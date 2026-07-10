@@ -27,15 +27,13 @@ moved document leaving a permanent stub at its old path.
 
 ## PCS — Physics Configuration System
 
-The first resident is PCS, the Physics Configuration System: the
-epicprod subsystem that manages production configuration and campaign
-records — physics, event-generation, simulation, reconstruction, and
-background tags; datasets and their composed identities; campaigns and
-their continuum across the monthly production cadence; production
-requests, tasks, and configurations. PCS is where physicists meet the
-production system. The `pcs/` Django application here is installed
-into the swf-monitor runtime with its import path, app label, and
-tables unchanged from its swf-monitor origin.
+PCS, the Physics Configuration System, manages production
+configuration and campaign records — physics, event-generation,
+simulation, reconstruction, and background tags; datasets and their
+composed identities; campaigns and their continuum across the monthly
+production cadence; production requests, tasks, and configurations.
+PCS is where physicists meet the production system. The `pcs/` Django
+application is installed into the swf-monitor runtime.
 
 PCS documentation:
 
@@ -46,13 +44,10 @@ PCS documentation:
 - [PCS_BACKGROUND_TAG.md](docs/PCS_BACKGROUND_TAG.md) — the background
   tag axis.
 
-## Next
-
-Created 2026-07-10 at the start of the v38 cycle. The epicprod
-documentation set lives in [`docs/`](docs/). The next production
-content is the campaign assessments work: the campaign analytics
-library and its rollup service (design:
-[EPICPROD_ASSESSMENTS.md](docs/EPICPROD_ASSESSMENTS.md)).
+The epicprod documentation set lives in [`docs/`](docs/). The campaign
+assessments design — the campaign analytics library, its rollup
+service, and the scheduled assessments — is
+[EPICPROD_ASSESSMENTS.md](docs/EPICPROD_ASSESSMENTS.md).
 
 The official system-level documentation of the ePIC WFMS is
 <https://epic-wfms-docs.readthedocs.io>.
