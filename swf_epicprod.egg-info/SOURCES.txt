@@ -1,0 +1,8 @@
+LICENSE
+README.md
+pyproject.toml
+swf_epicprod/__init__.py
+swf_epicprod.egg-info/PKG-INFO
+swf_epicprod.egg-info/SOURCES.txt
+swf_epicprod.egg-info/dependency_links.txt
+swf_epicprod.egg-info/top_level.txt

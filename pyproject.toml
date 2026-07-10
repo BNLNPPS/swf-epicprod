@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swf-epicprod"
+version = "0.1.0"
+description = "ePIC automated production (epicprod) — the production domain of the swf platform"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+include = ["swf_epicprod*", "pcs*"]
+
+[tool.setuptools.package-data]
+"*" = ["templates/**/*.html", "static/**/*"]
