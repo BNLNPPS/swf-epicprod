@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 720" font-family="Arial, Helvetica, sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#33691e"/>
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ad1457"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1" dy="2" stdDeviation="1.5" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1400" height="720" fill="#ffffff"/>
+
+  <text x="700" y="32" text-anchor="middle" font-size="19" font-weight="bold">epicprod — the ePIC Production System</text>
+
+  <!-- ============ Communities ============ -->
+  <rect x="140" y="74" width="500" height="46" rx="8" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="390" y="94" text-anchor="middle" font-weight="bold" font-size="14">Production operations experts</text>
+  <text x="390" y="111" text-anchor="middle" font-size="11" fill="#555">operate · curate · LLM review &amp; gatekeeping</text>
+
+  <rect x="760" y="74" width="500" height="46" rx="8" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="1010" y="94" text-anchor="middle" font-weight="bold" font-size="14">ePIC collaboration</text>
+  <text x="1010" y="111" text-anchor="middle" font-size="11" fill="#555">view system · submit prod requests</text>
+
+  <line x1="390" y1="120" x2="390" y2="150" stroke="#444" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="1010" y1="120" x2="1010" y2="150" stroke="#444" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- ============ swf-monitor web interface band + L→R workflow ============ -->
+  <rect x="60" y="150" width="1280" height="220" rx="14" fill="#e3f2fd" stroke="#1565c0" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="700" y="172" text-anchor="middle" font-weight="bold" font-size="15" fill="#0d47a1">epicprod web interface</text>
+  <text x="700" y="189" text-anchor="middle" font-size="11" font-style="italic" fill="#555">one web interface (internal site + external proxy) · REST + MCP · live updates pushed to users (SSE)</text>
+
+  <!-- Stage 1 -->
+  <rect x="78" y="200" width="286" height="156" rx="7" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <rect x="78" y="200" width="286" height="26" rx="7" fill="#eef4fb" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="221" y="218" text-anchor="middle" font-weight="bold" font-size="13">1 · Production Requests</text>
+  <text x="221" y="256" text-anchor="middle" font-size="12">Requests / questionnaires</text>
+  <text x="221" y="278" text-anchor="middle" font-size="11" fill="#555">PWG · DSC intake</text>
+  <text x="221" y="312" text-anchor="middle" font-size="11" fill="#555" font-style="italic">the physics ask, structured</text>
+
+  <!-- Stage 2 -->
+  <rect x="392" y="200" width="330" height="156" rx="7" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <rect x="392" y="200" width="330" height="26" rx="7" fill="#eef4fb" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="557" y="218" text-anchor="middle" font-weight="bold" font-size="13">2 · Physics Configuration · PCS</text>
+  <text x="557" y="250" text-anchor="middle" font-size="12">Tags: physics · evgen · simu ·</text>
+  <text x="557" y="268" text-anchor="middle" font-size="12">reco · background (+ categories)</text>
+  <text x="557" y="296" text-anchor="middle" font-size="12">Datasets · Configurations</text>
+  <text x="557" y="330" text-anchor="middle" font-size="12" font-weight="bold">Task creation</text>
+  <text x="557" y="348" text-anchor="middle" font-size="11" fill="#555">submit-ready production tasks</text>
+
+  <!-- Stage 3 -->
+  <rect x="750" y="200" width="270" height="156" rx="7" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <rect x="750" y="200" width="270" height="26" rx="7" fill="#eef4fb" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="885" y="218" text-anchor="middle" font-weight="bold" font-size="13">3 · Campaign Management</text>
+  <text x="885" y="252" text-anchor="middle" font-size="12">Campaign views &amp; actions</text>
+  <text x="885" y="270" text-anchor="middle" font-size="11" fill="#555">past · current · future</text>
+  <text x="885" y="302" text-anchor="middle" font-size="12">AI assessments</text>
+  <text x="885" y="320" text-anchor="middle" font-size="11" fill="#555">LLM evaluations across epicprod</text>
+
+  <!-- Stage 4 -->
+  <rect x="1048" y="200" width="274" height="156" rx="7" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <rect x="1048" y="200" width="274" height="26" rx="7" fill="#eef4fb" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="1185" y="218" text-anchor="middle" font-weight="bold" font-size="13">4 · PanDA Execution</text>
+  <text x="1185" y="252" text-anchor="middle" font-size="12">Activity · Tasks · Jobs</text>
+  <text x="1185" y="274" text-anchor="middle" font-size="12">Errors · Diagnostics</text>
+  <text x="1185" y="296" text-anchor="middle" font-size="12">Alarms · EIC queues</text>
+
+  <!-- L→R workflow arrows -->
+  <line x1="364" y1="284" x2="392" y2="284" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="722" y1="284" x2="750" y2="284" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1020" y1="284" x2="1048" y2="284" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============ Credential boundary ============ -->
+  <line x1="50" y1="404" x2="1350" y2="404" stroke="#b71c1c" stroke-width="2" stroke-dasharray="10 6"/>
+  <text x="700" y="398" text-anchor="middle" font-size="11" font-weight="bold" fill="#b71c1c">credential boundary — the web interface holds no production credentials</text>
+
+  <!-- cross-boundary arrows -->
+  <line x1="400" y1="426" x2="400" y2="372" stroke="#ad1457" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#arrow-pink)"/>
+  <text x="408" y="420" text-anchor="start" font-size="10" fill="#ad1457">&#8617; AI assessments</text>
+  <line x1="650" y1="372" x2="650" y2="426" stroke="#444" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="658" y="420" text-anchor="start" font-size="10" fill="#333">submit task &#8594;</text>
+  <line x1="1145" y1="426" x2="1145" y2="372" stroke="#ad1457" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#arrow-pink)"/>
+  <text x="1137" y="420" text-anchor="end" font-size="10" fill="#ad1457">&#8617; live state · SSE</text>
+
+  <!-- ============ Engine services (below boundary) ============ -->
+  <rect x="70" y="426" width="470" height="112" rx="12" fill="#e8eaf6" stroke="#3949ab" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="305" y="450" text-anchor="middle" font-weight="bold" font-size="15" fill="#283593">corun-ai — LLM analysis &amp; artifacts</text>
+  <text x="305" y="468" text-anchor="middle" font-size="11" font-style="italic" fill="#555">LLM execution + durable artifacts (quick &amp; extended)</text>
+  <text x="305" y="492" text-anchor="middle" font-size="12">assessments · comment replies · daily campaign reports</text>
+  <text x="305" y="512" text-anchor="middle" font-size="12">campaign narratives — human-authored LLM context</text>
+  <text x="305" y="530" text-anchor="middle" font-size="11" fill="#555" font-style="italic">via wrangle-ai executor</text>
+
+  <rect x="560" y="426" width="370" height="112" rx="12" fill="#f3e5f5" stroke="#6a1b9a" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="745" y="450" text-anchor="middle" font-weight="bold" font-size="15" fill="#4a148c">prod_ops_agent</text>
+  <text x="745" y="468" text-anchor="middle" font-size="11" font-style="italic" fill="#555">credentialed operations — the only credential holder</text>
+  <text x="745" y="492" text-anchor="middle" font-size="12">submit · retry · recover · inspect</text>
+  <text x="745" y="512" text-anchor="middle" font-size="12">Rucio / EVGEN assimilation</text>
+  <text x="745" y="530" text-anchor="middle" font-size="11" fill="#555">PanDA OIDC · Rucio x509 · xrootd</text>
+
+  <rect x="950" y="426" width="390" height="112" rx="12" fill="#f1f8e9" stroke="#33691e" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1145" y="450" text-anchor="middle" font-weight="bold" font-size="15" fill="#1b5e20">Production services &amp; data movement</text>
+  <text x="1145" y="470" text-anchor="middle" font-size="12">PanDA / JEDI &#160;·&#160; Rucio &#160;·&#160; xrootd</text>
+  <text x="1145" y="492" text-anchor="middle" font-size="11" fill="#555" font-style="italic">task refinement · job brokerage · pilots</text>
+  <text x="1145" y="512" text-anchor="middle" font-size="11" fill="#555">HPC &amp; OSG sites · storage &amp; batch resources</text>
+
+  <!-- prod_ops_agent -> production services -->
+  <line x1="930" y1="482" x2="950" y2="482" stroke="#33691e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+
+  <!-- ============ Stores ============ -->
+  <rect x="70" y="562" width="470" height="72" rx="12" fill="#f1f8e9" stroke="#33691e" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="305" y="587" text-anchor="middle" font-weight="bold" font-size="14" fill="#1b5e20">Production knowledge base</text>
+  <text x="305" y="608" text-anchor="middle" font-size="12">curated facts · objectives · priorities · narratives</text>
+  <text x="305" y="626" text-anchor="middle" font-size="11" fill="#555" font-style="italic">input to LLM reasoning</text>
+
+  <rect x="950" y="562" width="390" height="72" rx="12" fill="#f1f8e9" stroke="#33691e" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="1145" y="587" text-anchor="middle" font-weight="bold" font-size="14" fill="#1b5e20">Produced datasets</text>
+  <text x="1145" y="608" text-anchor="middle" font-size="12">RECO / FULL outputs in JLab Rucio</text>
+  <text x="1145" y="626" text-anchor="middle" font-size="11" fill="#555" font-style="italic">registered under the composed task name</text>
+
+  <line x1="305" y1="538" x2="305" y2="562" stroke="#33691e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+  <text x="315" y="555" font-size="10" fill="#555">artifacts</text>
+  <line x1="1145" y1="538" x2="1145" y2="562" stroke="#33691e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+  <text x="1155" y="555" font-size="10" fill="#555">outputs</text>
+
+  <!-- ============ Legend ============ -->
+  <text x="700" y="672" text-anchor="middle" font-size="11" fill="#666">orange = communities &#160;·&#160; blue = epicprod web interface &#160;·&#160; indigo = corun-ai (LLM) &#160;·&#160; purple = prod_ops_agent (credentials) &#160;·&#160; green = services &amp; data &#160;·&#160; pink = live results (SSE)</text>
+  <text x="700" y="692" text-anchor="middle" font-size="11" font-style="italic" fill="#666">left→right: the epicprod production workflow · below the line: the credentialed engine that powers it · results stream back to the interface</text>
+</svg>

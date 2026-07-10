@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="720" viewBox="0 0 1240 720" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 z" fill="#444"/>
+    </marker>
+  </defs>
+  <rect width="1240" height="720" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="620" y="42" text-anchor="middle" font-size="26" font-weight="bold" fill="#222">The operations automation loop</text>
+  <text x="620" y="70" text-anchor="middle" font-size="16" font-style="italic" fill="#555">Maximal automation with human control points: the system tends itself and concentrates attention</text>
+
+  <!-- Lane 1: automation -->
+  <rect x="50" y="100" width="1140" height="220" rx="8" fill="#f1f8e9" stroke="#538135" stroke-width="1.8"/>
+  <text x="75" y="126" font-size="16" font-weight="bold" fill="#2e5822">The system tends itself</text>
+  <text x="1165" y="126" text-anchor="end" font-size="14.5" font-style="italic" fill="#666">routine failure modes self-heal</text>
+
+  <rect x="80" y="150" width="320" height="140" rx="6" fill="#ffffff" stroke="#538135" stroke-width="1.6"/>
+  <text x="240" y="182" text-anchor="middle" font-size="16" font-weight="bold" fill="#2e5822">Autonomous supervision</text>
+  <text x="240" y="210" text-anchor="middle" font-size="14.5" fill="#333">Scheduled supervisor verifies</text>
+  <text x="240" y="231" text-anchor="middle" font-size="14.5" fill="#333">liveness by message round trip,</text>
+  <text x="240" y="252" text-anchor="middle" font-size="14.5" fill="#333">restarts what should run, leaves</text>
+  <text x="240" y="273" text-anchor="middle" font-size="14.5" fill="#333">deliberate stops alone</text>
+
+  <rect x="460" y="150" width="320" height="140" rx="6" fill="#eaeffa" stroke="#4472c4" stroke-width="1.8"/>
+  <text x="620" y="182" text-anchor="middle" font-size="16" font-weight="bold" fill="#2a4d8f">System state and services</text>
+  <text x="620" y="210" text-anchor="middle" font-size="14.5" fill="#333">Agents heartbeat and log to the</text>
+  <text x="620" y="231" text-anchor="middle" font-size="14.5" fill="#333">monitor; service health is cached</text>
+  <text x="620" y="252" text-anchor="middle" font-size="14.5" fill="#333">and visible everywhere</text>
+
+  <rect x="840" y="150" width="320" height="140" rx="6" fill="#ffffff" stroke="#538135" stroke-width="1.6"/>
+  <text x="1000" y="182" text-anchor="middle" font-size="16" font-weight="bold" fill="#2e5822">Routine sweeps</text>
+  <text x="1000" y="210" text-anchor="middle" font-size="14.5" fill="#333">Status refresh, data lineage</text>
+  <text x="1000" y="231" text-anchor="middle" font-size="14.5" fill="#333">snapshots, request ingest,</text>
+  <text x="1000" y="252" text-anchor="middle" font-size="14.5" fill="#333">daily reports, cache pruning</text>
+
+  <line x1="400" y1="220" x2="454" y2="220" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="840" y1="220" x2="786" y2="220" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+
+  <!-- Inter-lane arrows -->
+  <line x1="240" y1="322" x2="240" y2="474" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="254" y="392" font-size="14.5" fill="#333">what cannot self-heal</text>
+  <text x="254" y="412" font-size="14.5" fill="#333">surfaces as an alarm</text>
+
+  <line x1="1000" y1="478" x2="1000" y2="327" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="986" y="392" text-anchor="end" font-size="14.5" fill="#333">actions and results</text>
+  <text x="986" y="412" text-anchor="end" font-size="14.5" fill="#333">recorded in system state</text>
+
+  <!-- Lane 2: attention -->
+  <rect x="50" y="430" width="1140" height="220" rx="8" fill="#fdf3e0" stroke="#bf8f00" stroke-width="1.8"/>
+  <text x="75" y="456" font-size="16" font-weight="bold" fill="#7a5c00">Attention concentrates — humans decide</text>
+  <text x="1165" y="456" text-anchor="end" font-size="14.5" font-style="italic" fill="#666">explicit control points, auditable actions</text>
+
+  <rect x="80" y="480" width="320" height="140" rx="6" fill="#ffffff" stroke="#bf8f00" stroke-width="1.6"/>
+  <text x="240" y="512" text-anchor="middle" font-size="16" font-weight="bold" fill="#7a5c00">Alarms, reports, assessments</text>
+  <text x="240" y="540" text-anchor="middle" font-size="14.5" fill="#333">Alarms carry what needs action;</text>
+  <text x="240" y="561" text-anchor="middle" font-size="14.5" fill="#333">daily reports and AI assessments</text>
+  <text x="240" y="582" text-anchor="middle" font-size="14.5" fill="#333">summarize what changed</text>
+
+  <rect x="460" y="480" width="320" height="140" rx="6" fill="#ffffff" stroke="#bf8f00" stroke-width="1.6"/>
+  <text x="620" y="512" text-anchor="middle" font-size="16" font-weight="bold" fill="#7a5c00">Operator decides</text>
+  <text x="620" y="540" text-anchor="middle" font-size="14.5" fill="#333">Reads what changed and what</text>
+  <text x="620" y="561" text-anchor="middle" font-size="14.5" fill="#333">needs action; sets priorities,</text>
+  <text x="620" y="582" text-anchor="middle" font-size="14.5" fill="#333">approves, steers</text>
+
+  <rect x="840" y="480" width="320" height="140" rx="6" fill="#fce5cd" stroke="#c55a11" stroke-width="1.6"/>
+  <text x="1000" y="512" text-anchor="middle" font-size="16" font-weight="bold" fill="#9c4a10">Bounded actions</text>
+  <text x="1000" y="540" text-anchor="middle" font-size="14.5" fill="#333">Catalog controls — retry, recovery,</text>
+  <text x="1000" y="561" text-anchor="middle" font-size="14.5" fill="#333">priorities — executed by the</text>
+  <text x="1000" y="582" text-anchor="middle" font-size="14.5" fill="#333">credentialed operations agent</text>
+
+  <line x1="400" y1="550" x2="454" y2="550" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="780" y1="550" x2="834" y2="550" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+</svg>

@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" font-family="Arial, Helvetica, sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1565c0"/>
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ad1457"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#33691e"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1" dy="2" stdDeviation="1.4" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="720" fill="#ffffff"/>
+
+  <!-- ============ Title ============ -->
+  <text x="600" y="34" text-anchor="middle" font-size="20" font-weight="bold">Integration of LLM and distributed computing services in epicprod</text>
+  <text x="600" y="58" text-anchor="middle" font-size="12" font-style="italic" fill="#555">
+    Production facts, curated AI artifacts, controlled actions, and human review in one operations loop.
+  </text>
+
+  <!-- ============ Top human and collaboration row ============ -->
+  <rect x="70" y="90" width="300" height="76" rx="8" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="220" y="118" text-anchor="middle" font-weight="bold" font-size="14">Production team</text>
+  <text x="220" y="141" text-anchor="middle" font-size="11.5" fill="#555">Sets priorities, reviews assessments,</text>
+  <text x="220" y="157" text-anchor="middle" font-size="11.5" fill="#555">approves operational changes.</text>
+
+  <rect x="450" y="90" width="300" height="76" rx="8" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="600" y="118" text-anchor="middle" font-weight="bold" font-size="14">Production web interface</text>
+  <text x="600" y="141" text-anchor="middle" font-size="11.5" fill="#555">Internal site and external proxy.</text>
+  <text x="600" y="157" text-anchor="middle" font-size="11.5" fill="#555">Same production state, different access.</text>
+
+  <rect x="830" y="90" width="300" height="76" rx="8" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="980" y="118" text-anchor="middle" font-weight="bold" font-size="14">ePIC collaboration</text>
+  <text x="980" y="141" text-anchor="middle" font-size="11.5" fill="#555">Read-only visibility into campaign</text>
+  <text x="980" y="157" text-anchor="middle" font-size="11.5" fill="#555">status, artifacts, and decisions.</text>
+
+  <!-- ============ swf-monitor hub ============ -->
+  <rect x="90" y="220" width="1020" height="142" rx="14" fill="#e3f2fd" stroke="#1565c0" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="600" y="248" text-anchor="middle" font-weight="bold" font-size="16" fill="#0d47a1">epicprod Production operations portal</text>
+  <text x="600" y="269" text-anchor="middle" font-size="11.5" font-style="italic" fill="#555">Presents live production state, exposes context tools, and routes asynchronous results back to users.</text>
+
+  <rect x="122" y="290" width="220" height="52" rx="6" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="232" y="311" text-anchor="middle" font-weight="bold">Artifact presentation</text>
+  <text x="232" y="329" text-anchor="middle" font-size="11" fill="#555">Assessments, comments, reports.</text>
+
+  <rect x="380" y="290" width="220" height="52" rx="6" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="490" y="311" text-anchor="middle" font-weight="bold">LLM tools</text>
+  <text x="490" y="329" text-anchor="middle" font-size="11" fill="#555">REST APIs and MCP access.</text>
+
+  <rect x="638" y="290" width="220" height="52" rx="6" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="748" y="311" text-anchor="middle" font-weight="bold">Live production context</text>
+  <text x="748" y="329" text-anchor="middle" font-size="11" fill="#555">Tasks, jobs, queues, campaigns.</text>
+
+  <rect x="896" y="290" width="182" height="52" rx="6" fill="#ffffff" stroke="#ad1457" stroke-width="1.4"/>
+  <text x="987" y="311" text-anchor="middle" font-weight="bold" fill="#ad1457">Browser notification</text>
+  <text x="987" y="329" text-anchor="middle" font-size="11" fill="#555">Push completion notice to user.</text>
+
+  <path d="M600,166 V218" fill="none" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <path d="M220,166 V190 H600 V218" fill="none" stroke="#333" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <path d="M980,166 V190 H600 V218" fill="none" stroke="#333" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- ============ Lower execution layer ============ -->
+  <rect x="90" y="430" width="480" height="142" rx="14" fill="#e8eaf6" stroke="#3949ab" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="330" y="458" text-anchor="middle" font-weight="bold" font-size="15" fill="#283593">AI analysis and artifact service</text>
+  <text x="330" y="478" text-anchor="middle" font-size="11.5" font-style="italic" fill="#555">LLM execution and durable AI artifacts.</text>
+
+  <rect x="118" y="498" width="196" height="52" rx="6" fill="#ffffff" stroke="#3949ab" stroke-width="1.1"/>
+  <text x="216" y="519" text-anchor="middle" font-weight="bold">LLM operations</text>
+  <text x="216" y="537" text-anchor="middle" font-size="11" fill="#555">Assess, explain, reply, report.</text>
+
+  <rect x="344" y="498" width="198" height="52" rx="6" fill="#ffffff" stroke="#3949ab" stroke-width="1.1"/>
+  <text x="443" y="519" text-anchor="middle" font-weight="bold">Curated record</text>
+  <text x="443" y="537" text-anchor="middle" font-size="11" fill="#555">Versions, comments, provenance.</text>
+
+  <rect x="630" y="430" width="480" height="142" rx="14" fill="#f3e5f5" stroke="#6a1b9a" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="870" y="458" text-anchor="middle" font-weight="bold" font-size="15" fill="#4a148c">Credentialed operations service</text>
+  <text x="870" y="478" text-anchor="middle" font-size="11.5" font-style="italic" fill="#555">Credentialed production executor on pandaserver02.</text>
+
+  <rect x="658" y="498" width="196" height="52" rx="6" fill="#ffffff" stroke="#6a1b9a" stroke-width="1.1"/>
+  <text x="756" y="519" text-anchor="middle" font-weight="bold">Controlled actions</text>
+  <text x="756" y="537" text-anchor="middle" font-size="11" fill="#555">Submit, retry, recover, inspect.</text>
+
+  <rect x="884" y="498" width="198" height="52" rx="6" fill="#ffffff" stroke="#6a1b9a" stroke-width="1.1"/>
+  <text x="983" y="519" text-anchor="middle" font-weight="bold">Service credentials</text>
+  <text x="983" y="537" text-anchor="middle" font-size="11" fill="#555">PanDA, Rucio, xrootd access.</text>
+
+  <!-- swf-monitor to execution layer arrows -->
+  <path d="M232,342 V428" fill="none" stroke="#333" stroke-width="1.7" marker-end="url(#arrow)"/>
+  <path d="M490,342 V428" fill="none" stroke="#333" stroke-width="1.7" marker-end="url(#arrow)"/>
+  <text x="500" y="415" font-size="10" fill="#333">LLM request</text>
+  <path d="M748,342 V428" fill="none" stroke="#333" stroke-width="1.7" marker-end="url(#arrow)"/>
+  <text x="756" y="415" font-size="10" fill="#333">authorized action</text>
+
+  <!-- async returns -->
+  <path d="M520,430 V382 H965 V345" fill="none" stroke="#ad1457" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-pink)"/>
+  <path d="M987,430 V345" fill="none" stroke="#ad1457" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-pink)"/>
+
+  <!-- ============ Foundation row ============ -->
+  <rect x="90" y="620" width="480" height="62" rx="12" fill="#f1f8e9" stroke="#33691e" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="330" y="645" text-anchor="middle" font-weight="bold" font-size="14" fill="#1b5e20">AI production knowledge base</text>
+  <text x="330" y="664" text-anchor="middle" font-size="11.5" fill="#555">Curated campaign facts, objectives, priorities, narratives.</text>
+  <text x="330" y="678" text-anchor="middle" font-size="11.5" fill="#555">Input to LLM reasoning and ideation.</text>
+
+  <rect x="630" y="620" width="480" height="62" rx="12" fill="#f1f8e9" stroke="#33691e" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="870" y="645" text-anchor="middle" font-weight="bold" font-size="14" fill="#1b5e20">Production services and data movement</text>
+  <text x="870" y="666" text-anchor="middle" font-size="11.5" fill="#555">PanDA/JEDI, Rucio, xrootd, storage and batch resources.</text>
+
+  <path d="M330,572 V618" fill="none" stroke="#33691e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+  <path d="M870,572 V618" fill="none" stroke="#33691e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+
+  <!-- ============ Legend ============ -->
+  <text x="600" y="705" text-anchor="middle" font-size="11" fill="#666">
+    Implementation: swf-monitor portal · corun-ai/wrangle-ai analysis service · epicprod_ops_agent credentialed actions · PanDA/Rucio/xrootd production services.
+  </text>
+</svg>

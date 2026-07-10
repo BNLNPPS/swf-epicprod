@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 770" font-family="Arial, Helvetica, sans-serif" font-size="14">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#33691e"/>
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ad1457"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1" dy="2" stdDeviation="1.5" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1360" height="770" fill="#ffffff"/>
+
+  <text x="680" y="36" text-anchor="middle" font-size="19" font-weight="bold">LLM and Distributed Computing Services Integration in epicprod</text>
+
+  <!-- ============ Communities (top) ============ -->
+  <rect x="150" y="70" width="430" height="48" rx="8" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="365" y="90" text-anchor="middle" font-weight="bold" font-size="14">Production operations experts</text>
+  <text x="365" y="108" text-anchor="middle" font-size="11" fill="#555">operation · curation · LLM review &amp; gatekeeping</text>
+
+  <rect x="780" y="70" width="430" height="48" rx="8" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="995" y="90" text-anchor="middle" font-weight="bold" font-size="14">ePIC collaboration</text>
+  <text x="995" y="108" text-anchor="middle" font-size="11" fill="#555">view system · submit prod requests</text>
+
+  <!-- portal (the web service) delivers each community's functionality -->
+  <line x1="365" y1="210" x2="365" y2="118" stroke="#444" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="995" y1="210" x2="995" y2="118" stroke="#444" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- ============ Portal ============ -->
+  <rect x="90" y="210" width="1180" height="150" rx="14" fill="#e3f2fd" stroke="#1565c0" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="680" y="238" text-anchor="middle" font-weight="bold" font-size="17" fill="#0d47a1">Production operations portal</text>
+  <text x="680" y="258" text-anchor="middle" font-size="12" font-style="italic" fill="#555">the production web interface — internal site + external proxy · routes results back to users</text>
+
+  <rect x="130" y="278" width="340" height="70" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="300" y="306" text-anchor="middle" font-weight="bold" font-size="14">LLM assistance</text>
+  <text x="300" y="328" text-anchor="middle" font-size="12" fill="#555">assessments · comments · reports</text>
+
+  <rect x="510" y="278" width="340" height="70" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="680" y="306" text-anchor="middle" font-weight="bold" font-size="14">Production knowledge access</text>
+  <text x="680" y="328" text-anchor="middle" font-size="12" fill="#555">REST APIs · MCP tools · databases</text>
+
+  <rect x="890" y="278" width="340" height="70" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="1.2"/>
+  <text x="1060" y="306" text-anchor="middle" font-weight="bold" font-size="14">Live and historical production</text>
+  <text x="1060" y="328" text-anchor="middle" font-size="12" fill="#555">campaigns · tasks · jobs · queues</text>
+
+  <line x1="470" y1="313" x2="510" y2="313" stroke="#444" stroke-width="1.5"/>
+  <line x1="850" y1="313" x2="890" y2="313" stroke="#444" stroke-width="1.5"/>
+
+  <!-- credential boundary + portal -> services -->
+  <line x1="60" y1="386" x2="1300" y2="386" stroke="#b71c1c" stroke-width="2" stroke-dasharray="10 6"/>
+  <text x="680" y="381" text-anchor="middle" font-size="11" font-weight="bold" fill="#b71c1c">credential boundary — no credentials above this line</text>
+  <line x1="370" y1="360" x2="370" y2="410" stroke="#444" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="380" y="375" font-size="11" fill="#555">LLM request</text>
+  <line x1="990" y1="360" x2="990" y2="410" stroke="#444" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="1000" y="375" font-size="11" fill="#555">authorized action</text>
+
+  <!-- ============ LLM analysis & artifact service ============ -->
+  <rect x="90" y="410" width="560" height="156" rx="14" fill="#e8eaf6" stroke="#3949ab" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="370" y="438" text-anchor="middle" font-weight="bold" font-size="16" fill="#283593">LLM analysis &amp; artifact service — corun-ai</text>
+  <text x="370" y="458" text-anchor="middle" font-size="12" font-style="italic" fill="#555">LLM execution and durable LLM artifacts</text>
+
+  <rect x="115" y="474" width="255" height="76" rx="8" fill="#ffffff" stroke="#3949ab" stroke-width="1.2"/>
+  <text x="242" y="500" text-anchor="middle" font-weight="bold" font-size="14">LLM analysis</text>
+  <text x="242" y="521" text-anchor="middle" font-size="12" fill="#555">task/job/queue assessments</text>
+  <text x="242" y="539" text-anchor="middle" font-size="12" fill="#555">daily campaign reports</text>
+
+  <rect x="390" y="474" width="240" height="76" rx="8" fill="#ffffff" stroke="#3949ab" stroke-width="1.2"/>
+  <text x="510" y="500" text-anchor="middle" font-weight="bold" font-size="14">Campaign narratives</text>
+  <text x="510" y="521" text-anchor="middle" font-size="12" fill="#555">human-authored context for LLM</text>
+  <text x="510" y="539" text-anchor="middle" font-size="12" fill="#555">objectives · priorities · evolution</text>
+
+  <!-- ============ Credentialed operations service ============ -->
+  <rect x="710" y="410" width="560" height="156" rx="14" fill="#f3e5f5" stroke="#6a1b9a" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="990" y="438" text-anchor="middle" font-weight="bold" font-size="16" fill="#4a148c">Credentialed operations service — prod_ops_agent</text>
+  <text x="990" y="458" text-anchor="middle" font-size="12" font-style="italic" fill="#555">the only holder of production credentials</text>
+
+  <rect x="735" y="474" width="255" height="76" rx="8" fill="#ffffff" stroke="#6a1b9a" stroke-width="1.2"/>
+  <text x="862" y="500" text-anchor="middle" font-weight="bold" font-size="14">Controlled actions</text>
+  <text x="862" y="521" text-anchor="middle" font-size="12" fill="#555">submit · retry</text>
+  <text x="862" y="539" text-anchor="middle" font-size="12" fill="#555">recover · inspect</text>
+
+  <rect x="1010" y="474" width="240" height="76" rx="8" fill="#ffffff" stroke="#6a1b9a" stroke-width="1.2"/>
+  <text x="1130" y="500" text-anchor="middle" font-weight="bold" font-size="14">Service credentials</text>
+  <text x="1130" y="521" text-anchor="middle" font-size="12" fill="#555">PanDA · Rucio</text>
+  <text x="1130" y="539" text-anchor="middle" font-size="12" fill="#555">xrootd access</text>
+
+  <!-- services -> stores -->
+  <line x1="370" y1="566" x2="370" y2="610" stroke="#33691e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+  <line x1="990" y1="566" x2="990" y2="610" stroke="#33691e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+
+  <!-- ============ Stores ============ -->
+  <rect x="90" y="610" width="560" height="80" rx="12" fill="#f1f8e9" stroke="#33691e" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="370" y="638" text-anchor="middle" font-weight="bold" font-size="15" fill="#1b5e20">Production knowledge base</text>
+  <text x="370" y="660" text-anchor="middle" font-size="12">curated facts · objectives · priorities · narratives</text>
+  <text x="370" y="679" text-anchor="middle" font-size="11.5" font-style="italic" fill="#555">input to LLM reasoning</text>
+
+  <rect x="710" y="610" width="560" height="80" rx="12" fill="#f1f8e9" stroke="#33691e" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="990" y="638" text-anchor="middle" font-weight="bold" font-size="15" fill="#1b5e20">Production services &amp; data movement</text>
+  <text x="990" y="660" text-anchor="middle" font-size="12">PanDA / JEDI · Rucio · xrootd</text>
+  <text x="990" y="679" text-anchor="middle" font-size="11.5" font-style="italic" fill="#555">storage &amp; batch resources</text>
+
+  <!-- (community functionality is shown by the labeled arrows up top) -->
+
+  <!-- ============ Implementation footnote ============ -->
+  <text x="680" y="738" text-anchor="middle" font-size="11.5" font-style="italic" fill="#666">Implementation: swf-monitor portal · corun-ai + wrangle-ai analysis service · prod_ops_agent credentialed actions · PanDA/Rucio/xrootd production services</text>
+</svg>

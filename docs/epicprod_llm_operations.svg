@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" font-family="Arial, Helvetica, sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1565c0"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#33691e"/>
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e65100"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1" dy="2" stdDeviation="1.5" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="760" fill="#ffffff"/>
+
+  <!-- ============ Title ============ -->
+  <text x="600" y="32" text-anchor="middle" font-size="17" font-weight="bold">epicprod LLM operations architecture</text>
+  <text x="600" y="52" text-anchor="middle" font-size="11" font-style="italic" fill="#555">
+    swf-monitor renders production pages; corun-ai provides LLM-backed operations, artifacts, comments, and curation
+  </text>
+
+  <!-- ================================================================ -->
+  <!-- ============ User-facing production surface ============ -->
+  <!-- ================================================================ -->
+  <rect x="40" y="74" width="1120" height="110" rx="12" fill="#fff8e1" stroke="#f57f17" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="600" y="98" text-anchor="middle" font-weight="bold" font-size="14" fill="#e65100">User-facing production surface</text>
+
+  <rect x="85" y="115" width="230" height="52" rx="6" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="200" y="137" text-anchor="middle" font-weight="bold">Browser on pandaserver02</text>
+  <text x="200" y="154" text-anchor="middle" font-size="11" fill="#555">direct internal face</text>
+
+  <rect x="365" y="115" width="230" height="52" rx="6" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="480" y="137" text-anchor="middle" font-weight="bold">Browser on devcloud</text>
+  <text x="480" y="154" text-anchor="middle" font-size="11" fill="#555">through swf-remote proxy</text>
+
+  <rect x="885" y="115" width="230" height="52" rx="6" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="1000" y="137" text-anchor="middle" font-weight="bold">Bots and assistants</text>
+  <text x="1000" y="154" text-anchor="middle" font-size="11" fill="#555">MCP clients and Mattermost</text>
+
+  <line x1="315" y1="141" x2="362" y2="141" stroke="#e65100" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow-orange)"/>
+  <text x="338" y="132" text-anchor="middle" font-size="10" fill="#bf360c">same pages</text>
+
+  <!-- ================================================================ -->
+  <!-- ============ SWF boundary ============ -->
+  <!-- ================================================================ -->
+  <rect x="40" y="218" width="1120" height="190" rx="12" fill="#e3f2fd" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="600" y="242" text-anchor="middle" font-weight="bold" font-size="14" fill="#0d47a1">swf-monitor: production context, routing, and browser rendering</text>
+
+  <rect x="70" y="265" width="245" height="95" rx="6" fill="#ffffff" stroke="#1565c0" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="192" y="289" text-anchor="middle" font-weight="bold">Production object pages</text>
+  <text x="192" y="313" text-anchor="middle" font-size="11">PanDA task, job, queue</text>
+  <text x="192" y="331" text-anchor="middle" font-size="11">PCS campaign task</text>
+  <text x="192" y="350" text-anchor="middle" font-size="11" fill="#555" font-style="italic">renders corun-ai artifacts by pointer</text>
+
+  <rect x="352" y="265" width="245" height="95" rx="6" fill="#ffffff" stroke="#1565c0" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="474" y="289" text-anchor="middle" font-weight="bold">Production context API</text>
+  <text x="474" y="313" text-anchor="middle" font-size="11">REST and MCP detail tools</text>
+  <text x="474" y="331" text-anchor="middle" font-size="11">subject metadata and URLs</text>
+  <text x="474" y="350" text-anchor="middle" font-size="11" fill="#555" font-style="italic">source of production object facts</text>
+
+  <rect x="635" y="265" width="245" height="95" rx="6" fill="#ffffff" stroke="#1565c0" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="758" y="289" text-anchor="middle" font-weight="bold">corun-ai REST client</text>
+  <text x="758" y="313" text-anchor="middle" font-size="11">create pages, list pages</text>
+  <text x="758" y="331" text-anchor="middle" font-size="11">ask LLM comment reply</text>
+  <text x="758" y="350" text-anchor="middle" font-size="11" fill="#555" font-style="italic">token-authenticated service call</text>
+
+  <rect x="918" y="265" width="210" height="95" rx="6" fill="#ffffff" stroke="#1565c0" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="1023" y="289" text-anchor="middle" font-weight="bold">Callback and SSE relay</text>
+  <text x="1023" y="313" text-anchor="middle" font-size="11">corun-ai completion notice</text>
+  <text x="1023" y="331" text-anchor="middle" font-size="11">ops-agent event notice</text>
+  <text x="1023" y="350" text-anchor="middle" font-size="11" fill="#555" font-style="italic">browser notification only</text>
+
+  <path d="M200,167 V213 H192 V262" fill="none" stroke="#1565c0" stroke-width="1.6" marker-end="url(#arrow-blue)"/>
+  <path d="M480,167 V198 H192 V262" fill="none" stroke="#1565c0" stroke-width="1.6" marker-end="url(#arrow-blue)"/>
+  <path d="M1000,167 V198 H474 V262" fill="none" stroke="#1565c0" stroke-width="1.6" marker-end="url(#arrow-blue)"/>
+
+  <path d="M315,340 H330 V378 H758 V363" fill="none" stroke="#1565c0" stroke-width="1.4" marker-end="url(#arrow-blue)"/>
+  <path d="M597,322 H635" fill="none" stroke="#1565c0" stroke-width="1.4" marker-end="url(#arrow-blue)"/>
+
+  <!-- ================================================================ -->
+  <!-- ============ corun-ai boundary ============ -->
+  <!-- ================================================================ -->
+  <rect x="40" y="445" width="760" height="260" rx="12" fill="#f8fcf3" stroke="#33691e" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="420" y="469" text-anchor="middle" font-weight="bold" font-size="14" fill="#1b5e20">corun-ai: LLM-backed operations and artifacts</text>
+
+  <rect x="70" y="490" width="205" height="88" rx="6" fill="#f1f8e9" stroke="#33691e" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="172" y="513" text-anchor="middle" font-weight="bold">Sections</text>
+  <text x="172" y="537" text-anchor="middle" font-size="11">epicprod.assessment</text>
+  <text x="172" y="555" text-anchor="middle" font-size="11">epicprod.narrative</text>
+  <text x="172" y="572" text-anchor="middle" font-size="11" fill="#555" font-style="italic">visibility, prompts, metadata</text>
+
+  <rect x="300" y="490" width="205" height="88" rx="6" fill="#f1f8e9" stroke="#33691e" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="402" y="513" text-anchor="middle" font-weight="bold">Artifacts</text>
+  <text x="402" y="537" text-anchor="middle" font-size="11">Pages and versions</text>
+  <text x="402" y="555" text-anchor="middle" font-size="11">comments and provenance</text>
+  <text x="402" y="572" text-anchor="middle" font-size="11" fill="#555" font-style="italic">durable LLM outputs</text>
+
+  <rect x="530" y="490" width="205" height="88" rx="6" fill="#f1f8e9" stroke="#33691e" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="632" y="513" text-anchor="middle" font-weight="bold">wrangle worker</text>
+  <text x="632" y="537" text-anchor="middle" font-size="11">rapid async LLM work</text>
+  <text x="632" y="555" text-anchor="middle" font-size="11">comment replies, probes</text>
+  <text x="632" y="572" text-anchor="middle" font-size="11" fill="#555" font-style="italic">bounded execution</text>
+
+  <rect x="160" y="620" width="205" height="66" rx="6" fill="#ffffff" stroke="#33691e" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="262" y="645" text-anchor="middle" font-weight="bold">AI assessments</text>
+  <text x="262" y="667" text-anchor="middle" font-size="11">append-only corun-ai Pages</text>
+  <text x="262" y="682" text-anchor="middle" font-size="11" fill="#555" font-style="italic">hidden from codoc browse UI</text>
+
+  <rect x="435" y="620" width="205" height="66" rx="6" fill="#ffffff" stroke="#33691e" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="538" y="645" text-anchor="middle" font-weight="bold">Campaign narrative stream</text>
+  <text x="538" y="667" text-anchor="middle" font-size="11">human-authored entries</text>
+  <text x="538" y="682" text-anchor="middle" font-size="11" fill="#555" font-style="italic">context for progress assessment</text>
+
+  <path d="M758,360 V418 H402 V487" fill="none" stroke="#33691e" stroke-width="1.7" marker-end="url(#arrow-green)"/>
+  <path d="M632,578 V610 H538 V617" fill="none" stroke="#33691e" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <path d="M632,578 V604 H262 V617" fill="none" stroke="#33691e" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <path d="M735,534 H820 V312 H915" fill="none" stroke="#33691e" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow-green)"/>
+
+  <!-- ================================================================ -->
+  <!-- ============ Production credentials boundary ============ -->
+  <!-- ================================================================ -->
+  <rect x="835" y="445" width="325" height="260" rx="12" fill="#fef8f3" stroke="#e65100" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="998" y="469" text-anchor="middle" font-weight="bold" font-size="14" fill="#bf360c">Production credentials boundary</text>
+
+  <rect x="875" y="495" width="245" height="90" rx="6" fill="#fff3e0" stroke="#e65100" stroke-width="1.8" filter="url(#shadow)"/>
+  <text x="998" y="519" text-anchor="middle" font-weight="bold">epicprod_ops_agent</text>
+  <text x="998" y="543" text-anchor="middle" font-size="11">PanDA submission</text>
+  <text x="998" y="561" text-anchor="middle" font-size="11">Rucio/xrootd log retrieval</text>
+  <text x="998" y="579" text-anchor="middle" font-size="11" fill="#555" font-style="italic">runs on pandaserver02</text>
+
+  <rect x="875" y="625" width="245" height="62" rx="6" fill="#ffffff" stroke="#e65100" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="998" y="649" text-anchor="middle" font-weight="bold">Production services</text>
+  <text x="998" y="672" text-anchor="middle" font-size="11">PanDA, Rucio, xrootd, local cache</text>
+
+  <path d="M474,360 V432 H998 V492" fill="none" stroke="#e65100" stroke-width="1.5" marker-end="url(#arrow-orange)"/>
+  <path d="M998,585 V622" fill="none" stroke="#e65100" stroke-width="1.6" marker-end="url(#arrow-orange)"/>
+  <path d="M998,495 V420 H1023 V363" fill="none" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow-blue)"/>
+
+  <!-- ============ Bottom note ============ -->
+  <text x="600" y="742" text-anchor="middle" font-size="11" fill="#666">
+    Solid arrows = request or execution path; dashed arrows = completion notification path. SSE is notification, not source of truth.
+  </text>
+</svg>

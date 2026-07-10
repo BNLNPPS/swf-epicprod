@@ -48,11 +48,11 @@ PCS documentation:
 
 ## Next
 
-Created 2026-07-10 at the start of the v38 cycle. The next production
+Created 2026-07-10 at the start of the v38 cycle. The epicprod
+documentation set lives in [`docs/`](docs/). The next production
 content is the campaign assessments work: the campaign analytics
 library and its rollup service (design:
-[EPICPROD_ASSESSMENTS.md](https://github.com/BNLNPPS/swf-monitor/blob/infra/baseline-v38/docs/EPICPROD_ASSESSMENTS.md),
-migrating here with the doc set).
+[EPICPROD_ASSESSMENTS.md](docs/EPICPROD_ASSESSMENTS.md)).
 
 The official system-level documentation of the ePIC WFMS is
 <https://epic-wfms-docs.readthedocs.io>.

@@ -25,11 +25,14 @@ implicit fetch at deploy time.
 `docs/ARCHITECTURE_MAP.md` is the plan of record for what lives where
 (common-lib / swf-monitor-as-platform / swf-epicprod) and each
 component's consumption interface. The epicprod documentation set
-(`EPICPROD_*.md`, PCS docs) migrates here from `swf-monitor/docs/`;
-until a doc has moved, the swf-monitor copy is authoritative. Moved so
-far: `PCS.md`, `PCS_DATASET_REQUEST_WORKFLOW.md`,
-`PCS_BACKGROUND_TAG.md` (2026-07-10, with the `pcs` application).
-Every moved doc leaves a permanent stub at its old path.
+lives here (moved from `swf-monitor/docs/` 2026-07-10, each doc
+leaving a permanent stub at its old path): the PCS docs, the
+`EPICPROD_*` set (task catalog, ops, ops agent, data lineage, EVGEN
+inputs, questionnaire, validation, narratives, assessments, LLM
+operations), `JEDI_INTEGRATION.md`, `JEDI_EPIC_PROPOSAL.md`,
+`CAMPAIGN_CONTINUUM.md`, and `COMMISSIONING_RELAXATIONS.md`.
+Platform-service docs (action stream, SSE, external access, MCP,
+deployment) remain in `swf-monitor/docs/`.
 
 ## The pcs application
 
