@@ -447,3 +447,18 @@ app_name=epicprod) with measured durations; questionnaire import reads its
 CSV URL from SysConfig `questionnaire_csv_url` and records `skipped` when
 unset. Manual full run: the same enqueue command with any `--created-by`;
 association backfill: `--extra days=30`.
+
+### Credential expiry check
+
+The first chain step checks the expiry of the credentials automated
+production depends on — the PanDA OIDC token
+(`$PANDA_CONFIG_ROOT/.token`), the BNL Rucio proxy
+(`$X509_USER_PROXY`), and the EVGEN output proxy
+(`$EVGEN_X509_PROXY`) — and records one `credential_expiry_check`
+action carrying the days left per credential. A credential inside the
+warning window (`CREDENTIAL_EXPIRY_WARN_DAYS`, default 7 days),
+expired, missing, unreadable, or whose environment variable is unset
+raises the record to the live stream: automation that dies with a
+credential must not die silently. Standalone run:
+`python -m swf_epicprod.credential_check` (exit 0 healthy, 3 warning,
+4 expired/missing/unreadable).
