@@ -129,6 +129,26 @@ yet implemented: the catalog UI surfacing of the matched and unmatched
 populations, and consuming a matched EVGEN dataset as a payload-staged
 submission input.
 
+## The Definitions Side
+
+The production team's dataset definitions live in the
+`eic/simulation_campaign_datasets` repository: one seed CSV per dataset,
+a CI that measures each dataset's cost (real per-file event counts,
+initialization and per-event walltime, per-event output sizes), and the
+background-mixing configurations under `config_data/`. The nightly
+dataset definitions sweep (`pcs/definitions_sweep.py`, a `catalog_sync`
+chain step) assimilates this third namespace onto the catalog: each
+definition is matched exactly against the registered EVGEN Rucio
+inventory and, through the request-side input matcher above, against the
+catalog's evgen datasets. The resulting populations — defined, requested,
+registered, and the gaps between them — extend the two-population
+reconciliation above to three; a definition never registered, or a
+registered dataset never defined, is a completeness signal of the same
+kind as an unmatched request. Matched definitions and their costs are
+written to each catalog dataset's `metadata['definitions']`; the full
+inventory, cost model, and background-config registry are kept in the
+`dataset-definitions.json` snapshot.
+
 ## Related
 
 - [JEDI_INTEGRATION.md](JEDI_INTEGRATION.md) — submission design; the single-Rucio constraint and the payload-staged input mode.

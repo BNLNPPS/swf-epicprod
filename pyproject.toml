@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swf-epicprod"
-version = "0.2.1"
+version = "0.3.0"
 description = "ePIC automated production (epicprod) — the production domain of the swf platform"
 readme = "README.md"
 license = {file = "LICENSE"}
