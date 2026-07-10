@@ -1,0 +1,981 @@
+{% extends 'base.html' %}
+{% block title %}{{ schema.label }} Tags - PCS{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<style>
+    .compose-wrap {
+        display: flex; gap: 1.5rem; padding: 1rem 1.5rem; height: calc(100vh - 80px);
+    }
+    /* Left panel */
+    .tag-browser { flex: 0 0 38%; display: flex; flex-direction: column; min-width: 0; }
+    .tag-browser-header { margin-bottom: .75rem; }
+    .tag-search {
+        width: 100%; padding: .4rem .75rem; border: 1px solid #dee2e6;
+        border-radius: .375rem; font-size: .875rem; margin-bottom: .5rem;
+    }
+    .filter-row { display: flex; gap: .375rem; margin-bottom: .75rem; flex-wrap: wrap; }
+    .filter-pill {
+        padding: .25rem .75rem; border: 1px solid #dee2e6; border-radius: 1rem;
+        background: #fff; font-size: .8rem; cursor: pointer; color: #495057;
+    }
+    .filter-pill.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .tag-list {
+        flex: 1; overflow-y: auto; border: 1px solid #dee2e6;
+        border-radius: .375rem; background: #fff;
+    }
+    .tag-item {
+        padding: .6rem .85rem; border-bottom: 1px solid #f0f0f0;
+        cursor: pointer; transition: background .1s; outline: none;
+    }
+    .tag-item:last-child { border-bottom: none; }
+    .tag-item:hover { background: #f8f9fa; }
+    .tag-item.selected { background: #e7f1ff; border-left: 3px solid #0d6efd; }
+    .tag-item-line1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tag-item-label { font-weight: 600; font-size: .85rem; color: #212529; }
+    .tag-item-cat { font-size: .8rem; color: #6c757d; margin-left: .35rem; }
+    .tag-item-desc { font-size: .8rem; color: #6c757d; margin-left: .35rem; }
+    .tag-item-line2 { font-size: .75rem; color: #999; margin-top: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tag-item-status { font-size: .65rem; padding: .1rem .4rem; border-radius: .75rem; margin-left: .4rem; }
+    .tag-nav { margin-bottom: .5rem; font-size: .8rem; display: flex; gap: .75rem; }
+    .tag-nav a { color: #0d6efd; text-decoration: none; }
+    .tag-nav a:hover { text-decoration: underline; }
+    .tag-nav .current { font-weight: 600; color: #212529; }
+    .tag-list-empty { padding: 2rem; text-align: center; color: #6c757d; }
+    #param-filters { flex-wrap: wrap; gap: .3rem; align-items: center; }
+    #param-filters select { font-size: .75rem; padding: .15rem .4rem; border: 1px solid #dee2e6; border-radius: .25rem; background: #fff; color: #495057; max-width: 130px; }
+    #param-filters .clear-filters { font-size: .75rem; padding: .15rem .5rem; cursor: pointer; color: #dc3545; border: none; background: none; }
+
+    /* Right panel shared */
+    .right-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .panel-header {
+        display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;
+    }
+    .panel-header h4 { margin: 0; }
+    .panel-header .btn-group { display: flex; gap: .4rem; }
+    .panel-body { flex: 1; overflow-y: auto; padding-right: .5rem; }
+
+    /* View mode */
+    .detail-field { margin-bottom: .75rem; }
+    .detail-label { font-size: .75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; letter-spacing: .03em; }
+    .detail-value { font-size: .9rem; color: #212529; margin-top: .1rem; }
+    .params-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .75rem; }
+    .detail-empty { padding: 3rem; text-align: center; color: #6c757d; }
+
+    /* Create mode */
+    .field-group { margin-bottom: .85rem; }
+    .field-group label { display: block; font-size: .8rem; font-weight: 600; color: #495057; margin-bottom: .2rem; }
+    .field-group .form-control, .field-group .form-select { font-size: .875rem; }
+    .field-group .form-control.field-changed, .field-group .form-select.field-changed { color: #1a6b3c; font-weight: 600; }
+    .field-group textarea.form-control { resize: vertical; }
+    .suggestion-bar {
+        display: none; background: #fff3cd; border: 1px solid #ffc107; border-radius: .3rem;
+        padding: .15rem .5rem; margin-bottom: .3rem; font-size: .78rem; align-items: center; gap: .35rem;
+        width: fit-content;
+    }
+    .suggestion-bar.visible { display: inline-flex; }
+    .suggestion-bar .suggestion-source { color: #856404; font-weight: 500; }
+    .suggestion-bar .suggestion-value { flex: 1; color: #664d03; }
+    .suggestion-bar .btn-apply { padding: .1rem .5rem; font-size: .75rem; border-radius: .25rem; white-space: nowrap; }
+    .form-control.suggested, .form-select.suggested { color: #6c757d; font-style: italic; }
+    .params-header {
+        font-size: .9rem; font-weight: 600; color: #212529;
+        border-bottom: 1px solid #dee2e6; padding-bottom: .35rem;
+        margin-bottom: .75rem; margin-top: 1rem;
+    }
+    .required-star { color: #dc3545; }
+    .choice-wrap { display: flex; gap: .4rem; }
+    .choice-wrap .form-select { flex: 0 0 auto; width: auto; min-width: 140px; }
+    .choice-wrap .form-control { flex: 1; }
+    .choice-wrap .form-control.hidden-other { display: none; }
+
+    /* Param management modal */
+    .param-modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1050;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .param-modal-backdrop.hidden { display: none; }
+    .param-modal {
+        background: #fff; border-radius: .5rem; width: 720px; max-width: 90vw;
+        max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,.25);
+    }
+    .param-modal-header {
+        padding: .75rem 1rem; border-bottom: 1px solid #dee2e6;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .param-modal-header h5 { margin: 0; }
+    .param-modal-body { padding: 1rem; overflow-y: auto; flex: 1; }
+    .param-modal-footer { padding: .75rem 1rem; border-top: 1px solid #dee2e6; display: flex; gap: .5rem; justify-content: flex-end; }
+    .param-table { width: 100%; font-size: .82rem; border-collapse: collapse; }
+    .param-table th { background: #f8f9fa; padding: .4rem .5rem; text-align: left; border-bottom: 2px solid #dee2e6; font-size: .75rem; text-transform: uppercase; color: #6c757d; }
+    .param-table td { padding: .35rem .5rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+    .param-table input[type="text"], .param-table select { font-size: .82rem; padding: .2rem .4rem; border: 1px solid #dee2e6; border-radius: .25rem; }
+    .param-table input[type="text"] { width: 100%; }
+    .param-table .choices-input { width: 100%; font-size: .78rem; }
+    .param-table .btn-rm { border: none; background: none; color: #dc3545; cursor: pointer; font-size: .9rem; padding: .1rem .3rem; }
+    .param-table .btn-rm:hover { color: #a71d2a; }
+    .param-table tr.new-row td { border-top: 2px solid #0d6efd; background: #f0f7ff; }
+    .params-header .btn { margin-left: .75rem; font-size: .75rem; }
+</style>
+
+<div class="compose-wrap">
+    <!-- Left: Tag Browser -->
+    <div class="tag-browser">
+        <div class="tag-browser-header">
+            <div class="tag-nav">
+                {% if tag_type != 'p' %}<a href="{% url 'pcs:tag_compose' tag_type='p' %}">Physics</a>{% else %}<span class="current">Physics</span>{% endif %}
+                {% if tag_type != 'e' %}<a href="{% url 'pcs:tag_compose' tag_type='e' %}">EvGen</a>{% else %}<span class="current">EvGen</span>{% endif %}
+                {% if tag_type != 's' %}<a href="{% url 'pcs:tag_compose' tag_type='s' %}">Simu</a>{% else %}<span class="current">Simu</span>{% endif %}
+                {% if tag_type != 'r' %}<a href="{% url 'pcs:tag_compose' tag_type='r' %}">Reco</a>{% else %}<span class="current">Reco</span>{% endif %}
+                {% if tag_type != 'k' %}<a href="{% url 'pcs:tag_compose' tag_type='k' %}">Background</a>{% else %}<span class="current">Background</span>{% endif %}
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem">
+                <h5 style="margin:0">{{ schema.label }} Tags</h5>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-new-tag"
+                        {% if not user.is_authenticated %}disabled title="Compose a new tag — sign in to use"{% endif %}>New Tag</button>
+            </div>
+            <input type="text" class="tag-search" id="tag-search" placeholder="Search tags...">
+            <div class="btn-group btn-group-sm" id="list-sort" role="group" aria-label="Sort" style="margin-bottom:.5rem; align-self:flex-start;">
+                <button type="button" class="btn btn-outline-secondary active" data-sort="recent" style="font-size:.68rem; padding:.03rem .3rem; min-width:3.4rem;">Recent</button>
+                <button type="button" class="btn btn-outline-secondary" data-sort="alpha" style="font-size:.68rem; padding:.03rem .3rem; min-width:3.4rem;">A&ndash;Z</button>
+            </div>
+            <div class="filter-row" id="status-filters">
+                <span class="filter-pill active" data-status="all">All</span>
+                <span class="filter-pill" data-status="draft">Draft</span>
+                <span class="filter-pill" data-status="locked">Locked</span>
+            </div>
+            <div class="filter-row" id="creator-filters">
+            </div>
+            <div class="filter-row" id="param-filters"></div>
+        </div>
+        <div class="tag-list" id="tag-list" tabindex="0"></div>
+    </div>
+
+    <!-- Right: View / Create panels -->
+    <div class="right-panel">
+
+        <!-- VIEW MODE -->
+        <div id="view-panel" style="display:flex; flex-direction:column; flex:1;">
+            <div class="panel-header">
+                <h4 id="view-title">Select a tag</h4>
+                <div class="btn-group">
+                    <span id="view-status-badge"></span>
+                    <button type="button" class="btn btn-dark-green btn-sm" id="btn-edit-tag" style="display:none"
+                            {% if not user.is_authenticated %}disabled title="Edit your own draft tag — sign in to use"{% endif %}>Edit</button>
+                    <button type="button" class="btn btn-dark-green btn-sm" id="btn-copy-tag" style="display:none"
+                            {% if not user.is_authenticated %}disabled title="Copy this tag into a new draft — sign in to use"{% endif %}>Copy</button>
+                    <button type="button" class="btn btn-success btn-sm" id="btn-lock-tag" style="display:none" onclick="lockTag()">Lock</button>
+                    <button type="button" class="btn btn-danger btn-sm" id="btn-delete-tag" style="display:none" onclick="deleteTag()">Delete</button>
+                </div>
+            </div>
+            <div class="panel-body" id="view-body">
+                <div class="detail-empty">Click a tag on the left to view details{% if user.is_authenticated %}, or click <strong>New Tag</strong> to create one{% endif %}.</div>
+            </div>
+        </div>
+
+        <!-- CREATE MODE (hidden by default) -->
+        <div id="create-panel" style="display:none; flex-direction:column; flex:1;">
+            <div class="panel-header">
+                <h4 id="create-title">New {{ schema.label }} Tag</h4>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-create">Cancel</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="btn-save" onclick="saveTag()">Save</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                {% if tag_type == 'p' %}
+                <div class="field-group">
+                    <label>Category <span class="required-star">*</span></label>
+                    <div class="suggestion-bar" data-field="category"></div>
+                    <select name="category" id="id_category" class="form-select">
+                        <option value="">Select category</option>
+                        {% for cat in form.category.field.queryset %}
+                        <option value="{{ cat.pk }}">{{ cat.digit }}: {{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="field-group">
+                    <label>Description</label>
+                    <div class="suggestion-bar" data-field="description"></div>
+                    <textarea name="description" id="id_description" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="field-group">
+                    <label>Created By</label>
+                    <input type="text" id="id_created_by" class="form-control" value="{{ username }}" readonly disabled>
+                </div>
+                <div class="params-header">Parameters
+                    <button type="button" class="btn btn-dark-green btn-sm" id="btn-manage-params"
+                            {% if not user.is_authenticated %}disabled title="Edit the tag type's parameter field definitions — sign in to use"{% endif %}>Edit parameter fields</button>
+                </div>
+                {% for field in form %}
+                    {% if field.name|slice:":6" == "param_" %}
+                    <div class="field-group" data-param="{{ field.label }}">
+                        <label>
+                            {{ field.label }}
+                            {% if field.field.required %}<span class="required-star">*</span>{% endif %}
+                        </label>
+                        <div class="suggestion-bar" data-field="{{ field.name }}"></div>
+                        <div class="choice-wrap" data-field-name="{{ field.name }}">
+                            <input type="text" name="{{ field.name }}" id="{{ field.id_for_label }}" class="form-control" value="" {% if field.field.required %}required{% endif %}>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Parameter Management Modal -->
+<div class="param-modal-backdrop hidden" id="param-modal-backdrop">
+    <div class="param-modal">
+        <div class="param-modal-header">
+            <h5>Manage <span id="pm-type-label">{{ schema.label }}</span> Parameters</h5>
+            <button type="button" class="btn-close" id="pm-close">&times;</button>
+        </div>
+        <div class="param-modal-body">
+            <table class="param-table">
+                <thead>
+                    <tr>
+                        <th style="width:18%">Name</th>
+                        <th style="width:10%">Type</th>
+                        <th style="width:6%">Req</th>
+                        <th style="width:42%">Choices</th>
+                        <th style="width:8%">Allow Other</th>
+                        <th style="width:5%"></th>
+                    </tr>
+                </thead>
+                <tbody id="pm-tbody"></tbody>
+            </table>
+            <div style="margin-top:.5rem;">
+                <button type="button" class="btn btn-primary btn-sm" id="pm-add">+ Add Parameter</button>
+            </div>
+        </div>
+        <div class="param-modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" id="pm-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" id="pm-save">Save</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const allTags = {{ tags_json|safe }};
+    let fieldChoices = {{ choices_json|safe }};
+    const filterFields = {{ filter_fields_json|safe }};
+    let paramDefs = {{ param_defs_json|safe }};
+    const nextSuffix = {{ next_suffix }};
+    const initialSelectedLabel = {{ selected_tag_json|safe }};
+    const currentUser = '{{ username }}';
+    const tagType = '{{ tag_type }}';
+    const tagPrefix = '{{ schema.prefix }}';
+    const createTitle = document.getElementById('create-title');
+    const tagList = document.getElementById('tag-list');
+    const searchInput = document.getElementById('tag-search');
+    const viewPanel = document.getElementById('view-panel');
+    const createPanel = document.getElementById('create-panel');
+
+    function htmlEscape(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+    const viewTitle = document.getElementById('view-title');
+    const viewBody = document.getElementById('view-body');
+    const viewStatusBadge = document.getElementById('view-status-badge');
+    const btnLock = document.getElementById('btn-lock-tag');
+    const btnDelete = document.getElementById('btn-delete-tag');
+    let statusFilter = 'all';
+    let creatorFilter = null;
+    const paramFilters = {};
+    let selectedTagNumber = null;
+    let mode = 'view'; // 'view' or 'create'
+    const userEdited = {};
+
+    // Build param filter dropdowns
+    const paramRow = document.getElementById('param-filters');
+    filterFields.forEach(field => {
+        const vals = [...new Set(allTags.map(t => (t.parameters || {})[field]).filter(Boolean))].sort();
+        if (vals.length < 2) return;
+        const sel = document.createElement('select');
+        sel.dataset.param = field;
+        const label = field.replace(/_/g, ' ');
+        sel.innerHTML = `<option value="">${label}: all</option>` + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+        sel.addEventListener('change', function() {
+            if (this.value) paramFilters[field] = this.value;
+            else delete paramFilters[field];
+            renderTagList();
+            updateClearBtn();
+        });
+        paramRow.appendChild(sel);
+    });
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'clear-filters';
+    clearBtn.textContent = 'Clear';
+    clearBtn.style.display = 'none';
+    clearBtn.addEventListener('click', () => {
+        paramRow.querySelectorAll('select').forEach(s => s.value = '');
+        Object.keys(paramFilters).forEach(k => delete paramFilters[k]);
+        statusFilter = 'all';
+        document.querySelectorAll('#status-filters .filter-pill').forEach(p => p.classList.remove('active'));
+        document.querySelector('#status-filters .filter-pill[data-status="all"]').classList.add('active');
+        creatorFilter = null;
+        const creatorRow = document.getElementById('creator-filters');
+        creatorRow.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        const allCreator = creatorRow.querySelector('.filter-pill[data-creator=""]');
+        if (allCreator) allCreator.classList.add('active');
+        searchInput.value = '';
+        renderTagList();
+        updateClearBtn();
+    });
+    paramRow.appendChild(clearBtn);
+
+    function updateClearBtn() {
+        const active = searchInput.value || statusFilter !== 'all' || creatorFilter || Object.keys(paramFilters).length > 0;
+        clearBtn.style.display = active ? '' : 'none';
+    }
+
+    // Build creator filter pills
+    const creators = [...new Set(allTags.map(t => t.created_by))].sort();
+    const creatorRow = document.getElementById('creator-filters');
+    if (creators.length > 1) {
+        creatorRow.innerHTML = '<span class="filter-pill active" data-creator="">All creators</span>'
+            + creators.map(c => `<span class="filter-pill" data-creator="${c}">${c}</span>`).join('');
+        creatorRow.querySelectorAll('.filter-pill').forEach(pill => {
+            pill.addEventListener('click', () => {
+                creatorRow.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                creatorFilter = pill.dataset.creator || null;
+                renderTagList();
+                updateClearBtn();
+            });
+        });
+    }
+
+    // ── Next tag number prediction (from PersistentState, read-only) ──
+    function predictNextLabel(categoryDigit) {
+        if (tagType === 'p' && categoryDigit) {
+            return tagPrefix + (categoryDigit * 1000 + nextSuffix);
+        }
+        return tagPrefix + nextSuffix;
+    }
+
+    let editingTagNumber = null;
+    const btnSave = document.getElementById('btn-save');
+    const editOriginals = {};
+
+    function enableSave() { btnSave.disabled = false; btnSave.classList.remove('btn-secondary'); btnSave.classList.add('btn-primary'); }
+    function disableSave() { btnSave.disabled = true; btnSave.classList.remove('btn-primary'); btnSave.classList.add('btn-secondary'); }
+
+    function markFieldChanged(fieldName) {
+        if (!editingTagNumber) return;
+        const val = getFieldValue(fieldName);
+        const orig = editOriginals[fieldName] || '';
+        const changed = val !== orig;
+        // Mark visual
+        const wrap = createPanel.querySelector(`.choice-wrap[data-field-name="${fieldName}"]`);
+        if (wrap) {
+            wrap.querySelector('input').classList.toggle('field-changed', changed);
+            const sel = wrap.querySelector('select');
+            if (sel) sel.classList.toggle('field-changed', changed);
+        } else {
+            const el = createPanel.querySelector(`[name="${fieldName}"]`);
+            if (el) el.classList.toggle('field-changed', changed);
+        }
+        // Enable/disable save based on any field differing
+        const anyChanged = Object.keys(editOriginals).some(k => getFieldValue(k) !== (editOriginals[k] || ''));
+        if (anyChanged) enableSave(); else disableSave();
+    }
+
+    // ── Mode switching ──
+    function enterCreateMode(categoryDigit) {
+        mode = 'create';
+        editingTagNumber = null;
+        enableSave();
+        viewPanel.style.display = 'none';
+        createPanel.style.display = 'flex';
+        createTitle.textContent = categoryDigit
+            ? 'New Tag ' + predictNextLabel(categoryDigit)
+            : 'New Tag ' + predictNextLabel();
+        // Clear form
+        createPanel.querySelectorAll('input.form-control, textarea.form-control').forEach(el => {
+            el.value = '';
+            el.classList.remove('suggested');
+        });
+        createPanel.querySelectorAll('select.form-select').forEach(sel => {
+            sel.value = ''; sel.classList.remove('suggested');
+        });
+        createPanel.querySelectorAll('.choice-wrap select').forEach(sel => {
+            sel.value = '';
+        });
+        createPanel.querySelectorAll('.choice-wrap .hidden-other').forEach(el => el.classList.add('hidden-other'));
+        createPanel.querySelectorAll('.suggestion-bar').forEach(b => b.classList.remove('visible'));
+        createPanel.querySelectorAll('.field-changed').forEach(el => el.classList.remove('field-changed'));
+        Object.keys(editOriginals).forEach(k => delete editOriginals[k]);
+        Object.keys(userEdited).forEach(k => delete userEdited[k]);
+    }
+
+    function enterViewMode(tagNumber) {
+        mode = 'view';
+        createPanel.style.display = 'none';
+        viewPanel.style.display = 'flex';
+        if (tagNumber) showTagDetail(tagNumber);
+    }
+
+    const btnNew = document.getElementById('btn-new-tag');
+    if (btnNew) btnNew.addEventListener('click', enterCreateMode);
+    const btnEdit = document.getElementById('btn-edit-tag');
+    const btnCopy = document.getElementById('btn-copy-tag');
+
+    function fillFormFromTag(tag) {
+        if (tagType === 'p') { setFieldValue('category', String(tag.category_digit || ''), false); userEdited['category'] = true; }
+        setFieldValue('description', tag.description || '', false); userEdited['description'] = true;
+        const params = tag.parameters || {};
+        createPanel.querySelectorAll('.choice-wrap').forEach(wrap => {
+            const fname = wrap.dataset.fieldName;
+            const paramKey = fname.replace('param_', '');
+            if (params[paramKey]) { setFieldValue(fname, params[paramKey], false); userEdited[fname] = true; }
+        });
+    }
+
+    function snapshotOriginals() {
+        Object.keys(editOriginals).forEach(k => delete editOriginals[k]);
+        if (tagType === 'p') editOriginals['category'] = getFieldValue('category');
+        editOriginals['description'] = getFieldValue('description');
+        createPanel.querySelectorAll('.choice-wrap').forEach(wrap => {
+            const fname = wrap.dataset.fieldName;
+            editOriginals[fname] = getFieldValue(fname);
+        });
+        // Clear changed styling
+        createPanel.querySelectorAll('.field-changed').forEach(el => el.classList.remove('field-changed'));
+    }
+
+    if (btnEdit) btnEdit.addEventListener('click', () => {
+        if (!selectedTagNumber) return;
+        const tag = allTags.find(t => t.tag_number === selectedTagNumber);
+        if (!tag) return;
+        enterCreateMode(tag.category_digit);
+        editingTagNumber = tag.tag_number;
+        createTitle.textContent = 'Edit ' + tag.tag_label;
+        fillFormFromTag(tag);
+        snapshotOriginals();
+        disableSave();
+    });
+
+    if (btnCopy) btnCopy.addEventListener('click', () => {
+        if (!selectedTagNumber) return;
+        const tag = allTags.find(t => t.tag_number === selectedTagNumber);
+        if (!tag) return;
+        enterCreateMode(tag.category_digit);
+        fillFormFromTag(tag);
+    });
+    document.getElementById('btn-cancel-create').addEventListener('click', () => enterViewMode(selectedTagNumber));
+
+    function showTagDetail(tagNumber) {
+        const tag = allTags.find(t => t.tag_number === tagNumber);
+        if (!tag) {
+            viewTitle.textContent = 'Select a tag';
+            viewBody.innerHTML = '<div class="detail-empty">Click a tag on the left to view details.</div>';
+            viewStatusBadge.innerHTML = '';
+            if (btnEdit) btnEdit.style.display = 'none';
+            if (btnCopy) btnCopy.style.display = 'none';
+            btnLock.style.display = 'none';
+            btnDelete.style.display = 'none';
+            return;
+        }
+        viewTitle.textContent = tag.tag_label + ' — ' + (tag.description || tag.category_name || '');
+        const statusCls = tag.status === 'locked' ? 'bg-success' : 'bg-secondary';
+        viewStatusBadge.innerHTML = `<span class="badge ${statusCls}">${tag.status}</span>`;
+
+        const ownerDraft = currentUser && tag.created_by === currentUser && tag.status === 'draft';
+        // Edit: owner's drafts only
+        if (btnEdit) btnEdit.style.display = ownerDraft ? 'inline-block' : 'none';
+        // Copy: always visible when logged in
+        if (btnCopy) btnCopy.style.display = currentUser ? 'inline-block' : 'none';
+        btnLock.style.display = ownerDraft ? 'inline-block' : 'none';
+        btnDelete.style.display = ownerDraft ? 'inline-block' : 'none';
+
+        const params = tag.parameters || {};
+        const paramHtml = Object.keys(params).length > 0
+            ? '<div class="params-grid">' + Object.entries(params).map(([k, v]) =>
+                `<div class="detail-field"><div class="detail-label">${htmlEscape(k)}</div><div class="detail-value">${htmlEscape(v || '—')}</div></div>`
+              ).join('') + '</div>'
+            : '<div style="color:#6c757d">No parameters</div>';
+
+        viewBody.innerHTML = `
+            <div class="detail-field">
+                <div class="detail-label">Description</div>
+                <div class="detail-value">${tag.description || '—'}</div>
+            </div>
+            <div class="detail-field">
+                <div class="detail-label">Created By</div>
+                <div class="detail-value">${tag.created_by}</div>
+            </div>
+            <div style="margin-top:1rem; font-size:.9rem; font-weight:600; border-bottom:1px solid #dee2e6; padding-bottom:.35rem; margin-bottom:.75rem;">Parameters</div>
+            ${paramHtml}
+            <div id="tag-usage" style="margin-top:1.25rem;"></div>`;
+        loadTagUsage(tagNumber);
+    }
+
+    // 'Used by' for a tag: the datasets composed with it, fetched on open
+    // (on-demand, like the compose-page hydration). Each links into the Prod
+    // Tasks compose page anchored on a task that uses it, so the campaign
+    // resolves. A stale response (user moved to another tag) is dropped.
+    async function loadTagUsage(tagNumber) {
+        const host = document.getElementById('tag-usage');
+        if (!host) return;
+        host.innerHTML = '<div style="color:#6c757d; font-size:.82rem;">Loading datasets…</div>';
+        let d;
+        try {
+            const r = await fetch(`/swf-monitor/pcs/tags/${tagType}/${tagNumber}/datasets/`);
+            if (!r.ok) { host.innerHTML = `<div class="text-danger" style="font-size:.82rem;">Could not load usage (HTTP ${r.status}).</div>`; return; }
+            d = await r.json();
+        } catch (e) {
+            host.innerHTML = '<div class="text-danger" style="font-size:.82rem;">Could not load usage.</div>';
+            return;
+        }
+        if (host !== document.getElementById('tag-usage')) return;  // superseded
+        const dss = d.datasets || [];
+        const header = `<div style="font-size:.9rem; font-weight:600; border-bottom:1px solid #dee2e6; padding-bottom:.35rem; margin-bottom:.5rem;">Used by <span class="text-muted" style="font-weight:normal;">(${dss.length} dataset${dss.length === 1 ? '' : 's'})</span></div>`;
+        if (!dss.length) { host.innerHTML = header + '<div style="color:#6c757d; font-size:.82rem;">No datasets use this tag.</div>'; return; }
+        const compose = '/swf-monitor/pcs/tasks/compose/';
+        const rows = dss.map(x => {
+            if (x.task_name) {
+                const href = `${compose}?tab=tasks&selected=${encodeURIComponent(x.task_name)}`;
+                return `<li><a href="${href}">${x.composed_name}</a>${x.task_count > 1 ? ` <span class="item-meta">(${x.task_count} tasks)</span>` : ''}</li>`;
+            }
+            return `<li>${x.composed_name} <span class="item-meta">(no task)</span></li>`;
+        }).join('');
+        host.innerHTML = header + `<ul style="font-size:.82rem;">${rows}</ul>`;
+    }
+
+    // ── Build choice dropdowns ──
+    createPanel.querySelectorAll('.choice-wrap').forEach(wrap => {
+        const fieldName = wrap.dataset.fieldName;
+        const paramKey = fieldName.replace('param_', '');
+        const opts = fieldChoices[paramKey];
+        if (!opts || opts.length === 0) return;
+        const textInput = wrap.querySelector('input');
+        const sel = document.createElement('select');
+        sel.className = 'form-select';
+        sel.innerHTML = '<option value="">--</option>'
+            + opts.map(v => `<option value="${v}">${v}</option>`).join('')
+            + '<option value="__other__">Other...</option>';
+        wrap.insertBefore(sel, textInput);
+        textInput.classList.add('hidden-other');
+        textInput.placeholder = 'Enter value...';
+        sel.addEventListener('change', function() {
+            if (this.value === '__other__') {
+                textInput.classList.remove('hidden-other');
+                textInput.value = '';
+                textInput.focus();
+            } else {
+                textInput.classList.add('hidden-other');
+                textInput.value = this.value;
+            }
+            userEdited[fieldName] = true;
+            textInput.classList.remove('suggested');
+            sel.classList.remove('suggested');
+            markFieldChanged(fieldName);
+        });
+        textInput.addEventListener('input', function() {
+            userEdited[fieldName] = true;
+            textInput.classList.remove('suggested');
+            markFieldChanged(fieldName);
+        });
+    });
+
+    // Track edits on non-choice fields
+    createPanel.querySelectorAll('.field-group > .form-control, .field-group > .form-select').forEach(el => {
+        el.addEventListener('input', function() { userEdited[this.name] = true; this.classList.remove('suggested'); markFieldChanged(this.name); });
+        el.addEventListener('change', function() { userEdited[this.name] = true; this.classList.remove('suggested'); markFieldChanged(this.name); });
+    });
+    // Update predicted tag number when category changes (physics)
+    const catSelect = document.getElementById('id_category');
+    if (catSelect) catSelect.addEventListener('change', function() {
+        const digit = parseInt(this.value);
+        if (digit) createTitle.textContent = 'New Tag ' + predictNextLabel(digit);
+    });
+
+    // ── Tag list rendering ──
+    function sortItems(arr) {
+        const m = (document.querySelector('#list-sort .active') || {dataset: {}}).dataset.sort || 'recent';
+        const cp = arr.slice();
+        if (m === 'alpha') cp.sort((a, b) => (a.tag_label || '').localeCompare(b.tag_label || '', undefined, {numeric: true}));
+        else cp.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+        return cp;
+    }
+
+    function renderTagList() {
+        const q = searchInput.value.toLowerCase();
+        const filtered = allTags.filter(t => {
+            if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+            if (creatorFilter && t.created_by !== creatorFilter) return false;
+            const params = t.parameters || {};
+            for (const [k, v] of Object.entries(paramFilters)) {
+                if (params[k] !== v) return false;
+            }
+            if (!q) return true;
+            const searchable = [
+                t.tag_label, t.description, t.category_name || '',
+                ...Object.values(params)
+            ].join(' ').toLowerCase();
+            return searchable.includes(q);
+        });
+        if (filtered.length === 0) {
+            tagList.innerHTML = '<div class="tag-list-empty">No tags found</div>';
+            return;
+        }
+        tagList.innerHTML = sortItems(filtered).map(t => {
+            const sel = t.tag_number === selectedTagNumber ? ' selected' : '';
+            const statusCls = t.status === 'locked' ? 'bg-success text-white' : 'bg-secondary text-white';
+            const cat = t.category_name ? `<span class="tag-item-cat">${t.category_name}</span>` : '';
+            const desc = t.description ? `<span class="tag-item-desc">${t.description}</span>` : '';
+            return `<div class="tag-item${sel}" data-tag="${t.tag_number}">
+                <div class="tag-item-line1"><span class="tag-item-label">${t.tag_label}</span>${cat} ${desc}</div>
+                <div class="tag-item-line2">${t.created_at} &middot; ${t.created_by}<span class="tag-item-status badge ${statusCls}">${t.status}</span></div>
+            </div>`;
+        }).join('');
+        tagList.querySelectorAll('.tag-item').forEach(el => {
+            el.addEventListener('click', () => onTagClick(parseInt(el.dataset.tag)));
+        });
+    }
+
+    // ── Tag click ──
+    function onTagClick(tagNumber) {
+        selectedTagNumber = tagNumber;
+        tagList.querySelectorAll('.tag-item').forEach(el => {
+            el.classList.toggle('selected', parseInt(el.dataset.tag) === tagNumber);
+        });
+        if (mode === 'view') {
+            showTagDetail(tagNumber);
+        } else {
+            fillCreateForm(tagNumber);
+        }
+        updateUrl();
+    }
+
+    function updateUrl() {
+        const params = new URLSearchParams(window.location.search);
+        if (selectedTagNumber) {
+            const tag = allTags.find(t => t.tag_number === selectedTagNumber);
+            if (tag) params.set('selected', tag.tag_label);
+            else params.delete('selected');
+        } else {
+            params.delete('selected');
+        }
+        const qs = params.toString();
+        const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+        history.replaceState(null, '', newUrl);
+    }
+
+    // ── Fill create form from clicked tag (compose behavior) ──
+    function fillCreateForm(tagNumber) {
+        const tag = allTags.find(t => t.tag_number === tagNumber);
+        if (!tag) return;
+        createPanel.querySelectorAll('.suggestion-bar').forEach(b => b.classList.remove('visible'));
+        if (tagType === 'p') handleField('category', String(tag.category_digit || ''), tag.tag_label);
+        handleField('description', tag.description || '', tag.tag_label);
+        const params = tag.parameters || {};
+        createPanel.querySelectorAll('.choice-wrap').forEach(wrap => {
+            const fname = wrap.dataset.fieldName;
+            const paramKey = fname.replace('param_', '');
+            handleField(fname, params[paramKey] || '', tag.tag_label);
+        });
+    }
+
+    function getFieldValue(name) {
+        const wrap = createPanel.querySelector(`.choice-wrap[data-field-name="${name}"]`);
+        if (wrap) return wrap.querySelector('input').value.trim();
+        const el = createPanel.querySelector(`[name="${name}"]`);
+        return el ? el.value.trim() : '';
+    }
+
+    function setFieldValue(name, value, asSuggested) {
+        const wrap = createPanel.querySelector(`.choice-wrap[data-field-name="${name}"]`);
+        if (wrap) {
+            const textInput = wrap.querySelector('input');
+            const sel = wrap.querySelector('select');
+            if (sel) {
+                const paramKey = name.replace('param_', '');
+                const opts = fieldChoices[paramKey] || [];
+                if (opts.includes(value)) {
+                    sel.value = value; textInput.value = value; textInput.classList.add('hidden-other');
+                } else {
+                    sel.value = '__other__'; textInput.value = value; textInput.classList.remove('hidden-other');
+                }
+                if (asSuggested) { sel.classList.add('suggested'); textInput.classList.add('suggested'); }
+                else { sel.classList.remove('suggested'); textInput.classList.remove('suggested'); }
+            }
+            return;
+        }
+        const el = createPanel.querySelector(`[name="${name}"]`);
+        if (!el) return;
+        el.value = value;
+        if (asSuggested) el.classList.add('suggested'); else el.classList.remove('suggested');
+    }
+
+    function showSuggestion(fieldName, value, sourceLabel) {
+        const bar = createPanel.querySelector(`.suggestion-bar[data-field="${fieldName}"]`);
+        if (!bar) return;
+        bar.innerHTML = `<span class="suggestion-source">${sourceLabel}:</span>
+            <span class="suggestion-value">${value}</span>
+            <button type="button" class="btn btn-warning btn-sm btn-apply">Apply</button>`;
+        bar.classList.add('visible');
+        bar.querySelector('.btn-apply').addEventListener('click', () => {
+            setFieldValue(fieldName, value, false);
+            userEdited[fieldName] = true;
+            bar.classList.remove('visible');
+            markFieldChanged(fieldName);
+        });
+    }
+
+    function handleField(fieldName, newValue, sourceLabel) {
+        if (!newValue) return;
+        const currentVal = getFieldValue(fieldName);
+        if (!currentVal || !userEdited[fieldName]) {
+            setFieldValue(fieldName, newValue, true);
+            const bar = createPanel.querySelector(`.suggestion-bar[data-field="${fieldName}"]`);
+            if (bar) bar.classList.remove('visible');
+        } else if (currentVal === newValue) {
+            // noop
+        } else {
+            showSuggestion(fieldName, newValue, sourceLabel);
+        }
+    }
+
+    // ── Keyboard navigation ──
+    tagList.addEventListener('keydown', function(e) {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        e.preventDefault();
+        const items = Array.from(tagList.querySelectorAll('.tag-item'));
+        if (items.length === 0) return;
+        const idx = items.findIndex(el => parseInt(el.dataset.tag) === selectedTagNumber);
+        let next;
+        if (e.key === 'ArrowDown') next = idx < items.length - 1 ? idx + 1 : 0;
+        else next = idx > 0 ? idx - 1 : items.length - 1;
+        onTagClick(parseInt(items[next].dataset.tag));
+        items[next].scrollIntoView({block: 'nearest'});
+    });
+
+    // ── Filters ──
+    searchInput.addEventListener('input', renderTagList);
+    document.querySelectorAll('#list-sort button').forEach(b => b.addEventListener('click', () => {
+        document.querySelectorAll('#list-sort button').forEach(x => x.classList.toggle('active', x === b));
+        renderTagList();
+    }));
+    document.querySelectorAll('#status-filters .filter-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            document.querySelectorAll('#status-filters .filter-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            statusFilter = pill.dataset.status;
+            renderTagList();
+            updateClearBtn();
+        });
+    });
+
+    // ── Filters ──
+    searchInput.addEventListener('input', updateClearBtn);
+
+    // ── API helpers ──
+    const TAG_API_NAMES = {p: 'physics-tags', e: 'evgen-tags', s: 'simu-tags', r: 'reco-tags'};
+    const apiBase = '/swf-monitor/pcs/api/' + TAG_API_NAMES[tagType];
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const apiHeaders = {'Content-Type': 'application/json'};
+    if (csrfToken) apiHeaders['X-CSRFToken'] = csrfToken;
+
+    async function apiPost(url, body) {
+        const resp = await fetch(url, {method: 'POST', headers: apiHeaders, body: JSON.stringify(body)});
+        return resp;
+    }
+    async function apiPatch(url, body) {
+        const resp = await fetch(url, {method: 'PATCH', headers: apiHeaders, body: JSON.stringify(body)});
+        return resp;
+    }
+
+    window.lockTag = async function() {
+        if (!selectedTagNumber || !confirm('Lock this tag? This cannot be undone.')) return;
+        const resp = await apiPost(`${apiBase}/${selectedTagNumber}/lock/`, {});
+        if (resp.ok) {
+            const tag = allTags.find(t => t.tag_number === selectedTagNumber);
+            const label = tag ? tag.tag_label : selectedTagNumber;
+            window.location.href = `?selected=${encodeURIComponent(label)}`;
+        } else {
+            const data = await resp.json();
+            alert(data.detail || 'Lock failed');
+        }
+    };
+
+    window.deleteTag = async function() {
+        if (!selectedTagNumber || !confirm('Delete this tag?')) return;
+        const resp = await apiPost(`${apiBase}/${selectedTagNumber}/delete/`, {});
+        if (resp.ok) {
+            window.location.href = window.location.pathname;
+        } else {
+            const data = await resp.json();
+            alert(data.detail || 'Delete failed');
+        }
+    };
+
+    window.saveTag = async function() {
+        // Collect form data
+        const payload = {};
+        if (tagType === 'p') payload.category = getFieldValue('category');
+        payload.description = getFieldValue('description');
+        const parameters = {};
+        createPanel.querySelectorAll('.choice-wrap').forEach(wrap => {
+            const fname = wrap.dataset.fieldName;
+            const paramKey = fname.replace('param_', '');
+            const val = getFieldValue(fname);
+            if (val) parameters[paramKey] = val;
+        });
+        payload.parameters = parameters;
+
+        let resp;
+        if (editingTagNumber) {
+            resp = await apiPatch(`${apiBase}/${editingTagNumber}/`, payload);
+        } else {
+            resp = await apiPost(`${apiBase}/`, payload);
+        }
+        if (resp.ok) {
+            const data = await resp.json();
+            const label = data.tag_label || data.tag_number;
+            window.location.href = `?selected=${encodeURIComponent(label)}`;
+        } else {
+            const errors = await resp.json();
+            let msg = '';
+            for (const [field, msgs] of Object.entries(errors)) {
+                msg += `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}\n`;
+            }
+            alert(msg || 'Save failed');
+        }
+    };
+
+    // ── Init ──
+    renderTagList();
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('mode') === 'create') {
+        enterCreateMode();
+        // Clean up the URL param
+        urlParams.delete('mode');
+        const cleanUrl = urlParams.toString() ? `${window.location.pathname}?${urlParams}` : window.location.pathname;
+        history.replaceState(null, '', cleanUrl);
+    } else {
+        let autoSelect = null;
+        if (initialSelectedLabel) {
+            const match = allTags.find(t => t.tag_label === initialSelectedLabel);
+            if (match) autoSelect = match.tag_number;
+        }
+        if (!autoSelect && allTags.length > 0) autoSelect = allTags[0].tag_number;
+        if (autoSelect) {
+            onTagClick(autoSelect);
+            const el = tagList.querySelector(`[data-tag="${autoSelect}"]`);
+            if (el) el.scrollIntoView({block: 'nearest'});
+        }
+    }
+    tagList.focus();
+
+    // ── Parameter Management Modal ──
+    const pmBackdrop = document.getElementById('param-modal-backdrop');
+    const pmTbody = document.getElementById('pm-tbody');
+    const btnManageParams = document.getElementById('btn-manage-params');
+    let pmDefs = [];
+
+    function pmRenderRow(d, idx) {
+        const isNew = !d._existing;
+        const rowCls = isNew ? ' class="new-row"' : '';
+        const nameAttr = d._existing ? 'readonly' : '';
+        const typeOpts = ['string', 'integer', 'float', 'boolean'].map(
+            t => `<option value="${t}"${d.type === t ? ' selected' : ''}>${t}</option>`
+        ).join('');
+        return `<tr${rowCls} data-idx="${idx}">
+            <td><input type="text" value="${d.name}" data-field="name" ${nameAttr}></td>
+            <td><select data-field="type">${typeOpts}</select></td>
+            <td><input type="checkbox" data-field="required" ${d.required ? 'checked' : ''}></td>
+            <td><input type="text" class="choices-input" value="${(d.choices||[]).join(', ')}" data-field="choices" placeholder="comma-separated"></td>
+            <td style="text-align:center"><input type="checkbox" data-field="allow_other" ${d.allow_other !== false ? 'checked' : ''}></td>
+            <td><button type="button" class="btn-rm" data-idx="${idx}">&times;</button></td>
+        </tr>`;
+    }
+
+    function pmRender() {
+        pmTbody.innerHTML = pmDefs.map((d, i) => pmRenderRow(d, i)).join('');
+        pmTbody.querySelectorAll('.btn-rm').forEach(btn => {
+            btn.addEventListener('click', () => {
+                pmDefs.splice(parseInt(btn.dataset.idx), 1);
+                pmRender();
+            });
+        });
+    }
+
+    function pmReadFromDom() {
+        pmTbody.querySelectorAll('tr').forEach((tr, i) => {
+            if (i >= pmDefs.length) return;
+            const d = pmDefs[i];
+            d.name = tr.querySelector('[data-field="name"]').value.trim();
+            d.type = tr.querySelector('[data-field="type"]').value;
+            d.required = tr.querySelector('[data-field="required"]').checked;
+            const choicesStr = tr.querySelector('[data-field="choices"]').value.trim();
+            d.choices = choicesStr ? choicesStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+            d.allow_other = tr.querySelector('[data-field="allow_other"]').checked;
+        });
+    }
+
+    function pmOpen() {
+        pmDefs = paramDefs.map(d => ({...d, _existing: true}));
+        pmRender();
+        pmBackdrop.classList.remove('hidden');
+    }
+
+    function pmClose() {
+        pmBackdrop.classList.add('hidden');
+    }
+
+    if (btnManageParams) btnManageParams.addEventListener('click', pmOpen);
+    document.getElementById('pm-close').addEventListener('click', pmClose);
+    document.getElementById('pm-cancel').addEventListener('click', pmClose);
+    pmBackdrop.addEventListener('click', e => { if (e.target === pmBackdrop) pmClose(); });
+
+    document.getElementById('pm-add').addEventListener('click', () => {
+        pmReadFromDom();
+        pmDefs.push({name: '', type: 'string', required: false, choices: [], allow_other: true, sort_order: pmDefs.length});
+        pmRender();
+        const lastInput = pmTbody.querySelector('tr:last-child [data-field="name"]');
+        if (lastInput) lastInput.focus();
+    });
+
+    document.getElementById('pm-save').addEventListener('click', async () => {
+        pmReadFromDom();
+        const defsToSave = pmDefs.filter(d => d.name).map((d, i) => ({
+            name: d.name, type: d.type, required: d.required,
+            choices: d.choices, allow_other: d.allow_other, sort_order: i,
+        }));
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        try {
+            const resp = await fetch(`/swf-monitor/pcs/tags/${tagType}/param-defs/`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+                body: JSON.stringify({defs: defsToSave}),
+            });
+            const result = await resp.json();
+            if (result.error) {
+                alert('Error: ' + result.error);
+                return;
+            }
+            // Reload into create mode so new/changed fields are visible
+            const url = new URL(window.location.href);
+            url.searchParams.set('mode', 'create');
+            window.location.href = url.toString();
+        } catch (err) {
+            alert('Save failed: ' + err.message);
+        }
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "monitor_app/_datatable_base.html" %}
+
+{% block extra_filters %}
+<div class="card mb-3">
+    <div class="card-body">
+        <a href="{% url 'pcs:dataset_create' %}" class="btn btn-primary btn-sm">New Dataset</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block default_order %}[[7, 'desc']]{% endblock %}
+{% block page_length %}1000{% endblock %}

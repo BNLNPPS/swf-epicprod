@@ -1,0 +1,378 @@
+{% extends 'base.html' %}
+{% load swf_fmt %}
+
+{% block title %}{{ task.composed_name }} - Prod Task - PCS{% endblock %}
+
+{% block content %}
+<style>
+.btn.pcs-reset-submit-btn { background: #f6c343; border-color: #9a6500; color: #1f1600; }
+.btn.pcs-reset-submit-btn:hover,
+.btn.pcs-reset-submit-btn:focus { background: #9a4f00; border-color: #6f3600; color: #fff; }
+.btn.pcs-reset-submit-btn:active { background: #763700; border-color: #512500; color: #fff; }
+</style>
+<div class="container-fluid mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'pcs:pcs_hub' %}">PCS</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'pcs:prod_task_compose' %}?tab=tasks">Prod Tasks</a></li>
+            <li class="breadcrumb-item active">{{ task.composed_name }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h2>{{ task.composed_name }}</h2>
+            <p class="text-muted">
+                <span class="badge bg-{% if task.status == 'draft' %}secondary{% elif task.status == 'ready' %}primary{% elif task.status == 'submitted' %}info{% elif task.status == 'completed' %}success{% elif task.status == 'past_output' %}dark{% elif task.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ task.status }}</span>
+                Created by {{ task.created_by }} on {{ task.created_at|date:"Y-m-d H:i" }}
+                {% if task.updated_at != task.created_at %} | Updated {{ task.updated_at|date:"Y-m-d H:i" }}{% endif %}
+            </p>
+        </div>
+        <div>
+            {% if task.status == 'draft' %}
+            {% if can_operate %}
+            <a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&selected={{ task.composed_name|urlencode }}" class="btn btn-dark-green btn-sm">Edit in Compose</a>
+            <button class="btn btn-secondary btn-sm" id="btn-regen">Regenerate Commands</button>
+            <button class="btn btn-success btn-sm" id="btn-lock">Lock</button>
+            {% endif %}
+            {% endif %}
+            {% if task.panda_task_id %}
+            <a href="{% url 'monitor_app:panda_task_detail' task.panda_task_id %}" class="btn btn-info btn-sm">PanDA Task {{ task.panda_task_id }}</a>
+            {% if can_reset_submission %}
+            <button class="btn pcs-reset-submit-btn btn-sm" id="btn-reset-submission">Reset submission</button>
+            {% endif %}
+            {% elif can_submit %}
+            <button type="button" class="btn btn-success btn-sm" id="btn-submit-task">Submit to PanDA</button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if task.description %}
+    <p>{{ task.description }}</p>
+    {% endif %}
+
+    {% ai_assessment_panel task.overrides %}
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Dataset</h5>
+                    <table class="table table-sm table-bordered mb-0">
+                        <tr><td style="width:40%"><strong>Name (tag-based)</strong></td><td><a href="{% url 'pcs:dataset_detail' pk=task.dataset.pk %}">{{ task.dataset.composed_name }}</a></td></tr>
+                        {% if not task.dataset.has_internal_name %}<tr><td><strong>DID</strong></td><td><code>{{ task.dataset.did }}</code></td></tr>{% endif %}
+                        {% if task.dataset.source_location %}<tr><td><strong>Source path</strong></td><td><code>{{ task.dataset.source_location }}</code></td></tr>{% endif %}
+                        <tr><td><strong>Detector Version</strong></td><td>{{ task.dataset.detector_version }}</td></tr>
+                        <tr><td><strong>Detector Config</strong></td><td>{{ task.dataset.detector_config }}</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Production Config</h5>
+                    <table class="table table-sm table-bordered mb-0">
+                        <tr><td style="width:40%"><strong>Name</strong></td><td><a href="{% url 'pcs:prod_config_detail' pk=task.prod_config.pk %}">{{ task.prod_config.name }}</a></td></tr>
+                        <tr><td><strong>JUG_XL Tag</strong></td><td>{{ task.prod_config.jug_xl_tag|default:"-" }}</td></tr>
+                        <tr><td><strong>Container</strong></td><td><code>{{ task.prod_config.container_image|default:"-" }}</code></td></tr>
+                        <tr><td><strong>BG Mixing</strong></td><td>{% if task.prod_config.bg_mixing %}Yes{% else %}No{% endif %}</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Tags</h5>
+            <table class="table table-sm table-bordered">
+                <thead><tr><th>Type</th><th>Tag</th><th>Description</th><th>Key Parameters</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>Physics</td>
+                        <td><a href="{% url 'pcs:tag_compose' tag_type='p' %}?selected={{ task.dataset.physics_tag.tag_label|urlencode }}">{{ task.dataset.physics_tag.tag_label }}</a></td>
+                        <td>{{ task.dataset.physics_tag.description|truncatewords:10 }}</td>
+                        <td>{% for k, v in task.dataset.physics_tag.parameters.items %}<code>{{ k }}</code>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                    </tr>
+                    <tr>
+                        <td>EvGen</td>
+                        <td><a href="{% url 'pcs:tag_compose' tag_type='e' %}?selected={{ task.dataset.evgen_tag.tag_label|urlencode }}">{{ task.dataset.evgen_tag.tag_label }}</a></td>
+                        <td>{{ task.dataset.evgen_tag.description|truncatewords:10 }}</td>
+                        <td>{% for k, v in task.dataset.evgen_tag.parameters.items %}<code>{{ k }}</code>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                    </tr>
+                    <tr>
+                        <td>Simulation</td>
+                        <td><a href="{% url 'pcs:tag_compose' tag_type='s' %}?selected={{ task.dataset.simu_tag.tag_label|urlencode }}">{{ task.dataset.simu_tag.tag_label }}</a></td>
+                        <td>{{ task.dataset.simu_tag.description|truncatewords:10 }}</td>
+                        <td>{% for k, v in task.dataset.simu_tag.parameters.items %}<code>{{ k }}</code>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                    </tr>
+                    <tr>
+                        <td>Reconstruction</td>
+                        <td><a href="{% url 'pcs:tag_compose' tag_type='r' %}?selected={{ task.dataset.reco_tag.tag_label|urlencode }}">{{ task.dataset.reco_tag.tag_label }}</a></td>
+                        <td>{{ task.dataset.reco_tag.description|truncatewords:10 }}</td>
+                        <td>{% for k, v in task.dataset.reco_tag.parameters.items %}<code>{{ k }}</code>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Dataset Roles</h5>
+            <p class="text-muted mb-2" style="font-size: 0.9em;">
+                Lists derived from <code>overrides.{input,output,intermediate}_dataset_dids</code>
+                (JSON, no schema column). The canonical requested/output dataset
+                remains the <code>dataset</code> FK.
+            </p>
+            {% if task.output_dataset_overrides %}
+            <h6 class="mt-2">Output Overrides</h6>
+            <table class="table table-sm table-bordered mb-3">
+                <thead><tr><th style="width:35%">Name</th><th>DID</th><th>Source</th></tr></thead>
+                <tbody>
+                    {% for ds in task.output_dataset_overrides %}
+                    <tr>
+                        <td><a href="{% url 'pcs:dataset_detail' pk=ds.pk %}">{{ ds.composed_name }}</a></td>
+                        <td>{% if ds.has_internal_name %}<span class="text-muted">&mdash;</span>{% else %}<code>{{ ds.did }}</code>{% endif %}</td>
+                        <td>{% if ds.source_kind %}<code>{{ ds.source_kind }}</code> {{ ds.source_location }}{% else %}-{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            {% if task.input_datasets %}
+            <h6 class="mt-2">Input</h6>
+            <table class="table table-sm table-bordered mb-3">
+                <thead><tr><th style="width:35%">Name</th><th>DID</th><th>Source</th></tr></thead>
+                <tbody>
+                    {% for ds in task.input_datasets %}
+                    <tr>
+                        <td><a href="{% url 'pcs:dataset_detail' pk=ds.pk %}">{{ ds.composed_name }}</a></td>
+                        <td>{% if ds.has_internal_name %}<span class="text-muted">&mdash;</span>{% else %}<code>{{ ds.did }}</code>{% endif %}</td>
+                        <td>{% if ds.source_kind %}<code>{{ ds.source_kind }}</code> {{ ds.source_location }}{% else %}-{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            {% if task.intermediate_datasets %}
+            <h6 class="mt-2">Intermediate</h6>
+            <table class="table table-sm table-bordered mb-3">
+                <thead><tr><th style="width:35%">Name</th><th>DID</th><th>Source</th></tr></thead>
+                <tbody>
+                    {% for ds in task.intermediate_datasets %}
+                    <tr>
+                        <td><a href="{% url 'pcs:dataset_detail' pk=ds.pk %}">{{ ds.composed_name }}</a></td>
+                        <td>{% if ds.has_internal_name %}<span class="text-muted">&mdash;</span>{% else %}<code>{{ ds.did }}</code>{% endif %}</td>
+                        <td>{% if ds.source_kind %}<code>{{ ds.source_kind }}</code> {{ ds.source_location }}{% else %}-{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            {% if task.input_source_location and not task.input_datasets %}
+            <h6 class="mt-2">Input Source (legacy)</h6>
+            <table class="table table-sm table-bordered mb-0">
+                <tr><td style="width:30%"><strong>Kind</strong></td><td><code>{{ task.input_source_kind }}</code></td></tr>
+                <tr><td><strong>Location</strong></td><td><code>{{ task.input_source_location }}</code></td></tr>
+            </table>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if task.csv_file %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Submission (legacy)</h5>
+            <table class="table table-sm table-bordered">
+                <tr><td style="width:30%"><strong>CSV File</strong></td><td><code>{{ task.csv_file }}</code></td></tr>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if task.overrides %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Overrides</h5>
+            <table class="table table-sm table-bordered mb-0">
+                {% for key, value in task.overrides.items %}
+                <tr><td style="width:40%"><strong>{{ key }}</strong></td><td><code>{{ value }}</code></td></tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if task.condor_command %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="card-title mb-0">Condor Command</h5>
+                <button class="btn btn-dark-green btn-sm btn-copy" data-target="condor-cmd">Copy</button>
+            </div>
+            <pre id="condor-cmd" class="bg-dark text-light p-3 mb-0" style="font-size: 0.8em; white-space: pre-wrap; word-break: break-all;">{{ task.condor_command }}</pre>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if task.panda_command %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="card-title mb-0">PanDA Command</h5>
+                <button class="btn btn-dark-green btn-sm btn-copy" data-target="panda-cmd">Copy</button>
+            </div>
+            <pre id="panda-cmd" class="bg-dark text-light p-3 mb-0" style="font-size: 0.8em; white-space: pre-wrap; word-break: break-all;">{{ task.panda_command }}</pre>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if task_params_json %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="card-title mb-0">PanDA EVGEN Submission Spec</h5>
+                <button class="btn btn-dark-green btn-sm btn-copy" data-target="task-params">Copy</button>
+            </div>
+            <div class="text-muted mb-2" style="font-size: 0.85em;">
+                Computed from current PCS state. This is the <code>fmt=evgen</code> JSON fetched by
+                <code>submit-evgen-task.py</code> and turned into the PanDA client-API task plus sandbox.
+            </div>
+            <pre id="task-params" class="bg-dark text-light p-3 mb-0" style="font-size: 0.8em; white-space: pre-wrap;">{{ task_params_json }}</pre>
+        </div>
+    </div>
+    {% elif task_params_error %}
+    <div class="alert alert-warning mb-3">
+        <strong>PanDA EVGEN submission spec unavailable:</strong> {{ task_params_error }}
+    </div>
+    {% endif %}
+
+    {% if task.panda_task_id or panda_tasks or task.condor_cluster_id %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Tracking</h5>
+            <table class="table table-sm table-bordered">
+                {% if task.panda_task_id %}<tr><td><strong>PanDA Task ID</strong></td><td>{{ task.panda_task_id }}</td></tr>{% endif %}
+                {% if task.condor_cluster_id %}<tr><td><strong>Condor Cluster ID</strong></td><td>{{ task.condor_cluster_id }}</td></tr>{% endif %}
+            </table>
+            {% if panda_tasks %}
+            <h6>PanDA Tasks</h6>
+            <table class="table table-sm table-bordered mb-0">
+                <thead>
+                    <tr>
+                        <th>Try</th><th>JEDI task</th><th>Status</th><th>PanDA task name</th>
+                        <th>Datasets</th><th>Context</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pt in panda_tasks %}
+                    <tr>
+                        <td>try{{ pt.try_number }}{% if pt.current %} <span class="badge bg-info">current</span>{% endif %}</td>
+                        <td>{% if pt.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' pt.jedi_task_id %}">{{ pt.jedi_task_id }}</a>{% else %}-{% endif %}</td>
+                        <td>{{ pt.status_snapshot|default:"-" }}</td>
+                        <td style="word-break:break-all;"><code>{{ pt.task_name }}</code></td>
+                        <td style="word-break:break-all;">
+                            {% if pt.out_ds %}<div><strong>out:</strong> <code>{{ pt.out_ds }}</code></div>{% endif %}
+                            {% if pt.log_ds %}<div><strong>log:</strong> <code>{{ pt.log_ds }}</code></div>{% endif %}
+                            {% if not pt.out_ds and not pt.log_ds %}-{% endif %}
+                        </td>
+                        <td>
+                            {% if pt.site %}<div><strong>site:</strong> {{ pt.site }}</div>{% endif %}
+                            {% if pt.association_source %}<div><strong>source:</strong> {{ pt.association_source }}</div>{% endif %}
+                            {% if pt.updated_at %}<div><strong>updated:</strong> {{ pt.updated_at }}</div>{% endif %}
+                            {% if pt.match_reason %}<div class="text-muted">{{ pt.match_reason }}</div>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.querySelectorAll('.btn-copy').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const pre = document.getElementById(this.dataset.target);
+        navigator.clipboard.writeText(pre.textContent).then(() => {
+            this.textContent = 'Copied!';
+            setTimeout(() => { this.textContent = 'Copy'; }, 1500);
+        });
+    });
+});
+const btnRegen = document.getElementById('btn-regen');
+if (btnRegen) btnRegen.addEventListener('click', function() {
+    fetch('{% url "pcs:prod_task_generate_commands" name=task.composed_name %}')
+        .then(r => r.json())
+        .then(data => { location.reload(); });
+});
+const btnResetSubmission = document.getElementById('btn-reset-submission');
+if (btnResetSubmission) btnResetSubmission.addEventListener('click', function() {
+    if (!confirm('Reset submission on "{{ task.composed_name|escapejs }}"? This detaches PanDA Task {{ task.panda_task_id }} and returns the task to draft so it can be re-submitted. It does not stop or delete the PanDA task itself.')) return;
+    fetch('/swf-monitor/pcs/api/prod-tasks/{{ task.composed_name|urlencode }}/reset-submission/', {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'}
+    }).then(r => r.json().then(d => ({ok: r.ok, d})))
+      .then(({ok, d}) => { if (ok) location.reload(); else alert(d.detail || 'Reset failed'); });
+});
+
+const btnSubmitTask = document.getElementById('btn-submit-task');
+let submitPollTimer = null;
+function pollForSubmittedTask(attemptsLeft) {
+    submitPollTimer = setTimeout(function() {
+        fetch('/swf-monitor/pcs/api/prod-tasks/{{ task.composed_name|urlencode }}/')
+            .then(r => r.json().then(d => ({ok: r.ok, d})))
+            .then(({ok, d}) => {
+                if (ok && d.panda_task_id) {
+                    location.reload();
+                    return;
+                }
+                if (attemptsLeft > 1) pollForSubmittedTask(attemptsLeft - 1);
+                else if (btnSubmitTask) {
+                    btnSubmitTask.disabled = false;
+                    btnSubmitTask.textContent = 'Submit to PanDA';
+                }
+            })
+            .catch(() => {
+                if (attemptsLeft > 1) pollForSubmittedTask(attemptsLeft - 1);
+                else if (btnSubmitTask) {
+                    btnSubmitTask.disabled = false;
+                    btnSubmitTask.textContent = 'Submit to PanDA';
+                }
+            });
+    }, 10000);
+}
+if (btnSubmitTask) btnSubmitTask.addEventListener('click', function() {
+    if (!confirm('Submit "{{ task.composed_name|escapejs }}" to PanDA?')) return;
+    btnSubmitTask.disabled = true;
+    btnSubmitTask.textContent = 'Submitting...';
+    fetch('/swf-monitor/pcs/api/prod-tasks/{{ task.composed_name|urlencode }}/submit/', {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'}
+    }).then(r => r.json().then(d => ({ok: r.ok, d})))
+      .then(({ok, d}) => {
+          if (ok) {
+              btnSubmitTask.textContent = 'Submitted - awaiting PanDA ID...';
+              if (submitPollTimer) clearTimeout(submitPollTimer);
+              pollForSubmittedTask(30);
+          } else {
+              alert(d.detail || 'Submit failed');
+              btnSubmitTask.disabled = false;
+              btnSubmitTask.textContent = 'Submit to PanDA';
+          }
+      });
+});
+
+const btnLock = document.getElementById('btn-lock');
+if (btnLock) btnLock.addEventListener('click', function() {
+    if (!confirm('Lock "{{ task.composed_name|escapejs }}"? It becomes ready for submission and can no longer be edited. This cannot be undone.')) return;
+    fetch('/swf-monitor/pcs/api/prod-tasks/{{ task.composed_name|urlencode }}/lock/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+    }).then(r => r.json().then(d => ({ok: r.ok, d})))
+      .then(({ok, d}) => { if (ok) location.reload(); else alert(d.detail || 'Lock failed'); });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ config.name }} - Prod Config - PCS{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'pcs:pcs_hub' %}">PCS</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'pcs:prod_configs_compose' %}">Prod Configs</a></li>
+            <li class="breadcrumb-item active">{{ config.name }}</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h2>{{ config.name }}</h2>
+            <p class="text-muted">Created by {{ config.created_by }} on {{ config.created_at|date:"Y-m-d H:i" }}
+            {% if config.updated_at != config.created_at %} | Updated {{ config.updated_at|date:"Y-m-d H:i" }}{% endif %}</p>
+        </div>
+        <a href="{% url 'pcs:prod_config_edit' pk=config.pk %}" class="btn btn-dark-green btn-sm">Edit</a>
+    </div>
+
+    {% if config.description %}
+    <p>{{ config.description }}</p>
+    {% endif %}
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Background Mixing</h5>
+                    <table class="table table-sm table-bordered mb-0">
+                        <tr><td style="width:40%"><strong>Enabled</strong></td><td>{% if config.bg_mixing %}Yes{% else %}No{% endif %}</td></tr>
+                        <tr><td><strong>Cross Section</strong></td><td>{{ config.bg_cross_section|default:"-" }}</td></tr>
+                        <tr><td><strong>EvtGen File</strong></td><td><code>{{ config.bg_evtgen_file|default:"-" }}</code></td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Output Control</h5>
+                    <table class="table table-sm table-bordered mb-0">
+                        <tr><td style="width:40%"><strong>Copy Reco</strong></td><td>{% if config.copy_reco %}Yes{% else %}No{% endif %}</td></tr>
+                        <tr><td><strong>Copy Full</strong></td><td>{% if config.copy_full %}Yes{% else %}No{% endif %}</td></tr>
+                        <tr><td><strong>Copy Log</strong></td><td>{% if config.copy_log %}Yes{% else %}No{% endif %}</td></tr>
+                        <tr><td><strong>Use Rucio</strong></td><td>{% if config.use_rucio %}Yes{% else %}No{% endif %}</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Software Stack</h5>
+                    <table class="table table-sm table-bordered mb-0">
+                        <tr><td style="width:40%"><strong>JUG_XL Tag</strong></td><td>{{ config.jug_xl_tag|default:"-" }}</td></tr>
+                        <tr><td><strong>Container Image</strong></td><td><code>{{ config.container_image|default:"-" }}</code></td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Resource Targets</h5>
+                    <table class="table table-sm table-bordered mb-0">
+                        <tr><td style="width:40%"><strong>Hours/Job</strong></td><td>{{ config.target_hours_per_job|default:"-" }}</td></tr>
+                        <tr><td><strong>Events/Task</strong></td><td>{{ config.events_per_task|default:"-" }}</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">PanDA Overrides</h5>
+                    <table class="table table-sm table-bordered mb-0">
+                        <tr><td style="width:40%"><strong>Site</strong></td><td>{{ config.panda_site|default:"-" }}</td></tr>
+                        <tr><td><strong>Queue</strong></td><td>{{ config.panda_queue|default:"-" }}</td></tr>
+                        <tr><td><strong>Working Group</strong></td><td>{{ config.panda_working_group|default:"-" }}</td></tr>
+                        <tr><td><strong>Resource Type</strong></td><td>{{ config.panda_resource_type|default:"-" }}</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Rucio Overrides</h5>
+                    <table class="table table-sm table-bordered mb-0">
+                        <tr><td style="width:40%"><strong>RSE</strong></td><td>{{ config.rucio_rse|default:"-" }}</td></tr>
+                        <tr><td><strong>Replication Rules</strong></td><td>{% if config.rucio_replication_rules %}<pre class="mb-0" style="font-size:0.85em">{{ config.rucio_replication_rules }}</pre>{% else %}-{% endif %}</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if config.data %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Submission Parameters</h5>
+            <table class="table table-sm table-bordered mb-0">
+                {% for key, value in config.data.items %}
+                <tr><td style="width:40%"><strong>{{ key }}</strong></td><td><code>{{ value }}</code></td></tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if config.condor_template %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Condor Template</h5>
+            <pre class="bg-light p-3 mb-0" style="font-size: 0.85em; max-height: 400px; overflow-y: auto;">{{ config.condor_template }}</pre>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

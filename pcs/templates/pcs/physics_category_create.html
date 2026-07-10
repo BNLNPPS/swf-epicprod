@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Physics Category - PCS{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="container-fluid mt-4">
+    <h2>Create Physics Category</h2>
+    <p>Define a new physics area. The digit determines the tag number range (digit 3 → p3001, p3002, ...).</p>
+
+    <div class="mt-3" style="max-width: 600px;">
+        {% for field in form %}
+        {% if field.name != 'created_by' %}
+        <div class="mb-3">
+            <label for="{{ field.id_for_label }}" class="form-label"><strong>{{ field.label }}</strong></label>
+            {{ field }}
+            <div class="text-danger field-error" data-field="{{ field.name }}"></div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        <button type="button" class="btn btn-primary btn-sm" onclick="createCategory()">Create Category</button>
+        <a href="{% url 'pcs:physics_categories_list' %}" class="btn btn-secondary btn-sm">Cancel</a>
+    </div>
+</div>
+<script>
+async function createCategory() {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const headers = {'Content-Type': 'application/json'};
+    if (csrfToken) headers['X-CSRFToken'] = csrfToken;
+    const payload = {};
+    document.querySelectorAll('input[id^="id_"], textarea[id^="id_"], select[id^="id_"]').forEach(el => {
+        if (el.name && el.name !== 'created_by') payload[el.name] = el.value;
+    });
+    document.querySelectorAll('.field-error').forEach(el => el.textContent = '');
+    const resp = await fetch('/swf-monitor/pcs/api/physics-categories/', {
+        method: 'POST', headers, body: JSON.stringify(payload)
+    });
+    if (resp.ok) {
+        window.location.href = '{% url "pcs:physics_categories_list" %}';
+    } else {
+        const errors = await resp.json();
+        for (const [field, msgs] of Object.entries(errors)) {
+            const el = document.querySelector(`.field-error[data-field="${field}"]`);
+            if (el) el.textContent = Array.isArray(msgs) ? msgs.join(', ') : msgs;
+            else alert(`${field}: ${msgs}`);
+        }
+    }
+}
+</script>
+{% endblock %}

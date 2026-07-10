@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% load swf_fmt %}
+
+{% block title %}Physics Configurations - epicprod{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
+<style>
+.pcs-pc-table td, .pcs-pc-table th { vertical-align: top; white-space: nowrap; }
+/* House convention: DataTables' indicator classes on a hand-sorted table
+   (.sorting / .sorting_asc / .sorting_desc from the loaded CSS). */
+.pcs-pc-table th.pcs-pc-sort { cursor: pointer; user-select: none; }
+.pcs-pc-table .pcs-pc-cell { min-width: 7em; }
+.pcs-pc-filter a { margin-right: .7em; text-decoration: none; }
+.pcs-pc-filter a.active { font-weight: 700; text-decoration: underline; }
+.pcs-pc-scroll { overflow-x: auto; }
+.pcs-pc-files { color: #1e7e34; }
+.pcs-pc-status { color: #5d6b7a; }
+.pcs-pc-hold { color: #b8860b; font-weight: 600; }
+.pcs-pc-final { color: #a71d2a; font-weight: 600; }
+</style>
+
+<div class="container-fluid mt-3">
+  <h1>Physics Configurations</h1>
+  <p style="max-width: 62em">
+    Physics first: one row per physics configuration — the campaign-invariant
+    identity a request asks for — with its editions along the campaign axis,
+    showing fulfillment through time. A presentation view: nothing is edited
+    here; edition links lead to the catalog, where actions live. See
+    docs/CAMPAIGN_CONTINUUM.md.
+  </p>
+
+  <div class="pcs-pc-filter mb-2">
+    <div class="mb-1">
+      <strong>Campaigns:</strong>
+      {% for y, url in years_urls.items %}
+      <a href="{{ url }}" class="{% if years == y %}active{% endif %}">{{ y }}</a>
+      {% endfor %}
+    </div>
+    {% for label, f in facet_rows %}
+    {% if f.items %}
+    <div class="mb-1">
+      <strong>{{ label }}:</strong>
+      <a href="{{ f.all_url }}" class="{% if f.all_active %}active{% endif %}">All</a>
+      {% for item in f.items %}
+      <a href="{{ item.url }}" class="{% if item.active %}active{% endif %}">{{ item.value }} ({{ item.count }})</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+    <div class="mb-1 d-flex align-items-center gap-2">
+      <form method="get" class="d-flex align-items-center gap-2">
+        <input type="hidden" name="years" value="{{ years }}">
+        {% for label, f in facet_rows %}{% for item in f.items %}{% if item.active %}<input type="hidden" name="{{ f.param }}" value="{{ item.value }}">{% endif %}{% endfor %}{% endfor %}
+        <strong>Search:</strong>
+        <input type="search" name="q" value="{{ q }}" class="form-control form-control-sm" style="width: 24em"
+               placeholder="physics / generator / edition name&hellip;">
+        <button class="btn btn-sm btn-primary" type="submit">Filter</button>
+        <a class="btn btn-sm btn-secondary" href="{{ clear_url }}">Clear</a>
+      </form>
+    </div>
+    <div class="text-muted small">{{ shown }} of {{ total }} configuration{{ total|pluralize }}</div>
+  </div>
+
+  <div class="pcs-pc-scroll">
+  <table class="table table-sm table-striped pcs-pc-table dataTable">
+    <thead>
+      <tr>
+        <th class="pcs-pc-sort sorting_asc">Physics &amp; #requests</th>
+        <th class="pcs-pc-sort sorting">Process</th>
+        <th class="pcs-pc-sort sorting">Beam</th>
+        <th class="pcs-pc-sort sorting">Q²</th>
+        <th class="pcs-pc-sort sorting">Generator</th>
+        <th class="pcs-pc-sort sorting">Sample</th>
+        {% for c in campaigns %}<th class="pcs-pc-cell pcs-pc-sort sorting" data-default-dir="desc">{{ c }}</th>{% endfor %}
+      </tr>
+      <tr class="table-light small">
+        <th colspan="6" class="text-end fw-normal text-muted">produced, over the rows below:</th>
+        {% for t in campaign_totals %}
+        <th class="pcs-pc-cell fw-normal">
+          {% if t.produced %}
+          <span class="pcs-pc-files">{{ t.files }} files</span><br>
+          {{ t.size|filesizeformat }}<br>
+          <span class="text-muted">{{ t.n_datasets }} dataset{{ t.n_datasets|pluralize }} / {{ t.produced }} of {{ t.configs }} config{{ t.configs|pluralize }}</span>
+          {% elif t.configs %}<span class="text-muted">{{ t.configs }} config{{ t.configs|pluralize }}, none produced</span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.physics }}{% for pr in r.prod_requests %} <a href="{% url 'pcs:pcs_edition_data' name=pr.data.physics_config_anchor %}" class="small" title="{{ pr.requestor }}{% if pr.nevents %} · {{ pr.nevents }} events{% endif %} — production request on this configuration; click for its data page">req#{{ pr.pk }}</a>{% endfor %}{% for rid in r.requests %} <a href="{% url 'pcs:questionnaire_detail' rid %}" class="small" title="matched production request #{{ rid }}">#{{ rid }}</a>{% endfor %}</td>
+        <td>{{ r.process }}</td>
+        <td>{{ r.beam }}</td>
+        <td>{{ r.q2 }}</td>
+        <td>{{ r.gen_display }}</td>
+        <td>{{ r.sample }}</td>
+        {% for e in r.cells %}
+        <td class="pcs-pc-cell small" data-sort-val="{% if e %}{{ e.files|default:0 }}{% else %}-1{% endif %}">
+          {% if e %}
+            {% if e.files %}<span class="pcs-pc-files" title="{{ e.name }}{% if e.n_datasets > 1 %} — {{ e.n_datasets }} datasets{% endif %}">&#10003; {{ e.files }} f</span> <span class="text-muted">{{ e.size|filesizeformat }}</span>
+            {% else %}<span class="pcs-pc-status" title="{{ e.name }} — {{ e.status|default:"no task" }}, nothing produced">&#9675;</span>{% endif %}
+            {% if e.propagation == 'hold' %}<span class="pcs-pc-hold" title="disposition: hold">H</span>{% endif %}
+            {% if e.propagation == 'final' %}<span class="pcs-pc-final" title="disposition: final{% if e.replaced_by %} — replaced by {{ e.replaced_by }}{% endif %}">F</span>{% endif %}
+            {% if e.proposal %}<a class="ai-attr" href="{% url 'ai:ai_proposals' %}?subject={{ e.name|urlencode }}" title="pending AI proposal — click to review" style="text-decoration:none">AI</a>{% endif %}
+            <span class="small">{% if e.files %}<a href="{% url 'pcs:pcs_edition_data' e.name %}" title="the edition's datasets, DIDs, replicas">data</a> &middot; {% endif %}<a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ e.name|urlencode }}" title="the catalog task">task</a></span>
+          {% else %}
+            <span class="text-muted">·</span>
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% empty %}
+      <tr><td colspan="{{ campaigns|length|add:6 }}" class="text-center text-muted py-3">No configurations match this filter.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="small text-muted mb-3">
+    Cell legend: <span class="pcs-pc-files">&#10003; N f</span> data produced (files, volume) &middot;
+    <span class="pcs-pc-status">&#9675;</span> edition exists, nothing produced
+    (status in the tooltip) &middot; <span class="pcs-pc-hold">H</span> hold &middot;
+    <span class="pcs-pc-final">F</span> final &middot;
+    <span class="ai-attr">AI</span> pending proposal &middot;
+    · no edition in that campaign.
+  </div>
+</div>
+
+<script>
+(function () {
+  const table = document.querySelector('.pcs-pc-table');
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  const headers = Array.from(table.querySelectorAll('th.pcs-pc-sort'));
+  headers.forEach((th, idx) => th.addEventListener('click', () => {
+    const wasAsc = th.classList.contains('sorting_asc');
+    const wasDesc = th.classList.contains('sorting_desc');
+    const dir = wasAsc ? 'desc' : (wasDesc ? 'asc'
+                : (th.dataset.defaultDir || 'asc'));
+    headers.forEach(h => { h.classList.remove('sorting_asc', 'sorting_desc');
+                           h.classList.add('sorting'); });
+    th.classList.remove('sorting');
+    th.classList.add(dir === 'asc' ? 'sorting_asc' : 'sorting_desc');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const value = tr => {
+      const td = tr.children[idx];
+      if (!td) return '';
+      if (td.dataset.sortVal !== undefined) return parseFloat(td.dataset.sortVal);
+      return td.textContent.trim().toLowerCase();
+    };
+    rows.sort((a, b) => {
+      const va = value(a), vb = value(b);
+      const cmp = (typeof va === 'number' && typeof vb === 'number')
+        ? va - vb : String(va).localeCompare(String(vb));
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    rows.forEach(tr => tbody.appendChild(tr));
+  }));
+})();
+</script>
+{% endblock %}

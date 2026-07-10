@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% load swf_fmt %}
+{% block title %}Rucio DID — {{ did }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3" style="font-size:1rem;">
+
+  <div class="d-flex align-items-center mb-2 flex-wrap gap-2">
+    <h2 class="mb-0 me-2">Rucio Dataset</h2>
+    <a href="{% url 'pcs:pcs_catalog' %}" class="btn btn-sm btn-secondary">&larr; Catalog</a>
+    {% if r %}{% copy_btn did %}{% endif %}
+  </div>
+
+  <p class="mb-3"><code style="font-size:1.05rem;">{{ did }}</code></p>
+
+  {% if error %}
+    <div class="alert alert-danger">
+      <strong>Could not load this DID.</strong> {{ error }}
+    </div>
+  {% else %}
+
+  {# ---- Summary ---- #}
+  <div class="card mb-3">
+    <div class="card-body py-2">
+      <div class="row g-3">
+        <div class="col-auto"><div class="text-secondary small">Type</div>
+          <span class="badge bg-secondary">{{ r.type|default:"—" }}</span></div>
+        <div class="col-auto"><div class="text-secondary small">Account</div>
+          <strong>{{ r.account|default:"—" }}</strong></div>
+        <div class="col-auto"><div class="text-secondary small">State</div>
+          {% if r.is_open %}<span class="badge bg-warning text-dark">open</span>
+          {% else %}<span class="badge bg-success">closed</span>{% endif %}
+          {% if r.availability %}<span class="badge bg-info text-dark">{{ r.availability }}</span>{% endif %}</div>
+        <div class="col-auto"><div class="text-secondary small">Files</div>
+          <strong>{{ r.file_count|default:"—" }}</strong></div>
+        <div class="col-auto"><div class="text-secondary small">Size</div>
+          <strong>{% if r.bytes %}{{ r.bytes|filesizeformat }}{% else %}—{% endif %}</strong></div>
+        <div class="col-auto"><div class="text-secondary small">Created</div>
+          <span>{{ r.created_at|default:"—" }}</span></div>
+        <div class="col-auto"><div class="text-secondary small">Updated</div>
+          <span>{{ r.updated_at|default:"—" }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  {# ---- Replicas (RSE) ---- #}
+  <h4>Replicas</h4>
+  {% if r.replicas %}
+  <table class="table table-sm w-auto mb-4">
+    <thead><tr><th>RSE</th><th>State</th><th class="text-end">Files</th>
+      <th class="text-end">Size</th><th>Created</th><th>Updated</th></tr></thead>
+    <tbody>
+      {% for rep in r.replicas %}
+      <tr>
+        <td><strong>{{ rep.rse }}</strong></td>
+        <td>{% if rep.state == 'AVAILABLE' %}<span class="badge bg-success">{{ rep.state }}</span>
+            {% else %}<span class="badge bg-warning text-dark">{{ rep.state|default:'?' }}</span>{% endif %}</td>
+        <td class="text-end">{{ rep.available_length|default:rep.length|default:"—" }}</td>
+        <td class="text-end">{% if rep.bytes %}{{ rep.bytes|filesizeformat }}{% else %}—{% endif %}</td>
+        <td>{{ rep.created_at|default:"—" }}</td>
+        <td>{{ rep.updated_at|default:"—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-secondary mb-4">No replicas registered.</p>
+  {% endif %}
+
+  {# ---- Metadata (Rucio system + user attributes) ---- #}
+  <h4>Metadata</h4>
+  <table class="table table-sm w-auto mb-4">
+    <tbody>
+      {% for k, v in r.meta.items %}
+      <tr><td class="pe-4"><strong>{{ k }}</strong></td><td><code>{{ v|default:"—" }}</code></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# ---- File list (on demand — can be thousands) ---- #}
+  <h4>Files</h4>
+  <div id="rucio-files">
+    <button id="load-files" class="btn btn-sm btn-primary">
+      Load file list{% if r.file_count %} ({{ r.file_count }} files){% endif %}
+    </button>
+    <span id="files-status" class="ms-2 text-secondary"></span>
+  </div>
+  <div id="files-wrap" class="mt-2" style="display:none;">
+    <input id="files-filter" class="form-control form-control-sm mb-2" style="max-width:32rem;"
+           placeholder="filter files…">
+    <table class="table table-sm">
+      <thead><tr><th>File</th><th class="text-end">Size</th><th>adler32</th><th class="text-end">Events</th></tr></thead>
+      <tbody id="files-body"></tbody>
+    </table>
+  </div>
+
+  <script>
+  (function () {
+    const btn = document.getElementById('load-files');
+    const status = document.getElementById('files-status');
+    const wrap = document.getElementById('files-wrap');
+    const body = document.getElementById('files-body');
+    const filter = document.getElementById('files-filter');
+    if (!btn) return;
+    const url = "{% url 'pcs:rucio_did_files' scope name_url %}";
+
+    function fmtBytes(b) {
+      if (b == null) return '—';
+      const u = ['B','KB','MB','GB','TB']; let i = 0; b = Number(b);
+      while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+      return b.toFixed(i ? 1 : 0) + ' ' + u[i];
+    }
+    btn.addEventListener('click', async function () {
+      btn.disabled = true; status.textContent = 'loading…';
+      try {
+        const r = await fetch(url);
+        if (!r.ok) { let m = 'HTTP ' + r.status; try { m = (await r.json()).error || m; } catch (_) {} throw new Error(m); }
+        const data = await r.json();
+        const rows = (data.files || []).map(function (f) {
+          const full = (f.name || '');
+          const base = full.split('/').pop();
+          return '<tr data-n="' + full.toLowerCase() + '">'
+            + '<td title="' + full + '"><code>' + base + '</code></td>'
+            + '<td class="text-end">' + fmtBytes(f.bytes) + '</td>'
+            + '<td><code>' + (f.adler32 || '—') + '</code></td>'
+            + '<td class="text-end">' + (f.events == null ? '—' : f.events) + '</td></tr>';
+        });
+        body.innerHTML = rows.join('');
+        status.textContent = data.count + ' files';
+        wrap.style.display = '';
+        btn.style.display = 'none';
+      } catch (e) {
+        btn.disabled = false; status.textContent = '';
+        alert('Could not load file list: ' + e.message);
+      }
+    });
+    filter.addEventListener('input', function () {
+      const q = filter.value.toLowerCase();
+      body.querySelectorAll('tr').forEach(function (tr) {
+        tr.style.display = tr.dataset.n.includes(q) ? '' : 'none';
+      });
+    });
+  })();
+  </script>
+
+  {% endif %}
+</div>
+{% endblock %}

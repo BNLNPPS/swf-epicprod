@@ -1,0 +1,636 @@
+{% extends "base.html" %}
+{% load swf_fmt %}
+{% block title %}Campaign Task Catalog — {% if active_lifecycle == 'last' %}Last{% elif active_lifecycle == 'future' %}Future{% else %}Past{% endif %}{% endblock %}
+
+{% block content %}
+<style>
+.btn-outline-last-green {
+  color: #5fa380; border-color: #5fa380;
+}
+.btn-outline-last-green:hover,
+.btn-outline-last-green.active {
+  background-color: #5fa380; color: #fff; border-color: #5fa380;
+}
+
+.pcs-pdl-nav a { margin-right: 0.8em; color: #007bff; text-decoration: none; }
+.pcs-pdl-nav a:hover { text-decoration: underline; }
+.pcs-pdl-nav a.active { font-weight: bold; text-decoration: underline; color: #0056b3; }
+.pcs-pdl-section-label { font-weight: 600; margin-right: 0.6em; }
+.pcs-pdl-summary { margin-bottom: 0.4em; }
+.pcs-pdl-list td, .pcs-pdl-list th { vertical-align: top; }
+.pcs-pdl-rse-bad { color: #dc3545; }
+.pcs-pdl-filterbar a.filter-link { margin-right: 0.6em; color: #007bff; text-decoration: none; }
+.pcs-pdl-filterbar a.filter-link:hover { text-decoration: underline; }
+.pcs-pdl-filterbar a.filter-link.filter-active { font-weight: bold; text-decoration: underline; color: #0056b3; }
+.pcs-pdl-filterbar a.filter-link.pcs-pdl-incomplete { color: #dc3545; }
+.pcs-pdl-filterbar a.filter-link.pcs-pdl-incomplete.filter-active { color: #a71d2a; }
+</style>
+
+<div class="container-fluid mt-3 pcs-catalog">
+  <div class="d-flex align-items-center mb-3">
+    <h2 class="me-3 mb-0">Campaign Task Catalog</h2>
+    <a href="{% url 'pcs:pcs_hub' %}" class="btn btn-sm btn-secondary">PCS Hub</a>
+    {% if not is_tunnel and user.is_authenticated %}
+    {% if active_lifecycle == 'last' or active_lifecycle == 'producing' %}
+    <form method="post" action="{% url 'pcs:pcs_catalog_rucio_update' %}" class="ms-2 d-inline">
+      {% csrf_token %}
+      <input type="hidden" name="lifecycle" value="{{ active_lifecycle }}">
+      <input type="hidden" name="campaign" value="{{ producing_campaign|default:'' }}">
+      <button type="submit" class="btn btn-sm btn-primary"
+              title="Refresh the JLab Rucio output snapshot for the current, last, and producing campaigns"
+              onclick="return confirm('Refresh the JLab Rucio snapshot for the current, last, and producing campaigns?');">
+        Update from Rucio
+      </button>
+    </form>
+    {% else %}
+    <form method="post" action="{% url 'pcs:pcs_catalog_past_update' %}" class="ms-2 d-inline" id="epicprod-update-form">
+      {% csrf_token %}
+      <button type="submit" id="epicprod-update-btn" class="btn btn-sm btn-primary"
+              title="Re-import 2026 FULL/RECO campaign output from epic-prod (runs in the prod-ops agent; updates live when done)">
+        Update from epic-prod
+      </button>
+    </form>
+    {% endif %}
+    {% else %}
+    {# Inactive-button convention: operator actions stay visible to every viewer, disabled outside an operator session. #}
+    {% if active_lifecycle == 'last' or active_lifecycle == 'producing' %}
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Refresh the JLab Rucio output snapshot for the current, last, and producing campaigns — operator action; sign in on pandaserver02">Update from Rucio</button>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Re-import 2026 FULL/RECO campaign output from epic-prod — operator action; sign in on pandaserver02">Update from epic-prod</button>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <script>
+  // Update from epic-prod — fire-and-notify via the prod-ops agent + SSE push;
+  // the ~4900-dataset walk runs off the request (it times the gateway out) and
+  // the page updates when catalog_import_ready arrives. See docs/SSE_PUSH.md.
+  (function () {
+    const form = document.getElementById('epicprod-update-form');
+    const btn  = document.getElementById('epicprod-update-btn');
+    if (!form || !btn) return;
+    const label = btn.textContent.trim();
+    function busy(on) { btn.disabled = on; btn.textContent = on ? 'Updating…' : label; }
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (!confirm('Re-import 2026 past-campaign output datasets from epic-prod?')) return;
+      busy(true);
+      const token = form.querySelector('[name=csrfmiddlewaretoken]').value;
+      try {
+        const r = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/prod-tasks/catalog-import/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+          body: JSON.stringify({ source: 'epic-prod' }),
+        });
+        if (r.status !== 202) {
+          let m = 'queue failed';
+          try { const j = await r.json(); m = j.detail || j.message || m; } catch (_) {}
+          throw new Error(m);
+        }
+        // Open the push stream ONLY now that the import is queued — never on
+        // page load — so viewing the past catalog pins no streaming worker.
+        const es = new EventSource("{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=catalog_import_ready");
+        es.addEventListener('catalog_import_ready', function (ev) {
+          let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
+          if (d.source !== 'epic-prod') return;
+          if (d.ok === false) { es.close(); busy(false); alert('epic-prod import failed: ' + (d.error || 'unknown error')); }
+          else { window.location.reload(); }
+        });
+      } catch (err) {
+        busy(false);
+        alert('Could not queue the epic-prod import: ' + err.message);
+      }
+    });
+  })();
+  </script>
+
+  {% if show_tabs %}
+  <div class="pcs-tlf-tabs btn-group mb-2 flex-wrap" role="tablist" aria-label="Lifecycle tabs">
+    {% for tab in lifecycle_tabs %}
+      <a class="btn btn-sm btn-outline-{{ tab.color }}{% if tab.active %} active{% endif %}"
+         href="{{ tab.url }}">
+        {{ tab.label }}{% if tab.detail %} <span class="text-muted">·</span> {{ tab.detail }}{% endif %}
+      </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if active_lifecycle == 'producing' or active_lifecycle == 'last' %}
+  {# The symmetric tab strip (Current has the same one): Last activity under the tabs, promotion after it where rotation applies. #}
+  <div class="small mb-2">
+    <span><strong>Last activity:</strong> {{ tab_last_activity|fmt_dt|default:"none recorded" }}</span>
+    {% if active_lifecycle == 'producing' %}
+    {% if user.is_authenticated %}
+    <form method="post" action="{% url 'pcs:pcs_catalog_promote_current' %}" class="d-inline ms-3">
+      {% csrf_token %}
+      <input type="hidden" name="name" value="{{ producing_campaign }}">
+      <button type="submit" class="btn btn-sm btn-success"
+              onclick="return confirm('Make {{ producing_campaign }} current? {{ promote_cascade_note }}');">
+        Make {{ producing_campaign }} current</button>
+    </form>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-success ms-3" disabled
+            title="Promote {{ producing_campaign }} to current — operator action; sign in to use">Make {{ producing_campaign }} current</button>
+    {% endif %}
+    <span class="text-muted">{{ promote_cascade_note }}</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if active_lifecycle == 'producing' %}
+    <div class="border rounded p-2 mb-3" style="max-width: 62em">
+      <div>
+        <strong>{{ producing_campaign }} is producing</strong>{% if producing_arrivals %} &mdash;
+        {{ producing_arrivals.files }} new file{{ producing_arrivals.files|pluralize }} in JLab Rucio
+        since {{ producing_arrivals.window_start|fmt_dt }} (as of the last arrivals sweep){% endif %}.
+      </div>
+      {% if producing_task_mix %}
+      <div class="small mt-1">
+        <strong>Task records:</strong>
+        {% for status, n in producing_task_mix.items %}{{ n }} {{ status }}{% if not forloop.last %} &middot; {% endif %}{% endfor %}
+        <span class="text-muted">— all listed in the table below, the same
+          curated view as the Current tab (CAMPAIGN_CONTINUUM.md).</span>
+      </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+    {% if instancing %}
+    <div class="border rounded p-2 mb-3" style="max-width: 62em">
+      {# Collapsed when idle: the plan is residual bookkeeping until something is pending, then it opens itself. #}
+      <details{% if instancing.plan.summary.mint or instancing.plan.summary.merge %} open{% endif %}>
+      <summary style="cursor:pointer">
+        <strong>Instancing plan {{ instancing.source }} &rarr; {{ instancing.target }}</strong>
+        <span class="text-muted small ms-2">{% if instancing.plan.summary.mint or instancing.plan.summary.merge %}{{ instancing.plan.summary.mint }} to mint, {{ instancing.plan.summary.merge }} to adopt{% else %}nothing pending{% endif %}</span>
+      </summary>
+      <div class="mb-1 mt-1">
+        <span class="text-muted small">populate this campaign's working catalog from
+          {{ instancing.source }}'s continuing physics configurations
+          (CAMPAIGN_CONTINUUM.md); pending AI disposition proposals are not
+          consumed — deciding them changes this plan</span>
+      </div>
+      {% if instancing.last_run %}
+      <div class="small mb-1">
+        <strong>Last populated:</strong> {{ instancing.last_run.at|fmt_dt }}
+        by {{ instancing.last_run.by|default:"?" }}
+        ({{ instancing.last_run.outcome }}) &mdash; {{ instancing.last_run.summary }}.
+        The plan below is the residual state after that run.
+      </div>
+      {% endif %}
+      {% for label, key, items in instancing.classes %}
+      {% if items %}
+      <details class="mb-1">
+        <summary class="small" style="cursor:pointer">{{ label }}: <strong>{{ items|length }}</strong></summary>
+        <div class="small text-muted" style="max-height: 20em; overflow-y: auto">
+          {% for item in items %}
+          <div>{{ item.pc.0 }} · {{ item.pc.1|join:" " }}{% if item.pc.3 %} · {{ item.pc.3 }}{% endif %}
+            &mdash; {% if item.target_editions %}{{ item.target_editions.0 }}{% else %}{{ item.source_editions.0 }}{% endif %}
+            {% if item.replaced_by %} (replaced by {{ item.replaced_by|join:", " }}){% endif %}
+            {% if item.dispositions %} (dispositions: {{ item.dispositions|join:", " }}){% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+      {% endfor %}
+      {% if instancing.plan.summary.mint or instancing.plan.summary.merge %}
+      {% if user.is_authenticated %}
+      <form method="post" action="{% url 'pcs:pcs_catalog_instancing_execute' %}" class="mt-2">
+        {% csrf_token %}
+        <input type="hidden" name="source" value="{{ instancing.source }}">
+        <input type="hidden" name="target" value="{{ instancing.target }}">
+        <input type="hidden" name="return_lifecycle" value="{{ active_lifecycle }}">
+        <button type="submit" class="btn btn-sm btn-success"
+                onclick="return confirm('Populate {{ instancing.target }} from {{ instancing.source }}? {{ instancing.plan.summary.mint }} edition(s) minted, {{ instancing.plan.summary.merge }} adopted; the plan is recomputed at execution.');">
+          Populate {{ instancing.target }} from {{ instancing.source }}</button>
+      </form>
+      {% else %}
+      <button type="button" class="btn btn-sm btn-success mt-2" disabled
+              title="Mint {{ instancing.plan.summary.mint }} edition(s), adopt {{ instancing.plan.summary.merge }} — operator action; sign in to use">
+        Populate {{ instancing.target }} from {{ instancing.source }}</button>
+      {% endif %}
+      {% else %}
+      <div class="small text-muted mt-2">Nothing pending — every actionable
+        configuration is instanced; unresolved ones await curation.</div>
+      {% endif %}
+      </details>
+    </div>
+    {% endif %}
+
+  {% if active_lifecycle == 'last' and not rucio_unmatched_campaign and rucio_detected %}
+    <div class="border rounded p-2 mb-3 small bg-light">
+      <div class="mb-1 text-muted">
+        No <strong>last</strong> release set. Pick one from the active 26.x releases
+        in JLab Rucio (PCS current: <strong>{{ rucio_current_name }}</strong>):
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+      {% for r in rucio_detected %}
+        {% if r.version != rucio_current_name %}
+        <span>{{ r.version }} <span class="text-muted">({{ r.count }})</span>
+          {% if user.is_authenticated %}
+          <form method="post" action="{% url 'pcs:pcs_catalog_set_last' %}" class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="name" value="{{ r.version }}">
+            <button type="submit" class="btn btn-sm btn-success py-0 px-2 ms-1"
+                    title="Designate {{ r.version }} as PCS last and pull its Rucio snapshot"
+                    onclick="return confirm('Set PCS last to {{ r.version }} and pull snapshot?');">Make last</button>
+          </form>
+          {% else %}
+          <button type="button" class="btn btn-sm btn-success py-0 px-2 ms-1" disabled
+                  title="Designate {{ r.version }} as PCS last and pull its Rucio snapshot — operator action; sign in to use">Make last</button>
+          {% endif %}
+        </span>
+        {% endif %}
+      {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if active_lifecycle == 'producing' and rucio_timeline_json != 'null' or active_lifecycle == 'last' and rucio_timeline_json != 'null' %}
+    <div id="pcs-rucio-timeline" class="mb-3" style="min-height:540px"></div>
+  {% endif %}
+
+  {% if rucio_unmatched %}
+  <details class="mb-3 small">
+    <summary class="text-muted">
+      <strong style="color:#dc3545">&#9888; {{ rucio_unmatched|length }} unmatched Rucio output{{ rucio_unmatched|length|pluralize }}</strong>
+      for campaign {{ rucio_unmatched_campaign }} (no past-output row matched these DIDs)
+    </summary>
+    <ul class="mt-2 mb-0" style="font-family:monospace; font-size:0.85em;">
+    {% for u in rucio_unmatched %}
+      <li>{{ u.did }} &middot; {{ u.files }} files &middot; {{ u.bytes|filesizeformat }}{% if u.incomplete %} <span style="color:#dc3545">(incomplete)</span>{% endif %}</li>
+    {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% if active_lifecycle == 'past' or active_lifecycle == 'future' %}
+  <div class="pcs-pdl-nav small mb-2">
+    <span class="pcs-pdl-section-label">Release:</span>
+    <a href="?lifecycle={{ active_lifecycle }}&amp;release=all{% if active_stage %}&amp;stage={{ active_stage }}{% endif %}"
+       class="{% if active_release == 'all' %}active{% endif %}"
+       style="font-weight:600">All</a>
+    {% for grp in release_year_groups %}
+      <span class="text-muted mx-1">|</span>
+      <a href="?lifecycle={{ active_lifecycle }}&amp;release={{ grp.all_key }}{% if active_stage %}&amp;stage={{ active_stage }}{% endif %}"
+         class="{% if active_release == grp.all_key %}active{% endif %}"
+         style="font-weight:600">All {{ grp.year }}</a>
+      {% for v in grp.versions %}
+        <a href="?lifecycle={{ active_lifecycle }}&amp;release={{ v|urlencode }}{% if active_stage %}&amp;stage={{ active_stage }}{% endif %}"
+           class="{% if active_release == v %}active{% endif %}">{{ v }}</a>
+      {% endfor %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if task_list_html %}
+    {# The unified curated view (CAMPAIGN_CONTINUUM.md): this campaign renders the same task table as Current. #}
+    {{ task_list_html|safe }}
+  {% else %}
+  <div class="pcs-pdl-nav small mb-2">
+    <span class="pcs-pdl-section-label">Stage:</span>
+    <a href="?lifecycle={{ active_lifecycle }}&amp;release={{ active_release|urlencode }}"
+       class="{% if not active_stage %}active{% endif %}">All ({{ stage_counts.all }})</a>
+    {% if stage_counts.FULL %}
+    <a href="?lifecycle={{ active_lifecycle }}&amp;release={{ active_release|urlencode }}&amp;stage=FULL"
+       class="{% if active_stage == 'FULL' %}active{% endif %}">Simu ({{ stage_counts.FULL }})</a>
+    {% endif %}
+    {% if stage_counts.RECO %}
+    <a href="?lifecycle={{ active_lifecycle }}&amp;release={{ active_release|urlencode }}&amp;stage=RECO"
+       class="{% if active_stage == 'RECO' %}active{% endif %}">Reco ({{ stage_counts.RECO }})</a>
+    {% endif %}
+  </div>
+
+  {% if active_release %}
+    <div id="pcs-pdl-filterbar" class="pcs-pdl-filterbar small mb-2">
+      <div class="mb-1">
+        <a href="#" data-toggle="incomplete" class="filter-link pcs-pdl-incomplete">
+          Incomplete file counts (<span data-count="incomplete">0</span>)
+        </a>
+      </div>
+      <div class="mb-1 d-flex align-items-center gap-2">
+        <span class="pcs-pdl-section-label">Search:</span>
+        <input type="search" id="pcs-pdl-q" class="form-control form-control-sm"
+               style="width:24em;" placeholder="dataset / path&hellip;">
+        <button type="button" id="pcs-pdl-clear" class="btn btn-sm btn-secondary"
+                title="Clear all filters">Clear</button>
+      </div>
+      <div class="mb-1">
+        <span class="pcs-pdl-section-label">Geometry:</span>
+        <a href="#" data-filter="detector" data-value="" class="filter-link filter-active">All</a>
+        <span id="pcs-pdl-detector-opts"></span>
+      </div>
+      <div class="mb-1">
+        <span class="pcs-pdl-section-label">Beam:</span>
+        <a href="#" data-filter="beam" data-value="" class="filter-link filter-active">All</a>
+        <span id="pcs-pdl-beam-opts"></span>
+      </div>
+      <div class="mb-1">
+        <span class="pcs-pdl-section-label">Physics:</span>
+        <a href="#" data-filter="physics" data-value="" class="filter-link filter-active">All</a>
+        <span id="pcs-pdl-physics-opts"></span>
+      </div>
+      <div class="mb-1">
+        <span class="pcs-pdl-section-label">Q&sup2;:</span>
+        <a href="#" data-filter="q2" data-value="" class="filter-link filter-active">All</a>
+        <span id="pcs-pdl-q2-opts"></span>
+      </div>
+      <div class="mb-1">
+        <span class="pcs-pdl-section-label">Species:</span>
+        <a href="#" data-filter="species" data-value="" class="filter-link filter-active">All</a>
+        <span id="pcs-pdl-species-opts"></span>
+      </div>
+      <div>
+        <span class="pcs-pdl-section-label">Energy:</span>
+        <a href="#" data-filter="energy" data-value="" class="filter-link filter-active">All</a>
+        <span id="pcs-pdl-energy-opts"></span>
+      </div>
+    </div>
+
+    <div class="pcs-pdl-summary">
+      <strong>{% if active_release == 'all' %}All past releases{% elif active_release|slice:":4" == "all_" %}All {{ active_release|slice:"4:" }}{% else %}{{ active_release }}{% endif %}{% if active_stage %} &mdash; {% if active_stage == 'FULL' %}Simu{% else %}Reco{% endif %} only{% endif %}</strong>
+      &middot; {{ selected_campaign_count }} campaign{{ selected_campaign_count|pluralize }}
+      &middot; {{ tasks|length }} dataset{{ tasks|length|pluralize }}
+      {% if aggregate_file_count or aggregate_data_size %}
+        &middot; {{ aggregate_file_count }} files
+        &middot; {{ aggregate_data_size|filesizeformat }}
+      {% endif %}
+    </div>
+
+    <table class="table table-sm pcs-pdl-list mb-1">
+      <thead>
+        <tr>
+          <th style="width:1.5em"><input type="checkbox" id="pcs-pdl-selectall" aria-label="Select all"></th>
+          <th style="width:3em">#</th>
+          <th style="width:4em">Stage</th>
+          <th style="width:5em">Release</th>
+          <th>Dataset</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for t in tasks %}
+        {% with o=t.outputs.0 tf=t.dataset.tag_facets %}
+        <tr class="pcs-pdl-row"
+            data-detector="{{ tf.detector }}"
+            data-beam="{{ tf.beam }}"
+            data-physics="{{ tf.physics }}"
+            data-q2="{{ tf.q2 }}"
+            data-species="{{ tf.species }}"
+            data-energy="{{ tf.energy }}"
+            data-incomplete="{% if not o.complete %}1{% else %}0{% endif %}"
+            data-search="{{ o.did|lower }} {{ t.dataset.composed_name|lower }}">
+          <td><input type="checkbox" class="pcs-pdl-cb" name="task" value="{{ t.pk }}"></td>
+          <td class="small text-muted">{{ forloop.counter }}</td>
+          <td class="small">{% if o.stage == 'FULL' %}SIMU{% else %}{{ o.stage }}{% endif %}</td>
+          <td class="small">{{ o.version }}</td>
+          <td class="small">
+            <div><strong class="text-muted">Tags:</strong> <a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ t.name|urlencode }}" title="Tag breakdown for this dataset">{{ t.dataset.composed_name }}</a></div>
+            <div><strong class="text-muted">Output:</strong> <a href="{{ o.did|rucio_did_url }}" title="Rucio dataset detail">{{ o.did }}</a></div>
+            <div class="text-muted">
+              {{ o.file_count }} files
+              &middot; {{ o.bytes|filesizeformat }}
+              {% if o.rses %}&middot;
+                {% for r in o.rses %}{% if not forloop.first %}, {% endif %}{{ r.rse }}{% if not r.complete %} <span class="pcs-pdl-rse-bad">({{ r.files }}/{{ r.total }})</span>{% endif %}{% endfor %}
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endwith %}
+      {% empty %}
+        <tr><td colspan="5" class="text-center text-muted py-3">No datasets recorded for this campaign yet &mdash; click <em>Update from epic-prod</em>.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% elif active_lifecycle == 'last' %}
+    {# Last not set yet — Make-last selector above is the call to action. #}
+  {% elif active_lifecycle == 'future' %}
+    <div class="border rounded p-3" style="max-width: 62em">
+      {% if next_campaign_hint %}
+      <div class="mb-1"><strong>Likely next campaign: {{ next_campaign_hint.name }}</strong> &mdash;
+        named by
+        <a class="ai-attr-text" href="{% url 'ai:ai_proposals' %}?batch={{ next_campaign_hint.batches.0|urlencode }}"
+           title="Pending campaign-propagation proposals whose disposition batch names {{ next_campaign_hint.name }} as the next campaign">{{ next_campaign_hint.pending }} pending AI campaign-propagation proposal{{ next_campaign_hint.pending|pluralize }}</a>.
+      </div>
+      <div class="text-muted">
+        No future campaign exists yet. The instancing plan above lays out what
+        a population would create from
+        {% if instancing %}<strong>{{ instancing.source }}</strong>'s{% else %}the
+        current campaign's{% endif %} continuing physics configurations;
+        deciding the pending dispositions changes the plan, and Populate
+        creates the campaign.
+      </div>
+      {% else %}
+      <div class="text-muted">
+        No future campaigns yet. The next campaign is created from the current
+        campaign's dataset dispositions once they are proposed and decided.
+      </div>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="alert alert-info">
+      No past campaigns ingested yet. Click <strong>Update from epic-prod</strong> above to populate from
+      the cloned <code>epic-prod</code> tree.
+    </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<script>
+(function() {
+  const all = document.getElementById('pcs-pdl-selectall');
+  const cbs = document.querySelectorAll('.pcs-pdl-cb');
+  if (all) all.addEventListener('change', () => cbs.forEach(c => c.checked = all.checked));
+
+  /* Faceted filter — Detector / Beam / Physics / Q2. Same panda-jobs
+     convention as the Current tab's filter bar: per-filter horizontal
+     value (count) links, counts faceted on the other active filters. */
+  const FILTERS = ['detector','beam','physics','q2','species','energy'];
+  const DS_KEY  = { detector:'detector', beam:'beam', physics:'physics',
+                    q2:'q2', species:'species', energy:'energy' };
+
+  // Energy filter values like '500MeV' / '5GeV' need unit-aware
+  // sort — plain numeric sort would put 5GeV (=5) before 500MeV (=500).
+  function energyMeV(s) {
+    const m = String(s).match(/^([\d.]+)\s*(eV|keV|MeV|GeV|TeV)$/i);
+    if (!m) return null;
+    const mult = {ev:1e-6, kev:1e-3, mev:1, gev:1e3, tev:1e6}[m[2].toLowerCase()];
+    return parseFloat(m[1]) * mult;
+  }
+  const rows    = Array.from(document.querySelectorAll('tr.pcs-pdl-row'));
+  if (!rows.length) return;
+
+  const initial = new URL(window.location.href).searchParams;
+  const state = Object.fromEntries(FILTERS.map(k => [k, initial.get(k) || '']));
+  state.q = (initial.get('q') || '').trim();
+  state.incomplete = initial.get('incomplete') === '1';
+  const qInput = document.getElementById('pcs-pdl-q');
+  if (qInput) qInput.value = state.q;
+
+  function rowMatches(tr, skip) {
+    if (skip !== 'q' && state.q) {
+      if (!(tr.dataset.search || '').includes(state.q.toLowerCase())) return false;
+    }
+    if (skip !== 'incomplete' && state.incomplete) {
+      if (tr.dataset.incomplete !== '1') return false;
+    }
+    for (const k of FILTERS) {
+      if (k === skip) continue;
+      if (state[k] && tr.dataset[DS_KEY[k]] !== state[k]) return false;
+    }
+    return true;
+  }
+
+  function escape(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderBar() {
+    const counts = Object.fromEntries(FILTERS.map(k => [k, {}]));
+    let incompleteCount = 0;
+    for (const tr of rows) {
+      for (const k of FILTERS) {
+        if (rowMatches(tr, k)) {
+          const v = tr.dataset[DS_KEY[k]];
+          if (v) counts[k][v] = (counts[k][v] || 0) + 1;
+        }
+      }
+      if (rowMatches(tr, 'incomplete') && tr.dataset.incomplete === '1') {
+        incompleteCount++;
+      }
+    }
+    const incCountEl = document.querySelector('[data-count="incomplete"]');
+    if (incCountEl) incCountEl.textContent = incompleteCount;
+    const incLink = document.querySelector('a.filter-link[data-toggle="incomplete"]');
+    if (incLink) incLink.classList.toggle('filter-active', !!state.incomplete);
+    for (const k of FILTERS) {
+      const span = document.getElementById('pcs-pdl-' + k + '-opts');
+      if (!span) continue;
+      const entries = Object.entries(counts[k]).sort((a, b) => {
+        if (k === 'energy') {
+          const ea = energyMeV(a[0]), eb = energyMeV(b[0]);
+          if (ea !== null && eb !== null) return ea - eb;
+        }
+        const na = parseFloat(a[0]), nb = parseFloat(b[0]);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a[0].localeCompare(b[0]);
+      });
+      span.innerHTML = entries.map(([v, n]) => {
+        const active = state[k] === v ? ' filter-active' : '';
+        return `<a href="#" data-filter="${k}" data-value="${escape(v)}"`
+             + ` class="filter-link${active}">${escape(v)} (${n})</a>`;
+      }).join('');
+      const allLink = document.querySelector(
+        `#pcs-pdl-filterbar .filter-link[data-filter="${k}"][data-value=""]`);
+      if (allLink) allLink.classList.toggle('filter-active', !state[k]);
+    }
+  }
+
+  function syncUrl() {
+    const u = new URL(window.location.href);
+    const p = u.searchParams;
+    FILTERS.forEach(k => p.delete(k));
+    p.delete('q');
+    p.delete('incomplete');
+    for (const k of FILTERS) if (state[k]) p.set(k, state[k]);
+    if (state.q) p.set('q', state.q);
+    if (state.incomplete) p.set('incomplete', '1');
+    history.replaceState(null, '', u.toString());
+  }
+
+  function applyFilters() {
+    for (const tr of rows) {
+      tr.style.display = rowMatches(tr, null) ? '' : 'none';
+    }
+    renderBar();
+    syncUrl();
+  }
+
+  document.getElementById('pcs-pdl-filterbar')?.addEventListener('click', e => {
+    const a = e.target.closest('a.filter-link');
+    if (!a) return;
+    e.preventDefault();
+    if (a.dataset.toggle) {
+      state[a.dataset.toggle] = !state[a.dataset.toggle];
+    } else {
+      const k = a.dataset.filter;
+      const v = a.dataset.value || '';
+      state[k] = (state[k] === v && v !== '') ? '' : v;
+    }
+    applyFilters();
+  });
+
+  if (qInput) {
+    qInput.addEventListener('input', () => {
+      state.q = qInput.value.trim();
+      applyFilters();
+    });
+  }
+  document.getElementById('pcs-pdl-clear')?.addEventListener('click', () => {
+    state.q = '';
+    state.incomplete = false;
+    if (qInput) qInput.value = '';
+    for (const k of FILTERS) state[k] = '';
+    applyFilters();
+  });
+
+  applyFilters();
+})();
+</script>
+
+{% if active_lifecycle == 'producing' and rucio_timeline_json != 'null' or active_lifecycle == 'last' and rucio_timeline_json != 'null' %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+(function() {
+  const data = {{ rucio_timeline_json|safe }};
+  const el = document.getElementById('pcs-rucio-timeline');
+  if (!el) return;
+  if (!data || !data.dates || !data.dates.length) {
+    el.innerHTML = '<div class="text-muted small">No Rucio arrivals timeline available — '
+      + 'click <em>Update from Rucio</em> to populate the snapshot.</div>';
+    return;
+  }
+  const TB = 1e12;
+  const SIMU_COLOR = '#1f77b4';
+  const RECO_COLOR = '#ff7f0e';
+  const tb = bytes => bytes.map(b => b / TB);
+  const traces = [
+    {x: data.dates, y: data.simu.cum_datasets, name: 'Simu',
+     legendgroup: 'simu', mode: 'lines', line: {shape: 'hv', color: SIMU_COLOR},
+     xaxis: 'x', yaxis: 'y'},
+    {x: data.dates, y: data.reco.cum_datasets, name: 'Reco',
+     legendgroup: 'reco', mode: 'lines', line: {shape: 'hv', color: RECO_COLOR},
+     xaxis: 'x', yaxis: 'y'},
+    {x: data.dates, y: data.simu.cum_files, legendgroup: 'simu',
+     mode: 'lines', line: {shape: 'hv', color: SIMU_COLOR},
+     xaxis: 'x', yaxis: 'y2', showlegend: false},
+    {x: data.dates, y: data.reco.cum_files, legendgroup: 'reco',
+     mode: 'lines', line: {shape: 'hv', color: RECO_COLOR},
+     xaxis: 'x', yaxis: 'y2', showlegend: false},
+    {x: data.dates, y: tb(data.simu.cum_bytes), legendgroup: 'simu',
+     mode: 'lines', line: {shape: 'hv', color: SIMU_COLOR},
+     xaxis: 'x', yaxis: 'y3', showlegend: false},
+    {x: data.dates, y: tb(data.reco.cum_bytes), legendgroup: 'reco',
+     mode: 'lines', line: {shape: 'hv', color: RECO_COLOR},
+     xaxis: 'x', yaxis: 'y3', showlegend: false},
+  ];
+  const layout = {
+    title: {text: 'Rucio arrivals — ' + (data.campaign_name || ''),
+            font: {size: 14}},
+    margin: {l: 70, r: 30, t: 40, b: 40},
+    height: 540,
+    xaxis:  {anchor: 'y3', type: 'date'},
+    yaxis:  {domain: [0.70, 1.00], title: 'datasets', rangemode: 'tozero'},
+    yaxis2: {domain: [0.36, 0.66], title: 'files (registered)',
+             rangemode: 'tozero'},
+    yaxis3: {domain: [0.00, 0.32], title: 'output (TB)', rangemode: 'tozero'},
+    legend: {orientation: 'h', y: -0.12},
+    showlegend: true,
+  };
+  Plotly.newPlot(el, traces, layout, {displayModeBar: false, responsive: true});
+})();
+</script>
+{% endif %}
+{% endblock %}

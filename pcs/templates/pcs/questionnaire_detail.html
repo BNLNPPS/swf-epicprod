@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% load swf_fmt %}
+
+{% block title %}Request #{{ questionnaire.id }} - PCS{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'pcs:pcs_hub' %}">PCS</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'pcs:questionnaires_list' %}">Requests</a></li>
+      <li class="breadcrumb-item active">Request #{{ questionnaire.id }}</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+      <h1 class="h2 mb-1">Request #{{ questionnaire.id }}</h1>
+      <div class="text-muted">Submitted {{ questionnaire.submitted_at|fmt_dt }}</div>
+    </div>
+    <a href="{% url 'pcs:questionnaires_list' %}" class="btn btn-sm btn-secondary">All requests</a>
+  </div>
+
+  <div class="row">
+    <div class="col-xl-7 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h5 card-title">Request</h2>
+          <table class="table table-sm mb-0">
+            <tr><td style="width:12rem;"><strong>Contact</strong></td><td style="overflow-wrap:anywhere;">{{ questionnaire.contact_display|default:"-" }}</td></tr>
+            <tr>
+              <td><strong>Repository</strong></td>
+              <td style="overflow-wrap:anywhere;">
+                {% if questionnaire.repository_display %}
+                  {{ questionnaire.repository_display }}
+                {% else %}
+                  {{ questionnaire.repository|linebreaksbr }}
+                {% endif %}
+              </td>
+            </tr>
+            <tr><td><strong>Generator</strong></td><td>{{ questionnaire.generator_display|default:"-" }}</td></tr>
+            <tr><td><strong>Events</strong></td><td style="overflow-wrap:anywhere;">{{ questionnaire.nevents|linebreaksbr }}</td></tr>
+            <tr><td><strong>Benchmark</strong></td><td style="overflow-wrap:anywhere;">{{ questionnaire.benchmark|linebreaksbr }}</td></tr>
+            <tr><td><strong>Estimate</strong></td><td style="overflow-wrap:anywhere;">{{ questionnaire.estimate|linebreaksbr }}</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {% if user.is_authenticated %}
+    <div class="col-xl-5 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h5 card-title">Raw Submission</h2>
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Status</dt>
+            <dd class="col-sm-8">{{ questionnaire.status }}</dd>
+            <dt class="col-sm-4">Raw contact</dt>
+            <dd class="col-sm-8" style="overflow-wrap:anywhere;">{{ questionnaire.contact|linebreaksbr }}</dd>
+            <dt class="col-sm-4">Raw repository</dt>
+            <dd class="col-sm-8" style="overflow-wrap:anywhere;">{{ questionnaire.repository|linebreaksbr }}</dd>
+            <dt class="col-sm-4">Source row</dt>
+            <dd class="col-sm-8">{{ questionnaire.source_row|default:"-" }}</dd>
+            <dt class="col-sm-4">Source URL</dt>
+            <dd class="col-sm-8" style="overflow-wrap:anywhere;">{{ questionnaire.source_url|default:"-" }}</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h5 card-title">Description</h2>
+      <div style="overflow-wrap:anywhere;">{{ questionnaire.description|linebreaksbr }}</div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h5 card-title">Production Matches</h2>
+      {% if matches %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Confidence</th>
+              <th>Reason</th>
+              <th>Matched</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in matches %}
+            {% with match=item.match task=item.task %}
+            <tr>
+              <td style="min-width:28rem; overflow-wrap:anywhere;">
+                {% if task %}
+                  <a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ task.composed_name|urlencode }}">{{ task.composed_name }}</a>
+                  <div class="text-muted small">{{ task.status }}{% if task.campaign %} · {{ task.campaign.name }}{% endif %}</div>
+                {% else %}
+                  <span class="text-danger">Unresolved task</span>
+                  <div class="text-muted small">{{ match.task_name|default:match.task_id }}</div>
+                {% endif %}
+              </td>
+              <td>{{ match.confidence|default:"-" }}</td>
+              <td style="min-width:18rem; overflow-wrap:anywhere;">{{ match.reason|default:"-" }}</td>
+              <td class="small text-muted">{{ match.matched_by|default:"-" }}<br>{{ match.matched_at_display|default:"" }}</td>
+              <td class="text-end">
+                {% if match.task_id %}
+                {% if user.is_authenticated %}
+                <form method="post" action="{% url 'pcs:questionnaire_match_remove' pk=questionnaire.pk task_id=match.task_id %}">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                </form>
+                {% else %}
+                <button type="button" class="btn btn-sm btn-danger" disabled
+                        title="Remove this request-task match — sign in to use">Remove</button>
+                {% endif %}
+                {% endif %}
+              </td>
+            </tr>
+            {% endwith %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted mb-0">No production matches recorded.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h5 card-title">Add Or Update Match</h2>
+      <form {% if user.is_authenticated %}method="post" action="{% url 'pcs:questionnaire_match_add' pk=questionnaire.pk %}"{% endif %} class="row g-3">
+        {% if user.is_authenticated %}{% csrf_token %}{% endif %}
+        <div class="col-lg-5">
+          <label class="form-label" for="match-task">Prod task name</label>
+          <input id="match-task" name="task" class="form-control" required {% if not user.is_authenticated %}disabled{% endif %}>
+        </div>
+        <div class="col-lg-2">
+          <label class="form-label" for="match-confidence">Confidence</label>
+          <select id="match-confidence" name="confidence" class="form-select" {% if not user.is_authenticated %}disabled{% endif %}>
+            {% for choice in confidence_choices %}
+            <option value="{{ choice }}">{{ choice }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-lg-5">
+          <label class="form-label" for="match-reason">Reason</label>
+          <input id="match-reason" name="reason" class="form-control" placeholder="Why this task belongs to this request" {% if not user.is_authenticated %}disabled{% endif %}>
+        </div>
+        <div class="col-12">
+          <button type="submit" class="btn btn-primary btn-sm" {% if not user.is_authenticated %}disabled title="Bind this request to a production task — sign in to use"{% endif %}>Match</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

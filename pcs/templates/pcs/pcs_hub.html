@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+
+{% block title %}PCS Hub - SWF Monitor{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <h1 class="mb-4">Physics Configuration System (PCS)</h1>
+    <p class="lead mb-5">Configure production tasks based on physics inputs: physics process, event generation, simulation, and reconstruction tags. Compose production submissions and datasets with validated, immutable tag configurations.</p>
+
+    {% include "pcs/_pcs_sections.html" %}
+</div>
+{% endblock %}

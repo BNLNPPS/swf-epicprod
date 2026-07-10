@@ -1,0 +1,352 @@
+{% extends 'base.html' %}
+{% load swf_fmt %}
+
+{% block title %}Request Questionnaire Responses - PCS{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <style>
+  .pcs-tlf-bar .filter-link {
+    margin-right: 0.6em;
+    color: #007bff;
+    text-decoration: none;
+  }
+  .pcs-tlf-bar .filter-link:hover { text-decoration: underline; }
+  .pcs-tlf-bar .filter-link.filter-active {
+    font-weight: bold;
+    text-decoration: underline;
+    color: #0056b3;
+  }
+  .pcs-tlf-bar-row { margin-bottom: 0.4em; }
+  .pcs-tlf-label { font-weight: 600; margin-right: 0.5em; }
+  .pcs-qf-list td { word-break: break-word; overflow-wrap: anywhere; }
+  </style>
+
+  <div class="mb-3">
+    <h1 class="mb-1">Request Questionnaire Responses</h1>
+    <div class="d-flex flex-wrap align-items-center gap-3">
+      <div class="text-muted">
+        <span id="pcs-qf-shown">{{ total_count }}</span> shown of {{ total_count }}
+      </div>
+      <a href="https://docs.google.com/forms/d/e/1FAIpQLScDqiEaHayAcwBDGAWa4W6k-6yUFzS-XiWuhLolpy64mLk5FA/viewform"
+         target="_blank" rel="noopener noreferrer">
+        Questionnaire form
+      </a>
+    </div>
+  </div>
+
+  <div id="pcs-qf-bar" class="pcs-tlf-bar mb-3">
+    <div class="pcs-tlf-bar-row d-flex align-items-center gap-2">
+      <span class="pcs-tlf-label">Search:</span>
+      <input type="search" id="pcs-qf-q" class="form-control form-control-sm"
+             style="width:24em;" placeholder="request / contact / repo...">
+      <button type="button" id="pcs-qf-clear" class="btn btn-sm btn-secondary"
+              title="Clear all filters">Clear</button>
+    </div>
+    <div class="pcs-tlf-bar-row">
+      <span class="pcs-tlf-label">Repo:</span>
+      <a href="#" data-filter="repo" data-value="" class="filter-link filter-active">All</a>
+      <span id="pcs-qf-repo-opts"></span>
+    </div>
+    <div class="pcs-tlf-bar-row">
+      <span class="pcs-tlf-label">Generator:</span>
+      <a href="#" data-filter="generator" data-value="" class="filter-link filter-active">All</a>
+      <span id="pcs-qf-generator-opts"></span>
+    </div>
+    <div class="pcs-tlf-bar-row">
+      <span class="pcs-tlf-label">Contact:</span>
+      <a href="#" data-filter="contact" data-value="" class="filter-link filter-active">All</a>
+      <span id="pcs-qf-contact-opts"></span>
+    </div>
+    <div class="pcs-tlf-bar-row">
+      <span class="pcs-tlf-label">Completeness:</span>
+      <a href="#" data-toggle="missing_contact" class="filter-link">missing contact (<span data-count="missing_contact">0</span>)</a>
+      <a href="#" data-toggle="missing_email" class="filter-link">missing email (<span data-count="missing_email">0</span>)</a>
+    </div>
+  </div>
+
+  {% if not is_tunnel and user.is_authenticated %}
+  <div class="mb-3 p-2 border rounded bg-light" style="max-width: 42rem;">
+    <form method="post" action="{% url 'pcs:questionnaire_import' %}" class="row g-2 align-items-end">
+      {% csrf_token %}
+      <div class="col">
+        <label class="form-label small mb-1" for="csv-url">Import questionnaire CSV from URL</label>
+        <input id="csv-url" name="csv_url" type="url" class="form-control"
+               placeholder="https://docs.google.com/spreadsheets/.../export?format=csv"
+               required>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary" type="submit">Import</button>
+      </div>
+    </form>
+  </div>
+  {% else %}
+  <div class="mb-3 p-2 border rounded bg-light" style="max-width: 42rem;">
+    <div class="row g-2 align-items-end">
+      <div class="col">
+        <label class="form-label small mb-1" for="csv-url">Import questionnaire CSV from URL</label>
+        <input id="csv-url" type="url" class="form-control" disabled
+               placeholder="https://docs.google.com/spreadsheets/.../export?format=csv">
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary" type="button" disabled
+                title="Import the production-request form responses — operator action; sign in on pandaserver02">Import</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="table-responsive">
+    <table class="table table-sm table-striped align-middle pcs-qf-list" style="width:auto; min-width: 96rem;">
+	      <thead>
+	        <tr>
+	          <th>Submitted</th>
+	          <th>Description</th>
+	          <th>Repository</th>
+	          <th>Prod matches</th>
+	          <th>Events</th>
+          <th>Benchmark</th>
+          <th>Estimate</th>
+        </tr>
+      </thead>
+      <tbody>
+	        {% for q in questionnaires %}
+	        <tr class="pcs-qf-data"
+              data-repo="{{ q.repository_display }}"
+              data-generator="{{ q.generator_filter }}"
+              data-contact="{{ q.contact_filter }}"
+              data-missing-contact="{% if q.has_contact %}0{% else %}1{% endif %}"
+              data-missing-email="{% if q.has_email %}0{% else %}1{% endif %}"
+              data-search="{{ q.search_text }}">
+	          <td class="text-nowrap">
+	            <div><a href="{% url 'pcs:questionnaire_detail' pk=q.pk %}">Request #{{ q.pk }}</a></div>
+	            <div class="text-muted small">{{ q.submitted_at|fmt_dt }}</div>
+	            {% if user.is_authenticated %}
+	              <button type="button" class="btn btn-sm btn-secondary mt-2"
+	                      data-bs-toggle="modal" data-bs-target="#questionnaire-raw-{{ q.id }}">
+                Raw
+              </button>
+            {% endif %}
+          </td>
+          <td style="min-width: 34rem; max-width: 42rem; overflow-wrap:anywhere;">
+            {{ q.description|linebreaksbr }}
+            {% if q.contact_display %}
+              <div class="text-muted mt-2"><strong>Contact:</strong> {{ q.contact_display }}</div>
+            {% endif %}
+          </td>
+          <td style="min-width: 26rem; max-width: 34rem; overflow-wrap:anywhere;">
+            {% if q.repository|slice:":4" == "http" %}
+              <a href="{{ q.repository }}" rel="noopener noreferrer">{{ q.repository }}</a>
+            {% else %}
+              {{ q.repository|linebreaksbr }}
+            {% endif %}
+            {% if q.generator_display %}
+              <div class="text-muted mt-2"><strong>Generator:</strong> {{ q.generator_display }}</div>
+            {% endif %}
+          </td>
+          <td class="text-nowrap">
+            <a href="{% url 'pcs:questionnaire_detail' pk=q.pk %}">
+              {{ q.prod_match_count }} match{{ q.prod_match_count|pluralize:"es" }}
+            </a>
+          </td>
+          <td style="width: 12rem; max-width: 12rem; white-space: normal; overflow-wrap: anywhere;">{{ q.nevents }}</td>
+          <td style="max-width: 18rem;">{{ q.benchmark|linebreaksbr }}</td>
+          <td style="max-width: 22rem;">{{ q.estimate|linebreaksbr }}</td>
+        </tr>
+	        {% endfor %}
+          <tr id="pcs-qf-empty" style="display:none;">
+            <td colspan="7" class="text-muted">No questionnaire responses match the current filter.</td>
+          </tr>
+      </tbody>
+	    </table>
+	  </div>
+  {% if user.is_authenticated %}
+    {% for q in questionnaires %}
+    <div class="modal fade" id="questionnaire-raw-{{ q.id }}" tabindex="-1"
+         aria-labelledby="questionnaire-raw-title-{{ q.id }}" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 class="modal-title h5" id="questionnaire-raw-title-{{ q.id }}">
+              Raw Questionnaire {{ q.id }}
+            </h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <dl class="row mb-0">
+              <dt class="col-sm-3">Submitted</dt>
+              <dd class="col-sm-9">{{ q.submitted_at|fmt_dt }}</dd>
+              <dt class="col-sm-3">Status</dt>
+              <dd class="col-sm-9">{{ q.status }}</dd>
+              <dt class="col-sm-3">Description</dt>
+              <dd class="col-sm-9" style="overflow-wrap:anywhere;">{{ q.description|linebreaksbr }}</dd>
+              <dt class="col-sm-3">Repository</dt>
+              <dd class="col-sm-9" style="overflow-wrap:anywhere;">{{ q.repository|linebreaksbr }}</dd>
+              <dt class="col-sm-3">Contact</dt>
+              <dd class="col-sm-9" style="overflow-wrap:anywhere;">{{ q.contact|linebreaksbr }}</dd>
+              <dt class="col-sm-3">Events</dt>
+              <dd class="col-sm-9" style="overflow-wrap:anywhere;">{{ q.nevents|linebreaksbr }}</dd>
+              <dt class="col-sm-3">Benchmark</dt>
+              <dd class="col-sm-9" style="overflow-wrap:anywhere;">{{ q.benchmark|linebreaksbr }}</dd>
+              <dt class="col-sm-3">Estimate</dt>
+              <dd class="col-sm-9" style="overflow-wrap:anywhere;">{{ q.estimate|linebreaksbr }}</dd>
+              <dt class="col-sm-3">Source row</dt>
+              <dd class="col-sm-9">{{ q.source_row|default:"-" }}</dd>
+              <dt class="col-sm-3">Source URL</dt>
+              <dd class="col-sm-9" style="overflow-wrap:anywhere;">{{ q.source_url|default:"-" }}</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% endif %}
+  <script>
+  (function() {
+    const STR = ['repo', 'generator', 'contact'];
+    const BOOL = ['missing_contact', 'missing_email'];
+    const DS = {repo: 'repo', generator: 'generator', contact: 'contact'};
+    const BD = {missing_contact: 'missingContact', missing_email: 'missingEmail'};
+    const LABELS = {generator: {'__undefined__': 'Undefined'}};
+
+    const rows = Array.from(document.querySelectorAll('tr.pcs-qf-data'));
+    const emptyRow = document.getElementById('pcs-qf-empty');
+    const shownEl = document.getElementById('pcs-qf-shown');
+    const qInput = document.getElementById('pcs-qf-q');
+    const initial = new URL(window.location.href).searchParams;
+    const state = {
+      q: (initial.get('q') || '').trim(),
+      repo: initial.get('repo') || '',
+      generator: initial.get('generator') || '',
+      contact: initial.get('contact') || '',
+      missing_contact: initial.get('missing_contact') === '1',
+      missing_email: initial.get('missing_email') === '1',
+    };
+
+    function valuesFor(tr, k) {
+      const raw = tr.dataset[DS[k]] || '';
+      return k === 'contact' ? raw.split('||').filter(Boolean) : (raw ? [raw] : []);
+    }
+
+    function rowMatches(tr, skip) {
+      if (skip !== 'q' && state.q) {
+        if (!(tr.dataset.search || '').includes(state.q.toLowerCase())) return false;
+      }
+      for (const k of STR) {
+        if (k === skip) continue;
+        if (state[k] && !valuesFor(tr, k).includes(state[k])) return false;
+      }
+      for (const k of BOOL) {
+        if (k === skip) continue;
+        if (state[k] && tr.dataset[BD[k]] !== '1') return false;
+      }
+      return true;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => (
+        {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    }
+
+    function labelFor(k, v) {
+      return (LABELS[k] && LABELS[k][v]) || v;
+    }
+
+    function renderBar() {
+      const strCounts = {repo: {}, generator: {}, contact: {}};
+      const boolCounts = {missing_contact: 0, missing_email: 0};
+      for (const tr of rows) {
+        for (const k of STR) {
+          if (rowMatches(tr, k)) {
+            for (const v of valuesFor(tr, k)) {
+              strCounts[k][v] = (strCounts[k][v] || 0) + 1;
+            }
+          }
+        }
+        for (const k of BOOL) {
+          if (rowMatches(tr, k) && tr.dataset[BD[k]] === '1') boolCounts[k]++;
+        }
+      }
+
+      for (const k of STR) {
+        const span = document.getElementById('pcs-qf-' + k + '-opts');
+        if (!span) continue;
+        const entries = Object.entries(strCounts[k]).sort((a, b) => {
+          return labelFor(k, a[0]).localeCompare(labelFor(k, b[0]));
+        });
+        span.innerHTML = entries.map(([v, n]) => {
+          const active = state[k] === v ? ' filter-active' : '';
+          return `<a href="#" data-filter="${k}" data-value="${escapeHtml(v)}"`
+               + ` class="filter-link${active}">${escapeHtml(labelFor(k, v))} (${n})</a>`;
+        }).join('');
+        const allLink = document.querySelector(
+          `#pcs-qf-bar .filter-link[data-filter="${k}"][data-value=""]`);
+        if (allLink) allLink.classList.toggle('filter-active', !state[k]);
+      }
+
+      for (const k of BOOL) {
+        const c = document.querySelector(`[data-count="${k}"]`);
+        if (c) c.textContent = boolCounts[k];
+        const a = document.querySelector(`#pcs-qf-bar .filter-link[data-toggle="${k}"]`);
+        if (a) a.classList.toggle('filter-active', state[k]);
+      }
+    }
+
+    function syncUrl() {
+      const u = new URL(window.location.href);
+      const p = u.searchParams;
+      ['q', 'repo', 'generator', 'contact', 'missing_contact', 'missing_email'].forEach(k => p.delete(k));
+      if (state.q) p.set('q', state.q);
+      for (const k of STR) if (state[k]) p.set(k, state[k]);
+      for (const k of BOOL) if (state[k]) p.set(k, '1');
+      history.replaceState(null, '', u.toString());
+    }
+
+    function applyFilters() {
+      let visible = 0;
+      for (const tr of rows) {
+        const show = rowMatches(tr, null);
+        tr.style.display = show ? '' : 'none';
+        if (show) visible++;
+      }
+      if (shownEl) shownEl.textContent = visible;
+      if (emptyRow) emptyRow.style.display = visible === 0 ? '' : 'none';
+      renderBar();
+      syncUrl();
+    }
+
+    document.getElementById('pcs-qf-bar')?.addEventListener('click', e => {
+      const a = e.target.closest('a.filter-link');
+      if (!a) return;
+      e.preventDefault();
+      if (a.dataset.filter !== undefined) {
+        const k = a.dataset.filter;
+        const v = a.dataset.value || '';
+        state[k] = (state[k] === v && v !== '') ? '' : v;
+      } else if (a.dataset.toggle) {
+        const k = a.dataset.toggle;
+        state[k] = !state[k];
+      }
+      applyFilters();
+    });
+
+    if (qInput) {
+      qInput.value = state.q;
+      qInput.addEventListener('input', () => {
+        state.q = qInput.value.trim();
+        applyFilters();
+      });
+    }
+    document.getElementById('pcs-qf-clear')?.addEventListener('click', () => {
+      state.q = '';
+      if (qInput) qInput.value = '';
+      for (const k of STR) state[k] = '';
+      for (const k of BOOL) state[k] = false;
+      applyFilters();
+    });
+
+    applyFilters();
+  })();
+  </script>
+</div>
+{% endblock %}

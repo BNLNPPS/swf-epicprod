@@ -1,0 +1,503 @@
+{% extends 'base.html' %}
+
+{% block title %}Prod Configs - PCS{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<style>
+.compose-wrap { display: flex; gap: 1.5rem; padding: 1rem 1.5rem; height: calc(100vh - 80px); }
+.browse-panel { flex: 0 0 38%; display: flex; flex-direction: column; min-width: 0; }
+.right-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .75rem; }
+.panel-body { flex: 1; overflow-y: auto; padding-right: .5rem; }
+
+.browser-search { width: 100%; padding: .35rem .6rem; border: 1px solid #dee2e6;
+                   border-radius: .375rem; font-size: .85rem; margin-bottom: .5rem; }
+.item-list { flex: 1; overflow-y: auto; border: 1px solid #dee2e6; border-radius: .375rem; }
+.item-entry { padding: .5rem .75rem; border-bottom: 1px solid #f0f0f0; cursor: pointer; font-size: .82rem; }
+.item-entry:hover { background: #f8f9fa; }
+.item-entry.selected { background: #e7f1ff; border-left: 3px solid #0d6efd; }
+.item-label { font-weight: 600; }
+.item-meta { color: #6c757d; font-size: .75rem; }
+.item-badges { font-size: .82rem; }
+.item-badges .badge { font-size: inherit; font-weight: 500; }
+
+.detail-section { margin-bottom: 1rem; }
+.empty-state { color: #6c757d; font-style: italic; padding: 2rem 0; text-align: center; }
+</style>
+
+<div class="compose-wrap">
+    <!-- LEFT: Config Browser -->
+    <div class="browse-panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem;">
+            <strong style="font-size:.9rem;">Prod Configs</strong>
+            <div>
+                <span class="badge bg-secondary me-2" id="count-badge">0</span>
+                {% if username %}
+                <button class="btn btn-primary btn-sm" id="btn-new">New Config</button>
+                {% endif %}
+            </div>
+        </div>
+        <input type="text" class="browser-search" id="search" placeholder="Search configs...">
+        <div class="btn-group btn-group-sm" id="list-sort" role="group" aria-label="Sort" style="margin-bottom:.5rem; align-self:flex-start;">
+            <button type="button" class="btn btn-outline-secondary active" data-sort="recent" style="font-size:.68rem; padding:.03rem .3rem; min-width:3.4rem;">Recent</button>
+            <button type="button" class="btn btn-outline-secondary" data-sort="alpha" style="font-size:.68rem; padding:.03rem .3rem; min-width:3.4rem;">A&ndash;Z</button>
+        </div>
+        <div class="item-list" id="item-list" tabindex="0"></div>
+    </div>
+
+    <!-- RIGHT: Detail / Create / Edit -->
+    <div class="right-panel">
+        <div class="panel-header">
+            <h4 id="panel-title" style="margin:0;">Select a config</h4>
+            <div id="panel-buttons">
+                {% if username %}
+                <button class="btn btn-dark-green btn-sm" id="btn-copy" style="display:none;">Copy</button>
+                <button class="btn btn-dark-green btn-sm" id="btn-edit" style="display:none;">Edit</button>
+                <button class="btn btn-danger btn-sm" id="btn-delete" style="display:none;">Delete</button>
+                {% endif %}
+                <button class="btn btn-secondary btn-sm" id="btn-cancel" style="display:none;">Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btn-save" style="display:none;">Save</button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <!-- VIEW MODE -->
+            <div id="view-panel">
+                <div class="empty-state" id="view-empty">Click a config on the left to view its details.</div>
+                <div id="view-content" style="display:none;"></div>
+            </div>
+            <!-- CREATE/EDIT MODE -->
+            <div id="edit-panel" style="display:none;">
+                <div id="edit-form" style="max-width:850px;">
+                    <input type="hidden" id="editing_pk" value="">
+
+                    <fieldset class="mb-3"><legend class="h6">General</legend>
+                        <div class="row mb-2">
+                            <div class="col-md-6"><label class="form-label"><strong>Name</strong></label>
+                                <input type="text" name="name" class="form-control form-control-sm" required></div>
+                            <div class="col-md-6"><label class="form-label"><strong>Created By</strong></label>
+                                <input type="text" name="created_by" class="form-control form-control-sm" value="{{ username }}" readonly disabled></div>
+                        </div>
+                        <div class="mb-2"><label class="form-label"><strong>Description</strong></label>
+                            <textarea name="description" class="form-control form-control-sm" rows="2"></textarea></div>
+                    </fieldset>
+
+                    <fieldset class="mb-3"><legend class="h6">Background Mixing</legend>
+                        <div class="row mb-2">
+                            <div class="col-md-2"><div class="form-check mt-3">
+                                <input type="checkbox" name="bg_mixing" class="form-check-input" id="id_bg_mixing">
+                                <label for="id_bg_mixing" class="form-check-label">Enabled</label></div></div>
+                            <div class="col-md-4"><label class="form-label">Cross Section</label>
+                                <input type="text" name="bg_cross_section" class="form-control form-control-sm"></div>
+                            <div class="col-md-6"><label class="form-label">EvtGen File</label>
+                                <input type="text" name="bg_evtgen_file" class="form-control form-control-sm"></div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="mb-3"><legend class="h6">Output Control</legend>
+                        <div class="row mb-2">
+                            <div class="col-md-3"><div class="form-check"><input type="checkbox" name="copy_reco" class="form-check-input" checked> <label class="form-check-label">Copy Reco</label></div></div>
+                            <div class="col-md-3"><div class="form-check"><input type="checkbox" name="copy_full" class="form-check-input"> <label class="form-check-label">Copy Full</label></div></div>
+                            <div class="col-md-3"><div class="form-check"><input type="checkbox" name="copy_log" class="form-check-input" checked> <label class="form-check-label">Copy Log</label></div></div>
+                            <div class="col-md-3"><div class="form-check"><input type="checkbox" name="use_rucio" class="form-check-input" checked> <label class="form-check-label">Use Rucio</label></div></div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="mb-3"><legend class="h6">Software Stack</legend>
+                        <div class="row mb-2">
+                            <div class="col-md-4"><label class="form-label">JUG_XL Tag</label>
+                                <input type="text" name="jug_xl_tag" class="form-control form-control-sm"></div>
+                            <div class="col-md-8"><label class="form-label">Container Image</label>
+                                <input type="text" name="container_image" class="form-control form-control-sm"></div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="mb-3"><legend class="h6">Resource Targets</legend>
+                        <div class="row mb-2">
+                            <div class="col-md-4"><label class="form-label">Target Hours/Job</label>
+                                <input type="number" name="target_hours_per_job" class="form-control form-control-sm" step="0.01"></div>
+                            <div class="col-md-4"><label class="form-label">Events/Job</label>
+                                <input type="number" name="events_per_job" class="form-control form-control-sm" min="1"></div>
+                            <div class="col-md-4"><label class="form-label">Events/Task</label>
+                                <input type="number" name="events_per_task" class="form-control form-control-sm"></div>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="scout_mode" class="form-check-input" id="id_scout_mode">
+                            <label for="id_scout_mode" class="form-check-label">Scout Mode</label>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="mb-3"><legend class="h6">PanDA Overrides</legend>
+                        <div class="row mb-2">
+                            <div class="col-md-3"><label class="form-label">Site</label>
+                                <input type="text" name="panda_site" class="form-control form-control-sm"></div>
+                            <div class="col-md-3"><label class="form-label">Queue</label>
+                                <input type="text" name="panda_queue" class="form-control form-control-sm"></div>
+                            <div class="col-md-3"><label class="form-label">Working Group</label>
+                                <input type="text" name="panda_working_group" class="form-control form-control-sm"></div>
+                            <div class="col-md-3"><label class="form-label">Resource Type</label>
+                                <input type="text" name="panda_resource_type" class="form-control form-control-sm"></div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="mb-3"><legend class="h6">Rucio Overrides</legend>
+                        <div class="row mb-2">
+                            <div class="col-md-6"><label class="form-label">RSE</label>
+                                <input type="text" name="rucio_rse" class="form-control form-control-sm"></div>
+                            <div class="col-md-6"><label class="form-label">Log RSE</label>
+                                <input type="text" name="log_rse" class="form-control form-control-sm"></div>
+                        </div>
+                        <div class="mb-2"><label class="form-label">Replication Rules (JSON)</label>
+                            <textarea name="rucio_replication_rules" class="form-control form-control-sm" rows="2" style="font-family:monospace;"></textarea></div>
+                    </fieldset>
+
+                    <fieldset class="mb-3"><legend class="h6">Submission Parameters</legend>
+                        <div class="mb-2"><label class="form-label">Additional Parameters (JSON)</label>
+                            <textarea name="data" class="form-control form-control-sm" rows="6" style="font-family:monospace;"
+                                placeholder='{"transformation": "runGen-00-00-02", "processing_type": "epicproduction", "n_jobs": 1000}'></textarea>
+                            <small class="text-muted">Keys: workflow_mode, transformation, processing_type, prod_source_label, vo, n_jobs, events_per_file, files_per_job, corecount, no_build, skip_scout, exec_command, scope. Use the Scout Mode toggle for skip_scout.</small></div>
+                    </fieldset>
+
+                    <fieldset class="mb-3"><legend class="h6">Condor Template</legend>
+                        <textarea name="condor_template" class="form-control form-control-sm" rows="4" style="font-family:monospace;"></textarea>
+                    </fieldset>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const allConfigs = {{ configs_json|safe }};
+    const initialSelected = {{ selected_item_json|safe }};  // config name or null
+    const currentUser = '{{ username }}';
+    const preferredScoutMode = {{ prod_config_scout_mode_json|default:"false"|safe }};
+    let selectedId = null;
+    let mode = 'view';
+
+    function htmlEscape(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function configKeyOf(id) { return (allConfigs.find(x => x.id === id) || {}).name; }
+    function configIdOf(key) { return (allConfigs.find(x => x.name === key) || {}).id; }
+
+    function updateUrl() {
+        const params = new URLSearchParams();
+        if (selectedId) {
+            const key = configKeyOf(selectedId);
+            if (key) params.set('selected', key);
+        }
+        const qs = params.toString();
+        history.replaceState(null, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+    }
+
+    const itemList = document.getElementById('item-list');
+    const searchBox = document.getElementById('search');
+
+    function sortItems(arr) {
+        const m = (document.querySelector('#list-sort .active') || {dataset: {}}).dataset.sort || 'recent';
+        const cp = arr.slice();
+        if (m === 'alpha') cp.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, {numeric: true}));
+        else cp.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+        return cp;
+    }
+
+    function renderList() {
+        const q = searchBox.value.toLowerCase();
+        const filtered = allConfigs.filter(c => {
+            if (!q) return true;
+            return c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q) ||
+                   (c.jug_xl_tag||'').toLowerCase().includes(q) || c.created_by.toLowerCase().includes(q);
+        });
+        document.getElementById('count-badge').textContent = filtered.length;
+        itemList.innerHTML = sortItems(filtered).map(c => {
+            let badges = '';
+            if (c.bg_mixing) badges += '<span class="badge bg-warning text-dark me-1">BG</span>';
+            if (c.use_rucio) badges += '<span class="badge bg-info me-1">Rucio</span>';
+            return `<div class="item-entry${c.id === selectedId ? ' selected' : ''}" data-id="${c.id}">
+                <div class="item-label">${c.name}</div>
+                <div class="item-badges">${badges}<span class="badge bg-light text-dark">${c.jug_xl_tag || 'no tag'}</span></div>
+                <div class="item-meta">${c.created_by} | ${c.updated_at}</div>
+            </div>`;
+        }).join('') || '<div class="empty-state">No configs found.</div>';
+        itemList.querySelectorAll('.item-entry').forEach(el => {
+            el.addEventListener('click', () => { if (mode === 'view') selectConfig(parseInt(el.dataset.id)); });
+        });
+    }
+    searchBox.addEventListener('input', renderList);
+    document.querySelectorAll('#list-sort button').forEach(b => b.addEventListener('click', () => {
+        document.querySelectorAll('#list-sort button').forEach(x => x.classList.toggle('active', x === b));
+        renderList();
+    }));
+
+    function selectConfig(id) {
+        selectedId = id;
+        const c = allConfigs.find(x => x.id === id);
+        if (!c) return;
+        updateUrl();
+        renderList();
+        document.getElementById('panel-title').textContent = c.name;
+        document.getElementById('view-empty').style.display = 'none';
+        const vc = document.getElementById('view-content');
+        vc.style.display = 'block';
+
+        function row(label, val) { return `<tr><td style="width:40%"><strong>${htmlEscape(label)}</strong></td><td>${val || '-'}</td></tr>`; }
+        function text(value) { return value ? htmlEscape(value) : '-'; }
+        function boolRow(label, val) { return row(label, val ? 'Yes' : 'No'); }
+
+        let dataRows = '';
+        if (c.data && Object.keys(c.data).length) {
+            Object.entries(c.data).forEach(([k,v]) => { dataRows += row('data.' + k, text(v)); });
+        }
+
+        vc.innerHTML = `
+            <div class="detail-section">
+                ${c.description ? `<p>${c.description}</p>` : ''}
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Background Mixing</h6>
+                        <table class="table table-sm table-bordered mb-2" style="font-size:.82rem;">
+                            ${boolRow('Enabled', c.bg_mixing)}
+                            ${row('Cross Section', text(c.bg_cross_section))}
+                            ${row('EvtGen File', text(c.bg_evtgen_file))}
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Output Control</h6>
+                        <table class="table table-sm table-bordered mb-2" style="font-size:.82rem;">
+                            ${boolRow('Copy Reco', c.copy_reco)}${boolRow('Copy Full', c.copy_full)}
+                            ${boolRow('Copy Log', c.copy_log)}${boolRow('Use Rucio', c.use_rucio)}
+                        </table>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Software Stack</h6>
+                        <table class="table table-sm table-bordered mb-2" style="font-size:.82rem;">
+                            ${row('JUG_XL Tag', text(c.jug_xl_tag))}
+                            ${row('Container', text(c.container_image))}
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Resource Targets</h6>
+                        <table class="table table-sm table-bordered mb-2" style="font-size:.82rem;">
+                            ${row('Hours/Job', c.target_hours_per_job)}
+                            ${row('Events/Job', c.data && c.data.events_per_job)}
+                            ${row('Events/Task', c.events_per_task)}
+                            ${boolRow('Scout Mode', c.data && Object.prototype.hasOwnProperty.call(c.data, 'skip_scout') ? !Boolean(c.data.skip_scout) : false)}
+                        </table>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>PanDA Overrides</h6>
+                        <table class="table table-sm table-bordered mb-2" style="font-size:.82rem;">
+                            ${row('Site', c.panda_site)}${row('Queue', c.panda_queue)}
+                            ${row('Working Group', c.panda_working_group)}${row('Resource Type', c.panda_resource_type)}
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Rucio Overrides</h6>
+                        <table class="table table-sm table-bordered mb-2" style="font-size:.82rem;">
+                            ${row('RSE', c.rucio_rse)}
+                            ${row('Log RSE', c.data && c.data.log_rse)}
+                        </table>
+                    </div>
+                </div>
+                ${dataRows ? `<h6>Submission Parameters</h6><table class="table table-sm table-bordered mb-2" style="font-size:.82rem;">${dataRows}</table>` : ''}
+            </div>
+            <div class="item-meta">Created by ${c.created_by} on ${c.created_at} | Updated ${c.updated_at}</div>`;
+
+        // Copy: any authenticated user. Edit/Delete: only the owner.
+        const btnEdit = document.getElementById('btn-edit');
+        const btnCopy = document.getElementById('btn-copy');
+        const btnDelete = document.getElementById('btn-delete');
+        const isOwner = currentUser && c.created_by === currentUser;
+        if (btnCopy) btnCopy.style.display = currentUser ? 'inline-block' : 'none';
+        if (btnEdit) btnEdit.style.display = isOwner ? 'inline-block' : 'none';
+        if (btnDelete) btnDelete.style.display = isOwner ? 'inline-block' : 'none';
+    }
+
+    // Fill form from config object
+    function fillForm(c, isCopy) {
+        const form = document.getElementById('edit-form');
+        document.getElementById('editing_pk').value = isCopy ? '' : (c ? c.id : '');
+        const f = (name) => form.querySelector(`[name="${name}"]`);
+        f('name').value = isCopy ? `${c.name} (copy)` : (c ? c.name : '');
+        f('description').value = c ? c.description : '';
+        f('created_by').value = isCopy ? currentUser : (c ? c.created_by : currentUser);
+        f('bg_mixing').checked = c ? c.bg_mixing : false;
+        f('bg_cross_section').value = c ? c.bg_cross_section : '';
+        f('bg_evtgen_file').value = c ? c.bg_evtgen_file : '';
+        f('copy_reco').checked = c ? c.copy_reco : true;
+        f('copy_full').checked = c ? c.copy_full : false;
+        f('copy_log').checked = c ? c.copy_log : true;
+        f('use_rucio').checked = c ? c.use_rucio : true;
+        f('jug_xl_tag').value = c ? c.jug_xl_tag : '';
+        f('container_image').value = c ? c.container_image : '';
+        f('target_hours_per_job').value = c ? c.target_hours_per_job : '';
+        f('events_per_task').value = c ? (c.events_per_task || '') : '';
+        const data = c && c.data ? {...c.data} : {};
+        f('events_per_job').value = data.events_per_job || '';
+        f('log_rse').value = data.log_rse || '';
+        if (c) {
+            f('scout_mode').checked = Object.prototype.hasOwnProperty.call(data, 'skip_scout')
+                ? !Boolean(data.skip_scout)
+                : false;
+        } else {
+            f('scout_mode').checked = Boolean(preferredScoutMode);
+        }
+        delete data.events_per_job;
+        delete data.log_rse;
+        delete data.skip_scout;
+        f('panda_site').value = c ? c.panda_site : '';
+        f('panda_queue').value = c ? c.panda_queue : '';
+        f('panda_working_group').value = c ? c.panda_working_group : '';
+        f('panda_resource_type').value = c ? c.panda_resource_type : '';
+        f('rucio_rse').value = c ? c.rucio_rse : '';
+        f('rucio_replication_rules').value = c && c.rucio_replication_rules ? JSON.stringify(c.rucio_replication_rules, null, 2) : '';
+        f('data').value = Object.keys(data).length ? JSON.stringify(data, null, 2) : '';
+        f('condor_template').value = c ? c.condor_template || '' : '';
+    }
+
+    // Mode switching
+    const btnNew = document.getElementById('btn-new');
+    const btnEdit = document.getElementById('btn-edit');
+    const btnCopy = document.getElementById('btn-copy');
+    const btnDelete = document.getElementById('btn-delete');
+    const btnCancel = document.getElementById('btn-cancel');
+    const btnSave = document.getElementById('btn-save');
+    const viewPanel = document.getElementById('view-panel');
+    const editPanel = document.getElementById('edit-panel');
+
+    function enterEditMode(config, isCopy) {
+        mode = 'edit';
+        fillForm(config, isCopy);
+        viewPanel.style.display = 'none';
+        editPanel.style.display = 'block';
+        if (btnNew) btnNew.style.display = 'none';
+        if (btnEdit) btnEdit.style.display = 'none';
+        if (btnCopy) btnCopy.style.display = 'none';
+        if (btnDelete) btnDelete.style.display = 'none';
+        btnCancel.style.display = 'inline-block';
+        btnSave.style.display = 'inline-block';
+        document.getElementById('panel-title').textContent = isCopy ? 'Copy Config' : (config ? `Edit: ${config.name}` : 'New Config');
+    }
+
+    function enterViewMode() {
+        mode = 'view';
+        editPanel.style.display = 'none';
+        viewPanel.style.display = 'block';
+        if (btnNew) btnNew.style.display = 'inline-block';
+        btnCancel.style.display = 'none';
+        btnSave.style.display = 'none';
+        if (selectedId) selectConfig(selectedId);
+        else {
+            document.getElementById('panel-title').textContent = 'Select a config';
+            if (btnEdit) btnEdit.style.display = 'none';
+            if (btnCopy) btnCopy.style.display = 'none';
+            if (btnDelete) btnDelete.style.display = 'none';
+        }
+    }
+
+    if (btnNew) btnNew.addEventListener('click', () => enterEditMode(null, false));
+    if (btnEdit) btnEdit.addEventListener('click', () => {
+        const c = allConfigs.find(x => x.id === selectedId);
+        if (c) enterEditMode(c, false);
+    });
+    if (btnCopy) btnCopy.addEventListener('click', () => {
+        const c = allConfigs.find(x => x.id === selectedId);
+        if (c) enterEditMode(c, true);
+    });
+    if (btnDelete) btnDelete.addEventListener('click', async () => {
+        const c = allConfigs.find(x => x.id === selectedId);
+        if (!c) return;
+        if (!confirm(`Delete prod config "${c.name}"? This cannot be undone.`)) return;
+        const resp = await fetch(`/swf-monitor/pcs/api/prod-configs/${c.id}/`,
+            {method: 'DELETE', headers: apiHeaders});
+        if (resp.ok || resp.status === 204) {
+            window.location.href = window.location.pathname;
+        } else {
+            let msg = `Delete failed (HTTP ${resp.status})`;
+            try { const d = await resp.json(); msg = d.detail || msg; } catch(e) {}
+            alert(msg);
+        }
+    });
+    btnCancel.addEventListener('click', enterViewMode);
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const apiHeaders = {'Content-Type': 'application/json'};
+    if (csrfToken) apiHeaders['X-CSRFToken'] = csrfToken;
+
+    btnSave.addEventListener('click', async () => {
+        const form = document.getElementById('edit-form');
+        const pk = document.getElementById('editing_pk').value;
+        const payload = {};
+        // Collect text/textarea inputs
+        form.querySelectorAll('input[name], textarea[name]').forEach(el => {
+            if (el.type === 'checkbox') payload[el.name] = el.checked;
+            else if (el.type === 'number') payload[el.name] = el.value ? Number(el.value) : null;
+            else if (el.name === 'data' || el.name === 'rucio_replication_rules') {
+                try { payload[el.name] = el.value ? JSON.parse(el.value) : null; }
+                catch(e) { payload[el.name] = el.value; }
+            }
+            else payload[el.name] = el.value;
+        });
+        if (payload.data && (typeof payload.data !== 'object' || Array.isArray(payload.data))) {
+            alert('Additional Parameters must be valid JSON object syntax.');
+            return;
+        }
+        const data = payload.data || {};
+        if (payload.events_per_job) data.events_per_job = payload.events_per_job;
+        else delete data.events_per_job;
+        if (payload.log_rse) data.log_rse = payload.log_rse;
+        else delete data.log_rse;
+        data.skip_scout = !Boolean(payload.scout_mode);
+        delete payload.events_per_job;
+        delete payload.log_rse;
+        delete payload.scout_mode;
+        payload.data = Object.keys(data).length ? data : {};
+        const url = pk ? `/swf-monitor/pcs/api/prod-configs/${pk}/` : '/swf-monitor/pcs/api/prod-configs/';
+        const method = pk ? 'PATCH' : 'POST';
+        const resp = await fetch(url, {method, headers: apiHeaders, body: JSON.stringify(payload)});
+        if (resp.ok) {
+            const data = await resp.json();
+            window.location.href = `?selected=${encodeURIComponent(data.name || data.id)}`;
+        } else {
+            const errors = await resp.json();
+            let msg = '';
+            for (const [field, msgs] of Object.entries(errors)) {
+                msg += `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}\n`;
+            }
+            alert(msg || 'Save failed');
+        }
+    });
+
+    // Keyboard nav
+    itemList.addEventListener('keydown', function(e) {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        e.preventDefault();
+        const entries = Array.from(itemList.querySelectorAll('.item-entry'));
+        if (!entries.length) return;
+        const idx = entries.findIndex(el => el.classList.contains('selected'));
+        let next = e.key === 'ArrowDown' ? (idx < entries.length - 1 ? idx + 1 : 0) : (idx > 0 ? idx - 1 : entries.length - 1);
+        selectConfig(parseInt(entries[next].dataset.id));
+        entries[next].scrollIntoView({block: 'nearest'});
+    });
+
+    // Init
+    renderList();
+    if (initialSelected) {
+        const id = configIdOf(initialSelected);
+        if (id) selectConfig(id);
+        else if (allConfigs.length) selectConfig(allConfigs[0].id);
+    } else if (allConfigs.length) selectConfig(allConfigs[0].id);
+})();
+</script>
+{% endblock %}

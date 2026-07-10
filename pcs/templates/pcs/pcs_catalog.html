@@ -1,0 +1,878 @@
+{% extends "base.html" %}
+{% load swf_fmt %}
+{% block title %}{% if catalog_view == 'progress' %}Campaign Progress{% else %}Campaign Task Catalog{% endif %}{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
+<style>
+.pcs-view-switch .btn {
+  background: #d8ecff;
+  border-color: #6ea8fe;
+  color: #084298;
+}
+.pcs-view-switch .btn.active,
+.pcs-view-switch .btn.active:hover,
+.pcs-view-switch .btn.active:focus {
+  background: #0d6efd;
+  border-color: #0a58ca;
+  color: #fff;
+  cursor: default;
+}
+.pcs-view-switch .btn:not(.active):hover,
+.pcs-view-switch .btn:not(.active):focus {
+  background: #b6dcff;
+  border-color: #0a58ca;
+  color: #052c65;
+}
+.pcs-catalog-title {
+  flex: 0 0 29rem;
+  white-space: nowrap;
+}
+.pcs-refresh-status {
+  min-height: 1.5rem;
+}
+.pcs-refresh-status.is-active {
+  color: #084298;
+  font-weight: 600;
+}
+.pcs-build-timing summary {
+  cursor: pointer;
+}
+.pcs-build-timing table {
+  max-width: 52rem;
+}
+.pcs-build-timing td,
+.pcs-build-timing th {
+  padding: 0.15rem 0.5rem;
+  vertical-align: top;
+}
+.pcs-build-timing .pcs-time {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+</style>
+
+<div class="container-fluid mt-3 pcs-catalog">
+  <div class="d-flex align-items-center mb-3">
+    <h2 class="pcs-catalog-title me-3 mb-0">{% if catalog_view == 'progress' %}Current Campaign {{ progress_campaign_name }} Progress{% else %}Campaign Task Catalog{% endif %}</h2>
+    {% if active_lifecycle == 'current' %}
+    <div class="btn-group btn-group-sm pcs-view-switch me-2" role="group" aria-label="Catalog view">
+      <a href="{{ catalog_view_urls.catalog }}" data-catalog-view="catalog" data-tab-name="epicprod-catalog-view" class="btn{% if catalog_view == 'catalog' %} active{% endif %}">{% if catalog_view == 'catalog' %}Catalog{% else %}Catalog view in new tab{% endif %}</a>
+      <a href="{{ catalog_view_urls.progress }}" data-catalog-view="progress" data-tab-name="epicprod-progress-view" class="btn{% if catalog_view == 'progress' %} active{% endif %}">{% if catalog_view == 'progress' %}Progress{% else %}Progress view in new tab{% endif %}</a>
+    </div>
+    <script>
+    (function() {
+      const currentView = '{{ catalog_view }}';
+      const peerView = currentView === 'progress' ? 'catalog' : 'progress';
+      const labels = {
+        catalog: 'Catalog view tab',
+        progress: 'Progress view tab',
+      };
+      const storagePrefix = 'epicprod-catalog-view-open:';
+      const freshMs = 12 * 60 * 60 * 1000;
+      let peerOpen = false;
+      try {
+        const ts = parseInt(localStorage.getItem(storagePrefix + peerView) || '0', 10);
+        peerOpen = ts && (Date.now() - ts) < freshMs;
+      } catch (_) {}
+      if (peerOpen) {
+        const a = document.querySelector(`.pcs-view-switch a[data-catalog-view="${peerView}"]`);
+        if (a && !a.classList.contains('active')) {
+          a.textContent = labels[peerView];
+          a.dataset.peerSeen = '1';
+        }
+      }
+    })();
+    </script>
+    {% endif %}
+    {% if catalog_view != 'progress' %}
+    {% if not is_tunnel and user.is_authenticated %}
+    <form method="post" action="{% url 'pcs:pcs_catalog_csv_update' %}" class="ms-2 d-inline" id="csv-update-form">
+      {% csrf_token %}
+      <button type="submit" id="csv-update-btn" class="btn btn-sm btn-primary"
+              title="Re-import eic/epic-prod/docs/_data/datasets.csv into the catalog (runs in the prod-ops agent; updates live when done)">
+        Update from CSV
+      </button>
+    </form>
+    <form method="post" action="{% url 'pcs:pcs_catalog_rucio_update' %}" class="ms-2 d-inline" id="rucio-update-form">
+      {% csrf_token %}
+      <button type="submit" id="rucio-update-btn" class="btn btn-sm btn-primary"
+              title="Refresh the JLab Rucio output snapshot (runs in the prod-ops agent; updates live when done)">
+        Update from Rucio
+      </button>
+    </form>
+    <form method="post" action="{% url 'pcs:pcs_catalog_evgen_update' %}" class="ms-2 d-inline" id="evgen-update-form">
+      {% csrf_token %}
+      <button type="submit" id="evgen-update-btn" class="btn btn-sm btn-primary"
+              title="Assimilate the JLab Rucio EVGEN inventory and resolve it onto the catalog (runs in the prod-ops agent; updates live when done)">
+        Update EVGEN from Rucio
+      </button>
+    </form>
+    <form method="post" action="{% url 'pcs:pcs_catalog_questionnaire_match_update' %}" class="ms-2 d-inline" id="questionnaire-match-update-form">
+      {% csrf_token %}
+      <button type="submit" id="questionnaire-match-update-btn" class="btn btn-sm btn-primary"
+              title="Rebuild task-local questionnaire request links (runs in the prod-ops agent; updates live when done)">
+        Update request links
+      </button>
+    </form>
+    {% else %}
+    {# Inactive-button convention: operator actions stay visible to every viewer, disabled outside an operator session. #}
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Re-import eic/epic-prod/docs/_data/datasets.csv into the catalog — operator action; sign in on pandaserver02">Update from CSV</button>
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Refresh the JLab Rucio output snapshot — operator action; sign in on pandaserver02">Update from Rucio</button>
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Assimilate the JLab Rucio EVGEN inventory and resolve it onto the catalog — operator action; sign in on pandaserver02">Update EVGEN from Rucio</button>
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Rebuild task-local questionnaire request links — operator action; sign in on pandaserver02">Update request links</button>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <script>
+  // Update from Rucio — fire-and-notify via the prod-ops agent + SSE push.
+  // The JLab fetch + per-task match is too slow for the web request, so the
+  // button publishes to the agent and the page updates the instant
+  // rucio_snapshot_ready arrives — no polling. See docs/EPICPROD_DATA_LINEAGE.md.
+  (function () {
+    const form = document.getElementById('rucio-update-form');
+    const btn  = document.getElementById('rucio-update-btn');
+    if (!form || !btn) return;
+    const label = btn.textContent.trim();
+    function busy(on) { btn.disabled = on; btn.textContent = on ? 'Updating…' : label; }
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (!confirm('Refresh the JLab Rucio output snapshot for the current campaign?')) return;
+      busy(true);
+      const token = form.querySelector('[name=csrfmiddlewaretoken]').value;
+      try {
+        const r = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/prod-tasks/rucio-snapshot-update/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+        });
+        if (r.status !== 202) {
+          let m = 'queue failed';
+          try { const j = await r.json(); m = j.detail || j.message || m; } catch (_) {}
+          throw new Error(m);
+        }
+        // Open the push stream ONLY now that the action is queued — never on
+        // page load — so viewing the catalog pins no streaming worker.
+        const es = new EventSource("{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=rucio_snapshot_ready");
+        es.addEventListener('rucio_snapshot_ready', function (ev) {
+          let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
+          if (d.ok === false) { es.close(); busy(false); alert('Rucio update failed: ' + (d.error || 'unknown error')); }
+          else { window.location.reload(); }
+        });
+      } catch (err) {
+        busy(false);
+        alert('Could not queue the Rucio update: ' + err.message);
+      }
+    });
+  })();
+
+  // Update EVGEN from Rucio — fire-and-notify via the prod-ops agent + SSE push.
+  // The JLab fetch + per-dataset match is too slow for the web request, so the
+  // button publishes to the agent and the page updates when evgen_rucio_ready
+  // arrives. See docs/EPICPROD_EVGEN_INPUTS.md.
+  (function () {
+    const form = document.getElementById('evgen-update-form');
+    const btn  = document.getElementById('evgen-update-btn');
+    if (!form || !btn) return;
+    const label = btn.textContent.trim();
+    function busy(on) { btn.disabled = on; btn.textContent = on ? 'Updating…' : label; }
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (!confirm('Assimilate the JLab Rucio EVGEN inventory into the catalog?')) return;
+      busy(true);
+      const token = form.querySelector('[name=csrfmiddlewaretoken]').value;
+      try {
+        const r = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/prod-tasks/evgen-rucio-update/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+        });
+        if (r.status !== 202) {
+          let m = 'queue failed';
+          try { const j = await r.json(); m = j.detail || j.message || m; } catch (_) {}
+          throw new Error(m);
+        }
+        // Open the push stream ONLY now that the action is queued — never on
+        // page load — so viewing the catalog pins no streaming worker.
+        const es = new EventSource("{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=evgen_rucio_ready");
+        es.addEventListener('evgen_rucio_ready', function (ev) {
+          let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
+          if (d.ok === false) { es.close(); busy(false); alert('EVGEN update failed: ' + (d.error || 'unknown error')); }
+          else { window.location.reload(); }
+        });
+      } catch (err) {
+        busy(false);
+        alert('Could not queue the EVGEN update: ' + err.message);
+      }
+    });
+  })();
+
+  // Update request links — rebuild the task-local questionnaire-match cache in
+  // the prod-ops agent and reload when questionnaire_match_ready arrives.
+  (function () {
+    const form = document.getElementById('questionnaire-match-update-form');
+    const btn  = document.getElementById('questionnaire-match-update-btn');
+    if (!form || !btn) return;
+    const label = btn.textContent.trim();
+    function busy(on) { btn.disabled = on; btn.textContent = on ? 'Updating…' : label; }
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (!confirm('Rebuild questionnaire request links for the catalog?')) return;
+      busy(true);
+      const token = form.querySelector('[name=csrfmiddlewaretoken]').value;
+      try {
+        const r = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/prod-tasks/questionnaire-match-update/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+        });
+        if (r.status !== 202) {
+          let m = 'queue failed';
+          try { const j = await r.json(); m = j.detail || j.message || m; } catch (_) {}
+          throw new Error(m);
+        }
+        const es = new EventSource("{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=questionnaire_match_ready");
+        es.addEventListener('questionnaire_match_ready', function (ev) {
+          let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
+          if (d.ok === false) {
+            es.close();
+            busy(false);
+            alert('Request-link update failed: ' + (d.error || 'unknown error'));
+          } else {
+            window.location.reload();
+          }
+        });
+      } catch (err) {
+        busy(false);
+        alert('Could not queue the request-link update: ' + err.message);
+      }
+    });
+  })();
+
+  // Update from CSV — fire-and-notify via the prod-ops agent + SSE push, so the
+  // import runs off the request and the page updates when catalog_import_ready
+  // arrives. See docs/EPICPROD_OPS_AGENT.md, docs/SSE_PUSH.md.
+  (function () {
+    const form = document.getElementById('csv-update-form');
+    const btn  = document.getElementById('csv-update-btn');
+    if (!form || !btn) return;
+    const label = btn.textContent.trim();
+    function busy(on) { btn.disabled = on; btn.textContent = on ? 'Updating…' : label; }
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (!confirm('Re-import the default-datasets CSV into the catalog?')) return;
+      busy(true);
+      const token = form.querySelector('[name=csrfmiddlewaretoken]').value;
+      try {
+        const r = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/prod-tasks/catalog-import/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+          body: JSON.stringify({ source: 'csv' }),
+        });
+        if (r.status !== 202) {
+          let m = 'queue failed';
+          try { const j = await r.json(); m = j.detail || j.message || m; } catch (_) {}
+          throw new Error(m);
+        }
+        // Open the push stream ONLY now that the import is queued — never on
+        // page load — so viewing the catalog pins no streaming worker.
+        const es = new EventSource("{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=catalog_import_ready");
+        es.addEventListener('catalog_import_ready', function (ev) {
+          let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
+          if (d.source !== 'csv') return;
+          if (d.ok === false) { es.close(); busy(false); alert('CSV import failed: ' + (d.error || 'unknown error')); }
+          else { window.location.reload(); }
+        });
+      } catch (err) {
+        busy(false);
+        alert('Could not queue the CSV import: ' + err.message);
+      }
+    });
+  })();
+
+  // Refresh progress — rebuild the PanDA progress snapshot and rendered
+  // progress table cache in the prod-ops agent. Manual clicks always queue.
+  // Page-load auto-refresh only fires when the displayed snapshot is stale.
+  document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('progress-refresh-form');
+    const btn  = document.getElementById('progress-refresh-btn');
+    if (!form || !btn) return;
+    const label = btn.textContent.trim();
+    const statusEl = document.getElementById('pcs-refresh-status');
+    const ageEl = document.querySelector('.pcs-live-age[data-updated-at]');
+    const AUTO_REFRESH_AFTER_MS = 15 * 60 * 1000;
+    const AUTO_REFRESH_RETRY_MS = 5 * 60 * 1000;
+    const REFRESH_STREAM_TIMEOUT_MS = 6 * 60 * 1000;
+    const AUTO_REFRESH_KEY = 'epicprod-progress-auto-refresh';
+    let refreshInFlight = false;
+    function busy(on) {
+      btn.disabled = on;
+      btn.textContent = on ? 'Refreshing…' : label;
+      if (statusEl) {
+        statusEl.textContent = on ? 'Refreshing.' : '';
+        statusEl.classList.toggle('is-active', on);
+      }
+    }
+    function staleAgeMs() {
+      if (!ageEl) return null;
+      const ms = Date.parse(ageEl.dataset.updatedAt || '');
+      if (!Number.isFinite(ms)) return null;
+      return Date.now() - ms;
+    }
+    function shouldAutoRefresh() {
+      const age = staleAgeMs();
+      if (age === null || age < AUTO_REFRESH_AFTER_MS) return false;
+      const stamp = ageEl.dataset.updatedAt || '';
+      let last = {};
+      try { last = JSON.parse(localStorage.getItem(AUTO_REFRESH_KEY) || '{}'); } catch (_) {}
+      if (last.stamp === stamp && Date.now() - (last.requestedAt || 0) < AUTO_REFRESH_RETRY_MS) {
+        return false;
+      }
+      try {
+        localStorage.setItem(AUTO_REFRESH_KEY, JSON.stringify({
+          stamp: stamp,
+          requestedAt: Date.now(),
+        }));
+      } catch (_) {}
+      return true;
+    }
+    async function queueRefresh(options) {
+      const auto = Boolean(options && options.auto);
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      busy(true);
+      const token = form.querySelector('[name=csrfmiddlewaretoken]').value;
+      let es = null;
+      let streamTimer = null;
+      function closeStream() {
+        if (streamTimer) {
+          clearTimeout(streamTimer);
+          streamTimer = null;
+        }
+        if (es) {
+          es.close();
+          es = null;
+        }
+      }
+      window.addEventListener('beforeunload', closeStream, {once: true});
+      try {
+        const r = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/prod-tasks/campaign-progress-refresh/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+        });
+        if (r.status !== 202) {
+          let m = 'queue failed';
+          try { const j = await r.json(); m = j.detail || j.message || m; } catch (_) {}
+          throw new Error(m);
+        }
+        es = new EventSource("{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=campaign_progress_ready");
+        streamTimer = setTimeout(function() {
+          closeStream();
+          refreshInFlight = false;
+          busy(false);
+          if (statusEl) statusEl.textContent = 'Refresh still pending.';
+          if (!auto) alert('Progress refresh did not finish within 6 minutes.');
+        }, REFRESH_STREAM_TIMEOUT_MS);
+        es.addEventListener('campaign_progress_ready', function (ev) {
+          let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
+          if (d.ok === false) {
+            closeStream();
+            refreshInFlight = false;
+            busy(false);
+            if (!auto) alert('Progress refresh failed: ' + (d.error || 'unknown error'));
+          } else {
+            closeStream();
+            window.location.reload();
+          }
+        });
+        es.onerror = function() {
+          closeStream();
+          refreshInFlight = false;
+          busy(false);
+          if (statusEl) statusEl.textContent = 'Refresh stream closed.';
+          if (!auto) alert('Progress refresh stream closed before completion.');
+        };
+      } catch (err) {
+        closeStream();
+        refreshInFlight = false;
+        busy(false);
+        if (!auto) alert('Could not queue the progress refresh: ' + err.message);
+      }
+    }
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      queueRefresh({auto: false});
+    });
+    if (shouldAutoRefresh()) queueRefresh({auto: true});
+  });
+  </script>
+
+  {% if show_tabs and catalog_view != 'progress' %}
+  <div class="pcs-tlf-tabs btn-group mb-2 flex-wrap" role="tablist" aria-label="Lifecycle tabs">
+    {% for tab in lifecycle_tabs %}
+      <a class="btn btn-sm btn-outline-{{ tab.color }}{% if tab.active %} active{% endif %}"
+         href="{{ tab.url }}">
+        {{ tab.label }}{% if tab.detail %} <span class="text-muted">·</span> {{ tab.detail }}{% endif %}
+      </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if active_lifecycle == 'current' %}
+  <div class="small mb-2">
+    <span><strong>Last activity:</strong> {{ current_last_activity|fmt_dt|default:"none recorded" }}</span>
+    {% for offer in promote_offers %}
+    {% if user.is_authenticated %}
+    <form method="post" action="{% url 'pcs:pcs_catalog_promote_current' %}" class="d-inline ms-3">
+      {% csrf_token %}
+      <input type="hidden" name="name" value="{{ offer.name }}">
+      <button type="submit" class="btn btn-sm btn-success"
+              onclick="return confirm('Make {{ offer.name }} current? {{ offer.note }}');">
+        Make {{ offer.name }} current</button>
+    </form>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-success ms-3" disabled
+            title="{{ offer.note }} — operator action; sign in to use">Make {{ offer.name }} current</button>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if rucio_detected and rucio_detected.0.version != rucio_current_name and active_lifecycle == 'current' %}
+    {# Current tab and current is stale: selector to switch. #}
+    <div class="border rounded p-2 mb-3 small bg-light">
+      <div class="mb-1 text-muted">
+        Detected newer 26.x release in JLab Rucio
+        (PCS current: <strong>{{ rucio_current_name }}</strong>):
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+      {% for r in rucio_detected %}
+        <span>{{ r.version }} <span class="text-muted">({{ r.count }})</span>
+          {% if r.version != rucio_current_name %}
+            {% if user.is_authenticated %}
+            <form method="post" action="{% url 'pcs:pcs_catalog_set_current' %}" class="d-inline">
+              {% csrf_token %}
+              <input type="hidden" name="name" value="{{ r.version }}">
+              <button type="submit" class="btn btn-sm btn-success py-0 px-2 ms-1"
+                      title="Rename PCS current campaign to {{ r.version }} and pull its Rucio snapshot in one click"
+                      onclick="return confirm('Switch PCS current to {{ r.version }} and refresh snapshot?');">Make current</button>
+            </form>
+            {% else %}
+            <button type="button" class="btn btn-sm btn-success py-0 px-2 ms-1" disabled
+                    title="Rename PCS current campaign to {{ r.version }} and pull its Rucio snapshot — operator action; sign in to use">Make current</button>
+            {% endif %}
+          {% else %}
+            <span class="badge bg-success">current</span>
+          {% endif %}
+        </span>
+      {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  <div id="pcs-rucio-timeline" class="mb-2"></div>
+
+  {% if catalog_view == 'progress' %}
+  <div class="small text-muted mb-3 d-flex align-items-center gap-2 flex-wrap">
+    <span>
+    {% if progress_generated_at %}
+      Updated <span class="pcs-live-age" data-updated-at="{{ progress_generated_at }}">{{ progress_generated_at|fmt_ago }}</span> ({{ progress_generated_at|fmt_dt }}).
+    {% else %}
+      Not updated yet.
+    {% endif %}
+    </span>
+    {% if user.is_authenticated and not is_tunnel %}
+    <form method="post" action="{% url 'pcs:pcs_catalog_progress_refresh' %}" class="d-inline" id="progress-refresh-form">
+      {% csrf_token %}
+      <button type="submit" id="progress-refresh-btn" class="btn btn-sm btn-primary py-0 px-2"
+              title="Refresh progress">
+        Refresh
+      </button>
+    </form>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-primary py-0 px-2" disabled
+            title="Refresh progress — operator action; sign in on pandaserver02">Refresh</button>
+    {% endif %}
+    <span id="pcs-refresh-status" class="pcs-refresh-status" role="status" aria-live="polite"></span>
+  </div>
+  {% endif %}
+
+  {% if catalog_view != 'progress' %}
+  <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap">
+    <span>
+      {% if task_list_cache_rendered_at %}
+        Updated <span class="pcs-live-age" data-updated-at="{{ task_list_cache_rendered_at }}">{{ task_list_cache_rendered_at|fmt_ago }}</span> ({{ task_list_cache_rendered_at|fmt_dt }}).
+      {% else %}
+        Not updated yet.
+      {% endif %}
+    </span>
+    {% if user.is_authenticated and not is_tunnel %}
+    <form method="post" action="{% url 'pcs:pcs_catalog_cache_refresh' %}"
+          class="d-inline pcs-refresh-form"
+          data-refresh-button="Refreshing..."
+          data-refresh-message="Refreshing.">
+      {% csrf_token %}
+      <input type="hidden" name="view" value="catalog">
+      <button type="submit" class="btn btn-sm btn-primary py-0 px-2"
+              title="Refresh table">
+        Refresh
+      </button>
+    </form>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-primary py-0 px-2" disabled
+            title="Refresh table — operator action; sign in on pandaserver02">Refresh</button>
+    {% endif %}
+    <span id="pcs-refresh-status" class="pcs-refresh-status" role="status" aria-live="polite"></span>
+  </div>
+  {% endif %}
+
+  {% if catalog_timing_rows %}
+  <details class="pcs-build-timing small text-muted mb-3">
+    <summary>
+      Server build timing: {{ catalog_timing_total_ms }} ms before final page template render.
+    </summary>
+    <table class="table table-sm table-borderless mt-2 mb-1">
+      <tbody>
+        {% for row in catalog_timing_rows %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td class="pcs-time">{% if row.ms_display %}{{ row.ms_display }}{% endif %}</td>
+          <td>{{ row.detail }}</td>
+        </tr>
+        {% endfor %}
+        <tr id="pcs-browser-timing">
+          <td>browser navigation</td>
+          <td class="pcs-time"></td>
+          <td>measuring load timing...</td>
+        </tr>
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+
+  {% if rucio_unmatched %}
+  <details class="mb-3 small">
+    <summary class="text-muted">
+      <strong style="color:#dc3545">&#9888; {{ rucio_unmatched|length }} unmatched Rucio output{{ rucio_unmatched|length|pluralize }}</strong>
+      for campaign {{ rucio_unmatched_campaign }} (no request in this table matched these DIDs)
+    </summary>
+    <ul class="mt-2 mb-0" style="font-family:monospace; font-size:0.85em;">
+    {% for u in rucio_unmatched %}
+      <li>{{ u.did }} &middot; {{ u.files }} files &middot; {{ u.bytes|filesizeformat }}{% if u.incomplete %} <span style="color:#dc3545">(incomplete)</span>{% endif %}</li>
+    {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% if evgen_rucio_unmatched %}
+  <details class="mb-3 small">
+    <summary class="text-muted">
+      <strong style="color:#dc3545">&#9888; {{ evgen_rucio_unmatched|length }} EVGEN dataset{{ evgen_rucio_unmatched|length|pluralize }} in Rucio unclaimed by any request</strong>
+      {% if evgen_rucio_checked_at %}<span class="text-muted">(as of {{ evgen_rucio_checked_at }})</span>{% endif %}
+    </summary>
+    <ul class="mt-2 mb-0" style="font-family:monospace; font-size:0.85em;">
+    {% for u in evgen_rucio_unmatched %}
+      <li>{{ u.did }} &middot; {{ u.files }} files &middot; {{ u.bytes|filesizeformat }}</li>
+    {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% if task_list_html %}
+    {{ task_list_html|safe }}
+  {% else %}
+    {% include "pcs/_task_list_filter.html" %}
+  {% endif %}
+</div>
+
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+(function() {
+  function ageLabel(updatedAt) {
+    const ms = Date.parse(updatedAt || '');
+    if (!Number.isFinite(ms)) return '';
+    const seconds = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + ' min ago';
+    const hours = Math.floor(minutes / 60);
+    if (hours < 48) return hours + ' h ago';
+    return Math.floor(hours / 24) + ' d ago';
+  }
+  function refreshAges() {
+    document.querySelectorAll('.pcs-live-age[data-updated-at]').forEach(el => {
+      const label = ageLabel(el.dataset.updatedAt);
+      if (label) el.textContent = label;
+    });
+  }
+  refreshAges();
+  setInterval(refreshAges, 30000);
+  window.addEventListener('pageshow', refreshAges);
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) refreshAges();
+  });
+})();
+
+(function() {
+  const statusEl = document.getElementById('pcs-refresh-status');
+  document.querySelectorAll('form.pcs-refresh-form').forEach(form => {
+    form.addEventListener('submit', function() {
+      const btn = form.querySelector('button[type="submit"]');
+      if (btn) {
+        btn.disabled = true;
+        btn.dataset.originalText = btn.textContent.trim();
+        btn.textContent = form.dataset.refreshButton || 'Refreshing...';
+      }
+      if (statusEl) {
+        statusEl.textContent = form.dataset.refreshMessage || 'Refresh started.';
+        statusEl.classList.add('is-active');
+      }
+    });
+  });
+})();
+
+(function() {
+  const row = document.getElementById('pcs-browser-timing');
+  if (!row || !window.performance) return;
+  window.addEventListener('load', function() {
+    const nav = performance.getEntriesByType
+      ? performance.getEntriesByType('navigation')[0]
+      : null;
+    const cells = row.querySelectorAll('td');
+    if (!cells.length) return;
+    if (nav) {
+      const total = Math.round(nav.loadEventEnd - nav.startTime);
+      const response = Math.round(nav.responseEnd - nav.requestStart);
+      const dom = Math.round(nav.domContentLoadedEventEnd - nav.responseEnd);
+      cells[1].textContent = total + ' ms';
+      cells[2].textContent = 'response ' + response + ' ms; DOM after response ' + dom
+        + ' ms; transfer ' + (nav.transferSize || 0) + ' bytes';
+      return;
+    }
+    if (performance.timing) {
+      const t = performance.timing;
+      const total = t.loadEventEnd - t.navigationStart;
+      cells[1].textContent = total + ' ms';
+      cells[2].textContent = 'legacy browser timing';
+    }
+  });
+})();
+
+(function() {
+  const data = {{ rucio_timeline_json|safe }};
+  const el = document.getElementById('pcs-rucio-timeline');
+  if (!el) return;
+  if (!data || !data.dates || !data.dates.length) {
+    el.innerHTML = '<div class="text-muted small">No Rucio arrivals timeline available — '
+      + 'click <em>Update from Rucio</em> to populate the snapshot.</div>';
+    return;
+  }
+  function lastValue(stage, key) {
+    const arr = (stage || {})[key] || [];
+    return arr.length ? arr[arr.length - 1] : 0;
+  }
+  const plotSignature = [
+    data.campaign_name || '',
+    data.dates[0] || '',
+    data.dates[data.dates.length - 1] || '',
+    data.dates.length,
+    lastValue(data.simu, 'cum_datasets'),
+    lastValue(data.simu, 'cum_files'),
+    lastValue(data.simu, 'cum_bytes'),
+    lastValue(data.reco, 'cum_datasets'),
+    lastValue(data.reco, 'cum_files'),
+    lastValue(data.reco, 'cum_bytes'),
+  ].join('|');
+  const plotCacheKey = 'epicprod-rucio-timeline:v2:' + (data.campaign_name || 'current');
+  try {
+    const cached = JSON.parse(localStorage.getItem(plotCacheKey) || 'null');
+    if (cached && cached.signature === plotSignature && cached.image) {
+      el.innerHTML = '<img alt="Rucio arrivals plot" src="' + cached.image + '" '
+        + 'style="display:block;max-width:100%;height:auto;">';
+      return;
+    }
+  } catch (_) {}
+  const TB = 1e12;
+  const RUCIO_PLOT_HEIGHT = 420;
+  const SIMU_COLOR = '#1f77b4';
+  const RECO_COLOR = '#ff7f0e';
+  const tb = bytes => bytes.map(b => b / TB);
+  function hasData(stage) {
+    return ['cum_datasets', 'cum_files', 'cum_bytes'].some(k =>
+      (stage[k] || []).some(v => Number(v) > 0));
+  }
+  // Three stacked panes, sharing the time axis at the bottom:
+  //   top    = cumulative datasets
+  //   middle = cumulative files (registered)
+  //   bottom = cumulative output (TB)
+  // One legend entry per stage; toggling hides all three panes for
+  // that stage via legendgroup.
+  const traces = [];
+  if (hasData(data.simu || {})) {
+    traces.push(
+      {x: data.dates, y: data.simu.cum_datasets, name: 'Simu',
+       legendgroup: 'simu', mode: 'lines', line: {shape: 'hv', color: SIMU_COLOR},
+       xaxis: 'x', yaxis: 'y'},
+      {x: data.dates, y: data.simu.cum_files, legendgroup: 'simu',
+       mode: 'lines', line: {shape: 'hv', color: SIMU_COLOR},
+       xaxis: 'x', yaxis: 'y2', showlegend: false},
+      {x: data.dates, y: tb(data.simu.cum_bytes), legendgroup: 'simu',
+       mode: 'lines', line: {shape: 'hv', color: SIMU_COLOR},
+       xaxis: 'x', yaxis: 'y3', showlegend: false}
+    );
+  }
+  if (hasData(data.reco || {})) {
+    traces.push(
+      {x: data.dates, y: data.reco.cum_datasets, name: 'Reco',
+       legendgroup: 'reco', mode: 'lines', line: {shape: 'hv', color: RECO_COLOR},
+       xaxis: 'x', yaxis: 'y', showlegend: false},
+      {x: data.dates, y: data.reco.cum_files, legendgroup: 'reco',
+       mode: 'lines', line: {shape: 'hv', color: RECO_COLOR},
+       xaxis: 'x', yaxis: 'y2', showlegend: false},
+      {x: data.dates, y: tb(data.reco.cum_bytes), legendgroup: 'reco',
+       mode: 'lines', line: {shape: 'hv', color: RECO_COLOR},
+       xaxis: 'x', yaxis: 'y3', showlegend: false}
+    );
+  }
+  const layout = {
+    title: {text: 'Rucio arrivals — ' + (data.campaign_name || ''),
+            font: {size: 14}},
+    margin: {l: 70, r: 30, t: 36, b: 34},
+    height: RUCIO_PLOT_HEIGHT,
+    // Single shared x axis, anchored to the bottom pane's y3.
+    xaxis:  {anchor: 'y3', type: 'date'},
+    yaxis:  {domain: [0.70, 1.00], title: 'datasets', rangemode: 'tozero'},
+    yaxis2: {domain: [0.36, 0.66], title: 'files (registered)',
+             rangemode: 'tozero'},
+    yaxis3: {domain: [0.00, 0.32], title: 'output (TB)', rangemode: 'tozero'},
+    legend: {orientation: 'h', y: -0.12},
+    showlegend: true,
+  };
+  Plotly.newPlot(el, traces, layout, {displayModeBar: false, responsive: true}).then(() => {
+    try {
+      Plotly.toImage(el, {format: 'png', width: Math.max(900, el.clientWidth || 900), height: RUCIO_PLOT_HEIGHT})
+        .then(image => {
+          try {
+            localStorage.setItem(plotCacheKey, JSON.stringify({
+              signature: plotSignature,
+              image: image,
+              savedAt: Date.now(),
+            }));
+          } catch (_) {}
+        });
+    } catch (_) {}
+  });
+})();
+
+(function() {
+  const currentView = '{{ catalog_view }}';
+  const peerView = currentView === 'progress' ? 'catalog' : 'progress';
+  const peerLabels = {
+    catalog: {newTab: 'Catalog view in new tab', existing: 'Catalog view tab', loading: 'Catalog loading...'},
+    progress: {newTab: 'Progress view in new tab', existing: 'Progress view tab', loading: 'Progress loading...'},
+  };
+  const tabNames = {
+    catalog: 'epicprod-catalog-view',
+    progress: 'epicprod-progress-view',
+  };
+  const storagePrefix = 'epicprod-catalog-view-open:';
+  const freshMs = 12 * 60 * 60 * 1000;
+
+  if (!window.name || window.name.startsWith('epicprod-')) {
+    window.name = tabNames[currentView];
+  }
+
+  function stampOpen(view) {
+    try {
+      localStorage.setItem(storagePrefix + view, String(Date.now()));
+    } catch (_) {}
+  }
+
+  function recentlyOpen(view) {
+    try {
+      const ts = parseInt(localStorage.getItem(storagePrefix + view) || '0', 10);
+      return ts && (Date.now() - ts) < freshMs;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function peerLink(view) {
+    return document.querySelector(`a[data-catalog-view="${view}"]`);
+  }
+
+  function markPeerSeen(view) {
+    const a = peerLink(view);
+    if (!a || a.classList.contains('active')) return;
+    a.textContent = peerLabels[view].existing;
+    a.dataset.peerSeen = '1';
+  }
+
+  stampOpen(currentView);
+  if (recentlyOpen(peerView)) {
+    markPeerSeen(peerView);
+  }
+  window.addEventListener('storage', ev => {
+    if (ev.key === storagePrefix + peerView && recentlyOpen(peerView)) {
+      markPeerSeen(peerView);
+    }
+  });
+
+  let channel = null;
+  if ('BroadcastChannel' in window) {
+    channel = new BroadcastChannel('epicprod-catalog-view-tabs');
+    channel.onmessage = ev => {
+      const msg = ev.data || {};
+      if (msg.type === 'hello' && msg.view && msg.view !== currentView) {
+        markPeerSeen(msg.view);
+        channel.postMessage({type: 'present', view: currentView});
+      } else if (msg.type === 'present' && msg.view && msg.view !== currentView) {
+        markPeerSeen(msg.view);
+      } else if (msg.type === 'who') {
+        channel.postMessage({type: 'present', view: currentView});
+      }
+    };
+    channel.postMessage({type: 'hello', view: currentView});
+    channel.postMessage({type: 'who'});
+  }
+
+  document.querySelectorAll('a[data-catalog-view]').forEach(a => {
+    if (!a.classList.contains('active') && !a.dataset.peerSeen) {
+      const view = a.dataset.catalogView;
+      a.textContent = peerLabels[view].newTab;
+    }
+    a.addEventListener('click', e => {
+      if (a.classList.contains('active')) return;
+      e.preventDefault();
+      const view = a.dataset.catalogView;
+      stampOpen(currentView);
+      const peerIsKnown = a.dataset.peerSeen === '1' || recentlyOpen(view);
+      if (!peerIsKnown) {
+        a.classList.add('active', 'disabled');
+        a.textContent = peerLabels[view].loading;
+        window.open(a.href, tabNames[view] || a.dataset.tabName || '_blank');
+        return;
+      }
+      const targetName = tabNames[view] || a.dataset.tabName || '_blank';
+      const peer = window.open('', targetName);
+      if (!peer) {
+        window.open(a.href, targetName);
+        return;
+      }
+      try {
+        if (peer.location.href === 'about:blank') {
+          peer.location.href = a.href;
+        } else {
+          peer.focus();
+        }
+      } catch (_) {
+        peer.focus();
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "monitor_app/_datatable_base.html" %}
+
+{% block extra_filters %}
+<div class="card mb-3">
+    <div class="card-body">
+        <a href="{% url 'pcs:prod_task_compose' %}" class="btn btn-primary btn-sm">Compose Task</a>
+        <a href="{% url 'pcs:prod_tasks_list' %}" class="btn btn-secondary btn-sm ms-2">Refresh</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block default_order %}[[5, 'desc']]{% endblock %}

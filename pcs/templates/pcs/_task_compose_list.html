@@ -1,0 +1,544 @@
+{% load swf_fmt %}
+{% comment %}
+Compose view left-panel task list — concise sibling of pcs/_task_list_filter.html.
+
+Same task data, same filter semantics, but tuned for the narrow compose view
+column: card-style rows (one task = 2-3 compact lines) and a collapsed
+filter bar where facet titles render in a wrapping row and clicking a
+title reveals only that facet's values.
+
+Context expected:
+  tasks            : iterable of ProdTask, select_related(campaign, dataset, prod_config)
+  focused_task_id  : int | None — task to highlight on initial render
+  focused_campaign : Campaign | None — campaign of the focused task (caption)
+  filters          : dict — initial filter values (usually empty for compose view)
+
+Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
+(detail = { taskId }); the compose page listens and drives the right pane.
+{% endcomment %}
+
+<style>
+.pcs-cl-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.pcs-cl-caption { font-size: .9rem; color: #6c757d; margin-bottom: .35rem; }
+.pcs-cl-caption strong { color: #212529; }
+
+/* Filter bar — titles wrap; values only show for the chosen facet. */
+.pcs-cl-bar { border: 1px solid #dee2e6; border-radius: .375rem;
+              padding: .4rem .5rem; margin-bottom: .5rem; background: #fbfbfc; }
+.pcs-cl-bar-search { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .35rem; }
+.pcs-cl-bar-search input { flex: 1; padding: .25rem .5rem; font-size: .9rem;
+                            border: 1px solid #ced4da; border-radius: .25rem;
+                            min-width: 12rem; }
+.pcs-cl-bar-search .btn { white-space: nowrap; }
+.pcs-cl-bar-titles { display: flex; flex-wrap: wrap; gap: .25rem .35rem;
+                     font-size: .9rem; line-height: 1.5; }
+.pcs-cl-facet { display: inline-flex; align-items: baseline; gap: .25rem;
+                padding: .05rem .45rem; border: 1px solid #e3e6ea;
+                border-radius: 1rem; background: #fff; cursor: pointer;
+                user-select: none; }
+.pcs-cl-facet:hover { background: #eef3fb; border-color: #cfdcef; }
+.pcs-cl-facet.open  { background: #e7f1ff; border-color: #b6d4ff; color: #0d4d92; }
+.pcs-cl-facet.has-active { font-weight: 600; color: #0d4d92; border-color: #b6d4ff; }
+.pcs-cl-facet .facet-label { white-space: nowrap; }
+.pcs-cl-facet .facet-chosen { color: #0d4d92; font-weight: 600; }
+.pcs-cl-facet .facet-count  { color: #6c757d; font-weight: 400; font-size: .82rem; }
+
+.pcs-cl-values { display: none; margin-top: .4rem; padding-top: .35rem;
+                 border-top: 1px dashed #dee2e6; font-size: .88rem;
+                 line-height: 1.55; }
+.pcs-cl-values.open { display: block; }
+.pcs-cl-values .v-link { display: inline-block; margin-right: .55rem;
+                          color: #0d6efd; text-decoration: none; }
+.pcs-cl-values .v-link:hover { text-decoration: underline; }
+.pcs-cl-values .v-link.active { font-weight: 700; color: #0a3d80;
+                                  text-decoration: underline; }
+.pcs-cl-values .v-link .facet-count { color: #adb5bd; }
+.pcs-cl-values .v-toggle { color: #495057; border: 1px solid #ced4da;
+                            border-radius: .25rem; padding: 0 .4rem;
+                            margin-right: .35rem; text-decoration: none; }
+.pcs-cl-values .v-toggle.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+.pcs-cl-values.all {
+  max-height: none;
+  overflow: visible;
+  border: 2px solid #b6d4ff;
+  border-radius: .375rem;
+  background: #f4f9ff;
+  padding: .45rem .55rem;
+}
+.pcs-cl-values .facet-section { padding: .25rem 0 .35rem; border-bottom: 1px solid #eef0f2; }
+.pcs-cl-values .facet-section:last-child { border-bottom: 0; padding-bottom: 0; }
+.pcs-cl-values .facet-section-title { margin-bottom: .1rem; color: #495057; font-weight: 600; font-size: .82rem; }
+.pcs-cl-values .facet-section-values { overflow-wrap: anywhere; }
+
+/* Card rows. */
+.pcs-cl-list { flex: 1; overflow-y: auto; min-height: 0; border: 1px solid #dee2e6;
+                border-radius: .375rem; background: #fff; }
+.pcs-cl-row { display: block; padding: .45rem .55rem .5rem;
+               border-bottom: 1px solid #f0f0f0; cursor: pointer;
+               border-left: 4px solid transparent; }
+.pcs-cl-row:hover    { background: #f8f9fa; }
+.pcs-cl-row.selected { background: #e7f1ff; border-left-color: #0d6efd; }
+.pcs-cl-row .r1, .pcs-cl-row .r2, .pcs-cl-row .r3 {
+  display: flex; align-items: baseline; gap: .35rem; min-width: 0;
+}
+.pcs-cl-row .r1 { font-size: .95rem; flex-wrap: nowrap; }
+.pcs-cl-row .r2 { font-size: .85rem; color: #495057; margin-top: .1rem; flex-wrap: wrap; }
+.pcs-cl-row .r3 { font-size: .82rem; color: #6c757d; margin-top: .1rem; flex-wrap: wrap; }
+.pcs-cl-row .ds-path   { flex: 1 1 0; min-width: 0; overflow: hidden;
+                          text-overflow: ellipsis; white-space: nowrap; }
+.pcs-cl-row .req-chip  { padding: .02rem .4rem; border-radius: .25rem;
+                          font-size: .78rem;
+                          background: #e9ecef; color: #212529; }
+.pcs-cl-row .req-chip.pwg-edt            { background: #d0e8ff; }
+.pcs-cl-row .req-chip.pwg-inclusive      { background: #d4f4d4; }
+.pcs-cl-row .req-chip.pwg-jets_hf        { background: #fff0cc; }
+.pcs-cl-row .req-chip.pwg-semi_inclusive { background: #f4d4f4; }
+.pcs-cl-row .req-chip.pwg-tracking       { background: #ffe0cc; }
+.pcs-cl-row .nev      { color: #212529; white-space: nowrap; }
+.pcs-cl-row .prio     { color: #495057; white-space: nowrap; }
+.pcs-cl-row .sample   { font-style: italic; word-break: break-word; overflow-wrap: anywhere; flex: 1 1 auto; }
+.pcs-cl-row .flag-pill { display: inline-block; padding: 0 .35rem;
+                          border-radius: .65rem; font-size: .72rem;
+                          color: #fff; line-height: 1.5; }
+.pcs-cl-row .pill-bg   { background: #6c757d; }
+.pcs-cl-row .pill-new  { background: #198754; }
+.pcs-cl-row .pill-ptdr { background: #0d6efd; }
+.pcs-cl-row .pill-es   { background: #6f42c1; }
+.pcs-cl-row .pill-other{ background: #fd7e14; }
+.pcs-cl-row .pill-noout{ background: #adb5bd; }
+.pcs-cl-row .out-simu  { color: #1f77b4; }
+.pcs-cl-row .out-reco  { color: #b06000; }
+.pcs-cl-row .out-incomplete { color: #dc3545; }
+.pcs-cl-row .status-badge { padding: .02rem .4rem; border-radius: .2rem;
+                              font-size: .76rem; white-space: nowrap; }
+
+.pcs-cl-foot { margin-top: .35rem; font-size: .82rem; color: #6c757d;
+                display: flex; justify-content: space-between; align-items: center; }
+.pcs-cl-empty { padding: 1rem; color: #6c757d; font-style: italic; text-align: center; }
+</style>
+
+<div class="pcs-cl-wrap" id="pcs-cl-root">
+  {% if focused_campaign %}
+  <div class="pcs-cl-caption">
+    Scoped to campaign <strong>{{ focused_campaign.name }}</strong>
+    — <a href="{% url 'pcs:pcs_catalog' %}?lifecycle={{ focused_campaign.lifecycle }}">full catalog&nbsp;&rsaquo;</a>
+  </div>
+  {% endif %}
+
+  <div class="pcs-cl-bar" id="pcs-cl-bar">
+    <div class="pcs-cl-bar-search">
+      <input type="search" id="pcs-cl-q" value="{{ filters.q|default:'' }}"
+             placeholder="Search dataset / description…">
+      <button type="button" class="btn btn-sm btn-secondary" id="pcs-cl-clear">Clear</button>
+      <button type="button" class="btn btn-sm btn-secondary" id="pcs-cl-expand">Expand all</button>
+      <button type="button" class="btn btn-sm btn-secondary" id="pcs-cl-collapse">Collapse all</button>
+      <div class="btn-group btn-group-sm ms-2" id="pcs-cl-sort" role="group" aria-label="Sort">
+        <button type="button" class="btn btn-outline-secondary active" data-sort="recent" style="font-size:.68rem; padding:.03rem .3rem; min-width:3.4rem;">Recent</button>
+        <button type="button" class="btn btn-outline-secondary" data-sort="alpha" style="font-size:.68rem; padding:.03rem .3rem; min-width:3.4rem;">A&ndash;Z</button>
+      </div>
+    </div>
+
+    <div class="pcs-cl-bar-titles" id="pcs-cl-titles">
+      {% comment %}Facet titles. Each opens a values panel below; (n) = count under the
+         current filter state. data-active = currently chosen value (string
+         facets) or '1' (boolean facets).{% endcomment %}
+      <span class="pcs-cl-facet" data-facet="status"          ><span class="facet-label">Status</span>          <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="requestor"       ><span class="facet-label">Requestor</span>       <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="evgen"           ><span class="facet-label">Sample</span>          <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="submission_path" ><span class="facet-label">Submission</span>      <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="priority"        ><span class="facet-label">Priority</span>        <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="nevents"         ><span class="facet-label">Nev (M)</span>         <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="detector"        ><span class="facet-label">Geom</span>            <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="beam"            ><span class="facet-label">Beam</span>            <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="physics"         ><span class="facet-label">Physics</span>         <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="q2"              ><span class="facet-label">Q&sup2;</span>          <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="species"         ><span class="facet-label">Species</span>         <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="energy"          ><span class="facet-label">Energy</span>          <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="__output"        ><span class="facet-label">Output</span>          <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="__flags"         ><span class="facet-label">Flags</span>           <span class="facet-chosen"></span><span class="facet-count"></span></span>
+    </div>
+
+    <div class="pcs-cl-values" id="pcs-cl-values"></div>
+  </div>
+
+  <div class="pcs-cl-list" id="pcs-cl-list" tabindex="0">
+    {% for t in tasks %}
+    {% with task_name=t.composed_name source_path=t.dataset.source_location|default:'' gen_ver=t.overrides.csv_import.gen_version evgen=t.overrides.csv_import.evgen|default:'' bg=t.overrides.csv_import.background nev=t.overrides.csv_import.nevents path_filters=t.overrides.csv_import.filters %}
+    <div class="pcs-cl-row{% if focused_task_id == t.pk %} selected{% endif %}"
+         data-task-id="{{ t.pk }}"
+         data-status="{{ t.status|default:'' }}"
+         data-requestor="{{ t.requestor|default:'' }}"
+         data-submission-path="{% if t.prod_config.data.submission_path == 'panda' %}panda{% else %}condor{% endif %}"
+         data-pre-tdr="{% if t.pre_tdr_use %}1{% else %}0{% endif %}"
+         data-early-science="{% if t.early_science_use %}1{% else %}0{% endif %}"
+         data-other="{% if t.other_use %}1{% else %}0{% endif %}"
+         data-new-request="{% if t.new_request %}1{% else %}0{% endif %}"
+         data-background="{% if bg|lower == 'yes' %}1{% else %}0{% endif %}"
+         data-priority="{{ t.priority|default:'' }}"
+         data-nevents="{{ nev|millions }}"
+         data-evgen="{{ evgen }}"
+         data-detector="{{ path_filters.detector|default:'' }}"
+         data-beam="{{ path_filters.beam|default:'' }}"
+         data-physics="{{ path_filters.physics|default:'' }}"
+         data-q2="{{ path_filters.q2|default:'' }}"
+         data-species="{{ path_filters.species|default:'' }}"
+         data-energy="{{ path_filters.energy|default:'' }}"
+         data-has-output="{% if t.has_output %}1{% else %}0{% endif %}"
+         data-no-output="{% if t.has_output %}0{% else %}1{% endif %}"
+         data-incomplete-output="{% if t.output_incomplete %}1{% else %}0{% endif %}"
+         data-has-simu="{% if 'FULL' in t.output_stages %}1{% else %}0{% endif %}"
+         data-has-reco="{% if 'RECO' in t.output_stages %}1{% else %}0{% endif %}"
+         data-search="{{ task_name|lower }} {{ source_path|lower }} {{ t.description|default:''|lower }}"
+         data-name="{{ task_name|lower }}"
+         data-modified="{{ t.updated_at|date:'c' }}">
+
+      <div class="r1">
+        <span class="ds-path" title="{{ task_name }}">{{ task_name }}</span>
+        <span class="status-badge {{ t.status|state_class }}" title="{{ t.status|state_title }}">{{ t.status|state_label }}</span>
+        {% if t.dataset and t.dataset.propagation != 'continue' %}<span class="status-badge" style="background:#ffe9b0;color:#6b4e00" title="Campaign propagation: {{ t.dataset.propagation }}">{{ t.dataset.propagation }}</span>{% endif %}
+        {% if t.dataset.metadata.proposal %}<span class="status-badge ai-attr" title="Pending AI proposal: {{ t.dataset.metadata.proposal.prev_state }} &rarr; {{ t.dataset.metadata.proposal.payload.state }}">AI</span>{% endif %}
+        {% if t.priority %}<span class="prio">P={{ t.priority }}</span>{% endif %}
+      </div>
+
+      <div class="r2">
+        <span class="req-chip{% if t.requestor %} pwg-{{ t.requestor|lower }}{% endif %}">{{ t.requestor|default:"—" }}</span>
+        {% if gen_ver %}<span class="sample">{{ gen_ver }}</span>{% endif %}
+        {% if nev %}<span class="nev">{{ nev|millions }} M</span>{% endif %}
+        {% if bg|lower == 'yes' %}<span class="flag-pill pill-bg" title="Background-study dataset">Bg</span>{% endif %}
+        {% if t.new_request %}<span class="flag-pill pill-new" title="New request">New</span>{% endif %}
+        {% if t.pre_tdr_use %}<span class="flag-pill pill-ptdr" title="Possible pre-TDR use">pTDR</span>{% endif %}
+        {% if t.early_science_use %}<span class="flag-pill pill-es" title="Early-science use">ES</span>{% endif %}
+        {% if t.other_use %}<span class="flag-pill pill-other" title="Other use">Other</span>{% endif %}
+      </div>
+
+      {% if t.has_output or t.campaign %}
+      <div class="r3">
+        {% if t.has_output %}
+          {% for o in t.outputs %}
+            <span class="{% if o.stage == 'FULL' %}out-simu{% else %}out-reco{% endif %}">
+              {% if o.stage == 'FULL' %}Simu{% else %}Reco{% endif %}
+              {{ o.file_count }}f/{{ o.bytes|filesizeformat }}{% if not o.complete %} <span class="out-incomplete">!</span>{% endif %}
+            </span>
+          {% endfor %}
+        {% else %}
+          <span class="flag-pill pill-noout">no output</span>
+        {% endif %}
+        {% if t.campaign %}<span style="margin-left:auto;">{{ t.campaign.name }}</span>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endwith %}
+    {% empty %}
+    <div class="pcs-cl-empty">No tasks in this campaign.</div>
+    {% endfor %}
+  </div>
+
+  <div class="pcs-cl-foot">
+    <span><span id="pcs-cl-visible">{{ tasks|length }}</span> of {{ tasks|length }} task{{ tasks|length|pluralize }}</span>
+    <span id="pcs-cl-filter-summary"></span>
+  </div>
+</div>
+
+<script>
+(function() {
+  /* Live faceted filter for the compose view list. Same semantics as the
+     full-page catalog partial (pcs/_task_list_filter.html), but the value
+     chips are only rendered when the operator clicks a facet title — the
+     compose view column is too narrow to display every facet's values at once. */
+
+  const STR  = ['status','requestor','evgen','submission_path','priority','nevents',
+                'detector','beam','physics','q2','species','energy'];
+  const DS   = { status:'status', requestor:'requestor', evgen:'evgen',
+                 submission_path:'submissionPath',
+                 priority:'priority', nevents:'nevents',
+                 detector:'detector', beam:'beam', physics:'physics',
+                 q2:'q2', species:'species', energy:'energy' };
+  // Output and flag boolean facets are split into two groups so the user
+  // sees them under separate "Output" and "Flags" facet titles.
+  const OUT_BOOL  = ['has_output','no_output','incomplete_output','has_simu','has_reco'];
+  const FLAG_BOOL = ['new_request','pre_tdr_use','early_science_use','other_use','background'];
+  const BD = { new_request:'newRequest', pre_tdr_use:'preTdr',
+               early_science_use:'earlyScience', other_use:'other',
+               background:'background',
+               has_output:'hasOutput', no_output:'noOutput',
+               incomplete_output:'incompleteOutput',
+               has_simu:'hasSimu', has_reco:'hasReco' };
+  const BOOL_LABEL = {
+    new_request: 'New', pre_tdr_use: 'pTDR', early_science_use: 'early',
+    other_use: 'Other', background: 'Backgd',
+    has_output: 'with output', no_output: 'no output',
+    incomplete_output: 'incomplete', has_simu: 'Simu', has_reco: 'Reco',
+  };
+
+  const root      = document.getElementById('pcs-cl-root');
+  if (!root) return;
+  const listEl    = root.querySelector('#pcs-cl-list');
+  const rows      = Array.from(listEl.querySelectorAll('.pcs-cl-row'));
+  const qInput    = root.querySelector('#pcs-cl-q');
+  const clearBtn  = root.querySelector('#pcs-cl-clear');
+  const expandBtn = root.querySelector('#pcs-cl-expand');
+  const collapseBtn = root.querySelector('#pcs-cl-collapse');
+  const titlesEl  = root.querySelector('#pcs-cl-titles');
+  const valuesEl  = root.querySelector('#pcs-cl-values');
+  const visibleEl = root.querySelector('#pcs-cl-visible');
+  const summaryEl = root.querySelector('#pcs-cl-filter-summary');
+
+  const initial = new URL(window.location.href).searchParams;
+  const state = { q: (initial.get('q') || '').trim() };
+  STR.forEach(k => state[k] = initial.get(k) || '');
+  [...OUT_BOOL, ...FLAG_BOOL].forEach(k => state[k] = initial.get(k) === '1');
+
+  let openFacet = null; // facet key with values panel open ('' or null = closed)
+  let expandAll = false;
+
+  function energyMeV(s) {
+    const m = String(s).match(/^([\d.]+)\s*(eV|keV|MeV|GeV|TeV)$/i);
+    if (!m) return null;
+    const mult = {ev:1e-6, kev:1e-3, mev:1, gev:1e3, tev:1e6}[m[2].toLowerCase()];
+    return parseFloat(m[1]) * mult;
+  }
+
+  function rowMatches(tr, skip) {
+    if (skip !== 'q' && state.q) {
+      if (!(tr.dataset.search || '').includes(state.q.toLowerCase())) return false;
+    }
+    for (const k of STR) {
+      if (k === skip) continue;
+      if (state[k] && tr.dataset[DS[k]] !== state[k]) return false;
+    }
+    for (const k of [...OUT_BOOL, ...FLAG_BOOL]) {
+      if (k === skip) continue;
+      if (state[k] && tr.dataset[BD[k]] !== '1') return false;
+    }
+    return true;
+  }
+
+  function escapeAttr(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function strCountsFor(k) {
+    const counts = {};
+    for (const tr of rows) {
+      if (rowMatches(tr, k)) {
+        const v = tr.dataset[DS[k]];
+        if (v) counts[v] = (counts[v] || 0) + 1;
+      }
+    }
+    return Object.entries(counts).sort((a,b) => {
+      if (k === 'energy') {
+        const ea = energyMeV(a[0]), eb = energyMeV(b[0]);
+        if (ea !== null && eb !== null) return ea - eb;
+      }
+      const na = parseFloat(a[0]), nb = parseFloat(b[0]);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a[0].localeCompare(b[0]);
+    });
+  }
+
+  function boolCountFor(k) {
+    let n = 0;
+    for (const tr of rows) {
+      if (rowMatches(tr, k) && tr.dataset[BD[k]] === '1') n++;
+    }
+    return n;
+  }
+
+  function renderTitles() {
+    const facets = titlesEl.querySelectorAll('.pcs-cl-facet');
+    facets.forEach(f => {
+      const k = f.dataset.facet;
+      const chosenEl = f.querySelector('.facet-chosen');
+      const countEl  = f.querySelector('.facet-count');
+      f.classList.toggle('open', expandAll || openFacet === k);
+
+      if (STR.includes(k)) {
+        const counts = strCountsFor(k);
+        const activeVal = state[k];
+        chosenEl.textContent = activeVal ? `: ${activeVal}` : '';
+        countEl.textContent  = activeVal ? '' : ` (${counts.length})`;
+        f.classList.toggle('has-active', !!activeVal);
+      } else if (k === '__output') {
+        const onCount = OUT_BOOL.filter(b => state[b]).length;
+        chosenEl.textContent = onCount ? `: ${OUT_BOOL.filter(b => state[b]).map(b => BOOL_LABEL[b]).join(', ')}` : '';
+        countEl.textContent  = '';
+        f.classList.toggle('has-active', onCount > 0);
+      } else if (k === '__flags') {
+        const onCount = FLAG_BOOL.filter(b => state[b]).length;
+        chosenEl.textContent = onCount ? `: ${FLAG_BOOL.filter(b => state[b]).map(b => BOOL_LABEL[b]).join(', ')}` : '';
+        countEl.textContent  = '';
+        f.classList.toggle('has-active', onCount > 0);
+      }
+    });
+  }
+
+  function renderValuesPanel() {
+    valuesEl.classList.toggle('all', expandAll);
+    if (!openFacet && !expandAll) {
+      valuesEl.classList.remove('open');
+      valuesEl.innerHTML = '';
+      return;
+    }
+    const facetLabel = (facet) => {
+      const el = titlesEl.querySelector(`.pcs-cl-facet[data-facet="${facet}"] .facet-label`);
+      return el ? el.textContent.trim() : facet;
+    };
+    const renderFacetValues = (facet) => {
+      let html = '';
+      if (STR.includes(facet)) {
+        const k = facet;
+        const entries = strCountsFor(k);
+        const allActive = state[k] === '' ? ' active' : '';
+        html = `<a href="#" class="v-link${allActive}" data-vlink-facet="${k}" data-vlink-value="">All</a>`;
+        html += entries.map(([v, n]) => {
+          const active = state[k] === v ? ' active' : '';
+          return `<a href="#" class="v-link${active}" data-vlink-facet="${k}" data-vlink-value="${escapeAttr(v)}">${escapeAttr(v)} <span class="facet-count">(${n})</span></a>`;
+        }).join('');
+      } else if (facet === '__output') {
+        html = OUT_BOOL.map(k => {
+          const n = boolCountFor(k);
+          const active = state[k] ? ' active' : '';
+          return `<a href="#" class="v-toggle${active}" data-vtoggle="${k}">${BOOL_LABEL[k]} (${n})</a>`;
+        }).join('');
+      } else if (facet === '__flags') {
+        html = FLAG_BOOL.map(k => {
+          const n = boolCountFor(k);
+          const active = state[k] ? ' active' : '';
+          return `<a href="#" class="v-toggle${active}" data-vtoggle="${k}">${BOOL_LABEL[k]} (${n})</a>`;
+        }).join('');
+      }
+      return html;
+    };
+    const html = expandAll
+      ? [...STR, '__output', '__flags'].map(facet => `
+          <div class="facet-section">
+            <div class="facet-section-title">${escapeAttr(facetLabel(facet))}</div>
+            <div class="facet-section-values">${renderFacetValues(facet)}</div>
+          </div>`).join('')
+      : renderFacetValues(openFacet);
+    valuesEl.innerHTML = html;
+    valuesEl.classList.add('open');
+  }
+
+  function applyFilters() {
+    let visible = 0;
+    for (const tr of rows) {
+      const show = rowMatches(tr, null);
+      tr.style.display = show ? '' : 'none';
+      if (show) visible++;
+    }
+    if (visibleEl) visibleEl.textContent = visible;
+    renderTitles();
+    renderValuesPanel();
+    summaryEl.textContent = summaryText();
+    syncUrl();
+  }
+
+  function summaryText() {
+    const parts = [];
+    if (state.q) parts.push(`q:"${state.q}"`);
+    for (const k of STR) if (state[k]) parts.push(`${k}=${state[k]}`);
+    const bools = [...OUT_BOOL, ...FLAG_BOOL].filter(b => state[b]).map(b => BOOL_LABEL[b]);
+    if (bools.length) parts.push(bools.join('+'));
+    return parts.length ? `Filter: ${parts.join(' · ')}` : '';
+  }
+
+  function syncUrl() {
+    // Only touch filter keys — the compose page owns tab/selected/mode.
+    const u = new URL(window.location.href);
+    const p = u.searchParams;
+    ['q', ...STR, ...OUT_BOOL, ...FLAG_BOOL].forEach(k => p.delete(k));
+    if (state.q) p.set('q', state.q);
+    for (const k of STR) if (state[k]) p.set(k, state[k]);
+    for (const k of [...OUT_BOOL, ...FLAG_BOOL]) if (state[k]) p.set(k, '1');
+    history.replaceState(null, '', u.toString());
+  }
+
+  // ── Wire titles row ──
+  titlesEl.addEventListener('click', e => {
+    const f = e.target.closest('.pcs-cl-facet');
+    if (!f) return;
+    const k = f.dataset.facet;
+    expandAll = false;
+    openFacet = (openFacet === k) ? null : k;
+    renderTitles();
+    renderValuesPanel();
+  });
+
+  // ── Wire values panel (single delegate) ──
+  valuesEl.addEventListener('click', e => {
+    const link = e.target.closest('.v-link');
+    if (link) {
+      e.preventDefault();
+      const k = link.dataset.vlinkFacet;
+      const v = link.dataset.vlinkValue || '';
+      state[k] = (state[k] === v && v !== '') ? '' : v;
+      applyFilters();
+      return;
+    }
+    const tog = e.target.closest('.v-toggle');
+    if (tog) {
+      e.preventDefault();
+      state[tog.dataset.vtoggle] = !state[tog.dataset.vtoggle];
+      applyFilters();
+    }
+  });
+
+  // ── Search input ──
+  qInput.addEventListener('input', () => { state.q = qInput.value.trim(); applyFilters(); });
+
+  // ── Clear ──
+  clearBtn.addEventListener('click', () => {
+    state.q = ''; qInput.value = '';
+    STR.forEach(k => state[k] = '');
+    [...OUT_BOOL, ...FLAG_BOOL].forEach(k => state[k] = false);
+    openFacet = null;
+    expandAll = false;
+    applyFilters();
+  });
+
+  // ── Values panel expansion ──
+  expandBtn.addEventListener('click', () => {
+    expandAll = true;
+    openFacet = null;
+    renderTitles();
+    renderValuesPanel();
+  });
+  collapseBtn.addEventListener('click', () => {
+    expandAll = false;
+    openFacet = null;
+    renderTitles();
+    renderValuesPanel();
+  });
+
+  // ── Row click → custom event for the compose page ──
+  listEl.addEventListener('click', e => {
+    const row = e.target.closest('.pcs-cl-row');
+    if (!row) return;
+    rows.forEach(r => r.classList.toggle('selected', r === row));
+    const taskId = parseInt(row.dataset.taskId, 10);
+    root.dispatchEvent(new CustomEvent('pcs-cl:select', {
+      bubbles: true, detail: { taskId },
+    }));
+  });
+
+  // Sort (Recent = modified desc, A–Z = dataset name).
+  let sortMode = 'recent';
+  function sortRows() {
+    const sorted = rows.slice().sort((a, b) => sortMode === 'alpha'
+      ? (a.dataset.name || '').localeCompare(b.dataset.name || '', undefined, {numeric: true})
+      : (b.dataset.modified || '').localeCompare(a.dataset.modified || ''));
+    sorted.forEach(r => listEl.appendChild(r));
+  }
+  root.querySelectorAll('#pcs-cl-sort button').forEach(b => b.addEventListener('click', () => {
+    sortMode = b.dataset.sort;
+    root.querySelectorAll('#pcs-cl-sort button').forEach(x => x.classList.toggle('active', x === b));
+    sortRows();
+  }));
+
+  // Initial render.
+  sortRows();
+  applyFilters();
+})();
+</script>

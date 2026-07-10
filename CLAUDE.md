@@ -26,4 +26,19 @@ implicit fetch at deploy time.
 (common-lib / swf-monitor-as-platform / swf-epicprod) and each
 component's consumption interface. The epicprod documentation set
 (`EPICPROD_*.md`, PCS docs) migrates here from `swf-monitor/docs/`;
-until a doc has moved, the swf-monitor copy is authoritative.
+until a doc has moved, the swf-monitor copy is authoritative. Moved so
+far: `PCS.md`, `PCS_DATASET_REQUEST_WORKFLOW.md`,
+`PCS_BACKGROUND_TAG.md` (2026-07-10, with the `pcs` application).
+Every moved doc leaves a permanent stub at its old path.
+
+## The pcs application
+
+The `pcs` Django application lives here (top-level `pcs/` package) and
+is installed into the swf-monitor runtime — import path, app label,
+and `pcs_*` tables are unchanged from its swf-monitor origin, so
+migration history and cross-app imports are undisturbed. Its git
+history before 2026-07-10 remains in swf-monitor. Iterate with
+`sudo /data/wenauseic/github/swf-monitor/deploy-lightweight-ui-mcp.sh --ui`
+(syncs this tree onto the deployed venv's installed copy); migrations
+and management-command changes require the full swf-monitor deploy,
+which freezes this package non-editable into the deployed venv.

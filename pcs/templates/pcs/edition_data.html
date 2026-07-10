@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% load swf_fmt %}
+
+{% block title %}Rucio Data per Campaign - epicprod{% endblock %}
+
+{% block content %}
+<style>
+.pcs-ed-table { width: auto; max-width: 100%; }
+.pcs-ed-table td, .pcs-ed-table th { vertical-align: top; }
+.pcs-ed-rse-bad { color: #dc3545; }
+</style>
+
+<div class="container-fluid mt-3">
+  <div class="d-flex align-items-center mb-1">
+    <h1 style="font-size: 1.4rem" class="mb-0">Rucio data per campaign</h1>
+    <a href="{% url 'pcs:pcs_physics_configs' %}" class="btn btn-sm btn-secondary"
+       style="margin-left: 13em"
+       title="back to the physics-configuration view">&larr; Physics configurations</a>
+  </div>
+  <div class="mb-1"><strong>{{ pc_spec }}</strong>
+    {% for rid in requests %}
+    <a href="{% url 'pcs:questionnaire_detail' rid %}" class="ms-1"
+       title="matched production request #{{ rid }}">Request #{{ rid }}</a>
+    {% endfor %}
+  </div>
+  {% for pr in prod_requests %}
+  <div class="mb-1 small">
+    <strong class="text-muted">Request req#{{ pr.pk }}:</strong>
+    {{ pr.requestor|default:"—" }}{% if pr.nevents %} &middot; {{ pr.nevents }} events{% endif %}{% if pr.priority %} &middot; priority {{ pr.priority }}{% endif %}{% if pr.description %} &middot; {{ pr.description }}{% endif %}{% if pr.source_url %} &middot; <a href="{{ pr.source_url }}" target="_blank" rel="noopener">issue</a>{% endif %}
+  </div>
+  {% endfor %}
+  <div class="text-muted mb-1">{{ name }}</div>
+  <div class="mb-2">
+    <span style="color:#1e7e34">{{ total_files }} files &middot; {{ total_bytes|filesizeformat }}</span>
+    across {{ items|length }} dataset{{ items|length|pluralize }}
+  </div>
+
+  <table class="table table-sm table-striped pcs-ed-table">
+    <thead>
+      <tr><th>Campaign</th><th>Stage</th><th>Rucio dataset</th>
+          <th>Files</th><th>Size</th><th>Replicas</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for i in items %}
+      <tr>
+        <td>{{ i.campaign }}</td>
+        <td>{{ i.stage|default:"—" }}</td>
+        <td>
+          {% if i.did %}
+          <a href="{% url 'pcs:rucio_did_detail' i.did_scope i.did_name %}"
+             title="live Rucio detail — metadata, replicas, files">{{ i.did }}</a>
+          {% else %}
+          <span class="text-muted" title="PCS-internal name; no Rucio DID recorded">{{ i.internal }}</span>
+          {% endif %}
+        </td>
+        <td>{{ i.files }}</td>
+        <td>{{ i.size|filesizeformat }}</td>
+        <td class="small">
+          {% for r in i.rses %}
+          <div>{{ r.name }}: {{ r.files }}/{{ r.total }}{% if r.status != 'complete' %} <span class="pcs-ed-rse-bad">({{ r.status }})</span>{% endif %}</div>
+          {% empty %}<span class="text-muted">—</span>{% endfor %}
+        </td>
+        <td class="small"><a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ i.name|urlencode }}"
+             title="{{ i.name }}">task</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="small text-muted" style="max-width: 62em">
+    The Rucio dataset link opens the live detail page — Rucio metadata,
+    per-RSE replicas, and the file listing — read directly from JLab Rucio.
+  </p>
+</div>
+{% endblock %}

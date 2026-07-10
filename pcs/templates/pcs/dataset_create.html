@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Dataset - PCS{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="container-fluid mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'pcs:pcs_hub' %}">PCS</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'pcs:datasets_compose' %}">Datasets</a></li>
+            <li class="breadcrumb-item active">Create</li>
+        </ol>
+    </nav>
+
+    <h2>Create Dataset</h2>
+    <p>Compose a dataset from locked tags. Block 1 is created automatically. Only locked tags appear in the dropdowns.</p>
+
+    <div class="mt-3" style="max-width: 700px;" id="dataset-form">
+
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <label for="id_scope" class="form-label"><strong>Scope</strong></label>
+                <input type="text" name="scope" id="id_scope" class="form-control" value="{{ form.scope.value|default:"group.EIC" }}">
+            </div>
+            <div class="col-md-4">
+                <label for="id_detector_version" class="form-label"><strong>Detector Version</strong></label>
+                <input type="text" name="detector_version" id="id_detector_version" class="form-control" value="{{ form.detector_version.value|default:"" }}" placeholder="e.g. 26.02.0">
+            </div>
+            <div class="col-md-4">
+                <label for="id_detector_config" class="form-label"><strong>Detector Config</strong></label>
+                <input type="text" name="detector_config" id="id_detector_config" class="form-control" value="{{ form.detector_config.value|default:"" }}" placeholder="e.g. epic_craterlake">
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label for="id_physics_tag" class="form-label"><strong>Physics Tag</strong></label>
+                <select name="physics_tag" id="id_physics_tag" class="form-select" onchange="updatePreview()">
+                    <option value="">Select physics tag</option>
+                    {% for tag in form.physics_tag.field.queryset %}
+                    <option value="{{ tag.pk }}" data-label="{{ tag.tag_label }}" {% if form.physics_tag.value|stringformat:"s" == tag.pk|stringformat:"s" %}selected{% endif %}>{{ tag.tag_label }} — {{ tag.description|truncatewords:8 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="id_evgen_tag" class="form-label"><strong>EvGen Tag</strong></label>
+                <select name="evgen_tag" id="id_evgen_tag" class="form-select" onchange="updatePreview()">
+                    <option value="">Select evgen tag</option>
+                    {% for tag in form.evgen_tag.field.queryset %}
+                    <option value="{{ tag.pk }}" data-label="{{ tag.tag_label }}" {% if form.evgen_tag.value|stringformat:"s" == tag.pk|stringformat:"s" %}selected{% endif %}>{{ tag.tag_label }} — {{ tag.description|truncatewords:8 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label for="id_simu_tag" class="form-label"><strong>Simu Tag</strong></label>
+                <select name="simu_tag" id="id_simu_tag" class="form-select" onchange="updatePreview()">
+                    <option value="">Select simu tag</option>
+                    {% for tag in form.simu_tag.field.queryset %}
+                    <option value="{{ tag.pk }}" data-label="{{ tag.tag_label }}" {% if form.simu_tag.value|stringformat:"s" == tag.pk|stringformat:"s" %}selected{% endif %}>{{ tag.tag_label }} — {{ tag.description|truncatewords:8 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="id_reco_tag" class="form-label"><strong>Reco Tag</strong></label>
+                <select name="reco_tag" id="id_reco_tag" class="form-select" onchange="updatePreview()">
+                    <option value="">Select reco tag</option>
+                    {% for tag in form.reco_tag.field.queryset %}
+                    <option value="{{ tag.pk }}" data-label="{{ tag.tag_label }}" {% if form.reco_tag.value|stringformat:"s" == tag.pk|stringformat:"s" %}selected{% endif %}>{{ tag.tag_label }} — {{ tag.description|truncatewords:8 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label"><strong>Dataset Name Preview</strong></label>
+            <div id="name-preview" class="form-control bg-light" style="font-family: monospace; min-height: 38px;"></div>
+            <small class="text-muted">Max 255 characters. <span id="char-count"></span></small>
+        </div>
+
+        <div class="mb-3">
+            <label for="id_description" class="form-label"><strong>Description</strong></label>
+            <textarea name="description" id="id_description" class="form-control" rows="3">{{ form.description.value|default:"" }}</textarea>
+        </div>
+
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="id_external_evgen" onchange="toggleExternalFields()">
+            <label class="form-check-label" for="id_external_evgen"><strong>External EVGEN input</strong></label>
+        </div>
+
+        <div id="external-fields" style="display:none;">
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label for="id_source_kind" class="form-label"><strong>Source Kind</strong></label>
+                    <select id="id_source_kind" class="form-select">
+                        <option value="csv_manifest">CSV manifest</option>
+                        <option value="path">Path</option>
+                        <option value="url">URL</option>
+                        <option value="rucio_did">Rucio DID</option>
+                        <option value="file_list">File list</option>
+                    </select>
+                </div>
+                <div class="col-md-8">
+                    <label for="id_source_location" class="form-label"><strong>Source Location</strong></label>
+                    <input type="text" id="id_source_location" class="form-control" placeholder="CSV path, URL, DID, or file-list location">
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-danger" id="form-errors" style="display:none;"></div>
+
+        <button type="button" class="btn btn-primary btn-sm" onclick="createDataset()">Create Dataset</button>
+        <a href="{% url 'pcs:datasets_compose' %}" class="btn btn-secondary btn-sm">Cancel</a>
+    </div>
+</div>
+
+<script>
+function getSelectedLabel(selectId) {
+    const sel = document.getElementById(selectId);
+    const opt = sel.options[sel.selectedIndex];
+    return opt && opt.dataset.label ? opt.dataset.label : '?';
+}
+
+function updatePreview() {
+    const scope = document.getElementById('id_scope').value || '?';
+    const version = document.getElementById('id_detector_version').value || '?';
+    const config = document.getElementById('id_detector_config').value || '?';
+    const p = getSelectedLabel('id_physics_tag');
+    const e = getSelectedLabel('id_evgen_tag');
+    const s = getSelectedLabel('id_simu_tag');
+    const r = getSelectedLabel('id_reco_tag');
+    const name = `${scope}.${version}.${config}.${p}.${e}.${s}.${r}`;
+    document.getElementById('name-preview').textContent = name;
+    const len = name.length;
+    const counter = document.getElementById('char-count');
+    counter.textContent = `${len}/255`;
+    counter.style.color = len > 255 ? 'red' : 'inherit';
+}
+
+document.getElementById('id_scope').addEventListener('input', updatePreview);
+document.getElementById('id_detector_version').addEventListener('input', updatePreview);
+document.getElementById('id_detector_config').addEventListener('input', updatePreview);
+updatePreview();
+
+function toggleExternalFields() {
+    const visible = document.getElementById('id_external_evgen').checked;
+    document.getElementById('external-fields').style.display = visible ? 'block' : 'none';
+}
+
+function buildMetadata() {
+    if (!document.getElementById('id_external_evgen').checked) return null;
+    return {
+        stage: 'evgen',
+        source: {
+            kind: document.getElementById('id_source_kind').value,
+            location: document.getElementById('id_source_location').value,
+        },
+    };
+}
+
+async function createDataset() {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const headers = {'Content-Type': 'application/json'};
+    if (csrfToken) headers['X-CSRFToken'] = csrfToken;
+    const payload = {
+        scope: document.getElementById('id_scope').value,
+        detector_version: document.getElementById('id_detector_version').value,
+        detector_config: document.getElementById('id_detector_config').value,
+        physics_tag: document.getElementById('id_physics_tag').value,
+        evgen_tag: document.getElementById('id_evgen_tag').value,
+        simu_tag: document.getElementById('id_simu_tag').value,
+        reco_tag: document.getElementById('id_reco_tag').value,
+        description: document.getElementById('id_description').value,
+    };
+    const metadata = buildMetadata();
+    if (metadata) payload.metadata = metadata;
+    const errDiv = document.getElementById('form-errors');
+    errDiv.style.display = 'none';
+    const resp = await fetch('/swf-monitor/pcs/api/datasets/', {
+        method: 'POST', headers, body: JSON.stringify(payload)
+    });
+    if (resp.ok) {
+        const data = await resp.json();
+        window.location.href = `{% url 'pcs:datasets_compose' %}?selected=${encodeURIComponent(data.dataset_name || data.name || data.id)}`;
+    } else {
+        const errors = await resp.json();
+        let html = '';
+        for (const [field, msgs] of Object.entries(errors)) {
+            html += `<p><strong>${field}:</strong> ${Array.isArray(msgs) ? msgs.join(', ') : msgs}</p>`;
+        }
+        errDiv.innerHTML = html;
+        errDiv.style.display = 'block';
+    }
+}
+</script>
+{% endblock %}

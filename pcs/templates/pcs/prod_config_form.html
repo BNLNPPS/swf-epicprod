@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if editing %}Edit {{ config.name }}{% else %}Create Prod Config{% endif %} - PCS{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="container-fluid mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'pcs:pcs_hub' %}">PCS</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'pcs:prod_configs_compose' %}">Prod Configs</a></li>
+            {% if editing %}
+            <li class="breadcrumb-item"><a href="{% url 'pcs:prod_config_detail' pk=config.pk %}">{{ config.name }}</a></li>
+            <li class="breadcrumb-item active">Edit</li>
+            {% else %}
+            <li class="breadcrumb-item active">Create</li>
+            {% endif %}
+        </ol>
+    </nav>
+
+    <h2>{% if editing %}Edit {{ config.name }}{% else %}Create Production Config{% endif %}</h2>
+    <p>{% if editing %}Modify this production configuration template.{% else %}Define a reusable production submission template.{% endif %}</p>
+
+    <div id="config-form" class="mt-3" style="max-width: 900px;">
+        <div class="alert alert-danger" id="form-errors" style="display:none;"></div>
+
+        <fieldset class="mb-4">
+            <legend class="h5">General</legend>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label for="id_name" class="form-label"><strong>Name</strong></label>
+                    {{ form.name }}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label"><strong>Created By</strong></label>
+                    <input type="text" class="form-control" value="{{ username }}" readonly disabled>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="id_description" class="form-label"><strong>Description</strong></label>
+                {{ form.description }}
+            </div>
+        </fieldset>
+
+        <fieldset class="mb-4">
+            <legend class="h5">Background Mixing</legend>
+            <div class="row mb-3">
+                <div class="col-md-2">
+                    <div class="form-check mt-4">
+                        {{ form.bg_mixing }} <label for="id_bg_mixing" class="form-check-label">Enabled</label>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label for="id_bg_cross_section" class="form-label">Cross Section</label>
+                    {{ form.bg_cross_section }}
+                </div>
+                <div class="col-md-6">
+                    <label for="id_bg_evtgen_file" class="form-label">EvtGen File</label>
+                    {{ form.bg_evtgen_file }}
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="mb-4">
+            <legend class="h5">Output Control</legend>
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <div class="form-check">
+                        {{ form.copy_reco }} <label for="id_copy_reco" class="form-check-label">Copy Reco</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-check">
+                        {{ form.copy_full }} <label for="id_copy_full" class="form-check-label">Copy Full</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-check">
+                        {{ form.copy_log }} <label for="id_copy_log" class="form-check-label">Copy Log</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-check">
+                        {{ form.use_rucio }} <label for="id_use_rucio" class="form-check-label">Use Rucio</label>
+                    </div>
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="mb-4">
+            <legend class="h5">Software Stack</legend>
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label for="id_jug_xl_tag" class="form-label">JUG_XL Tag</label>
+                    {{ form.jug_xl_tag }}
+                </div>
+                <div class="col-md-8">
+                    <label for="id_container_image" class="form-label">Container Image</label>
+                    {{ form.container_image }}
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="mb-4">
+            <legend class="h5">Resource Targets</legend>
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label for="id_target_hours_per_job" class="form-label">Target Hours/Job</label>
+                    {{ form.target_hours_per_job }}
+                </div>
+                <div class="col-md-4">
+                    <label for="id_events_per_job" class="form-label">Events/Job</label>
+                    <input type="number" id="id_events_per_job" name="events_per_job" class="form-control" min="1" value="{{ config.data.events_per_job|default:'' }}">
+                </div>
+                <div class="col-md-4">
+                    <label for="id_events_per_task" class="form-label">Events/Task</label>
+                    {{ form.events_per_task }}
+                </div>
+            </div>
+            <div class="form-check form-switch">
+                <input type="checkbox" id="id_scout_mode" name="scout_mode" class="form-check-input">
+                <label for="id_scout_mode" class="form-check-label">Scout Mode</label>
+            </div>
+        </fieldset>
+
+        <fieldset class="mb-4">
+            <legend class="h5">Condor Template</legend>
+            <div class="mb-3">
+                {{ form.condor_template }}
+            </div>
+        </fieldset>
+
+        <fieldset class="mb-4">
+            <legend class="h5">PanDA Overrides</legend>
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <label for="id_panda_site" class="form-label">Site</label>
+                    {{ form.panda_site }}
+                </div>
+                <div class="col-md-3">
+                    <label for="id_panda_queue" class="form-label">Queue</label>
+                    {{ form.panda_queue }}
+                </div>
+                <div class="col-md-3">
+                    <label for="id_panda_working_group" class="form-label">Working Group</label>
+                    {{ form.panda_working_group }}
+                </div>
+                <div class="col-md-3">
+                    <label for="id_panda_resource_type" class="form-label">Resource Type</label>
+                    {{ form.panda_resource_type }}
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="mb-4">
+            <legend class="h5">Rucio Overrides</legend>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label for="id_rucio_rse" class="form-label">RSE</label>
+                    {{ form.rucio_rse }}
+                </div>
+                <div class="col-md-6">
+                    <label for="id_log_rse" class="form-label">Log RSE</label>
+                    <input type="text" id="id_log_rse" name="log_rse" class="form-control" value="{{ config.data.log_rse|default:'' }}">
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="id_rucio_replication_rules" class="form-label">Replication Rules (JSON)</label>
+                {{ form.rucio_replication_rules }}
+            </div>
+        </fieldset>
+
+        <fieldset class="mb-4">
+            <legend class="h5">Submission Parameters</legend>
+            <div class="mb-3">
+                <label for="id_data" class="form-label">Additional Parameters (JSON)</label>
+                {{ form.data }}
+                <small class="text-muted">Keys: workflow_mode, transformation, processing_type, prod_source_label, vo, n_jobs, events_per_file, files_per_job, corecount, no_build, skip_scout, exec_command, scope. Use the Scout Mode toggle for skip_scout.</small>
+            </div>
+        </fieldset>
+
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveConfig()">{% if editing %}Save Changes{% else %}Create Config{% endif %}</button>
+        {% if editing %}
+        <a href="{% url 'pcs:prod_config_detail' pk=config.pk %}" class="btn btn-secondary btn-sm">Cancel</a>
+        {% else %}
+        <a href="{% url 'pcs:prod_configs_compose' %}" class="btn btn-secondary btn-sm">Cancel</a>
+        {% endif %}
+    </div>
+</div>
+<script>
+const preferredScoutMode = {{ prod_config_scout_mode_json|default:"false"|safe }};
+
+function initializeScoutModeToggle() {
+    const editing = {{ editing|yesno:"true,false" }};
+    const scoutMode = document.getElementById('id_scout_mode');
+    const dataEl = document.getElementById('id_data');
+    if (!scoutMode) return;
+    if (!editing) {
+        scoutMode.checked = Boolean(preferredScoutMode);
+        return;
+    }
+    let data = {};
+    try { data = dataEl && dataEl.value ? JSON.parse(dataEl.value) : {}; } catch(_) { data = {}; }
+    scoutMode.checked = Object.prototype.hasOwnProperty.call(data, 'skip_scout')
+        ? !Boolean(data.skip_scout)
+        : false;
+}
+initializeScoutModeToggle();
+
+async function saveConfig() {
+    const editing = {{ editing|yesno:"true,false" }};
+    const pk = {{ config.pk|default:"null" }};
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const headers = {'Content-Type': 'application/json'};
+    if (csrfToken) headers['X-CSRFToken'] = csrfToken;
+    const payload = {};
+    document.querySelectorAll('#config-form input[id^="id_"], #config-form textarea[id^="id_"], #config-form select[id^="id_"]').forEach(el => {
+        const name = el.id.replace('id_', '');
+        if (el.type === 'checkbox') payload[name] = el.checked;
+        else if (el.type === 'number') payload[name] = el.value ? Number(el.value) : null;
+        else if (name === 'data' || name === 'rucio_replication_rules') {
+            try { payload[name] = el.value ? JSON.parse(el.value) : null; }
+            catch(e) { payload[name] = el.value; }
+        }
+        else payload[name] = el.value;
+    });
+    if (payload.data && (typeof payload.data !== 'object' || Array.isArray(payload.data))) {
+        const errDiv = document.getElementById('form-errors');
+        errDiv.innerHTML = '<p><strong>data:</strong> Additional Parameters must be valid JSON object syntax.</p>';
+        errDiv.style.display = 'block';
+        return;
+    }
+    const data = payload.data || {};
+    if (payload.events_per_job) data.events_per_job = payload.events_per_job;
+    else delete data.events_per_job;
+    if (payload.log_rse) data.log_rse = payload.log_rse;
+    else delete data.log_rse;
+    data.skip_scout = !Boolean(payload.scout_mode);
+    delete payload.events_per_job;
+    delete payload.log_rse;
+    delete payload.scout_mode;
+    payload.data = Object.keys(data).length ? data : {};
+    const url = editing ? `/swf-monitor/pcs/api/prod-configs/${pk}/` : '/swf-monitor/pcs/api/prod-configs/';
+    const method = editing ? 'PATCH' : 'POST';
+    const errDiv = document.getElementById('form-errors');
+    errDiv.style.display = 'none';
+    const resp = await fetch(url, {method, headers, body: JSON.stringify(payload)});
+    if (resp.ok) {
+        const data = await resp.json();
+        window.location.href = `{% url 'pcs:prod_configs_compose' %}?selected=${encodeURIComponent(data.name || data.id)}`;
+    } else {
+        const errors = await resp.json();
+        let html = '';
+        for (const [field, msgs] of Object.entries(errors)) {
+            html += `<p><strong>${field}:</strong> ${Array.isArray(msgs) ? msgs.join(', ') : msgs}</p>`;
+        }
+        errDiv.innerHTML = html;
+        errDiv.style.display = 'block';
+    }
+}
+</script>
+{% endblock %}

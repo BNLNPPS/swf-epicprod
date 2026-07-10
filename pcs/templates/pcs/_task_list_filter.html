@@ -1,0 +1,1019 @@
+{% load swf_fmt %}
+<style>
+/* Reuse DataTables sort indicator look on our hand-sorted table by
+   adopting DT's class names; the loaded dataTables.bootstrap5 CSS
+   styles .sorting / .sorting_asc / .sorting_desc with up/down arrows. */
+/* Muted green for the Last lifecycle tab — same family as Current's
+   success-green but lighter and desaturated so it reads as related
+   but distinct, and clearly not "more current" than Current. */
+.btn-outline-last-green {
+  color: #5fa380; border-color: #5fa380;
+}
+.btn-outline-last-green:hover,
+.btn-outline-last-green.active {
+  background-color: #5fa380; color: #fff; border-color: #5fa380;
+}
+
+.pcs-tlf-list th.pcs-sort { cursor: pointer; user-select: none; }
+.pcs-tlf-list td.pcs-tlf-cell-dataset { min-width: 24em; }
+
+/* Propagation disposition badges — shown only when not 'continue'. */
+.pcs-prop-badge { font-weight: 600; padding: 0 .45em; border-radius: .5em; margin-left: .4em; }
+.pcs-prop-hold  { background-color: #ffe9b0; color: #6b4e00; }
+.pcs-prop-final { background-color: #f6c8c8; color: #7a1212; }
+
+/* Gentle required-comment prompt inside the propagation panel. */
+.pcs-prop-need { background-color: #fff7e0; border: 1px solid #e6c96a; color: #5b4a12;
+                 border-radius: .5em; padding: .4em .7em; font-weight: 600; }
+.pcs-prop-comment-attn { border-color: #e6c96a !important;
+                         box-shadow: 0 0 0 .2rem rgba(230, 201, 106, .35); }
+
+/* Requestor row colors, mirroring eic/epic-prod default_datasets.md. */
+.pwg-edt            { background-color: #d0e8ff !important; }
+.pwg-inclusive      { background-color: #d4f4d4 !important; }
+.pwg-jets_hf        { background-color: #fff0cc !important; }
+.pwg-semi_inclusive { background-color: #f4d4f4 !important; }
+.pwg-tracking       { background-color: #ffe0cc !important; }
+
+/* Filter bar — mirrors the convention used by panda jobs / logs / tasks
+   (see monitor_app/_datatable_dynamic_base.html): horizontal lists of
+   value (count) links with bold+underline indicating the active value. */
+.pcs-tlf-bar .filter-link {
+  margin-right: 0.6em;
+  color: #007bff;
+  text-decoration: none;
+}
+.pcs-tlf-bar .filter-link:hover { text-decoration: underline; }
+.pcs-tlf-bar .filter-link.filter-active {
+  font-weight: bold;
+  text-decoration: underline;
+  color: #0056b3;
+}
+.pcs-tlf-bar-row { margin-bottom: 0.4em; }
+.pcs-tlf-label   { font-weight: 600; margin-right: 0.5em; }
+
+/* Dataset cell takes all leftover horizontal space and wraps long URLs
+   so the table fits the viewport without horizontal scroll. */
+.pcs-tlf-list td.pcs-tlf-cell-dataset {
+  width: 48%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.pcs-tlf-list.pcs-tlf-progress {
+  width: auto !important;
+  max-width: 100%;
+}
+.pcs-tlf-list.pcs-tlf-progress td.pcs-tlf-cell-dataset {
+  width: auto;
+  min-width: 24em;
+  max-width: 42em;
+}
+.pcs-tlf-progress-output td {
+  border-top: 0;
+  background: #fbfcfd;
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+}
+.pcs-tlf-progress-output td.pcs-tlf-cell-dataset {
+  padding-left: 1.25rem;
+}
+.pcs-tlf-list tr.pcs-tlf-desc td { word-break: break-word; overflow-wrap: anywhere; }
+.pcs-progress-track {
+  width: 12em;
+  max-width: 100%;
+  height: 0.55rem;
+  background: #e9ecef;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.pcs-progress-fill {
+  height: 100%;
+  background: #0d6efd;
+}
+</style>
+{% comment %}
+Shared task-list + filter partial used by:
+  - full-page Catalog (show_tabs=True, columns_mode='full')
+  - Compose-view left panel (show_tabs=False, columns_mode='compose-view')
+
+Context expected:
+  tasks                 : iterable of ProdTask, select_related as appropriate
+  show_tabs             : bool — render lifecycle tab bar
+  columns_mode          : 'full' | 'compose-view' — drives column visibility
+  active_lifecycle      : 'past'|'present'|'future' — active tab
+  lifecycle_tabs        : list of {key,label,color,campaigns} — three lifecycle slots
+  active_campaigns      : list of Campaign in the active lifecycle slot
+  focused_campaign      : Campaign | None — compose-view: campaign of focused task
+  focused_task_id       : int | None — compose-view: highlight this row
+  filters               : dict — current filter values for echo
+  requestor_options     : iterable of str — pulldown choices
+  status_choices        : iterable of (key, label) tuples
+  form_action           : URL the form GETs to
+{% endcomment %}
+
+{% if focused_campaign %}
+<div class="pcs-tlf-context mb-2">
+  <span class="text-muted small">Campaign:</span>
+  <strong>{{ focused_campaign.name }}</strong>
+</div>
+{% endif %}
+
+<div id="pcs-tlf-bar" class="pcs-tlf-bar mb-2">
+  <div class="pcs-tlf-bar-row d-flex align-items-center gap-2">
+    <span class="pcs-tlf-label">Search:</span>
+    <input type="search" id="pcs-tlf-q" value="{{ filters.q|default:'' }}"
+           class="form-control form-control-sm" style="width:24em;"
+           placeholder="dataset / description…">
+    <button type="button" id="pcs-tlf-clear" class="btn btn-sm btn-secondary"
+            title="Clear all filters">Clear</button>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Status:</span>
+    <a href="#" data-filter="status" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-status-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Campaign propagation:</span>
+    <a href="#" data-filter="propagation" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-propagation-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Requestor:</span>
+    <a href="#" data-filter="requestor" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-requestor-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Sample:</span>
+    <a href="#" data-filter="evgen" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-evgen-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Submission:</span>
+    <a href="#" data-filter="submission_path" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-submission_path-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Priority:</span>
+    <a href="#" data-filter="priority" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-priority-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">N events (M):</span>
+    <a href="#" data-filter="nevents" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-nevents-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Geometry:</span>
+    <a href="#" data-filter="detector" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-detector-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Beam:</span>
+    <a href="#" data-filter="beam" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-beam-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Physics:</span>
+    <a href="#" data-filter="physics" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-physics-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Q&sup2;:</span>
+    <a href="#" data-filter="q2" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-q2-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Species:</span>
+    <a href="#" data-filter="species" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-species-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Energy:</span>
+    <a href="#" data-filter="energy" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-energy-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Output:</span>
+    <a href="#" data-toggle="has_output" class="filter-link">with output (<span data-count="has_output">0</span>)</a>
+    <a href="#" data-toggle="no_output" class="filter-link">no output (<span data-count="no_output">0</span>)</a>
+    <a href="#" data-toggle="incomplete_output" class="filter-link">incomplete (<span data-count="incomplete_output">0</span>)</a>
+    <a href="#" data-toggle="has_simu" class="filter-link">Simu (<span data-count="has_simu">0</span>)</a>
+    <a href="#" data-toggle="has_reco" class="filter-link">Reco (<span data-count="has_reco">0</span>)</a>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Rucio evgen input:</span>
+    <a href="#" data-toggle="has_input" class="filter-link">matched (<span data-count="has_input">0</span>)</a>
+    <a href="#" data-toggle="no_input" class="filter-link">unmatched (<span data-count="no_input">0</span>)</a>
+    <a href="#" data-toggle="incomplete_input" class="filter-link">incomplete (<span data-count="incomplete_input">0</span>)</a>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label ai-attr-text">AI:</span>
+    <a href="#" data-toggle="ai_proposed" class="filter-link ai-attr-text">proposed (<span data-count="ai_proposed">0</span>)</a>
+    <a href="#" data-toggle="ai_executed" class="filter-link ai-attr-text">executed (<span data-count="ai_executed">0</span>)</a>
+  </div>
+  <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Flags:</span>
+    <a href="#" data-toggle="new_request" class="filter-link">New (<span data-count="new_request">0</span>)</a>
+    <a href="#" data-toggle="pre_tdr_use" class="filter-link">pTDR (<span data-count="pre_tdr_use">0</span>)</a>
+    <a href="#" data-toggle="early_science_use" class="filter-link">early (<span data-count="early_science_use">0</span>)</a>
+    <a href="#" data-toggle="other_use" class="filter-link">Other (<span data-count="other_use">0</span>)</a>
+    <a href="#" data-toggle="background" class="filter-link">Backgd (<span data-count="background">0</span>)</a>
+  </div>
+</div>
+
+<div class="pcs-tlf-legend small text-muted mb-3 mt-2">
+  <strong>Legend (Flags):</strong>
+  <strong>New</strong>: new request &middot;
+  <strong>pTDR</strong>: possible pre-TDR use &middot;
+  <strong>early</strong>: early-science use &middot;
+  <strong>Other</strong>: other use (full text description when given) &middot;
+  <strong>Backgd</strong>: background-study dataset
+</div>
+
+<div class="dataTables_wrapper pcs-tlf-list-wrap table-responsive">
+  <table class="table table-sm pcs-tlf-list{% if catalog_view == 'progress' %} pcs-tlf-progress{% endif %} dataTable mb-1">
+    <thead>
+      <tr>
+        <th style="width:1.5em"><input type="checkbox" id="pcs-tlf-selectall" aria-label="Select all visible"></th>
+        <th data-sort="index" class="pcs-sort sorting">#</th>
+        <th data-sort="requestor" class="pcs-sort sorting">Requestor</th>
+        {% if catalog_view == 'progress' %}
+        <th data-sort="task_mod" data-default-dir="desc" class="pcs-sort sorting">Task mod</th>
+        <th data-sort="dataset" class="pcs-sort sorting">Datasets</th>
+        <th data-sort="jobs" class="pcs-sort sorting">Jobs</th>
+        <th data-sort="completion" data-default-dir="desc" class="pcs-sort sorting">Dataset fill</th>
+        <th data-sort="processing" data-default-dir="desc" class="pcs-sort sorting">Processing</th>
+        <th data-sort="failures" data-default-dir="desc" class="pcs-sort sorting">Failures</th>
+        <th data-sort="link" data-default-dir="desc" class="pcs-sort sorting">Link</th>
+        {% else %}
+        <th data-sort="dataset" class="pcs-sort sorting">Dataset</th>
+        <th data-sort="status" class="pcs-sort sorting">Status</th>
+        <th data-sort="nevents" class="pcs-sort sorting">Nev (M)</th>
+        <th data-sort="background" class="pcs-sort sorting">Backgd</th>
+        <th data-sort="new_request" class="pcs-sort sorting">New</th>
+        <th data-sort="pre_tdr_use" class="pcs-sort sorting">pTDR</th>
+        <th data-sort="early_science_use" class="pcs-sort sorting">early</th>
+        <th data-sort="priority" class="pcs-sort sorting">Priority</th>
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tasks %}
+      {% with ds_path=t.dataset.source_location|default:t.dataset.composed_name gen_ver=t.overrides.csv_import.gen_version evgen=t.overrides.csv_import.evgen|default:'' issue=t.overrides.csv_import.issue_url bg=t.overrides.csv_import.background nev=t.overrides.csv_import.nevents other_text=t.overrides.csv_import.other_use_text|default:'' path_filters=t.overrides.csv_import.filters %}
+      <tr class="pcs-tlf-row pcs-tlf-data{% if focused_task_id == t.pk %} table-active{% endif %}"
+          data-task-id="{{ t.pk }}"
+          data-status="{{ t.status|default:'' }}"
+          data-propagation="{{ t.dataset.propagation|default:'' }}"
+          data-ai-proposed="{% if t.dataset.metadata.proposal %}1{% else %}0{% endif %}"
+          data-ai-executed="{% if t.dataset.composed_name in ai_executed_names %}1{% else %}0{% endif %}"
+          data-requestor="{{ t.requestor|default:'' }}"
+          data-submission-path="{% if t.prod_config.data.submission_path == 'panda' %}panda{% else %}condor{% endif %}"
+          data-pre-tdr="{% if t.pre_tdr_use %}1{% else %}0{% endif %}"
+          data-early-science="{% if t.early_science_use %}1{% else %}0{% endif %}"
+          data-other="{% if t.other_use %}1{% else %}0{% endif %}"
+          data-new-request="{% if t.new_request %}1{% else %}0{% endif %}"
+          data-background="{% if bg|lower == 'yes' %}1{% else %}0{% endif %}"
+          data-priority="{{ t.priority|default:'' }}"
+          data-nevents="{{ nev|millions }}"
+          data-evgen="{{ evgen }}"
+          data-detector="{{ path_filters.detector|default:'' }}"
+          data-beam="{{ path_filters.beam|default:'' }}"
+          data-physics="{{ path_filters.physics|default:'' }}"
+          data-q2="{{ path_filters.q2|default:'' }}"
+          data-species="{{ path_filters.species|default:'' }}"
+          data-energy="{{ path_filters.energy|default:'' }}"
+          data-has-output="{% if t.has_output %}1{% else %}0{% endif %}"
+          data-no-output="{% if t.has_output %}0{% else %}1{% endif %}"
+          data-incomplete-output="{% if t.output_incomplete %}1{% else %}0{% endif %}"
+          data-has-simu="{% if 'FULL' in t.output_stages %}1{% else %}0{% endif %}"
+          data-has-reco="{% if 'RECO' in t.output_stages %}1{% else %}0{% endif %}"
+          data-has-input="{% if t.has_input %}1{% else %}0{% endif %}"
+          data-no-input="{% if t.dataset.stage == 'evgen' and not t.has_input %}1{% else %}0{% endif %}"
+          data-incomplete-input="{% if t.input_incomplete %}1{% else %}0{% endif %}"
+          {% if catalog_view == 'progress' %}
+          data-progress-completion="{{ t.progress_sort.completion }}"
+          data-progress-processing="{{ t.progress_sort.processing }}"
+          data-progress-jobs="{{ t.progress_sort.jobs }}"
+          data-progress-failures="{{ t.progress_sort.failures }}"
+          data-progress-link="{{ t.progress_sort.link }}"
+          {% endif %}
+          data-search="{{ ds_path|lower }} {{ t.composed_name|lower }} {{ t.description|default:''|lower }}">
+        <td class="align-top"{% if catalog_view == 'progress' and t.progress.outputs %} rowspan="{{ t.progress.outputs|length|add:'1' }}"{% endif %}><input type="checkbox" class="pcs-tlf-cb" name="task" value="{{ t.composed_name }}"></td>
+        <td class="align-top small text-muted" data-sort-val="{{ forloop.counter }}"{% if catalog_view == 'progress' and t.progress.outputs %} rowspan="{{ t.progress.outputs|length|add:'1' }}"{% endif %}>{{ forloop.counter }}</td>
+        <td class="align-top small{% if t.requestor %} pwg-{{ t.requestor|lower }}{% endif %}"{% if catalog_view == 'progress' and t.progress.outputs %} rowspan="{{ t.progress.outputs|length|add:'1' }}"{% endif %}>{{ t.requestor|default:"—" }}</td>
+        {% if catalog_view == 'progress' %}
+        <td class="align-top small text-muted" data-sort-val="{{ t.updated_at|date:'U' }}"{% if t.progress.outputs %} rowspan="{{ t.progress.outputs|length|add:'1' }}"{% endif %}>{{ t.updated_at|fmt_ago }}</td>
+        {% endif %}
+        <td class="small pcs-tlf-cell-dataset align-top" data-sort-val="{{ ds_path }}"{% if catalog_view == 'progress' %} colspan="6"{% endif %}>
+          {% if t.campaign %}
+            <div class="text-muted"><strong>Campaign:</strong> {{ t.campaign.name }}
+              &middot; <a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ t.composed_name|urlencode }}">{{ t.composed_name }}</a>
+              {% if t.dataset and t.dataset.propagation != 'continue' %}<span class="pcs-prop-badge pcs-prop-{{ t.dataset.propagation }}">{{ t.dataset.propagation }}</span>{% endif %}
+              {% with prop=t.dataset.metadata.proposal %}{% if prop %}<a class="ai-attr" style="text-decoration:none" href="{% url 'ai:ai_proposals' %}?subject={{ t.dataset.composed_name|urlencode }}" title="{{ prop.comment }} — proposed by {{ prop.proposer }} {{ prop.proposed_at|slice:":10" }}. Click to review and decide on the AI proposal list.">AI: {{ prop.prev_state }} &rarr; {{ prop.payload.state }}</a>{% endif %}{% endwith %}
+              {% if t.dataset.composed_name in ai_executed_names %}<a class="ai-attr" style="text-decoration:none" href="{% url 'ai:ai_proposals' %}?subject={{ t.dataset.composed_name|urlencode }}" title="An executed AI proposal stands on this dataset — click to see it on the AI proposal list, where it can be undone">AI: executed</a>{% endif %}
+            </div>
+          {% endif %}
+          <div><strong class="text-muted">Input:</strong> <a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ t.composed_name|urlencode }}">{{ ds_path }}</a></div>
+          {% if gen_ver %}
+            <div class="text-muted"><strong>Sample:</strong>
+              {% if gen_ver|slice:":4" == "http" %}<a href="{{ gen_ver }}" target="_blank" rel="noopener">{{ gen_ver }}</a>{% else %}{{ gen_ver }}{% endif %}
+            </div>
+          {% endif %}
+          {% if t.description or issue %}
+            <div class="text-muted"><strong>Description:</strong>
+              {% if t.description %}{{ t.description|linebreaksbr }}{% endif %}
+              {% if issue %}{% if t.description %} · {% endif %}<a href="{{ issue }}" target="_blank" rel="noopener">issue</a>{% endif %}
+            </div>
+          {% endif %}
+          {% if t.pc_requests or t.questionnaire_matches %}
+            <div><strong class="text-muted">Request:</strong>
+              {% for pr in t.pc_requests %}
+                {% if not forloop.first %}, {% endif %}
+                <a href="{% url 'pcs:pcs_edition_data' name=t.composed_name %}" title="{{ pr.requestor }}{% if pr.nevents %} · {{ pr.nevents }} events{% endif %}{% if pr.description %} · {{ pr.description|truncatechars:120 }}{% endif %} — production request on this physics configuration; click for the configuration's data page">req#{{ pr.pk }}</a>
+              {% endfor %}
+              {% for qm in t.questionnaire_matches %}
+                {% if not forloop.first or t.pc_requests %}, {% endif %}
+                <a href="{% url 'pcs:questionnaire_detail' pk=qm.questionnaire.pk %}">#{{ qm.questionnaire.pk }}</a>{% if qm.confidence %} <span class="text-muted">({{ qm.confidence }})</span>{% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% if other_text|informative_text %}
+            <div><strong class="text-muted">Other:</strong> {{ other_text }}</div>
+          {% endif %}
+          {% if t.inputs %}
+            <div><strong class="text-muted">Rucio evgen input:</strong>
+              <ul class="mb-0 ps-3">
+                {% for i in t.inputs %}
+                <li><a href="{{ i.did|rucio_did_url }}" title="Rucio dataset detail">{{ i.did }}</a>
+                  <span class="text-muted">&middot; {{ i.file_count }} files{% if i.rses %} &middot; {% for r in i.rses %}{% if not forloop.first %} {% endif %}{{ r.rse }}{% if not r.complete %} <span style="color:#dc3545">({{ r.files }}/{{ r.total }})</span>{% endif %}{% endfor %}{% endif %}</span>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+          {% if t.outputs and catalog_view != 'progress' %}
+            <div><strong class="text-muted">Output{{ t.outputs|length|pluralize }}:</strong>
+              <ul class="mb-0 ps-3">
+                {% for o in t.outputs %}
+                <li>{% if o.stage == 'FULL' %}Simu{% else %}Reco{% endif %}:
+                  <a href="{{ o.did|rucio_did_url }}" title="Rucio dataset detail">{{ o.did }}</a>
+                  <span class="text-muted">&middot; {{ o.file_count }} files{% if o.rses %} &middot; {% for r in o.rses %}{% if not forloop.first %} {% endif %}{{ r.rse }}{% if not r.complete %} <span style="color:#dc3545">({{ r.files }}/{{ r.total }})</span>{% endif %}{% endfor %}{% endif %}</span>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+          {% if catalog_view == 'progress' and not t.progress.outputs %}
+            <div class="text-muted">No output recorded</div>
+          {% endif %}
+        </td>
+        {% if catalog_view != 'progress' %}
+        <td class="small {{ t.status|state_class }}" title="{{ t.status|state_title }}" data-sort-val="{{ t.status }}">{{ t.status|state_label }}</td>
+        <td class="small text-end" data-sort-val="{{ nev|default:'' }}">{{ nev|millions }}</td>
+        <td class="small text-center" data-sort-val="{% if bg|lower == 'yes' %}1{% else %}0{% endif %}">{% if bg|lower == 'yes' %}Yes{% endif %}</td>
+        <td class="small text-center">{% if t.new_request %}Yes{% endif %}</td>
+        <td class="small text-center">{% if t.pre_tdr_use %}Yes{% endif %}</td>
+        <td class="small text-center">{% if t.early_science_use %}Yes{% endif %}</td>
+        <td class="small" data-sort-val="{{ t.priority|default:'' }}">{{ t.priority|default:"" }}</td>
+        {% endif %}
+      </tr>
+      {% if catalog_view == 'progress' %}
+        {% for o in t.progress.outputs %}
+        <tr class="pcs-tlf-progress-output">
+          <td class="small pcs-tlf-cell-dataset align-top">
+            {% if o.stage %}<strong>{% if o.stage == 'FULL' %}Simu{% else %}Reco{% endif %}:</strong>{% else %}<strong>Output:</strong>{% endif %}
+            <a href="{{ o.did|rucio_did_url }}" title="Rucio dataset detail">{{ o.did }}</a>
+            <span class="text-muted">&middot; {{ o.file_count }} file{{ o.file_count|pluralize }}</span>
+          </td>
+          <td class="small align-top">
+            {% if o.processing.jeditaskid %}
+              <div><strong>{{ o.processing.total_jobs }}</strong> total</div>
+              <div class="text-muted">{{ o.processing.nactive }} active, {{ o.processing.nfinished }} finished</div>
+            {% elif o.expected_jobs %}
+              <div><strong>{{ o.expected_jobs }}</strong></div>
+            {% else %}
+              <span class="text-muted">Unknown</span>
+            {% endif %}
+          </td>
+          <td class="small align-top">
+            {% if o.expected_jobs %}
+              <div class="d-flex align-items-center gap-2">
+                <div class="pcs-progress-track" title="{{ o.file_count }} / {{ o.expected_jobs }} {{ o.expected_source }}">
+                  <div class="pcs-progress-fill" style="width:{{ o.completion_width }}%"></div>
+                </div>
+                <span>{{ o.completion_label }}</span>
+              </div>
+            {% else %}
+              <span class="text-muted">No expected job count</span>
+            {% endif %}
+          </td>
+          <td class="small align-top">
+            {% if o.processing.jeditaskid %}
+              <a href="{% url 'monitor_app:panda_task_detail' o.processing.jeditaskid %}">PanDA {{ o.processing.jeditaskid }}</a>
+              <div class="{{ o.processing.status|state_class }}" title="{{ o.processing.status|state_title }}">{{ o.processing.status|state_label }}</div>
+              {% if o.processing.processing_percent is not None %}
+                <div class="text-muted">{{ o.processing.processing_percent }}% terminal</div>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td class="small align-top">
+            {% if o.processing.jeditaskid %}
+              <div>{{ o.processing.nfailed }} failed</div>
+              <div class="text-muted">{{ o.processing.nfinalfailed }} final{% if o.processing.final_failure_rate is not None %} &middot; {{ o.processing.final_failure_rate }}%{% endif %}</div>
+            {% endif %}
+          </td>
+          <td class="small align-top">
+            {% if o.link %}
+              {{ o.link }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      {% endif %}
+      {% endwith %}
+      {% empty %}
+      <tr><td colspan="{% if catalog_view == 'progress' %}10{% else %}11{% endif %}" class="text-center text-muted py-3">No tasks match the current filter.</td></tr>
+      {% endfor %}
+
+      <tr id="pcs-tlf-empty" style="display:none"><td colspan="{% if catalog_view == 'progress' %}10{% else %}11{% endif %}" class="text-center text-muted py-3">No tasks match the current filter.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="pcs-tlf-bulk mt-1 d-flex align-items-center gap-2">
+  <span class="text-muted small"><span id="pcs-tlf-count">0</span> selected</span>
+  <div class="btn-group btn-group-sm ms-2" role="group" aria-label="Bulk actions">
+    <button type="button" class="btn btn-success" data-bulk="submit" disabled>Submit</button>
+    <button type="button" class="btn btn-secondary" data-bulk="archive" disabled>Archive</button>
+    <button type="button" class="btn btn-secondary" data-bulk="withdraw" disabled>Withdraw</button>
+    <button type="button" class="btn btn-secondary" data-bulk="clone" disabled>Clone</button>
+    <button type="button" class="btn btn-secondary" data-bulk="priority" disabled>Set priority…</button>
+    <button type="button" class="btn btn-secondary" data-bulk="propagation" disabled>Campaign propagation…</button>
+    <button type="button" class="btn btn-success" data-bulk="ai_approve" disabled>Approve AI</button>
+    <button type="button" class="btn btn-secondary" data-bulk="ai_deny" disabled>Deny AI</button>
+    <button type="button" class="btn btn-dark-green" data-bulk="ai_undo" disabled
+            title="Undo executed AI proposals on the selected datasets — restores the pre-approval state and returns the proposals to pending; the events remain on the record">Undo AI</button>
+  </div>
+  <select id="pcs-ai-quality" class="form-select form-select-sm ms-1" style="width:auto"
+          title="Optional quality tag recorded with an AI proposal decision (worst to best; 'wrong' marks the proposal miscalibrated and counts against the proposer's track record)">
+    <option value="">quality&hellip;</option>
+    <option value="wrong">wrong</option>
+    <option value="poor">poor</option>
+    <option value="ok">ok</option>
+    <option value="good">good</option>
+  </select>
+  <span class="text-muted small ms-auto">Showing {{ tasks|length }} task{{ tasks|length|pluralize }}</span>
+</div>
+
+<div id="pcs-prop-panel" class="mt-2 p-2 border rounded" style="display:none; max-width:60em">
+  {% csrf_token %}
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <strong>Campaign propagation</strong>
+    <span class="text-muted">(<span id="pcs-prop-count">0</span> selected)</span>
+    <select id="pcs-prop-state" class="form-select" style="width:auto">
+      <option value="continue">continue</option>
+      <option value="hold">hold</option>
+      <option value="final">final</option>
+    </select>
+    <input id="pcs-prop-replaced-by" class="form-control" style="width:26em"
+           placeholder="replaced by (composed name, optional)">
+  </div>
+  <div id="pcs-prop-need-comment" class="pcs-prop-need mt-2" style="display:none">
+    A comment is required — a sentence on why, with its source. Enter completes the change.
+  </div>
+  <div class="d-flex align-items-start gap-2 mt-2">
+    <textarea id="pcs-prop-comment" class="form-control" rows="2"
+              placeholder="Comment (required) — the why, with its source">{{ propagation_last_comment }}</textarea>
+    <button type="button" id="pcs-prop-apply" class="btn btn-success">Apply</button>
+    <button type="button" id="pcs-prop-cancel" class="btn btn-secondary">Cancel</button>
+  </div>
+  <div id="pcs-prop-result" class="mt-1" style="color:#b02a37"></div>
+</div>
+
+<script>
+(function() {
+  /* Live faceted filter — mirrors the panda jobs / logs / tasks convention
+     (see monitor_app/_datatable_dynamic_base.html): for each filter column
+     a horizontal "value (count)" link list, with counts faceted by the
+     state of the other filters. Initial state comes from URL query params
+     so the catalog stays bookmarkable. */
+
+  const STR = ['status','propagation','requestor','evgen','submission_path','priority','nevents',
+               'detector','beam','physics','q2','species','energy'];
+  const BOOL = ['new_request','pre_tdr_use','early_science_use','other_use','background',
+                'has_output','no_output','incomplete_output','has_simu','has_reco',
+                'has_input','no_input','incomplete_input','ai_proposed','ai_executed'];
+  const DS = { status:'status', propagation:'propagation',
+               requestor:'requestor', evgen:'evgen',
+               submission_path:'submissionPath',
+               priority:'priority', nevents:'nevents',
+               detector:'detector', beam:'beam', physics:'physics',
+               q2:'q2', species:'species', energy:'energy' };
+  const BD = { new_request:'newRequest', pre_tdr_use:'preTdr',
+               early_science_use:'earlyScience', other_use:'other',
+               background:'background',
+               has_output:'hasOutput', no_output:'noOutput',
+               incomplete_output:'incompleteOutput',
+               has_simu:'hasSimu', has_reco:'hasReco',
+               has_input:'hasInput', no_input:'noInput',
+               incomplete_input:'incompleteInput',
+               ai_proposed:'aiProposed', ai_executed:'aiExecuted' };
+
+  // Unit-aware Energy sort (100MeV < 500MeV < 1GeV < 5GeV).
+  function energyMeV(s) {
+    const m = String(s).match(/^([\d.]+)\s*(eV|keV|MeV|GeV|TeV)$/i);
+    if (!m) return null;
+    const mult = {ev:1e-6, kev:1e-3, mev:1, gev:1e3, tev:1e6}[m[2].toLowerCase()];
+    return parseFloat(m[1]) * mult;
+  }
+
+  const tableEl = document.querySelector('table.pcs-tlf-list');
+  const tbodyEl = tableEl ? tableEl.tBodies[0] : null;
+  const dataRows = tbodyEl ? Array.from(tbodyEl.querySelectorAll('tr.pcs-tlf-data')) : [];
+  const emptyRow = document.getElementById('pcs-tlf-empty');
+  const qInput = document.getElementById('pcs-tlf-q');
+
+  const initial = new URL(window.location.href).searchParams;
+  const state = {
+    q: (initial.get('q') || '').trim(),
+    status: initial.get('status') || '',
+    propagation: initial.get('propagation') || '',
+    requestor: initial.get('requestor') || '',
+    evgen: initial.get('evgen') || '',
+    submission_path: initial.get('submission_path') || '',
+    priority: initial.get('priority') || '',
+    nevents: initial.get('nevents') || '',
+    detector: initial.get('detector') || '',
+    beam: initial.get('beam') || '',
+    physics: initial.get('physics') || '',
+    q2: initial.get('q2') || '',
+    species: initial.get('species') || '',
+    energy: initial.get('energy') || '',
+    new_request: initial.get('new_request') === '1',
+    pre_tdr_use: initial.get('pre_tdr_use') === '1',
+    early_science_use: initial.get('early_science_use') === '1',
+    other_use: initial.get('other_use') === '1',
+    background: initial.get('background') === '1',
+    has_output: initial.get('has_output') === '1',
+    no_output: initial.get('no_output') === '1',
+    incomplete_output: initial.get('incomplete_output') === '1',
+    has_simu: initial.get('has_simu') === '1',
+    has_reco: initial.get('has_reco') === '1',
+    has_input: initial.get('has_input') === '1',
+    no_input: initial.get('no_input') === '1',
+    incomplete_input: initial.get('incomplete_input') === '1',
+    ai_proposed: initial.get('ai_proposed') === '1',
+    ai_executed: initial.get('ai_executed') === '1',
+    sort: initial.get('sort') || '',
+    dir: initial.get('dir') === 'desc' ? 'desc' : (initial.get('dir') === 'asc' ? 'asc' : ''),
+  };
+
+  function rowMatches(tr, skip) {
+    if (skip !== 'q' && state.q) {
+      if (!(tr.dataset.search || '').includes(state.q.toLowerCase())) return false;
+    }
+    for (const k of STR) {
+      if (k === skip) continue;
+      if (state[k] && tr.dataset[DS[k]] !== state[k]) return false;
+    }
+    for (const k of BOOL) {
+      if (k === skip) continue;
+      if (state[k] && tr.dataset[BD[k]] !== '1') return false;
+    }
+    return true;
+  }
+
+  function escapeAttr(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderBar() {
+    // Faceted counts: for each str filter, count rows that match all OTHER
+    // filters, bucketed by the row's own value of that filter. Boolean
+    // filters count rows that would still match if that boolean were ON.
+    const strCounts = { status:{}, propagation:{}, requestor:{}, evgen:{}, submission_path:{},
+                        priority:{}, nevents:{},
+                        detector:{}, beam:{}, physics:{}, q2:{}, species:{}, energy:{} };
+    const boolCounts = { new_request:0, pre_tdr_use:0, early_science_use:0, other_use:0, background:0,
+                         has_output:0, no_output:0, incomplete_output:0, has_simu:0, has_reco:0,
+                         has_input:0, no_input:0, incomplete_input:0, ai_proposed:0, ai_executed:0 };
+    for (const tr of dataRows) {
+      for (const k of STR) {
+        if (rowMatches(tr, k)) {
+          const v = tr.dataset[DS[k]];
+          if (v) strCounts[k][v] = (strCounts[k][v] || 0) + 1;
+        }
+      }
+      for (const k of BOOL) {
+        if (rowMatches(tr, k) && tr.dataset[BD[k]] === '1') boolCounts[k]++;
+      }
+    }
+
+    for (const k of STR) {
+      const span = document.getElementById('pcs-tlf-' + k + '-opts');
+      if (!span) continue;
+      const entries = Object.entries(strCounts[k]).sort((a,b) => {
+        if (k === 'energy') {
+          const ea = energyMeV(a[0]), eb = energyMeV(b[0]);
+          if (ea !== null && eb !== null) return ea - eb;
+        }
+        if (k === 'propagation') {
+          const order = {continue: 0, hold: 1, final: 2};
+          if (a[0] in order && b[0] in order) return order[a[0]] - order[b[0]];
+        }
+        // Numeric sort when both values parse as numbers, otherwise alphabetic.
+        const na = parseFloat(a[0]), nb = parseFloat(b[0]);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a[0].localeCompare(b[0]);
+      });
+      span.innerHTML = entries.map(([v,n]) => {
+        const active = state[k] === v ? ' filter-active' : '';
+        return `<a href="#" data-filter="${k}" data-value="${escapeAttr(v)}"`
+             + ` class="filter-link${active}">${escapeAttr(v)} (${n})</a>`;
+      }).join('');
+      const allLink = document.querySelector(
+        `#pcs-tlf-bar .filter-link[data-filter="${k}"][data-value=""]`);
+      if (allLink) allLink.classList.toggle('filter-active', !state[k]);
+    }
+    for (const k of BOOL) {
+      const c = document.querySelector(`[data-count="${k}"]`);
+      if (c) c.textContent = boolCounts[k];
+      const a = document.querySelector(`#pcs-tlf-bar .filter-link[data-toggle="${k}"]`);
+      if (a) a.classList.toggle('filter-active', state[k]);
+    }
+  }
+
+  function syncUrl() {
+    const u = new URL(window.location.href);
+    const p = u.searchParams;
+    ['q','status','propagation','requestor','evgen','submission_path','priority','nevents',
+     'detector','beam','physics','q2','species','energy',
+     'new_request','pre_tdr_use','early_science_use','other_use','background',
+     'has_output','no_output','incomplete_output','has_simu','has_reco',
+     'has_input','no_input','incomplete_input','ai_proposed','ai_executed',
+     'sort','dir'].forEach(k => p.delete(k));
+    if (state.q) p.set('q', state.q);
+    for (const k of STR)  if (state[k]) p.set(k, state[k]);
+    for (const k of BOOL) if (state[k]) p.set(k, '1');
+    if (state.sort && state.dir) {
+      p.set('sort', state.sort);
+      p.set('dir', state.dir);
+    }
+    history.replaceState(null, '', u.toString());
+  }
+
+  function trailingRows(tr) {
+    // Each task starts with a pcs-tlf-data TR and may be followed by
+    // any number of trailing rows (pcs-tlf-desc, pcs-tlf-other, ...).
+    // Walk until the next pcs-tlf-data or end.
+    const out = [];
+    let n = tr.nextElementSibling;
+    while (n && !n.classList.contains('pcs-tlf-data')) {
+      out.push(n);
+      n = n.nextElementSibling;
+    }
+    return out;
+  }
+
+  function applyFilters() {
+    let visible = 0;
+    for (const tr of dataRows) {
+      const show = rowMatches(tr, null);
+      tr.style.display = show ? '' : 'none';
+      trailingRows(tr).forEach(r => { r.style.display = show ? '' : 'none'; });
+      if (show) visible++;
+    }
+    if (emptyRow) emptyRow.style.display = (visible === 0 && dataRows.length > 0) ? '' : 'none';
+    renderBar();
+    syncUrl();
+  }
+
+  // Click handler on the bar — single delegate covers All, value links, and toggles.
+  document.getElementById('pcs-tlf-bar')?.addEventListener('click', e => {
+    const a = e.target.closest('a.filter-link');
+    if (!a) return;
+    e.preventDefault();
+    if (a.dataset.filter !== undefined) {
+      const k = a.dataset.filter;
+      const v = a.dataset.value || '';
+      state[k] = (state[k] === v && v !== '') ? '' : v;
+    } else if (a.dataset.toggle) {
+      const k = a.dataset.toggle;
+      state[k] = !state[k];
+    }
+    applyFilters();
+  });
+
+  if (qInput) {
+    qInput.value = state.q;
+    qInput.addEventListener('input', () => { state.q = qInput.value.trim(); applyFilters(); });
+  }
+  document.getElementById('pcs-tlf-clear')?.addEventListener('click', () => {
+    state.q = '';
+    if (qInput) qInput.value = '';
+    for (const k of STR)  state[k] = '';
+    for (const k of BOOL) state[k] = false;
+    applyFilters();
+  });
+
+  applyFilters();
+
+  /* Bulk-select state + multi-row column sort.
+     Each task is one .pcs-tlf-data TR plus any number of trailing rows
+     (.pcs-tlf-desc, .pcs-tlf-other); rows move/show/hide together.
+     Select-all only touches checkboxes on currently-visible data rows. */
+
+  const selectAll = document.getElementById('pcs-tlf-selectall');
+  const allCbs = document.querySelectorAll('.pcs-tlf-cb');
+  const count = document.getElementById('pcs-tlf-count');
+  const bulkButtons = document.querySelectorAll('.pcs-tlf-bulk [data-bulk]');
+  function visibleCbs() {
+    return Array.from(allCbs).filter(c => {
+      const tr = c.closest('tr.pcs-tlf-data');
+      return tr && tr.style.display !== 'none';
+    });
+  }
+  function refresh() {
+    const n = Array.from(allCbs).filter(c => c.checked).length;
+    if (count) count.textContent = n;
+    bulkButtons.forEach(b => b.disabled = (n === 0));
+  }
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      // Touch only visible rows — filter-hidden tasks must not be
+      // included in a "select all" action.
+      const targets = visibleCbs();
+      targets.forEach(c => c.checked = selectAll.checked);
+      refresh();
+    });
+  }
+  allCbs.forEach(c => c.addEventListener('change', refresh));
+  const propPanel = document.getElementById('pcs-prop-panel');
+  bulkButtons.forEach(b => {
+    b.addEventListener('click', () => {
+      const action = b.dataset.bulk;
+      const ids = Array.from(allCbs).filter(c => c.checked).map(c => c.value);
+      if (action === 'propagation' && propPanel) {
+        document.getElementById('pcs-prop-count').textContent = ids.length;
+        propPanel.style.display = '';
+        propPanel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        return;
+      }
+      if (action === 'ai_approve' || action === 'ai_deny') {
+        decideProposals(action === 'ai_approve' ? 'approve' : 'deny', ids);
+        return;
+      }
+      if (action === 'ai_undo') {
+        undoProposals(ids);
+        return;
+      }
+      alert(`Bulk action "${action}" on ${ids.length} task(s) — not yet wired.`);
+    });
+  });
+  refresh();
+
+  /* AI proposal decision — approve executes deterministically through the
+     propagation service with the approving human as changed_by; deny
+     records denial memory. One event per decision, not per dataset. */
+  async function decideProposals(decision, names) {
+    if (!names.length) return;
+    const quality = (document.getElementById('pcs-ai-quality') || {value:''}).value;
+    const verb = decision === 'approve' ? 'Approve and execute' : 'Deny';
+    const qnote = quality ? ` (quality: ${quality})` : '';
+    if (!confirm(`${verb} AI proposals on ${names.length} selected dataset(s)${qnote}? `
+                 + 'Rows without a pending proposal are skipped and reported.')) return;
+    const token = propPanel ? propPanel.querySelector('[name=csrfmiddlewaretoken]').value : '';
+    try {
+      const r = await fetch('{{ request.META.SCRIPT_NAME }}/ai/api/proposals/decide/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+        body: JSON.stringify({ names: names, decision: decision, quality: quality,
+                               filter: window.location.search }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.detail || 'request failed');
+      const parts = [];
+      if (decision === 'approve') parts.push(`${j.approved.length} approved and executed`);
+      else parts.push(`${j.denied.length} denied`);
+      if (j.stale.length) parts.push(`${j.stale.length} stale (withdrawn — record changed since proposed)`);
+      if (j.no_proposal.length) parts.push(`${j.no_proposal.length} had no pending proposal`);
+      alert('AI proposals: ' + parts.join(', ') + '.');
+      window.location.reload();
+    } catch (err) {
+      alert('Proposal decision failed: ' + err.message);
+    }
+  }
+
+  /* Undo executed AI proposals — the compensating action restores the
+     pre-approval state and returns the proposals to pending. */
+  async function undoProposals(names) {
+    if (!names.length) return;
+    if (!confirm(`Undo executed AI proposals on ${names.length} selected dataset(s)? `
+                 + 'Restores the pre-approval state and returns the proposals to pending; '
+                 + 'rows without an executed proposal are skipped and reported.')) return;
+    const token = propPanel ? propPanel.querySelector('[name=csrfmiddlewaretoken]').value : '';
+    try {
+      const r = await fetch('{{ request.META.SCRIPT_NAME }}/ai/api/proposals/undo/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+        body: JSON.stringify({ names: names }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.detail || 'request failed');
+      const parts = [`${j.undone.length} undone`];
+      if (j.moved.length) parts.push(`${j.moved.length} expired (record changed since execution)`);
+      if (j.no_proposal.length) parts.push(`${j.no_proposal.length} had no executed proposal`);
+      alert('AI proposal undo: ' + parts.join(', ') + '.');
+      window.location.reload();
+    } catch (err) {
+      alert('Undo failed: ' + err.message);
+    }
+  }
+
+  /* Propagation flip — one POST, one action-stream event, whatever the
+     selection size. Comment is required; the server remembers it as this
+     user's next default. */
+  (function () {
+    if (!propPanel) return;
+    const applyBtn = document.getElementById('pcs-prop-apply');
+    const cancelBtn = document.getElementById('pcs-prop-cancel');
+    const resultEl = document.getElementById('pcs-prop-result');
+    const commentEl = document.getElementById('pcs-prop-comment');
+    const needEl = document.getElementById('pcs-prop-need-comment');
+    function needComment() {
+      needEl.style.display = '';
+      commentEl.classList.add('pcs-prop-comment-attn');
+      commentEl.focus();
+    }
+    function commentSettled() {
+      needEl.style.display = 'none';
+      commentEl.classList.remove('pcs-prop-comment-attn');
+    }
+    commentEl.addEventListener('input', () => {
+      if (commentEl.value.trim()) commentSettled();
+    });
+    // Enter completes the change (Shift+Enter for a newline).
+    commentEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        applyBtn.click();
+      }
+    });
+    cancelBtn.addEventListener('click', () => {
+      propPanel.style.display = 'none';
+      resultEl.textContent = '';
+      commentSettled();
+    });
+    applyBtn.addEventListener('click', async () => {
+      const names = Array.from(allCbs).filter(c => c.checked).map(c => c.value);
+      const state = document.getElementById('pcs-prop-state').value;
+      const comment = commentEl.value.trim();
+      const replacedBy = document.getElementById('pcs-prop-replaced-by').value.trim();
+      if (!names.length) { resultEl.textContent = 'No tasks selected.'; return; }
+      if (!comment) { needComment(); return; }
+      commentSettled();
+      if (!confirm(`Set propagation to "${state}" on ${names.length} dataset(s)?`)) return;
+      applyBtn.disabled = true;
+      const token = propPanel.querySelector('[name=csrfmiddlewaretoken]').value;
+      try {
+        const r = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/datasets/propagation/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+          body: JSON.stringify({ names: names, state: state, comment: comment,
+                                 replaced_by: replacedBy,
+                                 filter: window.location.search }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.detail || 'request failed');
+        alert(`Propagation set to "${state}" on ${j.changed.length} dataset(s)`
+              + (j.unchanged.length ? `, ${j.unchanged.length} already there` : '')
+              + (j.unknown.length ? `, ${j.unknown.length} unknown: ${j.unknown.join(', ')}` : '')
+              + '.');
+        window.location.reload();
+      } catch (err) {
+        applyBtn.disabled = false;
+        if (/comment is required/i.test(err.message)) { needComment(); }
+        else { resultEl.textContent = 'Failed: ' + err.message; }
+      }
+    });
+  })();
+
+  /* Paired-row sort. */
+  const table = document.querySelector('table.pcs-tlf-list');
+  if (!table) return;
+  const tbody = table.tBodies[0];
+  if (!tbody) return;
+
+  // Build groups: each .pcs-tlf-data row plus all trailing non-data rows
+  // (e.g. pcs-tlf-desc, pcs-tlf-other). Groups move as a unit when sorting.
+  function buildGroups() {
+    const rows = Array.from(tbody.children);
+    const groups = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].classList.contains('pcs-tlf-data')) {
+        const grp = [rows[i]];
+        let j = i + 1;
+        while (j < rows.length && !rows[j].classList.contains('pcs-tlf-data')
+               && rows[j].id !== 'pcs-tlf-empty') {
+          grp.push(rows[j]);
+          j++;
+        }
+        groups.push(grp);
+        i = j - 1;
+      }
+    }
+    return groups;
+  }
+
+  function cellSortValue(dataRow, colIdx) {
+    if (table.classList.contains('pcs-tlf-progress') && colIdx >= 5) {
+      const progressSortKeys = {
+        5: 'progressJobs',
+        6: 'progressCompletion',
+        7: 'progressProcessing',
+        8: 'progressFailures',
+        9: 'progressLink',
+      };
+      return dataRow.dataset[progressSortKeys[colIdx]] || '';
+    }
+    const cells = dataRow.children;
+    if (colIdx >= cells.length) return '';
+    const td = cells[colIdx];
+    const v = td.getAttribute('data-sort-val');
+    return v !== null ? v : (td.textContent || '').trim();
+  }
+
+  function compareValues(a, b) {
+    const na = parseFloat(a), nb = parseFloat(b);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return a.localeCompare(b);
+  }
+
+  const headers = table.querySelectorAll('thead th.pcs-sort');
+  const requestedSort = state.sort;
+  const requestedDir = state.dir;
+  let syncInitialSortUrl = false;
+  let activeIdx = Array.from(headers).findIndex(h => h.dataset.sort === state.sort);
+  let activeDir = state.dir === 'desc' ? -1 : 1;  // 1 asc, -1 desc
+  if (activeIdx < 0) {
+    state.sort = '';
+    state.dir = '';
+    syncInitialSortUrl = Boolean(requestedSort || requestedDir);
+  } else if (!state.dir) {
+    activeDir = headers[activeIdx].dataset.defaultDir === 'desc' ? -1 : 1;
+    state.dir = activeDir === -1 ? 'desc' : 'asc';
+    syncInitialSortUrl = true;
+  }
+
+  function renderIndicators() {
+    headers.forEach((h, i) => {
+      h.classList.remove('sorting', 'sorting_asc', 'sorting_desc');
+      if (i === activeIdx) {
+        h.classList.add(activeDir === 1 ? 'sorting_asc' : 'sorting_desc');
+      } else {
+        h.classList.add('sorting');
+      }
+    });
+  }
+  function applySort(updateUrl) {
+    if (activeIdx < 0) {
+      renderIndicators();
+      if (updateUrl) syncUrl();
+      return;
+    }
+    // Header columns include the checkbox col at index 0, which is also a TH.
+    // The sortable headers start at index 1 in the THs of the row. But the
+    // header NodeList "headers" is filtered to .pcs-sort only, so its index
+    // activeIdx corresponds to the (activeIdx+1)-th cell in the data row
+    // (offset by the checkbox TD).
+    const colIdx = activeIdx + 1;
+    const groups = buildGroups();
+    groups.sort((g1, g2) => {
+      const v1 = cellSortValue(g1[0], colIdx);
+      const v2 = cellSortValue(g2[0], colIdx);
+      return compareValues(v1, v2) * activeDir;
+    });
+    groups.forEach(grp => grp.forEach(tr => tbody.appendChild(tr)));
+    // Keep the empty-state row at the end of the tbody.
+    if (emptyRow) tbody.appendChild(emptyRow);
+    renderIndicators();
+    if (updateUrl) syncUrl();
+  }
+  applySort(syncInitialSortUrl);
+
+  headers.forEach((h, i) => {
+    h.addEventListener('click', () => {
+      if (activeIdx === i) {
+        activeDir = -activeDir;
+      } else {
+        activeIdx = i;
+        activeDir = h.dataset.defaultDir === 'desc' ? -1 : 1;
+      }
+      state.sort = h.dataset.sort || '';
+      state.dir = activeDir === -1 ? 'desc' : 'asc';
+      applySort(true);
+    });
+  });
+})();
+</script>

@@ -1,0 +1,646 @@
+{% extends 'base.html' %}
+
+{% block title %}Datasets - PCS{% endblock %}
+
+{% block content %}
+<style>
+.compose-wrap { display: flex; gap: 1.5rem; padding: 1rem 1.5rem; height: calc(100vh - 80px); }
+.browse-panel { flex: 0 0 38%; display: flex; flex-direction: column; min-width: 0; }
+.right-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .75rem; }
+.panel-body { flex: 1; overflow-y: auto; padding-right: .5rem; }
+
+.browser-tabs { display: flex; gap: 0; border-bottom: 2px solid #dee2e6; margin-bottom: .75rem; }
+.browser-tab { padding: .4rem .75rem; cursor: pointer; border-bottom: 2px solid transparent;
+               margin-bottom: -2px; font-size: .85rem; color: #6c757d; user-select: none; }
+.browser-tab.active { color: #0d6efd; border-bottom-color: #0d6efd; font-weight: 600; }
+.browser-tab:hover { color: #0d6efd; }
+
+.browser-search { width: 100%; padding: .35rem .6rem; border: 1px solid #dee2e6;
+                   border-radius: .375rem; font-size: .85rem; margin-bottom: .5rem; }
+.item-list { flex: 1; overflow-y: auto; border: 1px solid #dee2e6; border-radius: .375rem; }
+.item-entry { padding: .5rem .75rem; border-bottom: 1px solid #f0f0f0; cursor: pointer; font-size: .82rem; }
+.item-entry:hover { background: #f8f9fa; }
+.item-entry.selected { background: #e7f1ff; border-left: 3px solid #0d6efd; }
+.item-label { font-weight: 600; }
+.item-meta { color: #6c757d; font-size: .75rem; }
+.item-tags { font-size: .75rem; color: #0d6efd; }
+
+.spec-section { margin-bottom: .75rem; border: 1px solid #dee2e6; border-radius: .375rem; overflow: hidden; }
+.spec-section-header { padding: .5rem .75rem; background: #f8f9fa; font-weight: 600; font-size: .85rem;
+                        cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.spec-section-header:hover { background: #e9ecef; }
+.spec-section-body { padding: .75rem; }
+.spec-section.collapsed .spec-section-body { display: none; }
+.params-grid { display: grid; grid-template-columns: auto 1fr; gap: .2rem .75rem; font-size: .82rem; }
+.params-grid .pk { color: #6c757d; }
+.params-grid .pv { font-weight: 500; }
+
+.empty-state { color: #6c757d; font-style: italic; padding: 1rem 0; }
+
+.suggestion-bar { display: none; background: #fff3cd; border: 1px solid #ffc107; border-radius: .3rem;
+    padding: .3rem .6rem; margin-bottom: .5rem; font-size: .8rem; align-items: center; gap: .5rem; }
+.suggestion-bar.visible { display: inline-flex; }
+.suggestion-bar .sg-source { font-weight: 600; color: #664d03; }
+.suggestion-bar .sg-value { color: #664d03; }
+.suggestion-bar .btn-apply { font-size: .72rem; padding: .1rem .5rem; }
+
+.field-diff-container { margin-top: .25rem; }
+.field-diff { display: flex; align-items: center; gap: .4rem; padding: .2rem .5rem; margin-bottom: .2rem;
+    background: #fff3cd; border: 1px solid #ffeeba; border-radius: .25rem; font-size: .78rem; flex-wrap: wrap; }
+.fd-label { font-weight: 600; color: #664d03; min-width: 80px; }
+.fd-current { color: #6c757d; text-decoration: line-through; }
+.fd-arrow { color: #664d03; }
+.fd-new { font-weight: 600; color: #664d03; }
+.fd-apply { font-size: .68rem; padding: .05rem .4rem; margin-left: auto; }
+</style>
+
+<div class="compose-wrap">
+    <!-- LEFT PANE -->
+    <div class="browse-panel">
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom: 2px solid #dee2e6; margin-bottom:.75rem;">
+            <div class="browser-tabs" style="border-bottom: none; margin-bottom: 0;">
+                <span class="browser-tab" data-browse="datasets">Datasets</span>
+                <span class="browser-tab" data-browse="p">Physics</span>
+                <span class="browser-tab" data-browse="e">EvGen</span>
+                <span class="browser-tab" data-browse="s">Simu</span>
+                <span class="browser-tab" data-browse="r">Reco</span>
+                <span class="browser-tab" data-browse="k">Background</span>
+            </div>
+            {% if username %}
+            <button class="btn btn-primary btn-sm" id="btn-new-dataset" style="display:none; margin-bottom:.35rem;">New Dataset</button>
+            {% endif %}
+        </div>
+        <input type="text" class="browser-search" id="browser-search" placeholder="Search...">
+        <div class="btn-group btn-group-sm" id="list-sort" role="group" aria-label="Sort" style="margin-bottom:.5rem; align-self:flex-start;">
+            <button type="button" class="btn btn-outline-secondary active" data-sort="recent" style="font-size:.68rem; padding:.03rem .3rem; min-width:3.4rem;">Recent</button>
+            <button type="button" class="btn btn-outline-secondary" data-sort="alpha" style="font-size:.68rem; padding:.03rem .3rem; min-width:3.4rem;">A&ndash;Z</button>
+        </div>
+        <div class="item-list" id="item-list" tabindex="0"></div>
+    </div>
+
+    <!-- RIGHT PANE -->
+    <div class="right-panel">
+        <div class="panel-header">
+            <h4 id="panel-title" style="margin:0;">Select an item</h4>
+            <div id="panel-buttons">
+                {% if username %}
+                <button class="btn btn-dark-green btn-sm" id="btn-copy" style="display:none;">Copy</button>
+                <button class="btn btn-dark-green btn-sm" id="btn-edit" style="display:none;">Edit</button>
+                {% endif %}
+                <button class="btn btn-secondary btn-sm" id="btn-clear" style="display:none;">Clear</button>
+                <button class="btn btn-secondary btn-sm" id="btn-cancel" style="display:none;">Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btn-save" style="display:none;" disabled>Create Dataset</button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <!-- BROWSE -->
+            <div id="browse-panel">
+                <div class="empty-state" id="browse-empty">Click an item on the left to view details.</div>
+                <div id="browse-content" style="display:none;"></div>
+            </div>
+            <!-- COMPOSE -->
+            <div id="compose-panel" style="display:none;">
+                <div class="spec-section" data-section="general">
+                    <div class="spec-section-header">General</div>
+                    <div class="spec-section-body">
+                        <div class="row mb-2">
+                            <div class="col-md-3"><label class="form-label" style="font-size:.82rem;"><strong>Scope</strong></label>
+                                <input type="text" id="ds-scope" class="form-control form-control-sm" value="group.EIC"></div>
+                            <div class="col-md-3"><label class="form-label" style="font-size:.82rem;"><strong>Detector Version</strong></label>
+                                <input type="text" id="ds-version" class="form-control form-control-sm" placeholder="26.02.0"></div>
+                            <div class="col-md-3"><label class="form-label" style="font-size:.82rem;"><strong>Detector Config</strong></label>
+                                <input type="text" id="ds-config" class="form-control form-control-sm" placeholder="epic_craterlake"></div>
+                            <div class="col-md-3"><label class="form-label" style="font-size:.82rem;"><strong>Created By</strong></label>
+                                <input type="text" id="ds-created-by" class="form-control form-control-sm" value="{{ username }}" readonly></div>
+                        </div>
+                        <div class="mb-2"><label class="form-label" style="font-size:.82rem;"><strong>Description</strong></label>
+                            <textarea id="ds-description" class="form-control form-control-sm" rows="2"></textarea></div>
+                        <div class="mb-2"><label class="form-label" style="font-size:.82rem;"><strong>Name Preview</strong></label>
+                            <div id="name-preview" class="form-control form-control-sm bg-light" style="min-height:32px;"></div></div>
+                    </div>
+                </div>
+                <div class="spec-section" data-section="physics_tag">
+                    <div class="spec-section-header">Physics Tag <span class="badge bg-secondary" id="p-badge">not selected</span></div>
+                    <div class="spec-section-body"><div class="suggestion-bar" id="p-suggestion"></div><div id="p-display" class="empty-state">Select a physics tag from the left pane.</div></div>
+                </div>
+                <div class="spec-section" data-section="evgen_tag">
+                    <div class="spec-section-header">EvGen Tag <span class="badge bg-secondary" id="e-badge">not selected</span></div>
+                    <div class="spec-section-body"><div class="suggestion-bar" id="e-suggestion"></div><div id="e-display" class="empty-state">Select an evgen tag from the left pane.</div></div>
+                </div>
+                <div class="spec-section" data-section="simu_tag">
+                    <div class="spec-section-header">Simu Tag <span class="badge bg-secondary" id="s-badge">not selected</span></div>
+                    <div class="spec-section-body"><div class="suggestion-bar" id="s-suggestion"></div><div id="s-display" class="empty-state">Select a simu tag from the left pane.</div></div>
+                </div>
+                <div class="spec-section" data-section="reco_tag">
+                    <div class="spec-section-header">Reco Tag <span class="badge bg-secondary" id="r-badge">not selected</span></div>
+                    <div class="spec-section-body"><div class="suggestion-bar" id="r-suggestion"></div><div id="r-display" class="empty-state">Select a reco tag from the left pane.</div></div>
+                </div>
+                <div class="spec-section" data-section="background_tag">
+                    <div class="spec-section-header">Background Tag <span style="margin-left:auto; display:flex; gap:.5rem; align-items:center;"><span class="badge bg-secondary" id="k-badge">none</span><button type="button" class="btn btn-secondary btn-sm" id="k-remove" style="display:none; font-size:.7rem; padding:.05rem .4rem;">Remove</button></span></div>
+                    <div class="spec-section-body"><div class="suggestion-bar" id="k-suggestion"></div><div id="k-display" class="empty-state">Optional &mdash; select a background tag from the left pane to add one.</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const allDatasets = {{ datasets_json|safe }};
+    const allTags = {{ tags_json|safe }};
+    const currentUser = '{{ username }}';
+    const csrfToken = '{{ csrf_token }}';
+    const initialSelected = {{ selected_item_json|safe }};  // string key (name/label) or null
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialTab = urlParams.get('tab') || 'datasets';
+
+    let browseType = initialTab;
+    let mode = 'browse';
+    let selectedItemId = null;
+
+    function htmlEscape(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // URL carries the stable name/label; internal lookups use integer id.
+    function itemKeyOf(type, id) {
+        if (type === 'dataset' || type === 'datasets') return (allDatasets.find(x => x.id === id) || {}).dataset_name;
+        if (['p','e','s','r','k'].includes(type)) return ((allTags[type]||[]).find(x => x.id === id) || {}).label;
+        return null;
+    }
+    function itemIdOf(type, key) {
+        if (type === 'dataset' || type === 'datasets') return (allDatasets.find(x => x.dataset_name === key) || {}).id;
+        if (['p','e','s','r','k'].includes(type)) return ((allTags[type]||[]).find(x => x.label === key) || {}).id;
+        return null;
+    }
+    // The dataset's human-facing identity is its tag-composed name
+    // (build_dataset_name); the internal csv_import.<hash> dataset_name is
+    // plumbing and is never shown. dataset_name stays the stable URL/lookup key.
+    function dsComposedName(d) { return (d && (d.composed_name || d.dataset_name)) || ''; }
+    function isLegacyKey(d) { return d && /^(csv_import|past)\./.test(d.dataset_name || ''); }
+    // Compose state: selected tag per type
+    const compose = { p: null, e: null, s: null, r: null, k: null };
+    let editingDatasetId = null;
+
+    const itemList = document.getElementById('item-list');
+    const searchBox = document.getElementById('browser-search');
+    const browsePanel = document.getElementById('browse-panel');
+    const browseEmpty = document.getElementById('browse-empty');
+    const browseContent = document.getElementById('browse-content');
+    const composePanel = document.getElementById('compose-panel');
+    const panelTitle = document.getElementById('panel-title');
+    const btnNew = document.getElementById('btn-new-dataset');
+    const btnCopy = document.getElementById('btn-copy');
+    const btnEdit = document.getElementById('btn-edit');
+    const btnClear = document.getElementById('btn-clear');
+    const btnCancel = document.getElementById('btn-cancel');
+    const btnSave = document.getElementById('btn-save');
+
+    const TAG_LABELS = {p:'Physics', e:'EvGen', s:'Simu', r:'Reco', k:'Background'};
+    const TAG_FK = {p:'physics_tag', e:'evgen_tag', s:'simu_tag', r:'reco_tag', k:'background_tag'};
+
+    function updateUrl() {
+        const params = new URLSearchParams();
+        params.set('tab', browseType);
+        if (selectedItemId) {
+            const key = itemKeyOf(browseType, selectedItemId);
+            if (key) params.set('selected', key);
+        }
+        if (mode === 'compose') params.set('mode', 'compose');
+        history.replaceState(null, '', `${window.location.pathname}?${params}`);
+    }
+
+    composePanel.querySelectorAll('.spec-section-header').forEach(h => {
+        h.addEventListener('click', () => h.parentElement.classList.toggle('collapsed'));
+    });
+
+    // ── Tag display helper ──
+    function renderTagDetail(tag, tagType) {
+        let paramsHtml = Object.entries(tag.parameters||{}).filter(([,v])=>v).map(([k,v]) =>
+            `<span class="pk">${k}</span><span class="pv">${v}</span>`).join('');
+        let cat = tagType === 'p' && tag.category_name ? `<span class="item-meta">${tag.category_name}</span> | ` : '';
+        return `<div style="font-size:.82rem;">
+            <strong>${tag.label}</strong> <span class="badge bg-${tag.status==='locked'?'success':'secondary'}" style="font-size:.7rem;">${tag.status}</span>
+            <span class="item-meta ms-2">${cat}${tag.created_by}</span>
+            ${tag.description ? `<p class="mb-1 mt-1">${tag.description}</p>` : ''}
+            ${paramsHtml ? `<div class="params-grid mt-1">${paramsHtml}</div>` : ''}
+        </div>`;
+    }
+
+    // ── Suggestion system ──
+    function clearAllSuggestions() {
+        ['p','e','s','r','k'].forEach(tt => {
+            const bar = document.getElementById(tt+'-suggestion');
+            bar.classList.remove('visible'); bar.innerHTML = '';
+        });
+        document.querySelectorAll('.field-diff-container').forEach(el => el.remove());
+        btnClear.style.display = 'none';
+    }
+
+    function showTagDiffs(tagType, browsedTag) {
+        const currentTag = compose[tagType];
+        if (!currentTag || !browsedTag || browsedTag.id === currentTag.id) return;
+        const bar = document.getElementById(tagType+'-suggestion');
+
+        // Top-level apply
+        bar.innerHTML = `<span class="sg-source">Replace ${TAG_LABELS[tagType]} with ${browsedTag.label}:</span>
+            <button type="button" class="btn btn-warning btn-sm btn-apply" data-tt="${tagType}" data-id="${browsedTag.id}">Apply</button>`;
+        bar.classList.add('visible');
+        bar.querySelector('.btn-apply').addEventListener('click', () => { applyTag(tagType, browsedTag); clearAllSuggestions(); });
+
+        // Per-param diffs
+        const curP = currentTag.parameters || {}, newP = browsedTag.parameters || {};
+        const allKeys = new Set([...Object.keys(curP), ...Object.keys(newP)]);
+        let diffHtml = '';
+        allKeys.forEach(k => {
+            const cv = String(curP[k]||'-'), nv = String(newP[k]||'-');
+            if (cv !== nv) {
+                diffHtml += `<div class="field-diff">
+                    <span class="fd-label">${k}:</span>
+                    <span class="fd-current">${cv}</span> <span class="fd-arrow">&rarr;</span>
+                    <span class="fd-new">${nv}</span></div>`;
+            }
+        });
+        if (browsedTag.description !== currentTag.description) {
+            diffHtml += `<div class="field-diff"><span class="fd-label">description:</span>
+                <span class="fd-current">${(currentTag.description||'').substring(0,40)}</span> <span class="fd-arrow">&rarr;</span>
+                <span class="fd-new">${(browsedTag.description||'').substring(0,40)}</span></div>`;
+        }
+        if (diffHtml) {
+            const container = document.createElement('div');
+            container.className = 'field-diff-container';
+            container.innerHTML = diffHtml;
+            bar.after(container);
+        }
+        btnClear.style.display = 'inline-block';
+    }
+
+    // ── Apply tag to compose ──
+    function applyTag(tagType, tag) {
+        compose[tagType] = tag;
+        const badge = document.getElementById(tagType+'-badge');
+        badge.textContent = tag.label;
+        badge.className = 'badge bg-success';
+        document.getElementById(tagType+'-display').innerHTML = renderTagDetail(tag, tagType);
+        if (tagType === 'k') document.getElementById('k-remove').style.display = 'inline-block';
+        clearAllSuggestions();
+        updatePreview();
+        updateSaveButton();
+    }
+
+    function updatePreview() {
+        const scope = document.getElementById('ds-scope').value || '?';
+        const ver = document.getElementById('ds-version').value || '?';
+        const cfg = document.getElementById('ds-config').value || '?';
+        const p = compose.p ? compose.p.label : '?';
+        const e = compose.e ? compose.e.label : '?';
+        const s = compose.s ? compose.s.label : '?';
+        const r = compose.r ? compose.r.label : '?';
+        const k = compose.k ? `.${compose.k.label}` : '';
+        document.getElementById('name-preview').textContent = `${scope}.${ver}.${cfg}.${p}.${e}.${s}.${r}${k}`;
+    }
+
+    function updateSaveButton() {
+        if (mode !== 'compose') return;
+        const ver = document.getElementById('ds-version').value.trim();
+        const cfg = document.getElementById('ds-config').value.trim();
+        btnSave.disabled = !(ver && cfg && compose.p && compose.e && compose.s && compose.r);
+    }
+
+    // ── Mode switching ──
+    function enterBrowseMode() {
+        mode = 'browse';
+        composePanel.style.display = 'none';
+        browsePanel.style.display = 'block';
+        btnCancel.style.display = 'none';
+        btnSave.style.display = 'none';
+        btnClear.style.display = 'none';
+        if (btnNew) btnNew.style.display = browseType === 'datasets' ? 'block' : 'none';
+        if (btnEdit) btnEdit.style.display = 'none';
+        if (btnCopy) btnCopy.style.display = 'none';
+        editingDatasetId = null;
+        compose.p = null; compose.e = null; compose.s = null; compose.r = null; compose.k = null;
+        clearAllSuggestions();
+        updateUrl();
+    }
+
+    function enterComposeMode(datasetToEdit) {
+        mode = 'compose';
+        browsePanel.style.display = 'none';
+        composePanel.style.display = 'block';
+        if (btnNew) btnNew.style.display = 'none';
+        if (btnEdit) btnEdit.style.display = 'none';
+        if (btnCopy) btnCopy.style.display = 'none';
+        btnCancel.style.display = 'inline-block';
+        btnSave.style.display = 'inline-block';
+        btnSave.disabled = true;
+        editingDatasetId = null;
+        compose.p = null; compose.e = null; compose.s = null; compose.r = null; compose.k = null;
+        clearAllSuggestions();
+
+        // Reset form
+        document.getElementById('ds-scope').value = 'group.EIC';
+        document.getElementById('ds-version').value = '';
+        document.getElementById('ds-config').value = '';
+        document.getElementById('ds-description').value = '';
+        ['p','e','s','r'].forEach(tt => {
+            document.getElementById(tt+'-badge').textContent = 'not selected';
+            document.getElementById(tt+'-badge').className = 'badge bg-secondary';
+            document.getElementById(tt+'-display').innerHTML = `<div class="empty-state">Select ${TAG_LABELS[tt]==='Physics'?'a':'an'} ${TAG_LABELS[tt].toLowerCase()} tag from the left pane.</div>`;
+        });
+        document.getElementById('k-badge').textContent = 'none';
+        document.getElementById('k-badge').className = 'badge bg-secondary';
+        document.getElementById('k-display').innerHTML = '<div class="empty-state">Optional &mdash; select a background tag from the left pane to add one.</div>';
+        document.getElementById('k-remove').style.display = 'none';
+
+        if (datasetToEdit) {
+            editingDatasetId = datasetToEdit.id;
+            document.getElementById('ds-scope').value = datasetToEdit.scope;
+            document.getElementById('ds-version').value = datasetToEdit.detector_version;
+            document.getElementById('ds-config').value = datasetToEdit.detector_config;
+            document.getElementById('ds-description').value = datasetToEdit.description || '';
+            ['p','e','s','r'].forEach(tt => {
+                const tagData = datasetToEdit[TAG_FK[tt]];
+                // Find full tag from allTags
+                const fullTag = (allTags[tt]||[]).find(t => t.id === tagData.id) || tagData;
+                applyTag(tt, fullTag);
+            });
+            if (datasetToEdit.background_tag) {
+                const bgFull = (allTags['k']||[]).find(t => t.id === datasetToEdit.background_tag.id) || datasetToEdit.background_tag;
+                applyTag('k', bgFull);
+            }
+            panelTitle.textContent = 'Edit Dataset';
+            btnSave.textContent = 'Save Dataset';
+        } else {
+            panelTitle.textContent = 'New Dataset';
+            btnSave.textContent = 'Create Dataset';
+        }
+        updatePreview();
+        updateUrl();
+    }
+
+    // ── Tab switching ──
+    function switchTab(tabName) {
+        document.querySelectorAll('.browser-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector(`[data-browse="${tabName}"]`).classList.add('active');
+        browseType = tabName;
+        selectedItemId = null;
+        searchBox.value = '';
+        if (btnNew) btnNew.style.display = (mode === 'browse' && tabName === 'datasets') ? 'block' : 'none';
+        if (mode === 'browse') {
+            browseEmpty.style.display = 'block';
+            browseContent.style.display = 'none';
+            panelTitle.textContent = 'Select an item';
+            if (btnEdit) btnEdit.style.display = 'none';
+            if (btnCopy) btnCopy.style.display = 'none';
+        }
+        renderList();
+        updateUrl();
+    }
+    document.querySelectorAll('.browser-tab').forEach(tab => {
+        tab.addEventListener('click', function() { switchTab(this.dataset.browse); });
+    });
+
+    searchBox.addEventListener('input', renderList);
+    document.querySelectorAll('#list-sort button').forEach(b => b.addEventListener('click', () => {
+        document.querySelectorAll('#list-sort button').forEach(x => x.classList.toggle('active', x === b));
+        renderList();
+    }));
+
+    // ── Render list ──
+    function sortItems(arr) {
+        const m = (document.querySelector('#list-sort .active') || {dataset: {}}).dataset.sort || 'recent';
+        const cp = arr.slice();
+        if (m === 'alpha') cp.sort((a, b) => (a.label || '').localeCompare(b.label || '', undefined, {numeric: true}));
+        else cp.sort((a, b) => (b.mod || '').localeCompare(a.mod || ''));
+        return cp;
+    }
+
+    function renderList() {
+        const q = searchBox.value.toLowerCase();
+        let items = [];
+        if (browseType === 'datasets') {
+            items = allDatasets.filter(d => !q || dsComposedName(d).toLowerCase().includes(q) ||
+                d.dataset_name.toLowerCase().includes(q) ||
+                d.physics_tag.label.toLowerCase().includes(q) || d.description.toLowerCase().includes(q) ||
+                (d.background_tag && d.background_tag.label.toLowerCase().includes(q))
+            ).map(d => ({ id: d.id, type: 'dataset', label: dsComposedName(d),
+                meta: `${d.physics_tag.label} ${d.evgen_tag.label} ${d.simu_tag.label} ${d.reco_tag.label}${d.background_tag ? ' ' + d.background_tag.label : ''} | ${d.created_by}`,
+                mod: d.updated_at || d.created_at || '',
+                selected: d.id === selectedItemId }));
+        } else {
+            // Tag type
+            const tt = browseType;
+            items = (allTags[tt]||[]).filter(t => !q || t.label.toLowerCase().includes(q) ||
+                t.description.toLowerCase().includes(q) ||
+                (t.category_name||'').toLowerCase().includes(q) ||
+                Object.values(t.parameters||{}).some(v => String(v).toLowerCase().includes(q))
+            ).map(t => ({
+                id: t.id, type: tt, label: t.label,
+                meta: `${t.status}${t.category_name ? ' | '+t.category_name : ''} | ${t.description.substring(0,50)}`,
+                mod: t.updated_at || t.created_at || '',
+                selected: t.id === selectedItemId,
+            }));
+        }
+        itemList.innerHTML = sortItems(items).map(it =>
+            `<div class="item-entry${it.selected ? ' selected' : ''}" data-type="${it.type}" data-id="${it.id}">
+                <div class="item-label">${it.label}</div>
+                <div class="item-meta">${it.meta}</div>
+            </div>`
+        ).join('') || '<div class="empty-state" style="padding:.75rem;">No items found.</div>';
+        itemList.querySelectorAll('.item-entry').forEach(el => {
+            el.addEventListener('click', () => onItemClick(el.dataset.type, parseInt(el.dataset.id)));
+        });
+    }
+
+    // ── Item click ──
+    function onItemClick(type, id) {
+        selectedItemId = id;
+        if (mode === 'compose') {
+            // Clear previous diffs
+            document.querySelectorAll('.field-diff-container').forEach(el => el.remove());
+            ['p','e','s','r','k'].forEach(tt => { const b = document.getElementById(tt+'-suggestion'); b.classList.remove('visible'); b.innerHTML = ''; });
+            btnClear.style.display = 'none';
+
+            if (['p','e','s','r','k'].includes(type)) {
+                const tag = (allTags[type]||[]).find(t => t.id === id);
+                if (!tag) return;
+                if (!compose[type]) {
+                    applyTag(type, tag);
+                } else if (id !== compose[type].id) {
+                    showTagDiffs(type, tag);
+                }
+            }
+            // dataset clicks in compose mode are ignored
+        } else {
+            if (type === 'dataset') showDatasetDetail(id);
+            else showTagBrowseDetail(type, id);
+        }
+        renderList();
+        updateUrl();
+    }
+
+    // ── Browse: dataset detail ──
+    function showDatasetDetail(id) {
+        const ds = allDatasets.find(d => d.id === id);
+        if (!ds) return;
+        browseEmpty.style.display = 'none';
+        browseContent.style.display = 'block';
+        panelTitle.textContent = dsComposedName(ds);
+        if (btnEdit) btnEdit.style.display = currentUser ? 'inline-block' : 'none';
+        if (btnCopy) btnCopy.style.display = currentUser ? 'inline-block' : 'none';
+        let tagsHtml = '';
+        const tagRows = [['Physics', ds.physics_tag], ['EvGen', ds.evgen_tag], ['Simu', ds.simu_tag], ['Reco', ds.reco_tag]];
+        if (ds.background_tag) tagRows.push(['Background', ds.background_tag]);
+        tagRows.forEach(([label, tag]) => {
+            const params = Object.entries(tag.parameters||{})
+                .filter(([,v])=>v)
+                .map(([k,v])=>`${htmlEscape(k)}=${htmlEscape(v)}`)
+                .join(', ');
+            tagsHtml += `<tr><td>${label}</td><td><strong>${htmlEscape(tag.label)}</strong></td><td>${htmlEscape(tag.description||'')}</td><td style="font-size:.78rem;">${params}</td></tr>`;
+        });
+        browseContent.innerHTML = `
+            <table class="table table-sm table-bordered mb-3" style="font-size:.82rem;">
+                <tr><td style="width:30%"><strong>Name (tag-based)</strong></td><td>${htmlEscape(dsComposedName(ds))}</td></tr>
+                ${!isLegacyKey(ds) ? `<tr><td><strong>DID</strong></td><td>${htmlEscape(ds.did)}</td></tr>` : ''}
+                <tr><td><strong>Detector</strong></td><td>${htmlEscape(ds.detector_version)} / ${htmlEscape(ds.detector_config)}</td></tr>
+                <tr><td><strong>Blocks</strong></td><td>${htmlEscape(ds.blocks)}</td></tr>
+                <tr><td><strong>Created By</strong></td><td>${htmlEscape(ds.created_by)} | ${htmlEscape(ds.created_at)}</td></tr>
+                ${ds.description ? `<tr><td><strong>Description</strong></td><td>${htmlEscape(ds.description)}</td></tr>` : ''}
+            </table>
+            <h6>Tags</h6>
+            <table class="table table-sm table-bordered" style="font-size:.82rem;">
+                <thead><tr><th>Type</th><th>Tag</th><th>Description</th><th>Parameters</th></tr></thead>
+                <tbody>${tagsHtml}</tbody>
+            </table>`;
+    }
+
+    // ── Browse: tag detail ──
+    function showTagBrowseDetail(tagType, id) {
+        const tag = (allTags[tagType]||[]).find(t => t.id === id);
+        if (!tag) return;
+        browseEmpty.style.display = 'none';
+        browseContent.style.display = 'block';
+        panelTitle.textContent = `${TAG_LABELS[tagType]} Tag: ${tag.label}`;
+        if (btnEdit) btnEdit.style.display = 'none';
+        if (btnCopy) btnCopy.style.display = 'none';
+        browseContent.innerHTML = renderTagDetail(tag, tagType);
+    }
+
+    // ── Buttons ──
+    if (btnNew) btnNew.addEventListener('click', () => enterComposeMode(null));
+    if (btnEdit) btnEdit.addEventListener('click', () => {
+        const ds = allDatasets.find(d => d.id === selectedItemId);
+        if (ds) enterComposeMode(ds);
+    });
+    if (btnCopy) btnCopy.addEventListener('click', () => {
+        const ds = allDatasets.find(d => d.id === selectedItemId);
+        if (ds) {
+            enterComposeMode(null);
+            // Pre-fill from copied dataset but no editingDatasetId (creates new)
+            document.getElementById('ds-scope').value = ds.scope;
+            document.getElementById('ds-version').value = ds.detector_version;
+            document.getElementById('ds-config').value = ds.detector_config;
+            document.getElementById('ds-description').value = ds.description || '';
+            ['p','e','s','r'].forEach(tt => {
+                const tagData = ds[TAG_FK[tt]];
+                const fullTag = (allTags[tt]||[]).find(t => t.id === tagData.id) || tagData;
+                applyTag(tt, fullTag);
+            });
+            if (ds.background_tag) {
+                const bgFull = (allTags['k']||[]).find(t => t.id === ds.background_tag.id) || ds.background_tag;
+                applyTag('k', bgFull);
+            }
+            panelTitle.textContent = 'New Dataset (copy)';
+            updatePreview();
+        }
+    });
+    btnClear.addEventListener('click', clearAllSuggestions);
+    const btnKRemove = document.getElementById('k-remove');
+    if (btnKRemove) btnKRemove.addEventListener('click', (e) => {
+        e.stopPropagation();
+        compose.k = null;
+        document.getElementById('k-badge').textContent = 'none';
+        document.getElementById('k-badge').className = 'badge bg-secondary';
+        document.getElementById('k-display').innerHTML = '<div class="empty-state">Optional &mdash; select a background tag from the left pane to add one.</div>';
+        btnKRemove.style.display = 'none';
+        updatePreview();
+        updateSaveButton();
+    });
+    btnCancel.addEventListener('click', () => { enterBrowseMode(); renderList(); });
+
+    // Save
+    btnSave.addEventListener('click', async function() {
+        const scope = document.getElementById('ds-scope').value.trim();
+        const ver = document.getElementById('ds-version').value.trim();
+        const cfg = document.getElementById('ds-config').value.trim();
+        const desc = document.getElementById('ds-description').value;
+        if (!ver || !cfg || !compose.p || !compose.e || !compose.s || !compose.r) return;
+
+        // Duplicate check: same name means same tag+detector combo already exists
+        const previewName = `${scope}.${ver}.${cfg}.${compose.p.label}.${compose.e.label}.${compose.s.label}.${compose.r.label}${compose.k ? '.'+compose.k.label : ''}`;
+        const existing = allDatasets.find(d => dsComposedName(d) === previewName && d.id !== editingDatasetId);
+        if (existing) {
+            alert(`Dataset already exists: ${previewName}`);
+            return;
+        }
+
+        const payload = { scope, detector_version: ver, detector_config: cfg, description: desc,
+            physics_tag: compose.p.id, evgen_tag: compose.e.id, simu_tag: compose.s.id, reco_tag: compose.r.id,
+            background_tag: compose.k ? compose.k.id : null,
+            created_by: currentUser };
+
+        const url = editingDatasetId ? `/swf-monitor/pcs/api/datasets/${editingDatasetId}/` : '/swf-monitor/pcs/api/datasets/';
+        const method = editingDatasetId ? 'PATCH' : 'POST';
+        const resp = await fetch(url, { method, headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+            body: JSON.stringify(payload) });
+        if (resp.ok) {
+            const data = await resp.json();
+            window.location.href = `/swf-monitor/pcs/datasets/compose/?tab=datasets&selected=${encodeURIComponent(data.dataset_name || data.name || data.id)}`;
+        } else {
+            const err = await resp.json();
+            alert('Save failed: ' + Object.values(err).flat().join(', '));
+        }
+    });
+
+    // Input listeners for preview
+    ['ds-scope','ds-version','ds-config'].forEach(id => {
+        document.getElementById(id).addEventListener('input', () => { updatePreview(); updateSaveButton(); });
+    });
+
+    // ── Keyboard nav ──
+    itemList.addEventListener('keydown', function(e) {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        e.preventDefault();
+        const entries = Array.from(itemList.querySelectorAll('.item-entry'));
+        if (!entries.length) return;
+        const idx = entries.findIndex(el => el.classList.contains('selected'));
+        let next = e.key === 'ArrowDown' ? (idx < entries.length-1 ? idx+1 : 0) : (idx > 0 ? idx-1 : entries.length-1);
+        onItemClick(entries[next].dataset.type, parseInt(entries[next].dataset.id));
+        entries[next].scrollIntoView({block: 'nearest'});
+    });
+
+    // ── Init ──
+    switchTab(browseType);
+    let autoId = null;
+    if (initialSelected) autoId = itemIdOf(browseType, initialSelected);
+    if (!autoId) {
+        const firstList = browseType === 'datasets' ? allDatasets : (allTags[browseType] || []);
+        if (firstList.length > 0) autoId = firstList[0].id;
+    }
+    if (autoId) {
+        selectedItemId = autoId;
+        if (browseType === 'datasets') showDatasetDetail(autoId);
+        else if (['p','e','s','r','k'].includes(browseType)) showTagBrowseDetail(browseType, autoId);
+        renderList();
+        updateUrl();
+    }
+})();
+</script>
+{% endblock %}
