@@ -82,7 +82,7 @@ installed swf-epicprod applications, which run inside it.
 | PanDA production layer (thin) | production job/file inventory, campaign-task associations, production diagnosis, DISpatcher production assistant, corun-ai callback | `src/monitor_app/panda/`, views and models in `monitor_app` | web/REST/MCP |
 | Production operations agent (instance) | `epicprod_ops_agent` and its doer scripts (submission, payload log, Rucio sweeps, catalog imports, cleaner-killer, enqueue) — the agent pattern itself is platform (`swf-common-lib`), with the testbed agents its precursor instances | `agents/`, `scripts/` | bus/REST |
 | Production action definitions | production action ids, sublevels, live defaults — the registry infrastructure generalizes as platform, like the logging system it rides on | `monitor_app/epicprod_logging.py` | import (within envelope) |
-| Production MCP tools | `pcs`, `epicprod_actions`, `ai_content`, `ai_proposals` tool modules | `src/monitor_app/mcp/` | MCP |
+| Production MCP tools (moved 2026-07-12) | `pcs`, `epicprod_actions`, `ai_proposals`, `epicprod_campaign_status` tool modules; assessment subject types (`ai_subjects`) | `swf_epicprod/mcp_tools/`, `swf_epicprod/ai_subjects.py` | MCP |
 | Campaign assessments (new) | analytics library, rollup service, assessment harness glue | greenfield | REST/MCP |
 
 Production Django applications ship from swf-epicprod as installable
@@ -122,7 +122,14 @@ thin adapters only (MCP tool registration, navigation entries).
   the logging system it rides on; the production action definitions are
   the domain content.
 - **MCP**: the runtime is platform; tool modules follow their domain;
-  a registration shim remains in the monitor.
+  a registration shim remains in the monitor. Realized 2026-07-12:
+  production tool modules live in `swf_epicprod/mcp_tools/` and register
+  on the monitor's single FastMCP instance — one MCP service downstream.
+  The `ai_content` tool module split rather than moved: registration,
+  retrieval, and corun storage stay platform in `monitor_app/mcp/`, and
+  the epicprod assessment subject types register into its subject-type
+  registry from `swf_epicprod/ai_subjects.py` — the same mechanism/policy
+  split as the action registry.
 - **Legacy AI content and memory models** (`AIContent`, `AIMemory`):
   superseded by corun-ai artifacts; they retire in place and are not
   mapped for migration.
