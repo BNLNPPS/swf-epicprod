@@ -80,15 +80,22 @@ def _floor(blocks):
     verdict = 'ok'
     reasons = []
 
-    health = blocks['panda_health']['data']
-    rate = health.get('final_failure_rate')
-    if rate is not None:
+    # The floor alarms on the window, not the lifetime: an unchanged
+    # accumulated failure burden must not re-alarm every night. Lifetime
+    # figures ride as standing context for the report.
+    window = blocks.get('window_activity', {}).get('data', {})
+    rate = window.get('window_failure_rate')
+    terminal = (window.get('window_jobs_finished') or 0) + \
+               (window.get('window_jobs_failed') or 0)
+    if rate is not None and terminal >= 20:
         if rate >= ffail_alarm:
             verdict = _worst(verdict, 'alarm')
-            reasons.append(f'final-failure rate {rate:.1%} >= {ffail_alarm:.0%}')
+            reasons.append(f'window failure rate {rate:.1%} >= {ffail_alarm:.0%} '
+                           f'({terminal} terminal jobs in window)')
         elif rate >= ffail_attention:
             verdict = _worst(verdict, 'attention')
-            reasons.append(f'final-failure rate {rate:.1%} >= {ffail_attention:.0%}')
+            reasons.append(f'window failure rate {rate:.1%} >= {ffail_attention:.0%} '
+                           f'({terminal} terminal jobs in window)')
 
     activity = blocks['action_stream_activity']['data']
     sync_age = activity.get('catalog_sync_age_hours')
@@ -126,7 +133,11 @@ def _floor(blocks):
         verdict = _worst(verdict, cred_verdict)
         reasons.append(f"credential check outcome '{creds.get('outcome')}'")
 
-    return {'verdict': verdict, 'reasons': reasons}
+    return {'verdict': verdict, 'reasons': reasons,
+            'standing_context': {
+                'lifetime_final_failure_rate':
+                    blocks['panda_health']['data'].get('final_failure_rate'),
+            }}
 
 
 def campaign_status(campaign=None, window_days=1):
@@ -154,8 +165,14 @@ def campaign_status(campaign=None, window_days=1):
         window_days = max(float(window_days), 0.04)  # floor ~1 hour
     except (TypeError, ValueError):
         window_days = 1.0
+    # The window carries an overlap so consecutive assessments leave no
+    # gap at the edges; events near a boundary may appear in two reports,
+    # which is harmless and expected.
+    overlap_hours = float(SysConfig.get_setting(
+        'assessment_window_overlap_hours', 2))
     window_end = timezone.now()
-    window_start = window_end - _dt.timedelta(days=window_days)
+    window_start = window_end - _dt.timedelta(
+        days=window_days, hours=overlap_hours)
 
     blocks = {}
     for member in _members.MEMBERS:

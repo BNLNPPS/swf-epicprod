@@ -39,7 +39,9 @@ CORUN_API_URL = (os.environ.get('CORUN_API_URL', '').rstrip('/')
                  or (os.environ.get('CORUN_BASE_URL', '').rstrip('/') + '/api/v1'
                      if os.environ.get('CORUN_BASE_URL') else ''))
 CORUN_API_TOKEN = os.environ.get('CORUN_API_TOKEN', '')
-CORUN_ASSESSMENT_DEFINITION = os.environ.get('CORUN_ASSESSMENT_DEFINITION', '')
+def _definition_for(kind):
+    return (os.environ.get(f'CORUN_ASSESSMENT_DEFINITION_{kind.upper()}')
+            or os.environ.get('CORUN_ASSESSMENT_DEFINITION', ''))
 
 log = logging.getLogger('assessment_enforce')
 
@@ -138,7 +140,7 @@ def main():
         if not _already_retried(args.prompt_group_id):
             job = _post(f'{CORUN_API_URL}/jobs/',
                         {'prompt_group_id': args.prompt_group_id,
-                         'definition_id': CORUN_ASSESSMENT_DEFINITION})
+                         'definition_id': _definition_for(kind)})
             _log('assessment_retry', outcome='ok', subject_key=campaign,
                  slot=slot, prompt_group_id=args.prompt_group_id,
                  retry_job_id=str(job.get('id') or ''),

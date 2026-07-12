@@ -63,6 +63,66 @@ def _page_items(listing):
     return listing.get('items') or listing.get('results') or []
 
 
+def _previous_bundle(corun_url, token, section, campaign, kind, manifest):
+    """The prior run's archived bundle (its prompt content) — the basis
+    for deterministic night-over-night deltas. Numbers are compared in
+    code; the model interprets the computed deltas."""
+    listing = manifest.fetch(
+        'previous_bundle', f'{corun_url}/sections/{section}/', token=token)
+    if listing is None:
+        return None
+    prompts = listing.get('prompts') or []
+    prefix = f'{campaign}/{kind}/'
+    for prompt in prompts:  # newest first
+        try:
+            content = json.loads(prompt.get('content') or '{}')
+        except json.JSONDecodeError:
+            continue
+        if str(content.get('slot') or '').startswith(prefix):
+            return content.get('bundle') or None
+    manifest.note('previous_bundle_match', True,
+                  'no prior bundle for this campaign and kind (first run)')
+    return None
+
+
+def _deltas(previous, rollup):
+    """Window-over-window movement, computed here — never by the model."""
+    if not previous or not rollup:
+        return {'available': False,
+                'reason': 'no prior bundle to compare against'}
+    prev_m = (previous.get('rollup') or {}).get('members') or {}
+    cur_m = rollup.get('members') or {}
+
+    def _n(members, member, *path):
+        node = (members.get(member) or {}).get('data') or {}
+        for key in path:
+            node = node.get(key) if isinstance(node, dict) else None
+            if node is None:
+                return None
+        return node
+
+    out = {'available': True,
+           'previous_generated_at': previous.get('generated_at') or ''}
+    for label, member, path in (
+            ('total_files', 'campaign_progress', ('total_files',)),
+            ('outputs_complete', 'campaign_progress', ('outputs_complete',)),
+            ('lifetime_jobs_finished', 'panda_health', ('jobs', 'nfinished')),
+            ('lifetime_jobs_failed', 'panda_health', ('jobs', 'nfailed')),
+    ):
+        cur = _n(cur_m, member, *path)
+        prev = _n(prev_m, member, *path)
+        if cur is not None and prev is not None:
+            out[label] = {'previous': prev, 'current': cur,
+                          'delta': cur - prev}
+    prev_disp = _n(prev_m, 'disposition_mix', 'dispositions') or {}
+    cur_disp = _n(cur_m, 'disposition_mix', 'dispositions') or {}
+    changed = {k: {'previous': prev_disp.get(k, 0), 'current': v}
+               for k, v in cur_disp.items() if prev_disp.get(k, 0) != v}
+    if changed:
+        out['dispositions_changed'] = changed
+    return out
+
+
 def _find_narratives(pages, campaign):
     """Pick the campaign narrative and the latest general narrative from a
     narrative-section page listing (client-side: the pages API filters by
@@ -123,16 +183,22 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
                 continue
             if data.get('quarantined'):
                 continue
+            structured = data.get('structured') or {}
             priors.append({
                 'group_id': page.get('group_id') or '',
                 'created_at': page.get('created_at') or '',
                 'verdict': data.get('verdict') or '',
                 'narration': (data.get('narration') or '')[:600],
                 'slot': data.get('slot') or '',
+                'standing_issues': structured.get('standing_issues') or [],
+                'top_issues': [str(i.get('title') or '')[:120]
+                               for i in structured.get('top_issues') or []],
             })
         priors.sort(key=lambda p: p['created_at'], reverse=True)
         priors = priors[:prior_count]
 
+    previous = _previous_bundle(corun_url, corun_token, section,
+                                campaign, kind, manifest)
     return {
         'schema': BUNDLE_SCHEMA,
         'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -141,6 +207,10 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
         'degraded': manifest.degraded,
         'manifest': manifest.entries,
         'rollup': rollup,
+        'deltas': _deltas(previous, {'members': (rollup or {}).get('members')
+                                     or {}, 'generated_at':
+                                     (rollup or {}).get('generated_at')}),
         'narratives': narratives,
+        'priors_supplied': len(priors),
         'priors': priors,
     }

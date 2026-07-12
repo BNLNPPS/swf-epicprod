@@ -40,7 +40,9 @@ CORUN_API_URL = (os.environ.get('CORUN_API_URL', '').rstrip('/')
 CORUN_API_TOKEN = os.environ.get('CORUN_API_TOKEN', '')
 CORUN_ASSESSMENT_SECTION = os.environ.get('CORUN_ASSESSMENT_SECTION',
                                           spec.DEFAULT_SECTION)
-CORUN_ASSESSMENT_DEFINITION = os.environ.get('CORUN_ASSESSMENT_DEFINITION', '')
+def _definition_for(kind):
+    return (os.environ.get(f'CORUN_ASSESSMENT_DEFINITION_{kind.upper()}')
+            or os.environ.get('CORUN_ASSESSMENT_DEFINITION', ''))
 TIMEOUT = 30
 
 
@@ -109,15 +111,16 @@ def submit_run(campaign, kind, window_days, *, dry_run=False):
               f'manifest={[(e["source"], e["ok"]) for e in evidence["manifest"]]}, '
               f'content {len(content)} bytes')
         return '', evidence
+    definition = _definition_for(kind)
     prompt = _request(
         f'{CORUN_API_URL}/prompts/',
         payload={'section': CORUN_ASSESSMENT_SECTION, 'content': content,
-                 'definition_id': CORUN_ASSESSMENT_DEFINITION},
+                 'definition_id': definition},
         token=CORUN_API_TOKEN)
     job = _request(
         f'{CORUN_API_URL}/jobs/',
         payload={'prompt_group_id': str(prompt.get('group_id') or ''),
-                 'definition_id': CORUN_ASSESSMENT_DEFINITION},
+                 'definition_id': definition},
         token=CORUN_API_TOKEN)
     return str(job.get('id') or job.get('job_id') or ''), evidence
 
@@ -138,11 +141,11 @@ def main():
     if not MONITOR_URL:
         print('ERROR: SWF_MONITOR_URL is not set', file=sys.stderr)
         return 2
-    if not args.dry_run and (not CORUN_API_URL or not CORUN_ASSESSMENT_DEFINITION):
-        print('ERROR: CORUN_API_URL / CORUN_ASSESSMENT_DEFINITION not set',
-              file=sys.stderr)
+    if not args.dry_run and (not CORUN_API_URL or not _definition_for(args.kind)):
+        print('ERROR: CORUN_API_URL or the definition id for this kind is '
+              'not set', file=sys.stderr)
         log_action('assessment_triggered', outcome='error',
-                   reason='CORUN_API_URL or CORUN_ASSESSMENT_DEFINITION unset')
+                   reason=f'CORUN_API_URL or definition for {args.kind} unset')
         return 2
 
     try:

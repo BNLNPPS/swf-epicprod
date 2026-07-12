@@ -59,18 +59,20 @@ def ensure_section(name):
     print(f'section {name}: created')
 
 
-def ensure_system_prompt():
-    wanted = spec.system_prompt_text()
+def ensure_system_prompt(kind):
+    wanted = spec.system_prompt_text(kind)
+    name = f'{spec.DEFAULT_SYSTEM_PROMPT_TITLE} — {kind}'
     listing = _request(
-        'GET', f'/system-prompts/?name={urllib.request.quote(spec.DEFAULT_SYSTEM_PROMPT_TITLE)}')
+        'GET', f'/system-prompts/?name={urllib.request.quote(name)}')
     rows = listing if isinstance(listing, list) else listing.get('results') or []
     current = next((r for r in rows if r.get('is_current', True)), None)
     if current and (current.get('content') or '') == wanted:
         print(f"system prompt: current (group {current.get('group_id')}, "
               f"v{current.get('version')})")
         return str(current['group_id'])
-    payload = {'name': spec.DEFAULT_SYSTEM_PROMPT_TITLE, 'content': wanted,
-               'data': {'source': 'swf_epicprod.assessment.spec'}}
+    payload = {'name': name, 'content': wanted,
+               'data': {'source': 'swf_epicprod.assessment.spec',
+                        'kind': kind}}
     if current:
         payload['group_id'] = current['group_id']
     created = _request('POST', '/system-prompts/', payload)
@@ -115,8 +117,6 @@ def main():
     # truncation, and truncations require operator approval.
     parser.add_argument('--timeout-s', type=int, default=3600)
     parser.add_argument('--section', default=spec.DEFAULT_SECTION)
-    parser.add_argument('--definition-name',
-                        default=spec.DEFAULT_DEFINITION_NAME)
     args = parser.parse_args()
 
     if not CORUN_API_URL or not CORUN_API_TOKEN:
@@ -125,14 +125,14 @@ def main():
         return 2
 
     ensure_section(args.section)
-    sp_group = ensure_system_prompt()
-    definition_id = ensure_definition(
-        args.definition_name, sp_group, args.model, args.effort,
-        args.timeout_s)
-
     print('\nEnvironment for the trigger and enforcement:')
     print(f'CORUN_ASSESSMENT_SECTION={args.section}')
-    print(f'CORUN_ASSESSMENT_DEFINITION={definition_id}')
+    for kind in ('nightly', 'weekly'):
+        sp_group = ensure_system_prompt(kind)
+        definition_id = ensure_definition(
+            spec.definition_name(kind), sp_group, args.model, args.effort,
+            args.timeout_s)
+        print(f'CORUN_ASSESSMENT_DEFINITION_{kind.upper()}={definition_id}')
     return 0
 
 

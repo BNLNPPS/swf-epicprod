@@ -277,6 +277,72 @@ def action_stream_activity(campaign, window_start, window_end):
     })
 
 
+def window_activity(campaign, window_start, window_end):
+    """The window's own PanDA activity — the nightly report's subject.
+
+    Jobs that reached a state in the window (by site and status) and
+    campaign-named tasks created or newly terminal in it, so productivity
+    or its absence is measured on the night, not the campaign's lifetime.
+    """
+    from django.db import connections
+    from monitor_app.panda.constants import PANDA_SCHEMA
+
+    try:
+        with connections['panda'].cursor() as cursor:
+            cursor.execute(
+                f'SELECT "jeditaskid", "taskname", "status", "creationdate", '
+                f'"modificationtime" FROM "{PANDA_SCHEMA}"."jedi_tasks" '
+                f'WHERE "taskname" LIKE %s',
+                [f'group.EIC.{campaign.name}.%'])
+            tasks = cursor.fetchall()
+            task_ids = [row[0] for row in tasks]
+            jobs_by = {}
+            if task_ids:
+                marks = ','.join(['%s'] * len(task_ids))
+                for table in ('jobsarchived4', 'jobsactive4'):
+                    cursor.execute(
+                        f'SELECT "computingsite", "jobstatus", COUNT(*) '
+                        f'FROM "{PANDA_SCHEMA}"."{table}" '
+                        f'WHERE "jeditaskid" IN ({marks}) '
+                        f'AND "modificationtime" >= %s '
+                        f'GROUP BY 1, 2',
+                        task_ids + [window_start])
+                    for site, status, n in cursor.fetchall():
+                        entry = jobs_by.setdefault(site or 'unknown', {})
+                        entry[status] = entry.get(status, 0) + int(n)
+    except Exception as e:
+        return _block('window_activity', window_start, window_end,
+                      _unavailable(f'PanDA window query failed: {e}'))
+
+    initiated = []
+    completed = []
+    failed = []
+    for tid, name, status, created, modified in tasks:
+        if created and created >= window_start.replace(tzinfo=None):
+            initiated.append({'jeditaskid': tid, 'name': name, 'status': status})
+        elif (modified and modified >= window_start.replace(tzinfo=None)
+              and status in ('done', 'finished', 'failed', 'aborted', 'broken')):
+            entry = {'jeditaskid': tid, 'name': name, 'status': status}
+            (failed if status in ('failed', 'aborted', 'broken')
+             else completed).append(entry)
+
+    window_finished = sum(e.get('finished', 0) for e in jobs_by.values())
+    window_failed = sum(e.get('failed', 0) for e in jobs_by.values())
+    terminal = window_finished + window_failed
+    return _block('window_activity', window_start, window_end, {
+        'available': True,
+        'jobs_by_site': jobs_by,
+        'window_jobs_finished': window_finished,
+        'window_jobs_failed': window_failed,
+        'window_failure_rate': (round(window_failed / terminal, 4)
+                                if terminal else None),
+        'tasks_initiated': initiated[:20],
+        'tasks_completed': completed[:20],
+        'tasks_newly_failed': failed[:20],
+        'quiet': terminal == 0 and not initiated and not completed and not failed,
+    })
+
+
 def system_status(campaign, window_start, window_end):
     """Cached platform system status — the System page's source summary.
 
