@@ -11,9 +11,10 @@ Two workstreams, by ownership:
   analytics library, the campaign-status rollup and its MCP/REST surfaces,
   the mechanical verdict floor, the `campaign` assessment subject, the
   scheduled trigger, and surfacing.
-- **corun-ai side** (ec2dev) — the assessment job definition, the harness
-  around the LLM call, the artifact schema enforcement, and registration.
-  This section is self-contained for handoff.
+- **corun-ai side** (ec2dev) — the `campaign_assessment` work unit on the
+  codoc job queue (v1 decision; wrangle-handler-shaped doer for the smooth
+  later move), the harness around the LLM call, the artifact schema
+  enforcement, and registration. This section is self-contained for handoff.
 
 The design authority remains EPICPROD_ASSESSMENTS.md; where v1 cuts a corner,
 the cut is recorded here.
@@ -103,10 +104,10 @@ REST client (no Django import), per the standing tooling preference. It:
 
 1. reads the SysConfig gate through REST; exits quietly if disabled;
 2. resolves the target campaign(s): producing first, else current;
-3. POSTs to the corun-ai jobs API to create one `epicprod-assessment` job per
-   campaign, parameters `{campaign, kind: nightly|weekly, window_days,
-   requested_by}`;
-4. records an `assessment_triggered` action-stream event per job (outcome
+3. POSTs the codoc jobs API (`POST /api/v1/jobs/`, token auth) to create
+   one `campaign_assessment` run per campaign, parameters `{campaign,
+   kind: nightly|weekly, window_days, requested_by}`;
+4. records an `assessment_triggered` action-stream event per run (outcome
    `error` if the POST fails — a slot that never fills must be visible).
 
 Cron (wenauseic), after the 02:15 catalog_sync chain has refreshed the state
@@ -128,25 +129,49 @@ pandabot relay. Badges, filters, and the dashboard are the elaboration phase.
 
 ## corun-ai side (ec2dev) — self-contained handoff
 
-corun-ai executes the assessment as a scheduled-triggered job; it holds the
-LLM credentials, model choice, prompt template, and output schema, and stores
-the artifact with provenance. Production state reaches it only through the
-swf-monitor MCP tools; narratives and prior assessments are corun-ai's own
-pages. Reference: EPICPROD_ASSESSMENTS.md (architecture, determinism rules,
-harness lifecycle), EPICPROD_LLM_OPERATIONS.md (component responsibilities).
+The assessment is **codoc-shaped work**: much input material and tools,
+reasoned over — there is no single observation target (argus-ai, the
+target-pointed probe design, is design-only as of 2026-07-12 and is not this
+assessment's shape). The execution layer, decided 2026-07-12: **v1 rides
+the codoc job queue** — the path codoc exercises daily (JobDefinition,
+worker, REST intake, completion callbacks) — with a smooth path to a
+wrangle-ai-based executor. The differentiation that decides it: the queue
+serves scheduled-and-patient work, which the nightly and weekly assessments
+are; a wrangle executor serves event-driven-and-waiting work — the future
+on-demand assessment, where a human waits on the answer. To keep the later
+move smooth, the harness is written wrangle-handler-shaped from day one: a
+standalone doer script, payload in, outcome out, its own hard timeout —
+invoked by the queue's runner now, by a wrangle handler later. Both layers
+present run-creation REST of the same shape and completion notification
+through the existing callback machinery, so the production side codes to
+the contract once. corun-ai holds the LLM
+credentials, model choice, prompt template, and output schema, and stores
+the artifact with provenance. Production state reaches the run through the
+must-look REST fetches and the swf-testbed MCP tools; narratives and prior
+assessments are corun-ai's own pages. Reference: EPICPROD_ASSESSMENTS.md
+(architecture, determinism rules, harness lifecycle),
+EPICPROD_LLM_OPERATIONS.md (component responsibilities).
 
 Deliverables:
 
-1. **Job definition** `epicprod-assessment`: model settings decided
-   2026-07-12 — Claude Fable for the 2026-07-12 bring-up runs; from
-   2026-07-13, Codex 5.6 at `xhigh` reasoning effort (assessment quality
-   matters more than latency). `mcp_tools` including the swf-testbed
-   MCP server (the DISpatcher access path), timeout ~15 min, system prompt =
-   the assessment template below, held as a versioned prompt group per the
+1. **Assessment work unit** `campaign_assessment`: the must-look basis
+   fetched by URL (the campaign-status rollup REST endpoint, JSON, carrying
+   the verdict floor; the landscape summaries — where a summary lacks a
+   REST peer, the production side adds one). Narratives and prior
+   assessments are corun-native inputs. Model settings decided 2026-07-12 —
+   Claude Fable for the 2026-07-12 bring-up runs; from 2026-07-13, Codex 5.6
+   at `xhigh` reasoning effort (assessment quality matters more than
+   latency). The model holds the swf-testbed MCP toolset during reasoning
+   (the DISpatcher access path) for drill-down; timeout 15 min as the hard
+   bound (expected runtime is minutes); system prompt = the assessment
+   template below, held as a versioned prompt group per the
    section-carried prompt convention.
-2. **Intake**: the existing jobs REST API receives the trigger's POST; job
-   parameters `{campaign, kind, window_days, requested_by}` reach the runner.
-3. **Harness** (the deterministic wrapper around the model call):
+2. **Intake**: a run-creation REST POST carrying `{campaign, kind,
+   window_days, requested_by}` — the codoc jobs API (`POST /api/v1/jobs/`)
+   for v1, the same-shaped wrangle-path endpoint when that layer arrives —
+   with completion notification on terminal states either way.
+3. **Harness** (the deterministic wrapper around the model call — runner
+   script on the queue path, handler/doer on the wrangle path):
    - Context: read the campaign narrative (`campaign_<campaign>`, current
      version) and the current general narrative (`campaign_general_*`
      latest); read the last N prior assessments of this campaign and kind
@@ -305,9 +330,10 @@ a larger prose budget is available and should be spent there.
    tool + REST, `campaign` subject, trigger script. Two deploy cycles
    (swf-epicprod direct-to-main + a small swf-monitor change on
    baseline-v39).
-2. **corun-ai side, parallel** — job definition, harness, schema validation,
-   registration. Exercised first against the live
-   `epicprod_campaign_status` tool from step 1.
+2. **corun-ai side, parallel** — the `campaign_assessment` work unit and
+   its wrangle-handler-shaped harness doer on the codoc queue, schema
+   validation, registration. Exercised first against the live rollup
+   surfaces from step 1.
 3. **End-to-end dry run** — manual trigger against the producing campaign;
    inspect the artifact, tune the floor thresholds and template.
 4. **Crons installed** — first scheduled nightly runs that night; the first
