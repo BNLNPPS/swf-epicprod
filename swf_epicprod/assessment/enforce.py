@@ -72,11 +72,15 @@ def _post(url, payload):
 
 
 def _report_title(prose, slot):
-    """First markdown heading, the same convention corun's worker uses."""
+    """First markdown heading, the same convention corun's worker uses.
+    Markdown links are flattened to their text — the title renders in
+    plain-text surfaces (page header lines, registrations)."""
+    import re
     for line in (prose or '').splitlines():
         s = line.strip()
         if s.startswith('#'):
             t = s.lstrip('#').strip()
+            t = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', t).strip()
             if t:
                 return t[:200]
     return f'Campaign assessment {slot}'
@@ -139,6 +143,10 @@ def main():
     artifact, prose, problems = spec.extract_artifact(content)
     if artifact is not None:
         problems += spec.validate_artifact(artifact)
+        if '## generation report' not in (prose or '').lower():
+            problems.append(
+                'prose is missing the mandatory closing '
+                '"## Generation report" section')
 
     if problems:
         if not _already_retried(args.prompt_group_id):

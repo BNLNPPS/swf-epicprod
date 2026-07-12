@@ -1,7 +1,7 @@
 # ePIC Production Campaign Assessments
 
 Scheduled LLM (large language model) assessments of production campaigns:
-a nightly operational assessment and a weekly trend assessment of each
+a daily operational assessment and a weekly trend assessment of each
 producing campaign, generated automatically, registered as AI assessments
 on the campaign, and distributed through the production channels. The
 assessments concentrate operator attention — what changed, what needs
@@ -9,7 +9,9 @@ action — and build the artifact record that the campaign dashboard and
 later assessments consume.
 
 This is a design document, written 2026-07-10 at the start of the v38
-cycle; nothing below is implemented yet. It builds on
+cycle and implemented in the v39 cycle;
+[EPICPROD_ASSESSMENTS_V1.md](EPICPROD_ASSESSMENTS_V1.md) carries the
+as-built contract. It builds on
 [EPICPROD_LLM_OPERATIONS.md](EPICPROD_LLM_OPERATIONS.md) (the corun-ai
 execution architecture), [EPICPROD_NARRATIVES.md](EPICPROD_NARRATIVES.md)
 (the campaign narratives that define what progress is measured against),
@@ -39,16 +41,16 @@ the concrete contract.)
   the harness front end — assembles the evidence deterministically (the
   campaign-status rollup and landscape summaries, campaign and general
   narratives, prior assessments) and submits the run with the bundle and
-  the subject reference — campaign, assessment kind (`nightly` or
+  the subject reference — campaign, assessment kind (`daily` or
   `weekly`), evidence window — as the run's prompt content. During the
   run the model additionally holds the swf-monitor MCP (Model Context
   Protocol) toolset, the same access path the DISpatcher bot uses, for
   drill-down beyond the bundle. Production state is served by the
   campaign-status MCP/REST rollup (see Analytics Library below)
   alongside the existing `epicprod_*`, `panda_*`, and `pcs_*` tools.
-  Cadence defaults: nightly at 03:45 ET, after the 02:15 catalog-sync
-  chain has refreshed the production state being assessed, and weekly on
-  Monday at 06:00 ET. The trigger records an action-stream event.
+  Cadence defaults: the daily at 03:45 ET, after the 02:15 catalog-sync
+  chain has refreshed the production state being assessed, and the
+  weekly on Monday at 06:00 ET. The trigger records an action-stream event.
 - **Registration.** The production-side completion handler — fed by
   corun's job-completion callback — validates the artifact and registers
   it through `epic_register_ai_assessment` — the write path whose
@@ -143,20 +145,24 @@ the completion handler — guides the operation and cleans up after it:
   dropped: the display shows the quarantined artifact or a red failure
   state.
 - Enforces one artifact per (campaign, kind, date); a rerun replaces
-  its predecessor. Nightly artifacts roll up under retention rules; the
+  its predecessor. Daily artifacts roll up under retention rules; the
   dashboard reads the latest N.
 
 ## Cadence
 
-The nightly assessment is short and operational, and runs even when
-little has changed. A quiet entry is inexpensive and is itself
-information; more importantly, the unbroken nightly sequence is what
-makes trend statements in later assessments verifiable, since the
-assessor's trend awareness is its own prior artifacts read back as
-context. The weekly assessment measures the campaign against its
-narrative's stated goals over a seven-day window; it uses the same
-schema with a larger prose budget, since trend interpretation is where
-the model's judgment carries the most value.
+The daily assessment is short and operational; its subject is the last
+day's window — productivity, new problems, and whether yesterday's
+problems still stand, carried in a standing-issues ledger inherited run
+to run. It runs even when little has changed: a quiet entry is
+inexpensive and is itself information, and the unbroken daily sequence
+is what makes trend statements in later assessments verifiable, since
+the assessor's trend awareness is its own prior artifacts read back as
+context. The weekly assessment is the standalone report: complete in
+itself, re-baselining each week, it measures the campaign against its
+narrative's stated goals over a seven-day window with the same schema
+and a larger prose budget, since trend interpretation is where the
+model's judgment carries the most value. A quiet week rightly reads
+much like the previous week's report.
 
 ## Dashboard Relationship
 
