@@ -19,36 +19,45 @@ action record), and the AI assessment mechanism in
 
 ## Architecture
 
-corun-ai executes the assessments. It holds the LLM credentials, model
-selection, prompt templates, and output schema as its own configuration,
-and stores the resulting artifacts with model and prompt provenance;
-swf-monitor holds no LLM credential and makes no LLM call. The
-assessment runs as a corun-ai work item — the scheduled counterpart of
-the on-request codoc-ai analyses.
+corun-ai executes the model run — the invariant piece — as a generic
+work item, the scheduled counterpart of the on-request codoc-ai
+analyses. It holds the LLM credentials and stores the resulting
+artifacts with model and prompt provenance; swf-monitor holds no LLM
+credential and makes no LLM call. The deterministic envelope around the
+run — evidence assembly before it, enforcement after it — is
+production-side epicprod code, because what enters the model and what is
+accepted out are app logic under intense iteration; the template and
+output schema are epicprod content stored versioned in corun over REST.
+corun carries no epicprod-specific code and no new models. (Placement
+settled 2026-07-12; execution rides the codoc job queue —
+scheduled-and-patient work — with a wrangle-ai-based executor foreseen
+for the event-driven-and-waiting class, both behind the same REST
+shape. [EPICPROD_ASSESSMENTS_V1.md](EPICPROD_ASSESSMENTS_V1.md) carries
+the concrete contract.)
 
-- **Trigger.** A scheduled script on the production host posts to a
-  corun-ai REST endpoint to create the work item, carrying only the
-  subject reference: campaign, assessment kind (`nightly` or `weekly`),
-  and evidence window. Cadence is held in SysConfig; defaults are
-  nightly at 03:45 ET, after the 02:15 catalog-sync chain has refreshed
-  the production state it will assess, and weekly on Monday at 06:00 ET.
-  The trigger records an action-stream event.
-- **Context.** The corun-ai worker gathers its evidence as an MCP
-  (Model Context Protocol) client of swf-monitor, the same access path
-  the DISpatcher bot uses. Campaign narratives and prior assessments
-  are corun-ai artifacts and are read directly. Production state —
-  progress, arrivals, dispositions, alarm state, action-stream
-  activity — is served by a campaign-status MCP tool (new; see
-  Analytics Library below) alongside the existing `epicprod_*`,
-  `panda_*`, and `pcs_*` tools.
-- **Registration.** The worker registers the result through
-  `epic_register_ai_assessment` — the write path whose intended callers
-  already include automated production assessors — with subject type
-  `campaign`, metadata `assessment_kind` and `origin: scheduled`, and a
-  structured verdict. Registration logs an epicprod action whose
-  sublevel rises with a non-`ok` verdict, so an assessment that calls
-  for attention reaches the live stream and the epicprod-live
-  Mattermost channel without additional machinery.
+- **Trigger and evidence.** A scheduled script on the production host —
+  the harness front end — assembles the evidence deterministically (the
+  campaign-status rollup and landscape summaries, campaign and general
+  narratives, prior assessments) and submits the run with the bundle and
+  the subject reference — campaign, assessment kind (`nightly` or
+  `weekly`), evidence window — as the run's prompt content. During the
+  run the model additionally holds the swf-monitor MCP (Model Context
+  Protocol) toolset, the same access path the DISpatcher bot uses, for
+  drill-down beyond the bundle. Production state is served by the
+  campaign-status MCP/REST rollup (see Analytics Library below)
+  alongside the existing `epicprod_*`, `panda_*`, and `pcs_*` tools.
+  Cadence defaults: nightly at 03:45 ET, after the 02:15 catalog-sync
+  chain has refreshed the production state being assessed, and weekly on
+  Monday at 06:00 ET. The trigger records an action-stream event.
+- **Registration.** The production-side completion handler — fed by
+  corun's job-completion callback — validates the artifact and registers
+  it through `epic_register_ai_assessment` — the write path whose
+  intended callers already include automated production assessors — with
+  subject type `campaign`, metadata `assessment_kind` and
+  `origin: scheduled`, and a structured verdict. Registration logs an
+  epicprod action whose sublevel rises with a non-`ok` verdict, so an
+  assessment that calls for attention reaches the live stream and the
+  epicprod-live Mattermost channel without additional machinery.
 
 ## Campaign Analytics Library
 
@@ -116,11 +125,12 @@ enforces it.
 
 ## Harness Lifecycle
 
-The harness — the deterministic script wrapping the LLM call on the
-corun-ai side — guides the operation and cleans up after it:
+The harness — the deterministic envelope around the LLM call,
+production-side epicprod code split between the submission front end and
+the completion handler — guides the operation and cleans up after it:
 
-- Assembles the evidence, applies the template and schema from corun-ai
-  section configuration (versioned, with provenance, following the
+- Assembles the evidence, applies the template and schema (epicprod
+  content stored versioned in corun, with provenance, following the
   section-carried prompt convention).
 - Validates the output against the schema, with a bounded re-prompt on
   mismatch.
@@ -173,7 +183,9 @@ Each step is a functional delivery and a release boundary:
 
 1. Campaign analytics library, the campaign-status rollup service, and
    the `epicprod_campaign_status` MCP tool.
-2. The corun-ai assessment operation — template, schema, work type,
-   harness — the scheduled trigger, and registration verdict handling.
+2. The assessment operation: corun's REST completed for autonomous use;
+   the production-side harness — evidence-assembling trigger, template
+   and schema bootstrapped into corun, completion handler — and
+   registration verdict handling.
 3. Surfacing: assessment filters, the producing-tab verdict badge, and
    narration distribution.
