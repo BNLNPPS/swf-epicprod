@@ -90,25 +90,39 @@ def campaign_progress(campaign, window_start, window_end):
 
 
 def panda_health(campaign, window_start, window_end):
-    """PanDA job-state aggregate over the campaign's matched tasks.
+    """PanDA job-state aggregate over every campaign-named task.
 
-    Reads the PanDA summaries embedded in the progress snapshot (one
-    bounded query family, already paid for) rather than re-querying.
+    The population is all JEDI tasks whose name carries the campaign
+    identity — including aborted and failed early attempts, which the
+    progress snapshot deliberately omits (they have no outputs) but which
+    carry exactly the failures a health axis must count. Found by the
+    first assessment's own audit: 40 campaign-named tasks vs 32
+    snapshot-matched (2026-07-12).
     """
-    from pcs.services import load_campaign_progress_snapshot
+    from pcs.services import _panda_progress_summaries
 
-    snap = load_campaign_progress_snapshot(campaign)
-    if not snap:
+    from django.db import connections
+    from monitor_app.panda.constants import PANDA_SCHEMA
+
+    try:
+        with connections['panda'].cursor() as cursor:
+            cursor.execute(
+                f'SELECT "jeditaskid" FROM "{PANDA_SCHEMA}"."jedi_tasks" '
+                f'WHERE "taskname" LIKE %s',
+                [f'group.EIC.{campaign.name}.%'])
+            task_ids = [row[0] for row in cursor.fetchall()]
+    except Exception as e:
         return _block('panda_health', window_start, window_end,
-                      _unavailable('no progress snapshot cached'))
+                      _unavailable(f'PanDA task lookup failed: {e}'))
+    if not task_ids:
+        return _block('panda_health', window_start, window_end,
+                      _unavailable('no campaign-named PanDA tasks'))
 
-    seen = {}
-    for row in (snap.get('rows') or {}).values():
-        for output in row.get('outputs') or []:
-            summary = output.get('processing') or {}
-            tid = summary.get('jeditaskid')
-            if tid:
-                seen[tid] = summary
+    by_id, _by_name, errors = _panda_progress_summaries(task_ids, [])
+    if errors:
+        return _block('panda_health', window_start, window_end,
+                      _unavailable('; '.join(str(e) for e in errors)))
+    seen = by_id
 
     sums = {k: 0 for k in ('nactive', 'nfinished', 'nfailed',
                            'nfinalfailed', 'nrunning', 'total_jobs')}

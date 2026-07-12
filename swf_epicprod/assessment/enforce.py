@@ -64,6 +64,17 @@ def _post(url, payload):
         return json.loads(resp.read().decode() or '{}')
 
 
+
+def _report_title(prose, slot):
+    """First markdown heading, the same convention corun's worker uses."""
+    for line in (prose or '').splitlines():
+        s = line.strip()
+        if s.startswith('#'):
+            t = s.lstrip('#').strip()
+            if t:
+                return t[:200]
+    return f'Campaign assessment {slot}'
+
 def _already_retried(prompt_group_id):
     """A retry is recorded in the action stream; its presence makes this
     attempt 2 — no state model needed."""
@@ -140,6 +151,7 @@ def main():
             assessment=content or '(empty model output)',
             username='assessment-harness', ai='corun-job',
             subject_label='', subject_url='',
+            title=f'Quarantined assessment — {slot}',
             data={'assessment_kind': kind, 'origin': 'scheduled',
                   'schema_version': spec.SCHEMA_VERSION, 'slot': slot,
                   'verdict': floor_verdict, 'quarantined': True,
@@ -169,6 +181,7 @@ def main():
                             if narration else ''),
         username='assessment-harness', ai='corun-job',
         subject_label='', subject_url='',
+        title=_report_title(prose, slot),
         data={'assessment_kind': kind, 'origin': 'scheduled',
               'schema_version': spec.SCHEMA_VERSION, 'slot': slot,
               'verdict': verdict, 'narration': narration,

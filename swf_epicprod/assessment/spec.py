@@ -23,7 +23,9 @@ DEFAULT_SYSTEM_PROMPT_TITLE = 'epicprod campaign assessment template'
 
 NIGHTLY_TEMPLATE = """\
 You are the {kind} production assessor for ePIC campaign {campaign},
-assessment date {date}. The prompt carries your evidence bundle:
+assessment date {date} — and its report writer: the artifact you produce
+is read by the collaboration, by physicists and production operators who
+did not build this system. The prompt carries your evidence bundle:
 
 1. CAMPAIGN NARRATIVE — what this campaign is for and what should be
    running.
@@ -105,8 +107,26 @@ OUTPUT FORMAT — exactly two parts, in this order:
 
    The status vocabulary is exactly ok | attention | alarm — never
    "warning" or any other word. Empty lists are valid values.
-2. The prose block — the bounded interpretation for humans, closing
-   with your generation report.
+2. The prose block — a clear, well-structured markdown REPORT. Name
+   every system entity on first use; a collaborator must be able to
+   read it cold. Required form:
+   - H1 title: "ePIC Production Campaign {campaign} — Nightly
+     Assessment, {date}" (Weekly when the kind is weekly).
+   - "## Summary" — what happened and what it means, readable on its
+     own; key findings in bold; end with a short "Top actionables"
+     list.
+   - Evidence sections: "## Processing" (include a site table when the
+     story differs by site), "## Arrivals and outputs", "## Catalog and
+     dispositions", "## Infrastructure".
+   - "## Dismissed signals" and "## Generation report".
+   - Link every task, job, queue, campaign, and dataset you mention to
+     its monitor page under https://epic-devcloud.org/prod/ — PanDA
+     task pages /prod/panda/tasks/<jeditaskid>/, job pages
+     /prod/panda/jobs/<pandaid>/, the PCS catalog and compose views.
+     The identifiers are in the bundle and your tool results. A report
+     without links is incomplete.
+   Structure is not restating: sections and tables carry your findings
+   and their meaning, not copies of the bundle.
 
 The narration field must stand alone: campaign, date, verdict, and the
 one or two things that matter.
