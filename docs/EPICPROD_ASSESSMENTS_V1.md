@@ -151,23 +151,35 @@ Deliverables:
      version) and the current general narrative (`campaign_general_*`
      latest); read the last N prior assessments of this campaign and kind
      (N from the rollup's `assessment_prior_count`).
-   - Task 1 — the comprehensive picture, from the campaign on down. The
-     must-look set is plural: `epicprod_campaign_status` (the rollup,
-     carrying the verdict floor) and the landscape summary tools — PanDA
-     activity and error summaries, task listings, the epicprod action
-     stream, system status. The summaries are surfacing instruments in
-     their own right, not confirmations of the rollup; investigation is
-     not gated on a rollup anomaly. Whatever any of them surfaces gets
-     directed drill-down (`panda_diagnose_jobs`, `panda_study_job`,
-     `pcs_prodtask_get`, Rucio tools) bounded by the job timeout.
+   - Task 1 basis — assembled by the harness, deterministically. The
+     must-look calls — `epicprod_campaign_status` (the rollup, carrying
+     the verdict floor), PanDA activity and error summaries, task
+     listings, the epicprod action stream, system status — are performed
+     identically every run with per-call outcomes recorded, and bundled
+     with the narratives and priors into one evidence bundle. Mandatory
+     coverage is mechanism, not instruction: a failed must-look marks the
+     run degraded mechanically. The must-look set is versioned harness
+     configuration beside the template and schema. Each run's bundle is
+     persisted: successive bundles form a time history of system state —
+     the seed of a higher-frequency state timeline (recorded future
+     direction, 2026-07-12: present monitoring is snapshot-oriented; a
+     ~30 s system-state history is wanted).
+   - Model drill-down: the summaries are surfacing instruments in their
+     own right, not confirmations of the rollup; investigation is not
+     gated on a rollup anomaly. Whatever any of them surfaces gets
+     directed drill-down by the model (`panda_diagnose_jobs`,
+     `panda_study_job`, `pcs_prodtask_get`, Rucio tools), plus any further
+     summaries it wants mid-reasoning, bounded by the job timeout — every
+     call lands in the verification transcript.
    - Task 2 — reason over the assembled picture and produce the report.
    - The model performs no arithmetic anywhere: every number it states
-     must have arrived in a tool result during the run.
-   - Generation report — always: the artifact closes with how it was
-     generated — what was consulted and what each contributed, tool errors
-     and gaps encountered, anything unobtainable, workarounds taken. The
-     harness appends tool failures it observed itself, so a degraded run
-     reads as degraded rather than smooth.
+     must have arrived in a tool result during the run — the harness
+     bundle or its own calls.
+   - Generation report — always, with two authors: the harness's basis
+     manifest (what was fetched, per-call outcomes, timings) and the
+     model's own account — what it consulted and what each contributed,
+     tool errors and gaps, anything unobtainable, workarounds taken — so
+     a degraded run reads as degraded rather than smooth.
    - Validation: parse the structured block against the schema below; one
      bounded re-prompt on mismatch; second failure → quarantined artifact
      (marked malformed, raw output retained, excluded from later context)
@@ -239,14 +251,15 @@ assessment date {date}. You are given:
    epicprod_*, Rucio).
 
 TASK 1 — build the comprehensive picture, from the campaign on down.
-The must-look set, every run: the campaign status rollup
-(epicprod_campaign_status — it carries the mechanical verdict FLOOR),
-PanDA activity and error summaries, recent production actions
-(epicprod_list_actions), and system status. These summaries exist to
-surface issues — use them to look, not merely to confirm the rollup.
-Whatever any of them surfaces, drill down to the task, the site, the
-error, the action behind it. Directed digging within your time budget,
-in service of the verdict and top issues.
+Your basis arrives assembled: the evidence bundle carries the campaign
+status rollup (with the mechanical verdict FLOOR), PanDA activity and
+error summaries, recent production actions, and system status, beside
+the narratives and your prior assessments. Read every summary as a
+surfacing instrument, not a confirmation of the rollup. Extend the
+picture wherever anything surfaced warrants it: drill down to the task,
+the site, the error, the action behind it, and call any further tools
+you need. Directed digging within your time budget, in service of the
+verdict and top issues.
 
 TASK 2 — reason over the picture and report: correlation across signals
 (an arrivals dip, one site's error spike, and a queue alarm may be one
