@@ -147,20 +147,35 @@ Deliverables:
 2. **Intake**: the existing jobs REST API receives the trigger's POST; job
    parameters `{campaign, kind, window_days, requested_by}` reach the runner.
 3. **Harness** (the deterministic wrapper around the model call):
-   - Evidence: call `epicprod_campaign_status(campaign, window_days)`;
-     read the campaign narrative (`campaign_<campaign>`, current version)
-     and the current general narrative (`campaign_general_*` latest); read
-     the last N prior assessments of this campaign and kind (N from the
-     rollup's `assessment_prior_count`).
-   - Prompt assembly: template + evidence JSON verbatim. The model receives
-     numbers only through the rollup; it performs no arithmetic.
+   - Context: read the campaign narrative (`campaign_<campaign>`, current
+     version) and the current general narrative (`campaign_general_*`
+     latest); read the last N prior assessments of this campaign and kind
+     (N from the rollup's `assessment_prior_count`).
+   - Task 1 — the comprehensive picture, from the campaign on down. The
+     must-look set is plural: `epicprod_campaign_status` (the rollup,
+     carrying the verdict floor) and the landscape summary tools — PanDA
+     activity and error summaries, task listings, the epicprod action
+     stream, system status. The summaries are surfacing instruments in
+     their own right, not confirmations of the rollup; investigation is
+     not gated on a rollup anomaly. Whatever any of them surfaces gets
+     directed drill-down (`panda_diagnose_jobs`, `panda_study_job`,
+     `pcs_prodtask_get`, Rucio tools) bounded by the job timeout.
+   - Task 2 — reason over the assembled picture and produce the report.
+   - The model performs no arithmetic anywhere: every number it states
+     must have arrived in a tool result during the run.
+   - Generation report — always: the artifact closes with how it was
+     generated — what was consulted and what each contributed, tool errors
+     and gaps encountered, anything unobtainable, workarounds taken. The
+     harness appends tool failures it observed itself, so a degraded run
+     reads as degraded rather than smooth.
    - Validation: parse the structured block against the schema below; one
      bounded re-prompt on mismatch; second failure → quarantined artifact
      (marked malformed, raw output retained, excluded from later context)
      or a failure record. Every scheduled slot resolves to a visible outcome.
    - Number verification: every numeric value in the structured block must
-     appear in the supplied evidence; violations are treated as schema
-     failures.
+     appear in the supplied evidence or in a tool result received during
+     the run (the harness verifies against the run's tool transcript);
+     violations are treated as schema failures.
    - Verdict floor: the rollup's `floor.verdict` is the minimum; the model
      may raise with justification, never lower.
    - One artifact per (campaign, kind, date); a rerun replaces its
@@ -193,9 +208,17 @@ Deliverables:
     {"title": "...", "severity": "attention|alarm",
      "evidence": ["<metric/action refs>"], "action": "<what a human should do>"}
   ],
+  "dismissed": [
+    {"signal": "<what looked anomalous>", "reason": "<why it is not an issue>"}
+  ],
   "narration": "2-4 self-contained sentences",
   "cites": {"narrative": "campaign_26.06.0", "narrative_version": 5,
-            "priors": ["<page group ids>"], "evidence_computed_at": "<iso8601>"}
+            "priors": ["<page group ids>"], "evidence_computed_at": "<iso8601>"},
+  "generation": {
+    "consulted": [{"source": "<tool or document>", "contribution": "..."}],
+    "problems": ["<tool errors, gaps, workarounds>"],
+    "unavailable": ["<sources or members that could not be obtained>"]
+  }
 }
 ```
 
@@ -206,26 +229,47 @@ The prose block is the page body; the structured block is `Page.data`; the
 
 ```
 You are the nightly production assessor for ePIC campaign {campaign},
-assessment date {date}. You are given, and may use nothing else:
+assessment date {date}. You are given:
 
 1. CAMPAIGN NARRATIVE {narrative_name} v{narrative_version} — what this
    campaign is for and what should be running.
 2. GENERAL NARRATIVE — standing facts of how production operates.
 3. PRIOR ASSESSMENTS — your last {n} nightly artifacts for this campaign.
-4. EVIDENCE — the campaign status rollup (JSON). Every number you state
-   must appear here verbatim. You do not calculate; you interpret.
-5. FLOOR — the mechanical verdict floor and its reasons. Your verdict may
-   be more severe than the floor, with justification; never less.
+4. THE PRODUCTION TOOLSET — the swf-testbed MCP tools (panda_*, pcs_*,
+   epicprod_*, Rucio).
 
-Produce the assessment artifact in the required JSON schema, then the prose
-block. Direct your judgment at what the numbers do not state themselves:
-correlation across signals (an arrivals dip, one site's error spike, and a
-queue alarm may be one event, not three), deviation from the narrative's
-stated intent, trend inflection against your prior assessments, and the
-explicit call on what requires human action, if anything. Do not restate
+TASK 1 — build the comprehensive picture, from the campaign on down.
+The must-look set, every run: the campaign status rollup
+(epicprod_campaign_status — it carries the mechanical verdict FLOOR),
+PanDA activity and error summaries, recent production actions
+(epicprod_list_actions), and system status. These summaries exist to
+surface issues — use them to look, not merely to confirm the rollup.
+Whatever any of them surfaces, drill down to the task, the site, the
+error, the action behind it. Directed digging within your time budget,
+in service of the verdict and top issues.
+
+TASK 2 — reason over the picture and report: correlation across signals
+(an arrivals dip, one site's error spike, and a queue alarm may be one
+event, not three), root causes your investigation established, deviation
+from the narrative's stated intent, trend inflection against your prior
+assessments, and the explicit call on what requires human action, if
+anything. Signals you examined and set aside go in the dismissed list
+with reasons — tomorrow's run inherits your explanations. Do not restate
 chart or table contents. A quiet night is a valid result: say so briefly.
-The narration field must stand alone: campaign, date, verdict, and the one
-or two things that matter.
+
+You interpret and investigate; you do not calculate. Every number you
+state must have arrived in a tool result during this run; it is verified
+against them. The FLOOR is your minimum verdict — raise it with
+justification if warranted, never lower it.
+
+ALWAYS close with the generation report: what you consulted and what each
+contributed, tool errors or gaps you hit, anything you could not obtain,
+and workarounds you took. Candour here is prized — a degraded run must
+read as degraded, never as smooth.
+
+Produce the artifact in the required JSON schema, then the prose block.
+The narration field must stand alone: campaign, date, verdict, and the
+one or two things that matter.
 ```
 
 ### Weekly prompt template (v1)
