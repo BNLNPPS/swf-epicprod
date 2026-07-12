@@ -412,32 +412,11 @@ def _promote_cascade_note(campaigns_by_lifecycle, target_name):
 
 def _campaigns_with_inflow():
     """Campaigns with fresh Rucio arrivals — the derived 'producing'
-    status (EPICPROD_DATA_LINEAGE.md): an arrivals block recorded within
-    SysConfig ``campaign_producing_window_days`` (default 3, covering
-    missed sweep nights). Current-labeled campaigns are excluded — the
-    Current tab already is their surface. Returns [(campaign, arrivals),
-    ...] sorted by name; purely derived, no stored lifecycle involved.
+    status. Single source: swf_epicprod.analytics.rollup.producing_campaigns
+    (also behind the campaign status rollup and the assessment trigger).
     """
-    import datetime as _dt
-
-    from monitor_app.models import SysConfig
-    days = SysConfig.get_setting('campaign_producing_window_days', 3)
-    try:
-        window = _dt.timedelta(days=float(days))
-    except (TypeError, ValueError):
-        window = _dt.timedelta(days=3)
-    cutoff = timezone.now() - window
-    out = []
-    for camp in Campaign.objects.exclude(lifecycle='current'):
-        arrivals = (camp.data or {}).get('arrivals') or {}
-        try:
-            last = _dt.datetime.fromisoformat(
-                arrivals.get('last_arrival_at', ''))
-        except (TypeError, ValueError):
-            continue
-        if last >= cutoff:
-            out.append((camp, arrivals))
-    return sorted(out, key=lambda pair: pair[0].name)
+    from swf_epicprod.analytics.rollup import producing_campaigns
+    return producing_campaigns()
 
 
 def _catalog_table_cache_key(campaign_id, catalog_view, signature):

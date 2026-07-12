@@ -750,3 +750,38 @@ def prod_request_compose(request):
     UserPreference.set_pref(username, 'composer_contact_email',
                             fields['contact_email'])
     return Response(result, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticatedOrReadOnly])
+def campaigns_status(request):
+    """Campaign status rollup — the assessment evidence document
+    (docs/EPICPROD_ASSESSMENTS_V1.md). Read-only, no DB writes beyond
+    SysConfig autoseeding of unset threshold keys.
+
+    Query params:
+        campaign     — campaign name; default: first producing campaign,
+                       else current.
+        window_days  — activity window for deltas/flips/actions (default 1).
+        targets_only — '1' returns only {targets, assessment_enabled}, the
+                       cheap form the scheduled trigger polls.
+    """
+    from swf_epicprod.analytics.rollup import (
+        campaign_status as _campaign_status, resolve_target_campaigns)
+
+    if request.query_params.get('targets_only') in ('1', 'true'):
+        from monitor_app.models import SysConfig
+        return Response({
+            'targets': resolve_target_campaigns(),
+            'assessment_enabled': bool(
+                SysConfig.get_setting('assessment_enabled', True)),
+        })
+    try:
+        result = _campaign_status(
+            request.query_params.get('campaign') or None,
+            window_days=request.query_params.get('window_days') or 1)
+    except ServiceError as e:
+        return Response({'detail': str(e)}, status=getattr(e, 'status', 400))
+    return Response(result)
