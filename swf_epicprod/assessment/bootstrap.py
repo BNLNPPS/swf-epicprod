@@ -7,7 +7,7 @@ JobDefinition, then prints the environment values the trigger and
 enforcement need. No human hands on corun configuration.
 
     python -m swf_epicprod.assessment.bootstrap [--model gpt-5.6-sol]
-        [--effort xhigh] [--timeout-s 3600]
+        [--effort xhigh] [--timeout-s 10800]
 
 Environment: CORUN_API_URL, CORUN_API_TOKEN.
 """
@@ -41,7 +41,8 @@ def _request(method, path, payload=None):
         return json.loads(resp.read().decode() or '{}')
 
 
-def ensure_section(name):
+def ensure_section(name, *, title='epicprod campaign assessments',
+                   description='', ui_visible=False):
     try:
         _request('GET', f'/sections/{name}/')
         print(f'section {name}: exists')
@@ -51,10 +52,11 @@ def ensure_section(name):
             raise
     _request('POST', '/sections/', {
         'name': name,
-        'title': 'epicprod campaign assessments',
-        'description': 'Scheduled campaign assessment runs and artifacts '
-                       '(swf-epicprod/docs/EPICPROD_ASSESSMENTS_V1.md).',
-        'data': {'ui_visible': False},
+        'title': title,
+        'description': description or (
+            'Scheduled campaign assessment runs and artifacts '
+            '(swf-epicprod/docs/EPICPROD_ASSESSMENTS_V1.md).'),
+        'data': {'ui_visible': ui_visible},
     })
     print(f'section {name}: created')
 
@@ -66,7 +68,9 @@ def ensure_system_prompt(kind):
         'GET', f'/system-prompts/?name={urllib.request.quote(name)}')
     rows = listing if isinstance(listing, list) else listing.get('results') or []
     current = next((r for r in rows if r.get('is_current', True)), None)
-    if current and (current.get('content') or '') == wanted:
+    # DRF trims surrounding whitespace on CharField input; compare the stored
+    # canonical form so an idempotent bootstrap does not mint empty versions.
+    if current and (current.get('content') or '').strip() == wanted.strip():
         print(f"system prompt: current (group {current.get('group_id')}, "
               f"v{current.get('version')})")
         return str(current['group_id'])
@@ -83,7 +87,15 @@ def ensure_system_prompt(kind):
 
 def ensure_definition(name, sp_group_id, model, effort, timeout_s):
     wanted_data = {'model': model, 'effort': effort,
-                   'mcp_tools': ['swf-testbed'],
+                   'mcp_tools': [
+                       'tjai',
+                       'swf-testbed',
+                       'rucio-jlab',
+                       'rucio-bnl',
+                       'xrootd',
+                       'lxr',
+                       'github-readonly',
+                   ],
                    'system_prompt_group_id': sp_group_id,
                    'timeout_s': timeout_s}
     listing = _request('GET', '/definitions/')
@@ -113,9 +125,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--model', default='gpt-5.6-sol')
     parser.add_argument('--effort', default='xhigh')
-    # A generous ceiling, not a target: killing a long think mid-run is a
-    # truncation, and truncations require operator approval.
-    parser.add_argument('--timeout-s', type=int, default=3600)
+    # Generous against the expected 3-5 minute run, but still bounds a
+    # pathological process.
+    parser.add_argument('--timeout-s', type=int, default=10800)
     parser.add_argument('--section', default=spec.DEFAULT_SECTION)
     args = parser.parse_args()
 
@@ -125,6 +137,14 @@ def main():
         return 2
 
     ensure_section(args.section)
+    ensure_section(
+        spec.DEFAULT_EVAL_SECTION,
+        title='epicprod assessment candidates',
+        description=(
+            'Candidate daily and weekly reports produced during evaluation; '
+            'never registered on production subjects.'),
+        ui_visible=True,
+    )
     print('\nEnvironment for the trigger and enforcement:')
     print(f'CORUN_ASSESSMENT_SECTION={args.section}')
     for kind in ('daily', 'weekly'):

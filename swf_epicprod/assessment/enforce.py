@@ -7,9 +7,8 @@ swf_epicprod.assessment.enforce --job-id ... --prompt-group-id ...
 ``assessment_completed`` handler. It validates the model's artifact
 against the schema, enforces the verdict floor (raise-only), retries a
 malformed run once, quarantines a second failure (raw output retained,
-never dropped), appends the harness half of the generation report, and
-registers the assessment — every scheduled slot resolves to a visible
-outcome.
+never dropped), and registers the assessment — every scheduled slot resolves
+to a visible outcome.
 """
 
 import argparse
@@ -39,6 +38,10 @@ CORUN_API_URL = (os.environ.get('CORUN_API_URL', '').rstrip('/')
                  or (os.environ.get('CORUN_BASE_URL', '').rstrip('/') + '/api/v1'
                      if os.environ.get('CORUN_BASE_URL') else ''))
 CORUN_API_TOKEN = os.environ.get('CORUN_API_TOKEN', '')
+CORUN_ASSESSMENT_SECTION = os.environ.get(
+    'CORUN_ASSESSMENT_SECTION', spec.DEFAULT_SECTION)
+
+
 def _definition_for(kind):
     # DAILY was NIGHTLY until 2026-07-12; honor an un-migrated environment.
     legacy = 'NIGHTLY' if kind == 'daily' else ''
@@ -122,6 +125,7 @@ def main():
     campaign = params.get('campaign') or 'unknown'
     kind = params.get('kind') or 'daily'
     slot = submitted.get('slot') or ''
+    evaluation = bool(submitted.get('evaluation'))
     floor = (((bundle.get('rollup') or {}).get('floor')) or {})
     floor_verdict = floor.get('verdict') or 'ok'
 
@@ -143,20 +147,47 @@ def main():
     artifact, prose, problems = spec.extract_artifact(content)
     if artifact is not None:
         problems += spec.validate_artifact(artifact)
-        if '## generation report' not in (prose or '').lower():
-            problems.append(
-                'prose is missing the mandatory closing '
-                '"## Generation report" section')
+        problems += spec.validate_prose(prose, kind)
 
     if problems:
-        if not _already_retried(args.prompt_group_id):
+        is_repair = bool(submitted.get('repair'))
+        if not is_repair and not _already_retried(args.prompt_group_id):
+            repair_submission = dict(submitted)
+            repair_submission['repair'] = {
+                'validation_problems': problems,
+                'previous_output': content,
+                'instruction': (
+                    'Produce a complete replacement report. Correct every '
+                    'listed validation problem while preserving supported '
+                    'production findings. Do not discuss the repair request '
+                    'outside the Generation report.'),
+            }
+            retry_prompt = _post(
+                f'{CORUN_API_URL}/prompts/',
+                {'section': (spec.DEFAULT_EVAL_SECTION if evaluation
+                             else CORUN_ASSESSMENT_SECTION),
+                 'content': json.dumps(repair_submission),
+                 'definition_id': _definition_for(kind)})
+            retry_prompt_group_id = str(
+                retry_prompt.get('group_id') or '')
             job = _post(f'{CORUN_API_URL}/jobs/',
-                        {'prompt_group_id': args.prompt_group_id,
+                        {'prompt_group_id': retry_prompt_group_id,
                          'definition_id': _definition_for(kind)})
             _log('assessment_retry', outcome='ok', subject_key=campaign,
                  slot=slot, prompt_group_id=args.prompt_group_id,
+                 retry_prompt_group_id=retry_prompt_group_id,
                  retry_job_id=str(job.get('id') or ''),
                  reason='; '.join(problems)[:300])
+            return 0
+        if evaluation:
+            _log('assessment_evaluation', outcome='error',
+                 subject_key=campaign, sublevel='high', slot=slot,
+                 job_id=args.job_id,
+                 corun_page_group_id=args.page_group_id,
+                 reason='candidate failed validation: '
+                        + '; '.join(problems)[:250])
+            print(f'{campaign} {slot}: evaluation candidate failed: '
+                  + '; '.join(problems))
             return 0
         # Second failure: quarantine — raw output retained, excluded from
         # later context (priors skip quarantined), verdict pinned to floor.
@@ -182,23 +213,35 @@ def main():
         return 0
 
     verdict = artifact.get('verdict')
+    model_verdict = verdict
     floor_enforced = False
     if not spec.verdict_at_least(verdict, floor_verdict):
         floor_enforced = True
-        artifact['verdict_model'] = verdict
         artifact['verdict'] = verdict = floor_verdict
 
     narration = str(artifact.get('narration') or '').strip()
+    if evaluation:
+        _log('assessment_evaluation', outcome='ok', subject_key=campaign,
+             slot=slot, verdict=verdict, floor_enforced=floor_enforced,
+             degraded=bool(bundle.get('degraded')),
+             corun_page_group_id=args.page_group_id,
+             job_id=args.job_id)
+        print(f'{campaign} {slot}: evaluation candidate validated '
+              f'verdict={verdict} page={args.page_group_id}')
+        return 0
+
     result = _register_ai_assessment_sync(
         subject_type='campaign', subject_key=campaign,
-        assessment=prose + ('\n\n---\n**Narration:** ' + narration
-                            if narration else ''),
+        # Narration is structured metadata for compact UI consumers. The
+        # human report must end with its provenance account.
+        assessment=prose,
         username='assessment-harness', ai='corun-job',
         subject_label='', subject_url='',
         title=_report_title(prose, slot),
         data={'assessment_kind': kind, 'origin': 'scheduled',
               'schema_version': spec.SCHEMA_VERSION, 'slot': slot,
               'verdict': verdict, 'narration': narration,
+              'model_verdict': model_verdict,
               'floor': floor, 'floor_enforced': floor_enforced,
               'structured': artifact,
               'prompt_group_id': args.prompt_group_id,

@@ -144,23 +144,35 @@ grows with it.
 4. records an `assessment_triggered` action-stream event per run, outcome
    `error` on any failure — a slot that never fills must be visible.
 
-**The run (corun, invariant):** the model under the fixed template (a
-versioned SystemPrompt), with the swf-testbed MCP toolset for drill-down.
-The bundle's summaries are surfacing instruments; whatever any of them
-surfaces the model chases (`panda_diagnose_jobs`, `panda_study_job`,
-`pcs_prodtask_get`, Rucio tools), plus any further summaries it wants,
-bounded by the job timeout. It reasons over the picture (Task 2), writes
-the artifact, performs no arithmetic anywhere — every number it states
-must have arrived in the bundle or a tool result — and closes with its
-generation report.
+**The run (corun, invariant):** the versioned SystemPrompt establishes a
+senior ePIC production and operations expert writing for expert peers. Before
+assessment it loads the user profile, general/SWF worker guidance, and
+documentation-writing guidance from TJAI. Its read-only investigation surface
+is SWF Testbed (PanDA, PCS, epicprod), BNL Rucio, JLab Rucio, XRootD, LXR, and
+a separately fenced GitHub service exposing its complete read-only surface.
+The prompt describes the knowledge held by each service,
+the evidence layer it represents, and the investigation routes connecting
+them. The bundle is the starting record; the model decides which material
+signals warrant drill-down, reconciles contradictions, and writes for the
+human reader. The JSON artifact is a secondary machine contract, not the
+organizing form of the prose.
+
+The daily is a focused operational delta report: activity, advancement,
+material changes, present attention, and the evolution of prior concerns. The
+weekly is a standalone synthesis: campaign state, the week's production,
+software/release state, responsibilities, and outlook. Both finish with a
+substantive `## Generation report` naming context and evidence consulted,
+actual tools and contributions, conflicts and failures, unavailable evidence,
+and the resulting confidence. Nothing follows that section.
 
 **Enforcement end (completion callback → prod-ops agent handler):** the
 corun completion callback already lands at swf-monitor; a handler:
 
 - fetches the result page and the run record (status, stderr) over REST;
-- validates the structured block against the schema and the prose
-  against the report form (the closing "## Generation report" section
-  is mandatory); on failure, one bounded re-submission; a second
+- validates the structured block against the exact schema and the prose
+  against the report form (the substantive `## Generation report` must be
+  the final H2); on failure, one bounded repair run receives the exact
+  validation failures and prior output; a second
   failure quarantines the artifact (marked malformed, raw output
   retained, excluded from later context and from the assessments page)
   or records the failure — every scheduled slot resolves to a visible
@@ -172,11 +184,11 @@ corun completion callback already lands at swf-monitor; a handler:
   ours;
 - enforces the floor: the artifact's verdict may exceed the bundle's
   floor with justification, never fall below it;
-- appends the harness half of the generation report (basis manifest,
-  per-call outcomes, run status) beside the model's account — a degraded
-  run reads as degraded rather than smooth;
-- enforces one artifact per (campaign, kind, date); a rerun replaces its
-  predecessor;
+- stores the harness manifest, per-call outcomes, run timing, and enforcement
+  state as registration metadata beside the model's final Generation report;
+  the human report itself remains model-written and ends with that section;
+- treats the newest artifact for each (campaign, kind, date) as authoritative
+  prior context while retaining older rerun pages as audit history;
 - registers: `epic_register_ai_assessment(subject_type='campaign',
   subject_key=<campaign>, ...)`, titled with the report's H1 (markdown
   links flattened to text — the assessments page leads with the
@@ -236,8 +248,10 @@ with no human hands on corun configuration:
 4. **Run-outcome completeness**: `GET /api/v1/jobs/<id>/` exposing the
    run's error and stderr/output (the worker already captures them), or a
    `/jobs/<id>/log/` endpoint — failures must be machine-readable.
-5. **MCP registry**: register the swf-testbed MCP server in the worker's
-   `MCP_SERVERS` registry so a definition can select it.
+5. **MCP registry**: register TJAI, SWF Testbed, BNL Rucio, JLab Rucio,
+   XRootD, LXR, and a separately fenced read-only GitHub service in the
+   worker's `MCP_SERVERS` registry. BNL uses a renewable worker-side service
+   proxy; no personal proxy path is embedded in the definition.
 6. **A token** for the epicprod service account.
 
 Everything else epicprod does itself over the existing surface: creates
@@ -246,20 +260,19 @@ through 1–3; submits nightly runs (prompts + jobs, the two-POST contract
 already deployed); receives completion through the existing subscription →
 swf-monitor callback → Mattermost relay, unchanged; reads result pages,
 run records, and prompt history over REST. Model settings epicprod sets in
-the definition it creates: Codex 5.6 (`gpt-5.6-sol`) at `xhigh` reasoning
-effort (the intended Fable bring-up fell to corun's model registry, which
-carries no Fable entry); timeout 60 min — a generous ceiling, not a
-target: killing a long think mid-run is a truncation (operator directive
-2026-07-12; observed runtime ~3.5 min).
+the definition it creates: Codex Sol (`gpt-5.6-sol`) at `xhigh` reasoning
+effort; timeout 10,800 seconds (three hours), generous against the observed
+runtime of roughly 3.5 minutes while still bounding a pathological run
+(operator directive 2026-07-12).
 
-### Artifact schema (v1, `schema_version: 1`)
+### Artifact schema (v2, `schema_version: 2`)
 
 The operative schema is `spec.validate_artifact` in
 `swf_epicprod/assessment/spec.py`; the shape:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "verdict": "ok | attention | alarm",
   "axes": {
     "arrivals":       {"status": "ok|attention|alarm", "note": "..."},
@@ -306,28 +319,31 @@ The operative templates are `DAILY_TEMPLATE` and `WEEKLY_TEMPLATE` in
 `swf_epicprod/assessment/spec.py` — that module is the single source;
 `assessment.bootstrap` pushes each as a versioned corun SystemPrompt
 referenced by the kind's JobDefinition. This document does not carry
-copies. The standing content rules the templates encode:
+copies. Their stable professional contract is:
 
-- The daily's subject is the window (24 hours plus a soft overlap):
-  productivity, new problems, the inherited standing-issues ledger
-  (`new|unchanged|improved|worsened|resolved`), deltas against the
-  previous run's bundle. The weekly is the standalone report,
-  re-baselined each week and measured against the campaign narrative's
-  stated goals.
-- The readers are ePIC production operators and physicists: collaboration
-  vocabulary is never expanded or explained; naming means identifying and
-  linking the concrete object.
-- Times in ET, labeled — never bare UTC. No table or bullet list of all
-  zeros; a quiet window is one sentence, and a section with nothing to
-  report is one line.
+- Identity, audience, purpose, source semantics, tool capabilities, and
+  investigation discipline are explicit. Editorial judgment belongs to the
+  expert model; templates do not accumulate symptom-level presentation rules.
+- The daily's subject is operational activity and change in the interval. The
+  weekly is standalone and re-baselined against campaign intent, the week's
+  daily record, and the preceding weekly.
+- The readers are ePIC production and computing experts. Reports use their
+  working vocabulary, identify and link concrete objects, and present time in
+  ET.
 - The model interprets and investigates; it does not calculate. The FLOOR
   is the minimum verdict, raise-only.
-- Output is exactly two parts: the fenced JSON artifact (schema above),
-  then the prose report with a plain-text H1 title, the required
-  sections, links for every object mentioned, and the mandatory closing
-  "## Generation report".
+- Output is exactly two parts: the fenced JSON artifact (schema above), then
+  the reader-oriented prose report. Narration remains metadata and is never
+  appended after the mandatory closing `## Generation report`.
 
 ## Sequencing
+
+During tuning, scheduled daily and weekly crons remain disabled. Candidate runs
+use `assessment.trigger --kind daily|weekly --evaluation`; their prompts and
+result pages live in `epicprod.assessment.eval`. They pass through the same
+schema, prose, floor, and repair enforcement, but are never registered on the
+campaign and never enter production prior context. Scheduling is restored only
+after the corresponding report form passes human review.
 
 1. **Production side, first pass** — analytics members, rollup + floor, MCP
    tool + REST, `campaign` subject, trigger script. Two deploy cycles
@@ -342,11 +358,12 @@ copies. The standing content rules the templates encode:
    over the completed REST.
 3. **End-to-end dry run** — manual trigger against the producing campaign;
    inspect the artifact, tune the floor thresholds and template.
-4. **Crons installed** (2026-07-12) — the daily rides the 03:45 cron; the
-   first weekly was run manually to seed the series and rides its Monday
-   cron.
+4. **Scheduling gated on acceptance** — both cron lines were disabled
+   2026-07-12 after the first outputs failed review. Restore daily only after
+   an evaluation candidate is accepted; restore weekly only after the daily
+   form is stable and a weekly candidate is accepted.
 
 The decision points held by the operator: floor thresholds and template
 wording after the dry run (step 3), and the go for the crons (step 4).
-Model/effort was decided 2026-07-12: Fable for bring-up, Codex 5.6 at
-`xhigh` from 2026-07-13.
+Model/effort is Codex 5.6 (`gpt-5.6-sol`) at `xhigh` throughout tuning and
+production.

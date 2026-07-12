@@ -165,14 +165,8 @@ def campaign_status(campaign=None, window_days=1):
         window_days = max(float(window_days), 0.04)  # floor ~1 hour
     except (TypeError, ValueError):
         window_days = 1.0
-    # The window carries an overlap so consecutive assessments leave no
-    # gap at the edges; events near a boundary may appear in two reports,
-    # which is harmless and expected.
-    overlap_hours = float(SysConfig.get_setting(
-        'assessment_window_overlap_hours', 2))
     window_end = timezone.now()
-    window_start = window_end - _dt.timedelta(
-        days=window_days, hours=overlap_hours)
+    window_start = window_end - _dt.timedelta(days=window_days)
 
     blocks = {}
     for member in _members.MEMBERS:

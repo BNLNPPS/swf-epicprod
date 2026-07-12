@@ -13,8 +13,10 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+from swf_epicprod.assessment import spec
+
 TIMEOUT = 60
-BUNDLE_SCHEMA = 'epicprod-evidence-bundle/1'
+BUNDLE_SCHEMA = 'epicprod-evidence-bundle/2'
 NARRATIVE_SECTION = 'epicprod.narrative'
 
 
@@ -176,7 +178,7 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
                               f'no {label} narrative page found for {campaign}')
 
     prior_count = int((rollup or {}).get('assessment_prior_count') or 7)
-    priors = []
+    prior_candidates = []
     prior_pages = manifest.fetch(
         'prior_assessments',
         f'{corun_url}/pages/?section={section}'
@@ -184,24 +186,60 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
     if prior_pages is not None:
         for page in _page_items(prior_pages):
             data = page.get('data') or {}
-            if (data.get('assessment_kind')
-                    and data.get('assessment_kind') not in _kind_aliases(kind)):
+            # The v2 cutover is deliberate: rejected v1 tuning outputs are
+            # not professional context and must never be grandfathered into
+            # the rebuilt daily or weekly series.
+            if data.get('schema_version') != spec.SCHEMA_VERSION:
+                continue
+            prior_kind = str(data.get('assessment_kind') or '').lower()
+            if prior_kind == 'nightly':
+                prior_kind = 'daily'
+            if kind == 'weekly':
+                if prior_kind not in ('daily', 'weekly'):
+                    continue
+            elif prior_kind and prior_kind not in _kind_aliases(kind):
                 continue
             if data.get('quarantined'):
                 continue
             structured = data.get('structured') or {}
-            priors.append({
+            prior_candidates.append({
                 'group_id': page.get('group_id') or '',
                 'created_at': page.get('created_at') or '',
+                'kind': prior_kind or kind,
                 'verdict': data.get('verdict') or '',
                 'narration': (data.get('narration') or '')[:600],
                 'slot': data.get('slot') or '',
+                # The weekly writer needs the actual daily reports, not just
+                # their ledgers. Context is intentionally generous here.
+                'report': page.get('content') or '',
                 'standing_issues': structured.get('standing_issues') or [],
                 'top_issues': [str(i.get('title') or '')[:120]
                                for i in structured.get('top_issues') or []],
             })
-        priors.sort(key=lambda p: p['created_at'], reverse=True)
-        priors = priors[:prior_count]
+        prior_candidates.sort(key=lambda p: p['created_at'], reverse=True)
+
+        # Reruns replace a report conceptually. The pages API retains every
+        # version, so keep only the newest report for each campaign/kind/day
+        # slot before selecting a daily sequence or preceding weekly.
+        unique = []
+        seen_slots = set()
+        for prior in prior_candidates:
+            slot_key = prior['slot'] or prior['group_id']
+            if slot_key in seen_slots:
+                continue
+            seen_slots.add(slot_key)
+            unique.append(prior)
+        prior_candidates = unique
+
+    if kind == 'weekly':
+        # A weekly is synthesized from the completed week's daily record and
+        # re-baselined against the immediately preceding weekly.
+        dailies = [p for p in prior_candidates if p['kind'] == 'daily'][:7]
+        weeklies = [p for p in prior_candidates if p['kind'] == 'weekly'][:1]
+        priors = sorted(dailies + weeklies,
+                        key=lambda p: p['created_at'], reverse=True)
+    else:
+        priors = prior_candidates[:prior_count]
 
     previous = _previous_bundle(corun_url, corun_token, section,
                                 campaign, kind, manifest)

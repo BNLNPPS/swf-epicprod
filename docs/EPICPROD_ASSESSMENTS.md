@@ -110,10 +110,11 @@ The model is treated as an untrusted generator inside a deterministic
 envelope. The template and schema define the contract; the harness
 enforces it.
 
-- **The model interprets; it does not calculate.** Every number in the
-  artifact originates in the supplied evidence, and the harness verifies
-  emitted numbers against supplied ones. Arithmetic is the analytics
-  library's job.
+- **The model interprets; it does not invent precision.** Every number in the
+  artifact must originate in supplied evidence or a tool result. The v2
+  harness validates structure and provenance but does not yet mechanically
+  reconcile every emitted number; bundle-number and MCP-session verification
+  remain planned tightening.
 - **Verdict floor.** Mechanical criteria — final-failure rate,
   catalog-sync freshness, stalled arrivals — compute a minimum verdict
   before the model runs. The model may raise the severity with
@@ -144,9 +145,9 @@ the completion handler — guides the operation and cleans up after it:
   the catalog-sync freshness pattern. A malformed result is never
   dropped: the display shows the quarantined artifact or a red failure
   state.
-- Enforces one artifact per (campaign, kind, date); a rerun replaces
-  its predecessor. Daily artifacts roll up under retention rules; the
-  dashboard reads the latest N.
+- Treats the newest artifact per (campaign, kind, date) as authoritative
+  context while retaining superseded reruns as audit history. Daily artifacts
+  roll up under retention rules; the dashboard reads the latest N.
 
 ## Cadence
 

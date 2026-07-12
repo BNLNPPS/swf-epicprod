@@ -193,6 +193,45 @@ def rucio_arrivals(campaign, window_start, window_end):
                 window_delta[f'{stage}_bytes'] = cum_bytes[-1] - base
         data['timeline_tail'] = series
         data['window_arrivals'] = window_delta
+        sweep_files = int(arrivals.get('files') or 0)
+        timeline_files = sum(
+            int(window_delta.get(f'{stage}_files') or 0)
+            for stage in ('reco', 'simu'))
+        sweep_start = arrivals.get('window_start')
+        sweep_end = arrivals.get('last_arrival_at')
+        overlap = False
+        try:
+            parsed_start = _dt.datetime.fromisoformat(
+                str(sweep_start).replace('Z', '+00:00'))
+            parsed_end = _dt.datetime.fromisoformat(
+                str(sweep_end).replace('Z', '+00:00'))
+            if parsed_start.tzinfo is None:
+                parsed_start = parsed_start.replace(tzinfo=_dt.timezone.utc)
+            if parsed_end.tzinfo is None:
+                parsed_end = parsed_end.replace(tzinfo=_dt.timezone.utc)
+            overlap = parsed_end >= window_start and parsed_start <= window_end
+        except (TypeError, ValueError):
+            pass
+        if overlap and sweep_files and not timeline_files:
+            data['consistency'] = {
+                'status': 'conflict',
+                'reason': (
+                    'The aggregate sweep recorded files during an interval '
+                    'overlapping the assessment window, while the timeline '
+                    'derived zero window arrivals.'),
+                'sweep_files': sweep_files,
+                'timeline_window_files': timeline_files,
+                'assessment': (
+                    'At least some sweep activity overlaps the report window; '
+                    'the exact campaign-window count is not established by '
+                    'these aggregates and requires Rucio drill-down.'),
+            }
+        else:
+            data['consistency'] = {
+                'status': 'aligned' if overlap else 'not_comparable',
+                'sweep_files': sweep_files,
+                'timeline_window_files': timeline_files,
+            }
     if not arrivals and not timeline:
         data.update(_unavailable('no arrivals recorded for this campaign'))
     return _block('rucio_arrivals', window_start, window_end, data)
@@ -243,6 +282,7 @@ def action_stream_activity(campaign, window_start, window_end):
         .values('timestamp', 'extra_data')[:ACTION_ROWS_MAX]
     )
     by_action = {}
+    campaign_by_action = {}
     for row in rows:
         extra = row['extra_data'] if isinstance(row['extra_data'], dict) else {}
         action = str(extra.get('action') or 'unknown')
@@ -251,6 +291,18 @@ def action_stream_activity(campaign, window_start, window_end):
         entry['count'] += 1
         if outcome and outcome != 'ok':
             entry['errors'] += 1
+        subject_key = str(extra.get('subject_key') or '')
+        is_campaign = (
+            (extra.get('subject_type') == 'campaign'
+             and subject_key == campaign.name)
+            or campaign.name in subject_key
+        )
+        if is_campaign:
+            campaign_entry = campaign_by_action.setdefault(
+                action, {'count': 0, 'errors': 0})
+            campaign_entry['count'] += 1
+            if outcome and outcome != 'ok':
+                campaign_entry['errors'] += 1
 
     sync = (
         AppLog.objects
@@ -268,7 +320,10 @@ def action_stream_activity(campaign, window_start, window_end):
         sync_outcome = str(extra.get('outcome') or '')
     return _block('action_stream_activity', window_start, window_end, {
         'available': True,
-        'actions': by_action,
+        # Keep campaign-attributed activity separate from shared platform
+        # mechanics so a campaign report cannot silently claim global work.
+        'actions': campaign_by_action,
+        'system_actions': by_action,
         'window_rows': len(rows),
         'window_truncated': len(rows) >= ACTION_ROWS_MAX,
         'catalog_sync_age_hours': sync_age_hours,
