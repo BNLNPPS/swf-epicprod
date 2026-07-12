@@ -166,6 +166,9 @@ designed as dashboard input.
 
 ## Implementation Plan
 
+The concrete v1 plan — workstreams, schema, prompt templates, sequencing —
+is [EPICPROD_ASSESSMENTS_V1.md](EPICPROD_ASSESSMENTS_V1.md) (2026-07-12).
+
 Each step is a functional delivery and a release boundary:
 
 1. Campaign analytics library, the campaign-status rollup service, and
