@@ -142,7 +142,6 @@ def panda_health(campaign, window_start, window_end):
     top_errors = sorted(errors.items(), key=lambda kv: -kv[1])[:TOP_ERRORS_LIMIT]
     return _block('panda_health', window_start, window_end, {
         'available': True,
-        'source_generated_at': snap.get('generated_at') or '',
         'panda_task_count': len(seen),
         'task_statuses': statuses,
         'jobs': sums,
@@ -396,6 +395,7 @@ def credential_status(campaign, window_start, window_end):
 MEMBERS = (
     campaign_progress,
     panda_health,
+    window_activity,
     rucio_arrivals,
     disposition_mix,
     action_stream_activity,

@@ -207,9 +207,7 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
         'degraded': manifest.degraded,
         'manifest': manifest.entries,
         'rollup': rollup,
-        'deltas': _deltas(previous, {'members': (rollup or {}).get('members')
-                                     or {}, 'generated_at':
-                                     (rollup or {}).get('generated_at')}),
+        'deltas': _deltas(previous, rollup),
         'narratives': narratives,
         'priors_supplied': len(priors),
         'priors': priors,
