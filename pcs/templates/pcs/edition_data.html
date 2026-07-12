@@ -24,7 +24,7 @@
     {% endfor %}
   </div>
   {% for pr in prod_requests %}
-  <div class="mb-1 small">
+  <div class="mb-1 small" id="req-{{ pr.pk }}">
     <strong class="text-muted">Request req#{{ pr.pk }}:</strong>
     {{ pr.requestor|default:"—" }}{% if pr.nevents %} &middot; {{ pr.nevents }} events{% endif %}{% if pr.priority %} &middot; priority {{ pr.priority }}{% endif %}{% if pr.description %} &middot; {{ pr.description }}{% endif %}{% if pr.source_url %} &middot; <a href="{{ pr.source_url }}" target="_blank" rel="noopener">issue</a>{% endif %}
   </div>

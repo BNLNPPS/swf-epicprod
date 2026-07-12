@@ -153,6 +153,10 @@
           <button type="button" class="btn btn-sm btn-secondary ms-2" id="rc-adopted-clear">Clear</button>
         </div>
 
+        <div id="rc-success" class="pcs-rc-success mt-3" style="display:none">
+          <strong>Request recorded.</strong> <span id="rc-success-detail"></span>
+        </div>
+
         <div class="mt-3">
           {% if user.is_authenticated %}
           <button type="button" class="btn btn-primary" id="rc-submit">Submit request</button>
@@ -161,12 +165,6 @@
                   title="Submit this request to the production team — sign in to use">Submit request</button>
           {% endif %}
           <span id="rc-status" class="ms-2 text-muted" role="status" aria-live="polite"></span>
-        </div>
-
-        <div id="rc-success" class="pcs-rc-success mt-3" style="display:none">
-          <strong>Request recorded.</strong> <span id="rc-success-detail"></span>
-          The production team sees it in the catalog; matched physics carries it
-          on every campaign edition.
         </div>
       </div>
     </div>
@@ -353,7 +351,10 @@
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.detail || 'request failed');
       status.textContent = '';
-      el('rc-success-detail').innerHTML = `Request <strong>req#${j.id}</strong>${j.requestor ? ' for ' + esc(j.requestor) : ''}`
+      const reqLabel = j.pc_anchor
+        ? `<a href="${dataPageUrl(j.pc_anchor)}#req-${j.id}"><strong>req#${j.id}</strong></a>`
+        : `<strong>req#${j.id}</strong>`;
+      el('rc-success-detail').innerHTML = `Request ${reqLabel}${j.requestor ? ' for ' + esc(j.requestor) : ''}`
         + (j.pc_anchor ? `, based on <a href="${dataPageUrl(j.pc_anchor)}">${esc(j.pc_anchor)}</a>.` : ', recorded as new physics.');
       el('rc-success').style.display = '';
     } catch (err) {
