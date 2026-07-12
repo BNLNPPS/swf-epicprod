@@ -58,6 +58,7 @@ V1 members formalize existing computations; no new credentialed sweeps:
 | `panda_health` | bounded PanDA summaries already used by progress + the `nfinalfailed`/`computed_finalfailurerate` family (`monitor_app/panda/api.py`), error rollup per `panda_error_summary` | job-state counts, final-failure rate, top error codes with counts, active/finished task counts |
 | `disposition_mix` | dataset `propagation` fields + history (PCS.md § Datasets) | counts by disposition; flips within window with comments |
 | `action_stream_activity` | AppLog `app_name='epicprod'` | actions by id and outcome in window; chain-step durations; catalog_sync freshness (age of last successful chain) |
+| `system_status` | cached platform status rows (the System page's source, in-process) | overall status and reason, per-state counts, staleness |
 | `credential_status` | latest `credential_expiry_check` action record | days left per credential |
 
 ### Rollup service, verdict floor, surfaces
@@ -114,14 +115,15 @@ grows with it.
 1. reads the SysConfig gate through the status REST; exits quietly when
    disabled; resolves targets (producing first, plus current when
    distinct);
-2. assembles the Task 1 basis deterministically: the must-look fetches —
-   the campaign status rollup (carrying the verdict floor), PanDA activity
-   and error summaries, the epicprod action stream, system status — plus
-   the narratives (`campaign_<name>` current, latest `campaign_general_*`)
-   and the last N prior assessments over corun REST. Identical calls every
-   run, per-call outcomes recorded; a failed must-look marks the run
-   degraded in the bundle itself. The must-look set is versioned
-   configuration here.
+2. assembles the Task 1 basis deterministically: the campaign status
+   rollup (one fetch carrying all seven analytics members — progress,
+   PanDA health, arrivals, dispositions, action stream, system status,
+   credentials — and the verdict floor), plus the narratives
+   (`campaign_<name>` current, latest `campaign_general_*`) and the last
+   N prior assessments over corun REST. Identical calls every run,
+   per-call outcomes recorded; a failed must-look — including an absent
+   campaign narrative — marks the run degraded in the bundle itself. The
+   must-look set is versioned configuration here.
 3. submits the run: the evidence bundle and run parameters `{campaign,
    kind, window_days, requested_by}` ARE the prompt content
    (`POST /api/v1/prompts/` into the assessment section), then the job

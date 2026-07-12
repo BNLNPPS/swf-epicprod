@@ -263,6 +263,26 @@ def action_stream_activity(campaign, window_start, window_end):
     })
 
 
+def system_status(campaign, window_start, window_end):
+    """Cached platform system status — the System page's source summary.
+
+    Read in-process (the cache rows the ops agent refreshes), so the
+    assessment bundle needs no separately authenticated fetch.
+    """
+    from monitor_app.viewdir.system_status import status_summary
+
+    summary = status_summary()
+    latest = summary.get('latest_checked_at')
+    return _block('system_status', window_start, window_end, {
+        'available': bool(summary.get('total')),
+        'overall_status': summary.get('overall_status', 'unknown'),
+        'overall_reason': summary.get('overall_reason', ''),
+        'latest_checked_at': latest.isoformat() if latest else None,
+        'counts': {k: summary.get(k, 0)
+                   for k in ('ok', 'warning', 'error', 'unknown', 'total')},
+    })
+
+
 def credential_status(campaign, window_start, window_end):
     """Latest credential expiry check from the action stream."""
     from monitor_app.models import AppLog
@@ -299,5 +319,6 @@ MEMBERS = (
     rucio_arrivals,
     disposition_mix,
     action_stream_activity,
+    system_status,
     credential_status,
 )
