@@ -97,9 +97,10 @@ def submit_run(campaign, kind, window_days, *, dry_run=False):
         campaign, kind, window_days,
         monitor_url=MONITOR_URL, corun_url=CORUN_API_URL,
         corun_token=CORUN_API_TOKEN, section=CORUN_ASSESSMENT_SECTION)
+    # The instructions live in the definition's SystemPrompt; the prompt
+    # content is the run's data — slot and evidence bundle.
     date = evidence['generated_at'][:10]
     content = json.dumps({
-        'template': spec.render_template(kind, campaign, date),
         'slot': spec.slot(campaign, kind, date),
         'bundle': evidence,
     })

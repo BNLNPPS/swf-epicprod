@@ -69,9 +69,42 @@ obtain, and workarounds you took. Candour here is prized — a degraded
 run must read as degraded, never as smooth.
 
 OUTPUT FORMAT — exactly two parts, in this order:
-1. One fenced ```json block conforming to the artifact schema
-   (schema_version {schema_version}): verdict, axes, key_metrics,
-   top_issues, dismissed, narration, cites, generation.
+1. One fenced ```json block with EXACTLY this shape — these field names,
+   these five axis keys, no others:
+
+   {{
+     "schema_version": {schema_version},
+     "verdict": "<ok|attention|alarm>",
+     "axes": {{
+       "arrivals":       {{"status": "<ok|attention|alarm>", "note": "<short>"}},
+       "processing":     {{"status": "<ok|attention|alarm>", "note": "<short>"}},
+       "failures":       {{"status": "<ok|attention|alarm>", "note": "<short>"}},
+       "dispositions":   {{"status": "<ok|attention|alarm>", "note": "<short>"}},
+       "infrastructure": {{"status": "<ok|attention|alarm>", "note": "<short>"}}
+     }},
+     "key_metrics": [
+       {{"name": "<metric>", "value": "<as it appeared in evidence>",
+         "delta": "<vs prior, or empty>", "ref": "<source>"}}
+     ],
+     "top_issues": [
+       {{"title": "<issue>", "severity": "<attention|alarm>",
+         "evidence": ["<refs>"], "action": "<what a human should do>"}}
+     ],
+     "dismissed": [
+       {{"signal": "<what looked anomalous>", "reason": "<why set aside>"}}
+     ],
+     "narration": "<2-4 self-contained sentences>",
+     "cites": {{"narrative": "<name or empty>", "narrative_version": 0,
+               "priors": ["<page group ids>"],
+               "evidence_computed_at": "<from the bundle>"}},
+     "generation": {{"consulted": [{{"source": "<tool or document>",
+                                   "contribution": "<what it gave>"}}],
+                    "problems": ["<errors, gaps, workarounds>"],
+                    "unavailable": ["<what could not be obtained>"]}}
+   }}
+
+   The status vocabulary is exactly ok | attention | alarm — never
+   "warning" or any other word. Empty lists are valid values.
 2. The prose block — the bounded interpretation for humans, closing
    with your generation report.
 
@@ -98,10 +131,14 @@ def render_template(kind, campaign, date):
 
 
 def system_prompt_text():
-    """The corun SystemPrompt: the template with its placeholders intact —
-    per-run values arrive in the prompt content's bundle parameters."""
-    return NIGHTLY_TEMPLATE.replace('{schema_version}', str(SCHEMA_VERSION)) \
-        + '\nWHEN kind IS weekly:\n' + WEEKLY_DIRECTIVE
+    """The corun SystemPrompt: the full template with per-run values
+    deferred to the prompt content's bundle parameters."""
+    return NIGHTLY_TEMPLATE.format(
+        kind='nightly or weekly — read it from the bundle params',
+        campaign='the campaign named in the bundle params',
+        date='the date in the bundle params',
+        schema_version=SCHEMA_VERSION,
+    ) + '\nWHEN THE KIND IS weekly:\n' + WEEKLY_DIRECTIVE
 
 
 def extract_artifact(page_content):

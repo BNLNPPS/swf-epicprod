@@ -231,9 +231,11 @@ through 1–3; submits nightly runs (prompts + jobs, the two-POST contract
 already deployed); receives completion through the existing subscription →
 swf-monitor callback → Mattermost relay, unchanged; reads result pages,
 run records, and prompt history over REST. Model settings epicprod sets in
-the definition it creates: Claude Fable for the 2026-07-12 bring-up; from
-2026-07-13, Codex 5.6 at `xhigh` reasoning effort; timeout 15 min as the
-hard bound (expected runtime minutes).
+the definition it creates: Codex 5.6 (`gpt-5.6-sol`) at `xhigh` reasoning
+effort (the intended Fable bring-up fell to corun's model registry, which
+carries no Fable entry); timeout 60 min — a generous ceiling, not a
+target: killing a long think mid-run is a truncation (operator directive
+2026-07-12; observed runtime ~3.5 min).
 
 ### Artifact schema (v1, `schema_version: 1`)
 

@@ -80,7 +80,13 @@ def main():
     parser.add_argument('--prompt-group-id', required=True)
     parser.add_argument('--page-group-id', default='')
     parser.add_argument('--status', required=True)
+    parser.add_argument('--timing', default='',
+                        help='model-run elapsed seconds from the callback')
     args = parser.parse_args()
+    try:
+        elapsed_s = round(float(args.timing), 1) if args.timing else None
+    except ValueError:
+        elapsed_s = None
 
     # The submitted bundle: floor, params, manifest — the harness's half
     # of the run's truth.
@@ -141,6 +147,7 @@ def main():
                   'generation_harness': {
                       'manifest': bundle.get('manifest'),
                       'degraded': bundle.get('degraded'),
+                      'elapsed_s': elapsed_s,
                       'job_id': args.job_id, 'enforcement': 'quarantined'}})
         _log('assessment_enforce', outcome='error', subject_key=campaign,
              sublevel='high', slot=slot, quarantined=True,
@@ -172,6 +179,8 @@ def main():
               'generation_harness': {
                   'manifest': bundle.get('manifest'),
                   'degraded': bundle.get('degraded'),
+                  'elapsed_s': elapsed_s,
+                  'bundle_generated_at': bundle.get('generated_at'),
                   'floor_enforced': floor_enforced}})
     if not result.get('success'):
         _log('assessment_enforce', outcome='error', subject_key=campaign,
