@@ -1,9 +1,13 @@
 # Campaign Assessments V1 — Implementation Plan
 
 This plan concretizes [EPICPROD_ASSESSMENTS.md](EPICPROD_ASSESSMENTS.md) into
-a first working version of the nightly and weekly campaign reports: the hybrid
+a first working version of the daily and weekly campaign reports: the hybrid
 procedural / template / LLM design, delivered promptly and elaborated
-thereafter. It is written 2026-07-12 as the plan of record for the v1 sprint.
+thereafter. It is written 2026-07-12 as the plan of record for the v1 sprint
+and updated the same day to the as-built state. The scheduled report kinds
+are `daily` and `weekly` — the daily is produced by a night cron but is the
+day's report, not a "nightly" (records registered before the rename carry
+`assessment_kind: nightly` and are read as dailies).
 
 Two workstreams, by ownership:
 
@@ -23,11 +27,15 @@ the cut is recorded here.
 
 ## V1 scope
 
-In: the nightly assessment end-to-end (trigger → evidence → LLM → validated
+In: the daily assessment end-to-end (trigger → evidence → LLM → validated
 artifact → registration → live stream/Mattermost), the weekly assessment as
-the same machinery with a seven-day window and larger prose budget, and an
-analytics library whose v1 members wrap computations the system already
-performs.
+the same machinery with a seven-day window and a standalone-report brief,
+and an analytics library whose v1 members wrap computations the system
+already performs. The two kinds carry distinct roles: the daily reports the
+window — productivity, new problems, the standing-issues ledger carried run
+to run, deltas against the previous bundle, the mechanical floor alarming
+on the window rather than the lifetime; the weekly is the standalone report,
+complete in itself and re-baselined each week.
 
 Deferred, deliberately: analytics renderings (plots) beyond what pages already
 show — v1 blocks are data-only; the campaign dashboard; assessment-page
@@ -127,7 +135,8 @@ grows with it.
 3. submits the run: the evidence bundle and run parameters `{campaign,
    kind, window_days, requested_by}` ARE the prompt content
    (`POST /api/v1/prompts/` into the assessment section), then the job
-   (`POST /api/v1/jobs/` with the `campaign_assessment` definition).
+   (`POST /api/v1/jobs/` with the kind's definition —
+   `campaign_assessment_daily` or `campaign_assessment_weekly`).
    corun's Prompt versioning thereby archives every nightly evidence
    bundle — durable storage for the system-state-over-time direction
    (recorded 2026-07-12: present monitoring is snapshot-oriented; a ~30 s
@@ -149,15 +158,18 @@ generation report.
 corun completion callback already lands at swf-monitor; a handler:
 
 - fetches the result page and the run record (status, stderr) over REST;
-- validates the structured block against the schema; on failure, one
-  bounded re-submission; a second failure quarantines the artifact
-  (marked malformed, raw output retained, excluded from later context) or
-  records the failure — every scheduled slot resolves to a visible
+- validates the structured block against the schema and the prose
+  against the report form (the closing "## Generation report" section
+  is mandatory); on failure, one bounded re-submission; a second
+  failure quarantines the artifact (marked malformed, raw output
+  retained, excluded from later context and from the assessments page)
+  or records the failure — every scheduled slot resolves to a visible
   outcome;
-- verifies numbers against the submitted bundle (v1); verifying
-  model-fetched numbers against the MCP server's own session record is
-  the designed tightening — the drill-down calls hit our MCP server, so
-  the tool-side transcript is ours;
+- verifies numbers against the submitted bundle (designed, not yet
+  implemented); verifying model-fetched numbers against the MCP
+  server's own session record is the designed tightening — the
+  drill-down calls hit our MCP server, so the tool-side transcript is
+  ours;
 - enforces the floor: the artifact's verdict may exceed the bundle's
   floor with justification, never fall below it;
 - appends the harness half of the generation report (basis manifest,
@@ -166,7 +178,9 @@ corun completion callback already lands at swf-monitor; a handler:
 - enforces one artifact per (campaign, kind, date); a rerun replaces its
   predecessor;
 - registers: `epic_register_ai_assessment(subject_type='campaign',
-  subject_key=<campaign>, ...)` with metadata `assessment_kind`,
+  subject_key=<campaign>, ...)`, titled with the report's H1 (markdown
+  links flattened to text — the assessments page leads with the
+  title), with metadata `assessment_kind`,
   `origin: 'scheduled'`, `verdict`, `schema_version`, narrative citation
   (name + version), the structured block, and model/prompt provenance —
   the non-ok-verdict live-stream raise and the Mattermost relay follow
@@ -176,12 +190,13 @@ Cron (wenauseic), after the 02:15 catalog_sync chain has refreshed the state
 being assessed:
 
 ```
-45 3 * * *  nightly, every producing/current campaign
+45 3 * * *  daily, every producing/current campaign
  0 6 * * 1  weekly, same targets, window_days=7
 ```
 
-corun-ai URL, token, assessment section name, and definition id live in
-`~/.env` / `production.env`.
+corun-ai URL, token, assessment section name, and the per-kind
+definition ids (`CORUN_ASSESSMENT_DEFINITION_DAILY` / `_WEEKLY`; the
+legacy `_NIGHTLY` value remains honored) live in `production.env`.
 
 ### Surfacing (v1 minimum)
 
@@ -239,8 +254,12 @@ target: killing a long think mid-run is a truncation (operator directive
 
 ### Artifact schema (v1, `schema_version: 1`)
 
+The operative schema is `spec.validate_artifact` in
+`swf_epicprod/assessment/spec.py`; the shape:
+
 ```json
 {
+  "schema_version": 1,
   "verdict": "ok | attention | alarm",
   "axes": {
     "arrivals":       {"status": "ok|attention|alarm", "note": "..."},
@@ -250,17 +269,23 @@ target: killing a long think mid-run is a truncation (operator directive
     "infrastructure": {"status": "...", "note": "..."}
   },
   "key_metrics": [
-    {"name": "...", "value": "...", "delta": "...", "ref": "<object url or id>"}
+    {"name": "...", "value": "<as it appeared in evidence>",
+     "delta": "<vs previous run, from the deltas member>", "ref": "<source>"}
   ],
   "top_issues": [
     {"title": "...", "severity": "attention|alarm",
-     "evidence": ["<metric/action refs>"], "action": "<what a human should do>"}
+     "evidence": ["<metric/action refs>"], "action": "<what a human should do>",
+     "owner": "<who acts>"}
+  ],
+  "standing_issues": [
+    {"title": "...", "status": "new|unchanged|improved|worsened|resolved",
+     "since": "<date first seen>", "note": "<one line on its shape>"}
   ],
   "dismissed": [
     {"signal": "<what looked anomalous>", "reason": "<why it is not an issue>"}
   ],
   "narration": "2-4 self-contained sentences",
-  "cites": {"narrative": "campaign_26.06.0", "narrative_version": 5,
+  "cites": {"narrative": "campaign_26.06.0", "narrative_version": 8,
             "priors": ["<page group ids>"], "evidence_computed_at": "<iso8601>"},
   "generation": {
     "consulted": [{"source": "<tool or document>", "contribution": "..."}],
@@ -270,70 +295,37 @@ target: killing a long think mid-run is a truncation (operator directive
 }
 ```
 
-The prose block is the page body; the structured block is `Page.data`; the
-`narration` field is the single payload for every thin delivery channel.
+The verdict and per-axis status vocabulary is exactly `ok | attention |
+alarm`; `standing_issues` is the run-to-run ledger. The prose block is the
+page body; the structured block is `Page.data`; the `narration` field is
+the single payload for every thin delivery channel.
 
-### Nightly prompt template (v1)
+### Prompt templates
 
-```
-You are the nightly production assessor for ePIC campaign {campaign},
-assessment date {date}. You are given:
+The operative templates are `DAILY_TEMPLATE` and `WEEKLY_TEMPLATE` in
+`swf_epicprod/assessment/spec.py` — that module is the single source;
+`assessment.bootstrap` pushes each as a versioned corun SystemPrompt
+referenced by the kind's JobDefinition. This document does not carry
+copies. The standing content rules the templates encode:
 
-1. CAMPAIGN NARRATIVE {narrative_name} v{narrative_version} — what this
-   campaign is for and what should be running.
-2. GENERAL NARRATIVE — standing facts of how production operates.
-3. PRIOR ASSESSMENTS — your last {n} nightly artifacts for this campaign.
-4. THE PRODUCTION TOOLSET — the swf-testbed MCP tools (panda_*, pcs_*,
-   epicprod_*, Rucio).
-
-TASK 1 — build the comprehensive picture, from the campaign on down.
-Your basis arrives assembled: the evidence bundle carries the campaign
-status rollup (with the mechanical verdict FLOOR), PanDA activity and
-error summaries, recent production actions, and system status, beside
-the narratives and your prior assessments. Read every summary as a
-surfacing instrument, not a confirmation of the rollup. Extend the
-picture wherever anything surfaced warrants it: drill down to the task,
-the site, the error, the action behind it, and call any further tools
-you need. Directed digging within your time budget, in service of the
-verdict and top issues.
-
-TASK 2 — reason over the picture and report: correlation across signals
-(an arrivals dip, one site's error spike, and a queue alarm may be one
-event, not three), root causes your investigation established, deviation
-from the narrative's stated intent, trend inflection against your prior
-assessments, and the explicit call on what requires human action, if
-anything. Signals you examined and set aside go in the dismissed list
-with reasons — tomorrow's run inherits your explanations. Do not restate
-chart or table contents. A quiet night is a valid result: say so briefly.
-
-You interpret and investigate; you do not calculate. Every number you
-state must have arrived in a tool result during this run; it is verified
-against them. The FLOOR is your minimum verdict — raise it with
-justification if warranted, never lower it.
-
-ALWAYS close with the generation report: what you consulted and what each
-contributed, tool errors or gaps you hit, anything you could not obtain,
-and workarounds you took. Candour here is prized — a degraded run must
-read as degraded, never as smooth.
-
-Produce the artifact in the required JSON schema, then the prose block.
-The narration field must stand alone: campaign, date, verdict, and the
-one or two things that matter.
-```
-
-### Weekly prompt template (v1)
-
-The nightly template with: "nightly production assessor" → "weekly
-production assessor"; window seven days; priors = the week's nightlies plus
-prior weeklies; and one added directive:
-
-```
-Measure the week against the campaign narrative's stated goals: what the
-narrative says this campaign should accomplish, what progressed, what
-stalled, and whether the campaign's trajectory this week supports its
-intent. Trend interpretation is where your judgment carries the most value;
-a larger prose budget is available and should be spent there.
-```
+- The daily's subject is the window (24 hours plus a soft overlap):
+  productivity, new problems, the inherited standing-issues ledger
+  (`new|unchanged|improved|worsened|resolved`), deltas against the
+  previous run's bundle. The weekly is the standalone report,
+  re-baselined each week and measured against the campaign narrative's
+  stated goals.
+- The readers are ePIC production operators and physicists: collaboration
+  vocabulary is never expanded or explained; naming means identifying and
+  linking the concrete object.
+- Times in ET, labeled — never bare UTC. No table or bullet list of all
+  zeros; a quiet window is one sentence, and a section with nothing to
+  report is one line.
+- The model interprets and investigates; it does not calculate. The FLOOR
+  is the minimum verdict, raise-only.
+- Output is exactly two parts: the fenced JSON artifact (schema above),
+  then the prose report with a plain-text H1 title, the required
+  sections, links for every object mentioned, and the mandatory closing
+  "## Generation report".
 
 ## Sequencing
 
@@ -350,8 +342,9 @@ a larger prose budget is available and should be spent there.
    over the completed REST.
 3. **End-to-end dry run** — manual trigger against the producing campaign;
    inspect the artifact, tune the floor thresholds and template.
-4. **Crons installed** — first scheduled nightly runs that night; the first
-   weekly is run manually to seed the series, then rides its Monday cron.
+4. **Crons installed** (2026-07-12) — the daily rides the 03:45 cron; the
+   first weekly was run manually to seed the series and rides its Monday
+   cron.
 
 The decision points held by the operator: floor thresholds and template
 wording after the dry run (step 3), and the go for the crons (step 4).
