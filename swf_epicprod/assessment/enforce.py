@@ -40,7 +40,11 @@ CORUN_API_URL = (os.environ.get('CORUN_API_URL', '').rstrip('/')
                      if os.environ.get('CORUN_BASE_URL') else ''))
 CORUN_API_TOKEN = os.environ.get('CORUN_API_TOKEN', '')
 def _definition_for(kind):
+    # DAILY was NIGHTLY until 2026-07-12; honor an un-migrated environment.
+    legacy = 'NIGHTLY' if kind == 'daily' else ''
     return (os.environ.get(f'CORUN_ASSESSMENT_DEFINITION_{kind.upper()}')
+            or (os.environ.get(f'CORUN_ASSESSMENT_DEFINITION_{legacy}', '')
+                if legacy else '')
             or os.environ.get('CORUN_ASSESSMENT_DEFINITION', ''))
 
 log = logging.getLogger('assessment_enforce')
@@ -112,7 +116,7 @@ def main():
     bundle = submitted.get('bundle') or {}
     params = bundle.get('params') or {}
     campaign = params.get('campaign') or 'unknown'
-    kind = params.get('kind') or 'nightly'
+    kind = params.get('kind') or 'daily'
     slot = submitted.get('slot') or ''
     floor = (((bundle.get('rollup') or {}).get('floor')) or {})
     floor_verdict = floor.get('verdict') or 'ok'

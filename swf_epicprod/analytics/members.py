@@ -277,11 +277,11 @@ def action_stream_activity(campaign, window_start, window_end):
 
 
 def window_activity(campaign, window_start, window_end):
-    """The window's own PanDA activity — the nightly report's subject.
+    """The window's own PanDA activity — the daily report's subject.
 
     Jobs that reached a state in the window (by site and status) and
     campaign-named tasks created or newly terminal in it, so productivity
-    or its absence is measured on the night, not the campaign's lifetime.
+    or its absence is measured on the window, not the campaign's lifetime.
     """
     from django.db import connections
     from monitor_app.panda.constants import PANDA_SCHEMA

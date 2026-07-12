@@ -28,7 +28,7 @@ async def epicprod_campaign_status(campaign: str = '', window_days: float = 1) -
         campaign: campaign name (e.g. '26.06.0'). Default: the first
             producing campaign, else the current campaign.
         window_days: activity window for deltas, disposition flips, and
-            action aggregation. Use 1 for a nightly assessment, 7 for a
+            action aggregation. Use 1 for a daily assessment, 7 for a
             weekly.
 
     A member with data.available=false could not read its source; treat

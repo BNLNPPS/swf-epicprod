@@ -63,22 +63,27 @@ def _page_items(listing):
     return listing.get('items') or listing.get('results') or []
 
 
+def _kind_aliases(kind):
+    """'daily' was 'nightly' until 2026-07-12; records keep the old kind."""
+    return (kind, 'nightly') if kind == 'daily' else (kind,)
+
+
 def _previous_bundle(corun_url, token, section, campaign, kind, manifest):
     """The prior run's archived bundle (its prompt content) — the basis
-    for deterministic night-over-night deltas. Numbers are compared in
+    for deterministic run-over-run deltas. Numbers are compared in
     code; the model interprets the computed deltas."""
     listing = manifest.fetch(
         'previous_bundle', f'{corun_url}/sections/{section}/', token=token)
     if listing is None:
         return None
     prompts = listing.get('prompts') or []
-    prefix = f'{campaign}/{kind}/'
+    prefixes = tuple(f'{campaign}/{k}/' for k in _kind_aliases(kind))
     for prompt in prompts:  # newest first
         try:
             content = json.loads(prompt.get('content') or '{}')
         except json.JSONDecodeError:
             continue
-        if str(content.get('slot') or '').startswith(prefix):
+        if str(content.get('slot') or '').startswith(prefixes):
             return content.get('bundle') or None
     manifest.note('previous_bundle_match', True,
                   'no prior bundle for this campaign and kind (first run)')
@@ -179,7 +184,8 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
     if prior_pages is not None:
         for page in _page_items(prior_pages):
             data = page.get('data') or {}
-            if data.get('assessment_kind') and data.get('assessment_kind') != kind:
+            if (data.get('assessment_kind')
+                    and data.get('assessment_kind') not in _kind_aliases(kind)):
                 continue
             if data.get('quarantined'):
                 continue

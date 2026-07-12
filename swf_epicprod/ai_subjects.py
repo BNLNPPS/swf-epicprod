@@ -11,7 +11,7 @@ subject dict: target_obj, target_json_field (the JSON pointer field on
 the subject object), canonical subject_key, subject_label, subject_url.
 """
 
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from django.urls import reverse
 
@@ -23,6 +23,12 @@ def _url(name, *args, query=None):
     path = reverse(name, args=args)
     if query:
         path = f'{path}?{urlencode(query)}'
+    # reverse() carries the deployment prefix when FORCE_SCRIPT_NAME is
+    # set, and _monitor_url's base ends with the same prefix — strip the
+    # duplicate so subject URLs don't come out /swf-monitor/swf-monitor/.
+    base_path = urlparse(_monitor_url('')).path.rstrip('/')
+    if base_path and path.startswith(f'{base_path}/'):
+        path = path[len(base_path):]
     return _monitor_url(path)
 
 

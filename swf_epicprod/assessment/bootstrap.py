@@ -127,7 +127,7 @@ def main():
     ensure_section(args.section)
     print('\nEnvironment for the trigger and enforcement:')
     print(f'CORUN_ASSESSMENT_SECTION={args.section}')
-    for kind in ('nightly', 'weekly'):
+    for kind in ('daily', 'weekly'):
         sp_group = ensure_system_prompt(kind)
         definition_id = ensure_definition(
             spec.definition_name(kind), sp_group, args.model, args.effort,

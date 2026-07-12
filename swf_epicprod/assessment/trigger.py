@@ -3,7 +3,7 @@
 
 Stdlib only; runs from cron under the deployed venv python:
 
-    45 3 * * *  python -m swf_epicprod.assessment.trigger --kind nightly
+    45 3 * * *  python -m swf_epicprod.assessment.trigger --kind daily
      0 6 * * 1  python -m swf_epicprod.assessment.trigger --kind weekly
 
 Per target campaign: assemble the evidence bundle deterministically,
@@ -41,7 +41,11 @@ CORUN_API_TOKEN = os.environ.get('CORUN_API_TOKEN', '')
 CORUN_ASSESSMENT_SECTION = os.environ.get('CORUN_ASSESSMENT_SECTION',
                                           spec.DEFAULT_SECTION)
 def _definition_for(kind):
+    # DAILY was NIGHTLY until 2026-07-12; honor an un-migrated environment.
+    legacy = 'NIGHTLY' if kind == 'daily' else ''
     return (os.environ.get(f'CORUN_ASSESSMENT_DEFINITION_{kind.upper()}')
+            or (os.environ.get(f'CORUN_ASSESSMENT_DEFINITION_{legacy}', '')
+                if legacy else '')
             or os.environ.get('CORUN_ASSESSMENT_DEFINITION', ''))
 TIMEOUT = 30
 
@@ -127,10 +131,10 @@ def submit_run(campaign, kind, window_days, *, dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--kind', choices=('nightly', 'weekly'),
-                        default='nightly')
+    parser.add_argument('--kind', choices=('daily', 'weekly'),
+                        default='daily')
     parser.add_argument('--window-days', type=float, default=None,
-                        help='evidence window (default: 1 nightly, 7 weekly)')
+                        help='evidence window (default: 1 daily, 7 weekly)')
     parser.add_argument('--campaign', default='',
                         help='override the target campaign(s)')
     parser.add_argument('--dry-run', action='store_true',
