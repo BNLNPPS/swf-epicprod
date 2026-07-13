@@ -2009,7 +2009,8 @@ def prodrequest_compose(*, created_by, pwg='', dsc='', description='',
                         q2='', generator='', generator_version='',
                         sample='', pc_anchor='', simu_path='',
                         contact_name='', contact_email='',
-                        repository='', intended_use=''):
+                        repository='', intended_use='', background_mode='',
+                        background_tag='', background_other=''):
     """Create a production request from the request composer.
 
     The mapping is deterministic: the composer's physics axes land in
@@ -2044,10 +2045,50 @@ def prodrequest_compose(*, created_by, pwg='', dsc='', description='',
     else:
         nevents = None
     pc_anchor = (pc_anchor or '').strip()
-    if pc_anchor and not Dataset.objects.filter(
-            composed_name=pc_anchor).exists():
+    anchor_dataset = None
+    if pc_anchor:
+        anchor_dataset = (Dataset.objects.filter(composed_name=pc_anchor)
+                          .select_related('background_tag')
+                          .order_by('block_num', 'pk').first())
+    if pc_anchor and anchor_dataset is None:
         raise ServiceError(
             f'Adopted configuration {pc_anchor!r} names no known dataset.')
+
+    background_mode = (background_mode or '').strip().lower()
+    if background_mode not in {'none', 'registered', 'other'}:
+        raise ServiceError('Choose whether this request needs background.')
+    background_request = {'mode': background_mode}
+    background_value = ''
+    background_display = 'No background'
+    if background_mode == 'registered':
+        background_tag = (background_tag or '').strip()
+        try:
+            registered_background = BackgroundTag.objects.get(
+                tag_label=background_tag)
+        except BackgroundTag.DoesNotExist:
+            raise ServiceError(
+                f'Registered background {background_tag!r} does not exist.')
+        background_value = registered_background.tag_label
+        background_display = registered_background.tag_label
+        background_request['tag'] = registered_background.tag_label
+    elif background_mode == 'other':
+        background_other = (background_other or '').strip()
+        if not background_other:
+            raise ServiceError('Describe the background that is not registered.')
+        if len(background_other) > 200:
+            raise ServiceError('Other background description must be 200 characters or fewer.')
+        background_value = background_other
+        background_display = background_other
+        background_request['other'] = background_other
+    if anchor_dataset is not None:
+        anchor_background = (anchor_dataset.background_tag.tag_label
+                             if anchor_dataset.background_tag_id else '')
+        selected_background = (background_value
+                               if background_mode == 'registered' else '')
+        if background_mode == 'other' or selected_background != anchor_background:
+            raise ServiceError(
+                'The background choice differs from the adopted configuration. '
+                'Clear the adopted configuration and submit this as a new request.')
 
     filters = {
         'process': process,
@@ -2060,6 +2101,7 @@ def prodrequest_compose(*, created_by, pwg='', dsc='', description='',
     data = {
         'composer': True,
         'filters': filters,
+        'background_request': background_request,
     }
     if pwg:
         data['pwg'] = pwg
@@ -2083,6 +2125,7 @@ def prodrequest_compose(*, created_by, pwg='', dsc='', description='',
         nevents=nevents,
         gen_config=gen_config,
         simu_path=(simu_path or '').strip(),
+        background=background_value,
         new_request=True,
         status='new',
         source_row=f'composer:{_uuid.uuid4().hex[:12]}',
@@ -2094,13 +2137,17 @@ def prodrequest_compose(*, created_by, pwg='', dsc='', description='',
         'web', 'prodrequest_compose',
         subject_type='prod_request', subject_key=str(request_row.pk),
         username=created_by, sublevel='normal', live_default=True,
-        requestor=requestor, pc_anchor=pc_anchor or '')
+        requestor=requestor, pc_anchor=pc_anchor or '',
+        background_mode=background_mode, background=background_value)
     return {
         'id': request_row.pk,
         'requestor': requestor,
         'pc_anchor': pc_anchor,
         'nevents': nevents,
         'status': request_row.status,
+        'background': background_value,
+        'background_request': background_request,
+        'background_display': background_display,
     }
 
 

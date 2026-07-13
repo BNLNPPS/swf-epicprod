@@ -730,7 +730,8 @@ def prod_request_compose(request):
         for key in ('pwg', 'dsc', 'description', 'process', 'beam',
                     'species', 'q2', 'generator', 'generator_version',
                     'sample', 'pc_anchor', 'simu_path', 'contact_name',
-                    'contact_email', 'repository', 'intended_use')
+                    'contact_email', 'repository', 'intended_use',
+                    'background_mode', 'background_tag', 'background_other')
     }
     try:
         result = services.prodrequest_compose(

@@ -36,13 +36,14 @@
     <strong>Your previous requests</strong>
     <span class="text-muted">— the best guide to the next one. Start from any of them.</span>
     <table class="table table-sm mb-1 mt-2">
-      <thead><tr><th>When</th><th>Group</th><th>Physics</th><th>Events</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>When</th><th>Group</th><th>Physics</th><th>Background</th><th>Events</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for r in my_requests %}
         <tr>
           <td>{{ r.created }}</td>
           <td>{{ r.requestor }}</td>
           <td>{% if r.filters.process %}{{ r.filters.process }}{% if r.filters.beam %} · {{ r.filters.beam }}{% endif %}{% if r.filters.q2 %} · {{ r.filters.q2 }}{% endif %}{% else %}{{ r.description|truncatechars:70 }}{% endif %}</td>
+          <td>{{ r.background_display }}</td>
           <td>{{ r.nevents|default:"—" }}</td>
           <td>{{ r.status }}</td>
           <td><button type="button" class="btn btn-sm btn-dark-green" data-rc-startfrom="{{ forloop.counter0 }}"
@@ -93,6 +94,19 @@
             <label for="rc-sample">Sample variant <span class="text-muted">(optional)</span></label>
             <input id="rc-sample" class="form-control" list="rc-sample-opts" placeholder="angular range, mass point, …">
             <datalist id="rc-sample-opts">{% for o in sample_options %}<option value="{{ o }}">{% endfor %}</datalist>
+          </div>
+          <div class="col-12">
+            <label>Background overlay</label>
+            <div class="border rounded p-2 d-flex align-items-start justify-content-between gap-3">
+              <div>
+                <strong id="rc-background-summary">Not specified</strong>
+                <div id="rc-background-detail" class="form-text">Choose whether to add background.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-dark-green flex-shrink-0"
+                      data-bs-toggle="modal" data-bs-target="#rc-background-panel">
+                Choose background
+              </button>
+            </div>
           </div>
           <div class="col-md-6">
             <label for="rc-nevents">How many events?</label>
@@ -179,16 +193,87 @@
   </div>
 </div>
 
+<div class="modal fade" id="rc-background-panel" tabindex="-1"
+     aria-labelledby="rc-background-panel-title" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title h5" id="rc-background-panel-title">Background overlay</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="border rounded p-3 mb-3 d-flex align-items-center justify-content-between gap-3">
+          <div>
+            <strong>No background</strong>
+            <div class="text-muted small">Produce the requested signal without a background overlay.</div>
+          </div>
+          <button type="button" class="btn btn-sm btn-dark-green flex-shrink-0"
+                  data-rc-background-none data-bs-dismiss="modal">Use no background</button>
+        </div>
+
+        <h3 class="h6">Registered backgrounds</h3>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Tag</th><th>Type</th><th>Beam</th><th>Source</th>
+                <th>Mechanism</th><th>Generator</th><th style="min-width:24rem">Description</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for background in backgrounds %}
+              <tr data-rc-background-row="{{ background.tag }}">
+                <td><strong>{{ background.tag }}</strong></td>
+                <td>{{ background.type|default:"—" }}</td>
+                <td>{{ background.beam|default:"—" }}</td>
+                <td>{{ background.source|default:"—" }}</td>
+                <td>{{ background.mechanism|default:"—" }}</td>
+                <td style="overflow-wrap:anywhere">{{ background.generator|default:"—" }}</td>
+                <td style="overflow-wrap:anywhere">{{ background.description|default:"—" }}</td>
+                <td>
+                  <button type="button" class="btn btn-sm btn-dark-green"
+                          data-rc-background-tag="{{ background.tag }}"
+                          data-bs-dismiss="modal">Use {{ background.tag }}</button>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="8" class="text-muted">No backgrounds are registered.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="border rounded p-3">
+          <label for="rc-background-other"><strong>Other / not registered</strong></label>
+          <div class="text-muted small mb-2">Describe the background the production team needs to add.</div>
+          <div class="d-flex gap-2">
+            <input id="rc-background-other" class="form-control" maxlength="200"
+                   placeholder="Background description">
+            <button type="button" class="btn btn-sm btn-dark-green flex-shrink-0"
+                    id="rc-background-other-use">Use this background</button>
+          </div>
+          <div id="rc-background-panel-status" class="text-danger small mt-1" role="status"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {{ configs_json|json_script:"rc-configs" }}
 {{ my_requests_json|json_script:"rc-myreqs" }}
+{{ backgrounds_json|json_script:"rc-backgrounds" }}
 <script>
 (function () {
   const configs = JSON.parse(JSON.parse(document.getElementById('rc-configs').textContent));
   const myReqs = JSON.parse(JSON.parse(document.getElementById('rc-myreqs').textContent));
+  const backgrounds = JSON.parse(JSON.parse(document.getElementById('rc-backgrounds').textContent));
   const fields = ['process', 'beam', 'species', 'q2', 'generator'];
   const el = id => document.getElementById(id);
   const dataPageUrl = name => "{% url 'pcs:pcs_edition_data' name='__NAME__' %}".replace('__NAME__', encodeURIComponent(name));
   let adoptedAnchor = '';
+  let backgroundMode = '';
+  let backgroundTag = '';
+  let backgroundOther = '';
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, c => (
@@ -214,6 +299,55 @@
   wireCombo('rc-pwg', 'rc-pwg-other', '{{ default_pwg|escapejs }}');
   wireCombo('rc-dsc', 'rc-dsc-other', '{{ default_dsc|escapejs }}');
 
+  function setBackground(mode, tag, other) {
+    const changed = mode !== backgroundMode || tag !== backgroundTag || other !== backgroundOther;
+    backgroundMode = mode || '';
+    backgroundTag = tag || '';
+    backgroundOther = other || '';
+    if (changed) clearAdopted();
+    const registered = backgrounds.find(item => item.tag === backgroundTag);
+    if (backgroundMode === 'none') {
+      el('rc-background-summary').textContent = 'No background';
+      el('rc-background-detail').textContent = 'Produce the signal without a background overlay.';
+    } else if (backgroundMode === 'registered') {
+      el('rc-background-summary').textContent = backgroundTag;
+      el('rc-background-detail').textContent = registered
+        ? registered.description : 'Registered background selected.';
+    } else if (backgroundMode === 'other') {
+      el('rc-background-summary').textContent = 'Other / not registered';
+      el('rc-background-detail').textContent = backgroundOther;
+    } else {
+      el('rc-background-summary').textContent = 'Not specified';
+      el('rc-background-detail').textContent = 'Choose whether to add background.';
+    }
+    renderMatches();
+  }
+
+  function clearAdopted() {
+    adoptedAnchor = '';
+    el('rc-adopted').style.display = 'none';
+  }
+
+  el('rc-background-panel').addEventListener('show.bs.modal', () => {
+    el('rc-background-other').value = backgroundMode === 'other' ? backgroundOther : '';
+    el('rc-background-panel-status').textContent = '';
+  });
+  el('rc-background-panel').querySelector('[data-rc-background-none]')
+    .addEventListener('click', () => setBackground('none', '', ''));
+  el('rc-background-panel').querySelectorAll('[data-rc-background-tag]')
+    .forEach(button => button.addEventListener('click', () => {
+      setBackground('registered', button.dataset.rcBackgroundTag, '');
+    }));
+  el('rc-background-other-use').addEventListener('click', () => {
+    const other = el('rc-background-other').value.trim();
+    if (!other) {
+      el('rc-background-panel-status').textContent = 'Describe the background first.';
+      return;
+    }
+    setBackground('other', '', other);
+    bootstrap.Modal.getOrCreateInstance(el('rc-background-panel')).hide();
+  });
+
   function currentAxes() {
     return {
       process: el('rc-process').value.trim(),
@@ -237,7 +371,13 @@
   function matches(axes) {
     const filled = fields.filter(f => axes[f]);
     if (!filled.length) return [];
-    return configs.filter(c => filled.every(f => axisMatch(c[f], axes[f])));
+    return configs.filter(c => {
+      if (!filled.every(f => axisMatch(c[f], axes[f]))) return false;
+      if (!backgroundMode) return true;
+      if (backgroundMode === 'none') return !c.background_tag;
+      if (backgroundMode === 'other') return false;
+      return c.background_tag === backgroundTag;
+    });
   }
 
   function renderMatches() {
@@ -249,13 +389,15 @@
       return;
     }
     if (!hits.length) {
-      box.innerHTML = '<div class="text-muted">Nothing matches yet — this looks like new physics. That is fine; submit it as new.</div>';
+      box.innerHTML = backgroundMode === 'other'
+        ? '<div class="text-muted">The requested background is not registered. That is fine; describe it and submit the request for production-team review.</div>'
+        : '<div class="text-muted">Nothing matches yet — this looks like new physics. That is fine; submit it as new.</div>';
       return;
     }
     box.innerHTML = hits.slice(0, 8).map((c, i) => `
       <div class="pcs-rc-match-card">
         <div><strong>${esc(c.process)}</strong>${c.beam ? ' · ' + esc(c.beam) : ''}${c.species ? ' · ' + esc(c.species) : ''}${c.q2 ? ' · Q² ' + esc(c.q2) : ''}${c.sample ? ' · ' + esc(c.sample) : ''}</div>
-        <div class="text-muted">${esc(c.generator)}${c.gen_version ? ' ' + esc(c.gen_version) : ''} · ${esc(c.physics)}</div>
+        <div class="text-muted">${esc(c.generator)}${c.gen_version ? ' ' + esc(c.gen_version) : ''} · ${esc(c.physics)} · ${c.background_tag ? esc(c.background_tag) : 'no background'}</div>
         <div>${c.files ? '<span class="pcs-rc-produced">' + c.files.toLocaleString() + ' files produced</span> in ' + esc(c.campaigns.join(', ')) : '<span class="text-muted">planned, nothing produced yet</span>'}</div>
         <button type="button" class="btn btn-sm btn-dark-green mt-1" data-rc-use="${configs.indexOf(c)}"
                 title="Base your request on this configuration — the production team sees a request for more of exactly this physics">Use this</button>
@@ -271,6 +413,7 @@
     el('rc-species').value = c.species; el('rc-q2').value = c.q2;
     el('rc-generator').value = c.generator; el('rc-genver').value = c.gen_version;
     el('rc-sample').value = c.sample;
+    setBackground(c.background_tag ? 'registered' : 'none', c.background_tag, '');
     adoptedAnchor = c.anchor;
     el('rc-adopted-name').textContent = c.anchor;
     el('rc-adopted-link').href = dataPageUrl(c.anchor);
@@ -279,12 +422,11 @@
   }
 
   el('rc-adopted-clear').addEventListener('click', () => {
-    adoptedAnchor = '';
-    el('rc-adopted').style.display = 'none';
+    clearAdopted();
   });
 
   fields.forEach(f => el('rc-' + f).addEventListener('input', () => {
-    adoptedAnchor = ''; el('rc-adopted').style.display = 'none';
+    clearAdopted();
     renderMatches();
   }));
   renderMatches();
@@ -297,6 +439,7 @@
     el('rc-species').value = f.species || ''; el('rc-q2').value = f.q2 || '';
     el('rc-generator').value = f.generator || ''; el('rc-sample').value = f.sample || '';
     el('rc-description').value = r.description || '';
+    setBackground(r.background_mode, r.background_tag, r.background_other);
     if (r.nevents) el('rc-nevents').value = r.nevents;
     if (r.anchor) {
       const c = configs.find(c => c.anchor === r.anchor);
@@ -318,6 +461,14 @@
   if (submit) submit.addEventListener('click', async () => {
     const status = el('rc-status');
     const axes = currentAxes();
+    if (!backgroundMode) {
+      status.textContent = 'Please choose whether this production needs background.';
+      return;
+    }
+    if (backgroundMode === 'other' && !backgroundOther) {
+      status.textContent = 'Please describe the background that is not registered.';
+      return;
+    }
     if (!el('rc-contact-name').value.trim() || !el('rc-contact-email').value.trim()) {
       status.textContent = 'Please give your name and email so the production team can reach you.';
       submit.disabled = false;
@@ -337,6 +488,9 @@
       simu_path: el('rc-simupath').value.trim(),
       repository: el('rc-repository').value.trim(),
       intended_use: el('rc-intended').value.trim(),
+      background_mode: backgroundMode,
+      background_tag: backgroundTag,
+      background_other: backgroundOther,
       pc_anchor: adoptedAnchor,
     };
     status.textContent = 'Submitting…';
@@ -355,7 +509,8 @@
         ? `<a href="${dataPageUrl(j.pc_anchor)}#req-${j.id}"><strong>req#${j.id}</strong></a>`
         : `<strong>req#${j.id}</strong>`;
       el('rc-success-detail').innerHTML = `Request ${reqLabel}${j.requestor ? ' for ' + esc(j.requestor) : ''}`
-        + (j.pc_anchor ? `, based on <a href="${dataPageUrl(j.pc_anchor)}">${esc(j.pc_anchor)}</a>.` : ', recorded as new physics.');
+        + (j.pc_anchor ? `, based on <a href="${dataPageUrl(j.pc_anchor)}">${esc(j.pc_anchor)}</a>` : ', recorded as new physics')
+        + ` · Background: ${esc(j.background_display)}.`;
       el('rc-success').style.display = '';
     } catch (err) {
       status.textContent = 'Could not submit: ' + err.message;

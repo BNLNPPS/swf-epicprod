@@ -26,7 +26,7 @@
   {% for pr in prod_requests %}
   <div class="mb-1 small" id="req-{{ pr.pk }}">
     <strong class="text-muted">Request req#{{ pr.pk }}:</strong>
-    {{ pr.requestor|default:"—" }}{% if pr.nevents %} &middot; {{ pr.nevents }} events{% endif %}{% if pr.priority %} &middot; priority {{ pr.priority }}{% endif %}{% if pr.description %} &middot; {{ pr.description }}{% endif %}{% if pr.source_url %} &middot; <a href="{{ pr.source_url }}" target="_blank" rel="noopener">issue</a>{% endif %}
+    {{ pr.requestor|default:"—" }}{% if pr.nevents %} &middot; {{ pr.nevents }} events{% endif %}{% if pr.data.background_request.mode == 'none' %} &middot; no background{% elif pr.background %} &middot; background {{ pr.background }}{% endif %}{% if pr.priority %} &middot; priority {{ pr.priority }}{% endif %}{% if pr.description %} &middot; {{ pr.description }}{% endif %}{% if pr.source_url %} &middot; <a href="{{ pr.source_url }}" target="_blank" rel="noopener">issue</a>{% endif %}
   </div>
   {% endfor %}
   <div class="text-muted mb-1">{{ name }}</div>

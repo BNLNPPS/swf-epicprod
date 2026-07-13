@@ -2438,6 +2438,8 @@ def pcs_request_composer(request):
             'generator': (gen_case.get(evgen[0], evgen[0]) if evgen else ''),
             'gen_version': (evgen[1] if evgen else ''),
             'sample': detail['sample'],
+            'background_tag': (head.background_tag.tag_label
+                               if head.background_tag_id else ''),
             'physics': head.physics_tag.tag_label if head.physics_tag else '',
             'anchor': head.composed_name,
             'campaigns': sorted(group['campaigns']),
@@ -2451,11 +2453,53 @@ def pcs_request_composer(request):
 
     username = getattr(request.user, 'username', '') or ''
     prefs = UserPreference.get_prefs(username) if username else {}
+    background_tags = list(BackgroundTag.objects.order_by('tag_number'))
+    background_labels = {tag.tag_label for tag in background_tags}
+    backgrounds = []
+    for tag in background_tags:
+        params = tag.parameters or {}
+        electron = str(params.get('beam_energy_electron') or '')
+        hadron = str(params.get('beam_energy_hadron') or '')
+        electron = '' if electron.upper() == 'N/A' else electron
+        hadron = '' if hadron.upper() == 'N/A' else hadron
+        backgrounds.append({
+            'tag': tag.tag_label,
+            'type': params.get('background_type') or '',
+            'beam': (f'{electron}x{hadron}' if electron and hadron
+                     else electron or hadron),
+            'source': params.get('bg_source') or '',
+            'mechanism': params.get('bg_mechanism') or '',
+            'generator': params.get('bg_generator') or '',
+            'description': tag.description or '',
+        })
     my_requests = []
     if username:
         for row in (ProdRequest.objects.filter(created_by=username)
                     .order_by('-created_at')[:10]):
-            filters = (row.data or {}).get('filters') or {}
+            row_data = row.data or {}
+            filters = row_data.get('filters') or {}
+            background_request = row_data.get('background_request')
+            if not isinstance(background_request, dict):
+                if row.background in background_labels:
+                    background_request = {
+                        'mode': 'registered',
+                        'tag': row.background,
+                    }
+                elif row.background:
+                    background_request = {
+                        'mode': 'other',
+                        'other': row.background,
+                    }
+                else:
+                    background_request = {'mode': 'none'}
+            background_mode = background_request.get('mode') or 'none'
+            background_tag = background_request.get('tag') or ''
+            background_other = background_request.get('other') or ''
+            background_display = (
+                background_tag if background_mode == 'registered'
+                else background_other if background_mode == 'other'
+                else 'None'
+            )
             my_requests.append({
                 'id': row.pk,
                 'created': row.created_at.strftime('%Y-%m-%d'),
@@ -2464,7 +2508,11 @@ def pcs_request_composer(request):
                 'nevents': row.nevents,
                 'description': row.description,
                 'filters': filters,
-                'anchor': (row.data or {}).get('physics_config_anchor', ''),
+                'anchor': row_data.get('physics_config_anchor', ''),
+                'background_mode': background_mode,
+                'background_tag': background_tag,
+                'background_other': background_other,
+                'background_display': background_display,
             })
     default_pwg = prefs.get('composer_pwg', '')
     default_dsc = prefs.get('composer_dsc', '')
@@ -2488,6 +2536,8 @@ def pcs_request_composer(request):
         'q2_options': _options('q2'),
         'generator_options': _options('generator'),
         'sample_options': _options('sample'),
+        'backgrounds': backgrounds,
+        'backgrounds_json': json.dumps(backgrounds),
         'pwg_options': PWG_OPTIONS,
         'dsc_option_groups': DSC_OPTION_GROUPS,
         'default_pwg': default_pwg,
