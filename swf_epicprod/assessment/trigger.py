@@ -40,6 +40,11 @@ CORUN_API_URL = (os.environ.get('CORUN_API_URL', '').rstrip('/')
 CORUN_API_TOKEN = os.environ.get('CORUN_API_TOKEN', '')
 CORUN_ASSESSMENT_SECTION = os.environ.get('CORUN_ASSESSMENT_SECTION',
                                           spec.DEFAULT_SECTION)
+CORUN_ASSESSMENT_BUNDLE_SECTION = os.environ.get(
+    'CORUN_ASSESSMENT_BUNDLE_SECTION', spec.DEFAULT_BUNDLE_SECTION)
+CORUN_WEB_URL = os.environ.get('CORUN_WEB_URL', '').rstrip('/')
+if not CORUN_WEB_URL and CORUN_API_URL.endswith('/api/v1'):
+    CORUN_WEB_URL = CORUN_API_URL[:-len('/api/v1')]
 def _definition_for(kind):
     # DAILY was NIGHTLY until 2026-07-12; honor an un-migrated environment.
     legacy = 'NIGHTLY' if kind == 'daily' else ''
@@ -96,25 +101,75 @@ def log_action(action, *, outcome, subject_key='', reason='', **counts):
         print(f'WARNING: action log post failed: {e}', file=sys.stderr)
 
 
-def submit_run(campaign, kind, window_days, *, dry_run=False):
+def persist_bundle(evidence):
+    """Store the full bundle as a hidden corun Page and return its URL."""
+    params = evidence.get('params') or {}
+    campaign = str(params.get('campaign') or '')
+    kind = str(params.get('kind') or '')
+    title = f'ePIC {campaign} {kind} assessment evidence — {evidence.get("generated_at")}'
+    page = _request(
+        f'{CORUN_API_URL}/pages/',
+        payload={
+            'section': CORUN_ASSESSMENT_BUNDLE_SECTION,
+            'title': title,
+            'content': '```json\n' + json.dumps(
+                evidence, indent=2, sort_keys=True) + '\n```',
+            'data': {
+                'ui_visible': False,
+                'artifact_type': 'campaign_assessment_evidence_bundle',
+                'source_system': 'epicprod',
+                'subject_type': 'campaign',
+                'subject_key': campaign,
+                'campaign': campaign,
+                'assessment_kind': kind,
+                'kind': kind,
+                'bundle_schema': evidence.get('schema') or '',
+                'schema_version': int(
+                    str(evidence.get('schema') or '/0').rsplit('/', 1)[-1]),
+                'evidence_generated_at': evidence.get('generated_at') or '',
+                'generated_at': evidence.get('generated_at') or '',
+            },
+            'tags': ['evidence-bundle', 'epicprod', f'campaign:{campaign}',
+                     f'assessment:{kind}'],
+        },
+        token=CORUN_API_TOKEN)
+    bundle_id = str(page.get('group_id') or '')
+    if not bundle_id:
+        raise RuntimeError(f'corun bundle Page response contained no group id: {page!r}')
+    url = f'{CORUN_WEB_URL}/page/{bundle_id}/'
+    evidence['artifact'] = {
+        'type': 'corun_page',
+        'id': bundle_id,
+        'url': url,
+        'section': CORUN_ASSESSMENT_BUNDLE_SECTION,
+    }
+    return url
+
+
+def submit_run(campaign, kind, window_days, *, dry_run=False,
+               bundle_only=False):
     """Assemble the bundle and create the corun run. Returns job id ''
     on dry runs; raises on submission failure."""
     evidence = bundle_mod.assemble(
         campaign, kind, window_days,
         monitor_url=MONITOR_URL, corun_url=CORUN_API_URL,
         corun_token=CORUN_API_TOKEN, section=CORUN_ASSESSMENT_SECTION)
-    # The instructions live in the definition's SystemPrompt; the prompt
-    # content is the run's data — slot and evidence bundle.
+    if dry_run:
+        content = json.dumps({'bundle': evidence})
+        print(f'{campaign}: dry run — bundle degraded={evidence["degraded"]}, '
+              f'manifest={[(e["source"], e["ok"]) for e in evidence["manifest"]]}, '
+              f'content {len(content)} bytes')
+        return '', evidence
+    persist_bundle(evidence)
+    if bundle_only:
+        return '', evidence
+    # Persist first, then attach the hidden Page locator to the evidence sent
+    # to the model and final renderer.
     date = evidence['generated_at'][:10]
     content = json.dumps({
         'slot': spec.slot(campaign, kind, date),
         'bundle': evidence,
     })
-    if dry_run:
-        print(f'{campaign}: dry run — bundle degraded={evidence["degraded"]}, '
-              f'manifest={[(e["source"], e["ok"]) for e in evidence["manifest"]]}, '
-              f'content {len(content)} bytes')
-        return '', evidence
     definition = _definition_for(kind)
     prompt = _request(
         f'{CORUN_API_URL}/prompts/',
@@ -126,7 +181,10 @@ def submit_run(campaign, kind, window_days, *, dry_run=False):
         payload={'prompt_group_id': str(prompt.get('group_id') or ''),
                  'definition_id': definition},
         token=CORUN_API_TOKEN)
-    return str(job.get('id') or job.get('job_id') or ''), evidence
+    job_id = str(job.get('id') or job.get('job_id') or '')
+    if not job_id:
+        raise RuntimeError(f'corun job response contained no job id: {job!r}')
+    return job_id, evidence
 
 
 def main():
@@ -139,17 +197,26 @@ def main():
                         help='override the target campaign(s)')
     parser.add_argument('--dry-run', action='store_true',
                         help='assemble and report the bundle; no submission')
+    parser.add_argument('--bundle-only', action='store_true',
+                        help='assemble and store the full bundle; do not create an LLM job')
     args = parser.parse_args()
     window_days = args.window_days or (7 if args.kind == 'weekly' else 1)
 
     if not MONITOR_URL:
         print('ERROR: SWF_MONITOR_URL is not set', file=sys.stderr)
         return 2
-    if not args.dry_run and (not CORUN_API_URL or not _definition_for(args.kind)):
-        print('ERROR: CORUN_API_URL or the definition id for this kind is '
-              'not set', file=sys.stderr)
+    if args.dry_run and args.bundle_only:
+        print('ERROR: --dry-run and --bundle-only are mutually exclusive',
+              file=sys.stderr)
+        return 2
+    if not args.dry_run and (not CORUN_API_URL or not CORUN_API_TOKEN
+                             or not CORUN_WEB_URL
+                             or (not args.bundle_only
+                                 and not _definition_for(args.kind))):
+        print('ERROR: CORUN API/token/web URL or the definition id '
+              'required for this operation is not set', file=sys.stderr)
         log_action('assessment_triggered', outcome='error',
-                   reason=f'CORUN_API_URL or definition for {args.kind} unset')
+                   reason='assessment operation configuration incomplete')
         return 2
 
     try:
@@ -175,8 +242,13 @@ def main():
     for campaign in targets:
         try:
             job_id, evidence = submit_run(campaign, args.kind, window_days,
-                                          dry_run=args.dry_run)
+                                          dry_run=args.dry_run,
+                                          bundle_only=args.bundle_only)
             if args.dry_run:
+                continue
+            if args.bundle_only:
+                print(f'{campaign}: bundle stored at '
+                      f'{evidence["artifact"]["url"]}')
                 continue
             print(f'{campaign}: {args.kind} assessment job {job_id} created'
                   f'{" (degraded evidence)" if evidence["degraded"] else ""}')

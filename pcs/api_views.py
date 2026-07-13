@@ -765,11 +765,16 @@ def campaigns_status(request):
         campaign     — campaign name; default: first producing campaign,
                        else current.
         window_days  — activity window for deltas/flips/actions (default 1).
+        history_at   — return the recorded production snapshot closest to
+                       this ISO-8601 timestamp instead of computing live state.
         targets_only — '1' returns only {targets, assessment_enabled}, the
                        cheap form the scheduled trigger polls.
     """
     from swf_epicprod.analytics.rollup import (
-        campaign_status as _campaign_status, resolve_target_campaigns)
+        campaign_status as _campaign_status,
+        campaign_status_snapshot,
+        resolve_target_campaigns,
+    )
 
     if request.query_params.get('targets_only') in ('1', 'true'):
         from monitor_app.models import SysConfig
@@ -779,6 +784,10 @@ def campaigns_status(request):
                 SysConfig.get_setting('assessment_enabled', True)),
         })
     try:
+        if request.query_params.get('history_at'):
+            return Response(campaign_status_snapshot(
+                request.query_params.get('campaign') or '',
+                request.query_params['history_at']))
         result = _campaign_status(
             request.query_params.get('campaign') or None,
             window_days=request.query_params.get('window_days') or 1)

@@ -22,6 +22,11 @@ DISPOSITION_FLIPS_LIMIT = 20
 TOP_ERRORS_LIMIT = 5
 TIMELINE_TAIL_BINS = 14
 ACTION_ROWS_MAX = 5000
+ASSESSMENT_ACTIONS = {
+    'assessment_triggered', 'assessment_enforce', 'assessment_register',
+    'assessment_retry', 'assessment_completed',
+}
+INTERNAL_ACTIONS = {'campaign_analytics_snapshot'}
 
 
 def _block(member, window_start, window_end, data):
@@ -40,7 +45,7 @@ def _unavailable(reason):
 
 
 def campaign_progress(campaign, window_start, window_end):
-    """Aggregate the cached campaign progress snapshot."""
+    """Aggregate the cached PCS progress view by unique output DID."""
     from pcs.services import load_campaign_progress_snapshot
 
     snap = load_campaign_progress_snapshot(campaign)
@@ -51,27 +56,48 @@ def campaign_progress(campaign, window_start, window_end):
                                    'builds it'))
 
     rows = list((snap.get('rows') or {}).values())
+    unique_outputs = {}
+    duplicate_dids = {}
+    anonymous = 0
+    for row in rows:
+        for output in row.get('outputs') or []:
+            did = str(output.get('did') or '').strip()
+            if did:
+                key = f'did:{did}'
+            else:
+                anonymous += 1
+                key = f'anonymous:{row.get("task_id")}:{anonymous}'
+            prior = unique_outputs.get(key)
+            if prior is not None and did:
+                duplicate_dids[did] = duplicate_dids.get(did, 1) + 1
+            checked = str(output.get('checked_at') or '')
+            prior_checked = str((prior or {}).get('checked_at') or '')
+            if prior is None or checked >= prior_checked:
+                unique_outputs[key] = {
+                    **output,
+                    '_task_name': row.get('task_name') or '',
+                }
+
     total_files = 0
     total_bytes = 0
     outputs_total = 0
     outputs_complete = 0
     incomplete = []
-    for row in rows:
-        for output in row.get('outputs') or []:
-            outputs_total += 1
-            total_files += int(output.get('file_count') or 0)
-            total_bytes += int(output.get('bytes') or 0)
-            pct = output.get('completion_percent')
-            if output.get('complete') and (pct is None or pct >= 100):
-                outputs_complete += 1
-            else:
-                incomplete.append({
-                    'task_name': row.get('task_name') or '',
-                    'did': output.get('did') or '',
-                    'completion_percent': pct,
-                    'file_count': int(output.get('file_count') or 0),
-                    'expected_jobs': output.get('expected_jobs'),
-                })
+    for output in unique_outputs.values():
+        outputs_total += 1
+        total_files += int(output.get('file_count') or 0)
+        total_bytes += int(output.get('bytes') or 0)
+        pct = output.get('completion_percent')
+        if output.get('complete') and (pct is None or pct >= 100):
+            outputs_complete += 1
+        else:
+            incomplete.append({
+                'task_name': output.get('_task_name') or '',
+                'did': output.get('did') or '',
+                'completion_percent': pct,
+                'file_count': int(output.get('file_count') or 0),
+                'expected_jobs': output.get('expected_jobs'),
+            })
     incomplete.sort(key=lambda o: (o['completion_percent'] is None,
                                    o['completion_percent'] or 0))
     return _block('campaign_progress', window_start, window_end, {
@@ -83,10 +109,46 @@ def campaign_progress(campaign, window_start, window_end):
         'outputs_complete': outputs_complete,
         'total_files': total_files,
         'total_bytes': total_bytes,
+        'output_identity': 'unique DID; outputs without a DID remain distinct',
+        'duplicate_output_records': sum(n - 1 for n in duplicate_dids.values()),
+        'duplicate_dids': [
+            {'did': did, 'records': count}
+            for did, count in sorted(duplicate_dids.items())[:10]
+        ],
+        'duplicate_dids_truncated': max(0, len(duplicate_dids) - 10),
         'least_complete': incomplete[:LEAST_COMPLETE_LIMIT],
         'least_complete_truncated': max(0, len(incomplete) - LEAST_COMPLETE_LIMIT),
         'source_errors': snap.get('errors') or [],
     })
+
+
+def _campaign_panda_task_ids(campaign):
+    """Campaign PanDA population from PCS associations plus name discovery."""
+    from django.db import connections
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    from pcs.models import PandaTasks, ProdTask
+
+    associated = set(
+        PandaTasks.objects
+        .filter(prod_task__campaign=campaign, jedi_task_id__isnull=False)
+        .values_list('jedi_task_id', flat=True)
+    )
+    associated.update(
+        ProdTask.objects
+        .filter(campaign=campaign, panda_task_id__isnull=False)
+        .values_list('panda_task_id', flat=True)
+    )
+    with connections['panda'].cursor() as cursor:
+        cursor.execute(
+            f'SELECT "jeditaskid" FROM "{PANDA_SCHEMA}"."jedi_tasks" '
+            f'WHERE "taskname" LIKE %s',
+            [f'group.EIC.{campaign.name}.%'])
+        name_matched = {row[0] for row in cursor.fetchall()}
+    return sorted(associated | name_matched), {
+        'associated': len(associated),
+        'name_matched': len(name_matched),
+        'union': len(associated | name_matched),
+    }
 
 
 def panda_health(campaign, window_start, window_end):
@@ -101,16 +163,8 @@ def panda_health(campaign, window_start, window_end):
     """
     from pcs.services import _panda_progress_summaries
 
-    from django.db import connections
-    from monitor_app.panda.constants import PANDA_SCHEMA
-
     try:
-        with connections['panda'].cursor() as cursor:
-            cursor.execute(
-                f'SELECT "jeditaskid" FROM "{PANDA_SCHEMA}"."jedi_tasks" '
-                f'WHERE "taskname" LIKE %s',
-                [f'group.EIC.{campaign.name}.%'])
-            task_ids = [row[0] for row in cursor.fetchall()]
+        task_ids, population = _campaign_panda_task_ids(campaign)
     except Exception as e:
         return _block('panda_health', window_start, window_end,
                       _unavailable(f'PanDA task lookup failed: {e}'))
@@ -143,6 +197,7 @@ def panda_health(campaign, window_start, window_end):
     return _block('panda_health', window_start, window_end, {
         'available': True,
         'panda_task_count': len(seen),
+        'population': population,
         'task_statuses': statuses,
         'jobs': sums,
         'final_failure_rate': rate,
@@ -151,7 +206,13 @@ def panda_health(campaign, window_start, window_end):
 
 
 def rucio_arrivals(campaign, window_start, window_end):
-    """Arrivals recency and volume from the sweep record and timeline."""
+    """JLab file-arrival sweeps and dataset-first-arrival history.
+
+    These are separate measurements. File sweeps count newly created file
+    DIDs over their recorded sweep intervals. The timeline records the first
+    replica arrival for each dataset and is retained only as lifetime context.
+    """
+    from monitor_app.models import AppLog
     from pcs.services import load_rucio_timeline
 
     arrivals = (campaign.data or {}).get('arrivals') or {}
@@ -165,74 +226,60 @@ def rucio_arrivals(campaign, window_start, window_end):
         except (TypeError, ValueError):
             age_hours = None
 
+    sweeps = []
+    rows = (
+        AppLog.objects
+        .filter(app_name='epicprod',
+                extra_data__action='rucio_arrivals',
+                timestamp__gte=window_start,
+                timestamp__lt=window_end)
+        .order_by('timestamp')
+        .values('timestamp', 'extra_data')
+    )
+    for row in rows:
+        extra = row['extra_data'] if isinstance(row['extra_data'], dict) else {}
+        count = int((extra.get('campaigns') or {}).get(campaign.name) or 0)
+        if not count:
+            continue
+        sweeps.append({
+            'window_start': str(extra.get('window_start') or ''),
+            'window_end': row['timestamp'].isoformat(),
+            'files': count,
+            'roots': list(extra.get('roots') or []),
+        })
+
     data = {
-        'available': bool(arrivals or age_hours is not None),
+        'available': bool(arrivals or sweeps),
+        'measurement': 'newly created JLab Rucio file DIDs',
         'last_arrival_at': last_at,
         'last_arrival_age_hours': age_hours,
-        'sweep_counts': {k: v for k, v in arrivals.items()
-                         if k != 'locations'},
+        'file_sweeps_ending_in_window': sweeps,
+        'files_in_recorded_sweeps': sum(row['files'] for row in sweeps),
+        'latest_sweep': {
+            key: value for key, value in arrivals.items()
+            if key != 'locations'
+        },
     }
     timeline = load_rucio_timeline(campaign.name)
     if timeline:
         dates = timeline.get('dates') or []
         tail = slice(max(0, len(dates) - TIMELINE_TAIL_BINS), len(dates))
         series = {'dates': dates[tail]}
-        window_delta = {}
-        start_iso = window_start.strftime('%Y-%m-%dT%H:%M:%S')
-        start_idx = next((i for i, d in enumerate(dates) if d >= start_iso),
-                         len(dates) - 1) if dates else 0
         for stage in ('reco', 'simu'):
             cum_files = (timeline.get(stage) or {}).get('cum_files') or []
             cum_bytes = (timeline.get(stage) or {}).get('cum_bytes') or []
             if cum_files:
                 series[f'{stage}_cum_files'] = cum_files[tail]
-                base = cum_files[start_idx - 1] if start_idx > 0 else 0
-                window_delta[f'{stage}_files'] = cum_files[-1] - base
             if cum_bytes:
-                base = cum_bytes[start_idx - 1] if start_idx > 0 else 0
-                window_delta[f'{stage}_bytes'] = cum_bytes[-1] - base
-        data['timeline_tail'] = series
-        data['window_arrivals'] = window_delta
-        sweep_files = int(arrivals.get('files') or 0)
-        timeline_files = sum(
-            int(window_delta.get(f'{stage}_files') or 0)
-            for stage in ('reco', 'simu'))
-        sweep_start = arrivals.get('window_start')
-        sweep_end = arrivals.get('last_arrival_at')
-        overlap = False
-        try:
-            parsed_start = _dt.datetime.fromisoformat(
-                str(sweep_start).replace('Z', '+00:00'))
-            parsed_end = _dt.datetime.fromisoformat(
-                str(sweep_end).replace('Z', '+00:00'))
-            if parsed_start.tzinfo is None:
-                parsed_start = parsed_start.replace(tzinfo=_dt.timezone.utc)
-            if parsed_end.tzinfo is None:
-                parsed_end = parsed_end.replace(tzinfo=_dt.timezone.utc)
-            overlap = parsed_end >= window_start and parsed_start <= window_end
-        except (TypeError, ValueError):
-            pass
-        if overlap and sweep_files and not timeline_files:
-            data['consistency'] = {
-                'status': 'conflict',
-                'reason': (
-                    'The aggregate sweep recorded files during an interval '
-                    'overlapping the assessment window, while the timeline '
-                    'derived zero window arrivals.'),
-                'sweep_files': sweep_files,
-                'timeline_window_files': timeline_files,
-                'assessment': (
-                    'At least some sweep activity overlaps the report window; '
-                    'the exact campaign-window count is not established by '
-                    'these aggregates and requires Rucio drill-down.'),
-            }
-        else:
-            data['consistency'] = {
-                'status': 'aligned' if overlap else 'not_comparable',
-                'sweep_files': sweep_files,
-                'timeline_window_files': timeline_files,
-            }
-    if not arrivals and not timeline:
+                series[f'{stage}_cum_bytes'] = cum_bytes[tail]
+        data['dataset_first_arrival_timeline'] = {
+            'measurement': (
+                'dataset file count assigned at the dataset earliest replica '
+                'creation time; later file additions do not move the series'),
+            'snapshot_fetched_at': timeline.get('snapshot_fetched_at') or '',
+            'tail': series,
+        }
+    if not arrivals and not sweeps and not timeline:
         data.update(_unavailable('no arrivals recorded for this campaign'))
     return _block('rucio_arrivals', window_start, window_end, data)
 
@@ -249,18 +296,24 @@ def disposition_mix(campaign, window_start, window_end):
         counts[state] = counts.get(state, 0) + 1
         history = (((ds.metadata or {}).get('propagation') or {})
                    .get('history') or [])
-        if not history:
-            continue
-        last = history[-1]
-        changed_at = str(last.get('changed_at') or '')
-        if changed_at >= window_start.isoformat()[:len(changed_at)] and changed_at:
+        for entry in history:
+            changed_at = str(entry.get('changed_at') or '')
+            try:
+                changed = _dt.datetime.fromisoformat(
+                    changed_at.replace('Z', '+00:00'))
+                if changed.tzinfo is None:
+                    changed = changed.replace(tzinfo=_dt.timezone.utc)
+            except (TypeError, ValueError):
+                continue
+            if not (window_start <= changed < window_end):
+                continue
             flips.append({
                 'dataset': ds.composed_name,
-                'state': last.get('state') or '',
-                'previous': last.get('previous') or '',
-                'comment': str(last.get('comment') or '')[:200],
-                'changed_by': last.get('changed_by') or '',
-                'changed_at': changed_at,
+                'state': entry.get('state') or '',
+                'previous': entry.get('previous') or '',
+                'comment': str(entry.get('comment') or '')[:200],
+                'changed_by': entry.get('changed_by') or '',
+                'changed_at': changed.isoformat(),
             })
     flips.sort(key=lambda f: f['changed_at'], reverse=True)
     return _block('disposition_mix', window_start, window_end, {
@@ -277,12 +330,14 @@ def action_stream_activity(campaign, window_start, window_end):
 
     rows = list(
         AppLog.objects
-        .filter(app_name='epicprod', timestamp__gte=window_start)
+        .filter(app_name='epicprod', timestamp__gte=window_start,
+                timestamp__lt=window_end)
         .order_by('-timestamp')
         .values('timestamp', 'extra_data')[:ACTION_ROWS_MAX]
     )
     by_action = {}
     campaign_by_action = {}
+    assessment_by_action = {}
     for row in rows:
         extra = row['extra_data'] if isinstance(row['extra_data'], dict) else {}
         action = str(extra.get('action') or 'unknown')
@@ -295,10 +350,16 @@ def action_stream_activity(campaign, window_start, window_end):
         is_campaign = (
             (extra.get('subject_type') == 'campaign'
              and subject_key == campaign.name)
-            or campaign.name in subject_key
+            or str(extra.get('campaign') or '') == campaign.name
+            or f'.{campaign.name}.' in subject_key
+            or subject_key.startswith(f'{campaign.name}/')
         )
         if is_campaign:
-            campaign_entry = campaign_by_action.setdefault(
+            target = (assessment_by_action if action in ASSESSMENT_ACTIONS
+                      else campaign_by_action)
+            if action in INTERNAL_ACTIONS:
+                continue
+            campaign_entry = target.setdefault(
                 action, {'count': 0, 'errors': 0})
             campaign_entry['count'] += 1
             if outcome and outcome != 'ok':
@@ -323,6 +384,7 @@ def action_stream_activity(campaign, window_start, window_end):
         # Keep campaign-attributed activity separate from shared platform
         # mechanics so a campaign report cannot silently claim global work.
         'actions': campaign_by_action,
+        'assessment_actions': assessment_by_action,
         'system_actions': by_action,
         'window_rows': len(rows),
         'window_truncated': len(rows) >= ACTION_ROWS_MAX,
@@ -342,25 +404,27 @@ def window_activity(campaign, window_start, window_end):
     from monitor_app.panda.constants import PANDA_SCHEMA
 
     try:
+        task_ids, population = _campaign_panda_task_ids(campaign)
         with connections['panda'].cursor() as cursor:
-            cursor.execute(
-                f'SELECT "jeditaskid", "taskname", "status", "creationdate", '
-                f'"modificationtime" FROM "{PANDA_SCHEMA}"."jedi_tasks" '
-                f'WHERE "taskname" LIKE %s',
-                [f'group.EIC.{campaign.name}.%'])
-            tasks = cursor.fetchall()
-            task_ids = [row[0] for row in tasks]
+            tasks = []
             jobs_by = {}
             if task_ids:
                 marks = ','.join(['%s'] * len(task_ids))
+                cursor.execute(
+                    f'SELECT "jeditaskid", "taskname", "status", '
+                    f'"creationdate", "modificationtime" '
+                    f'FROM "{PANDA_SCHEMA}"."jedi_tasks" '
+                    f'WHERE "jeditaskid" IN ({marks})', task_ids)
+                tasks = cursor.fetchall()
                 for table in ('jobsarchived4', 'jobsactive4'):
                     cursor.execute(
                         f'SELECT "computingsite", "jobstatus", COUNT(*) '
                         f'FROM "{PANDA_SCHEMA}"."{table}" '
                         f'WHERE "jeditaskid" IN ({marks}) '
                         f'AND "modificationtime" >= %s '
+                        f'AND "modificationtime" < %s '
                         f'GROUP BY 1, 2',
-                        task_ids + [window_start])
+                        task_ids + [window_start, window_end])
                     for site, status, n in cursor.fetchall():
                         entry = jobs_by.setdefault(site or 'unknown', {})
                         entry[status] = entry.get(status, 0) + int(n)
@@ -372,10 +436,12 @@ def window_activity(campaign, window_start, window_end):
     completed = []
     failed = []
     for tid, name, status, created, modified in tasks:
-        if created and created >= window_start.replace(tzinfo=None):
+        if (created and window_start.replace(tzinfo=None) <= created
+                < window_end.replace(tzinfo=None)):
             initiated.append({'jeditaskid': tid, 'name': name, 'status': status})
-        elif (modified and modified >= window_start.replace(tzinfo=None)
-              and status in ('done', 'finished', 'failed', 'aborted', 'broken')):
+        if (modified and window_start.replace(tzinfo=None) <= modified
+                < window_end.replace(tzinfo=None)
+                and status in ('done', 'finished', 'failed', 'aborted', 'broken')):
             entry = {'jeditaskid': tid, 'name': name, 'status': status}
             (failed if status in ('failed', 'aborted', 'broken')
              else completed).append(entry)
@@ -383,17 +449,26 @@ def window_activity(campaign, window_start, window_end):
     window_finished = sum(e.get('finished', 0) for e in jobs_by.values())
     window_failed = sum(e.get('failed', 0) for e in jobs_by.values())
     terminal = window_finished + window_failed
+    jobs_by_status = {}
+    for states in jobs_by.values():
+        for status, count in states.items():
+            jobs_by_status[status] = jobs_by_status.get(status, 0) + count
     return _block('window_activity', window_start, window_end, {
         'available': True,
+        'population': population,
         'jobs_by_site': jobs_by,
+        'jobs_by_status': jobs_by_status,
         'window_jobs_finished': window_finished,
         'window_jobs_failed': window_failed,
         'window_failure_rate': (round(window_failed / terminal, 4)
                                 if terminal else None),
         'tasks_initiated': initiated[:20],
+        'tasks_initiated_truncated': max(0, len(initiated) - 20),
         'tasks_completed': completed[:20],
+        'tasks_completed_truncated': max(0, len(completed) - 20),
         'tasks_newly_failed': failed[:20],
-        'quiet': terminal == 0 and not initiated and not completed and not failed,
+        'tasks_newly_failed_truncated': max(0, len(failed) - 20),
+        'quiet': not jobs_by and not initiated and not completed and not failed,
     })
 
 

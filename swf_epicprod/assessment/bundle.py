@@ -2,21 +2,21 @@
 
 Stdlib only. The must-look fetches run identically every time, each
 recorded in the manifest with its outcome; a failure degrades the run
-visibly, never silently. The bundle becomes the corun prompt content,
-so corun's Prompt versioning archives every run's evidence — the
-daily-cadence seed of the system-state-timeline direction.
+visibly, never silently. Production analytics owns the state history used
+for comparisons. Generated assessments are consumers, never evidence stores.
 """
 
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from swf_epicprod.assessment import spec
+from swf_epicprod.assessment import reporting
 
 TIMEOUT = 60
-BUNDLE_SCHEMA = 'epicprod-evidence-bundle/2'
+BUNDLE_SCHEMA = 'epicprod-evidence-bundle/3'
 NARRATIVE_SECTION = 'epicprod.narrative'
 
 
@@ -65,40 +65,44 @@ def _page_items(listing):
     return listing.get('items') or listing.get('results') or []
 
 
-def _kind_aliases(kind):
-    """'daily' was 'nightly' until 2026-07-12; records keep the old kind."""
-    return (kind, 'nightly') if kind == 'daily' else (kind,)
-
-
-def _previous_bundle(corun_url, token, section, campaign, kind, manifest):
-    """The prior run's archived bundle (its prompt content) — the basis
-    for deterministic run-over-run deltas. Numbers are compared in
-    code; the model interprets the computed deltas."""
-    listing = manifest.fetch(
-        'previous_bundle', f'{corun_url}/sections/{section}/', token=token)
-    if listing is None:
+def _parse_timestamp(value):
+    try:
+        parsed = datetime.fromisoformat(str(value or '').replace('Z', '+00:00'))
+    except ValueError:
         return None
-    prompts = listing.get('prompts') or []
-    prefixes = tuple(f'{campaign}/{k}/' for k in _kind_aliases(kind))
-    for prompt in prompts:  # newest first
-        try:
-            content = json.loads(prompt.get('content') or '{}')
-        except json.JSONDecodeError:
-            continue
-        if str(content.get('slot') or '').startswith(prefixes):
-            return content.get('bundle') or None
-    manifest.note('previous_bundle_match', True,
-                  'no prior bundle for this campaign and kind (first run)')
-    return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
-def _deltas(previous, rollup):
-    """Window-over-window movement, computed here — never by the model."""
-    if not previous or not rollup:
-        return {'available': False,
-                'reason': 'no prior bundle to compare against'}
-    prev_m = (previous.get('rollup') or {}).get('members') or {}
+def _baseline_24h_status(monitor_url, campaign, generated_at, manifest):
+    """Production analytics snapshot closest to 24 hours earlier."""
+    target = generated_at - timedelta(hours=24)
+    query = urllib.parse.urlencode({
+        'campaign': campaign,
+        'history_at': target.isoformat(),
+    })
+    return manifest.fetch(
+        'campaign_status_baseline',
+        f'{monitor_url}/pcs/api/campaigns/status/?{query}')
+
+
+def _deltas(baseline, rollup, generated_at):
+    """Movement from recorded production state closest to 24 hours earlier."""
+    if not rollup:
+        return {'available': False, 'reason': 'current rollup unavailable'}
+    if not baseline or not baseline.get('available'):
+        return {
+            'available': False,
+            'target_generated_at': (generated_at - timedelta(hours=24)).isoformat(),
+            'reason': str((baseline or {}).get('reason')
+                          or 'production analytics history unavailable'),
+        }
+    previous = baseline.get('status') or {}
+    prev_m = previous.get('members') or {}
     cur_m = rollup.get('members') or {}
+    baseline_at = _parse_timestamp(
+        baseline.get('selected_at') or previous.get('generated_at'))
 
     def _n(members, member, *path):
         node = (members.get(member) or {}).get('data') or {}
@@ -108,13 +112,23 @@ def _deltas(previous, rollup):
                 return None
         return node
 
-    out = {'available': True,
-           'previous_generated_at': previous.get('generated_at') or ''}
+    out = {
+        'available': True,
+        'basis': 'recorded production analytics closest to 24 hours prior',
+        'target_generated_at': (generated_at - timedelta(hours=24)).isoformat(),
+        'baseline_generated_at': (baseline.get('selected_at')
+                                  or previous.get('generated_at') or ''),
+        'baseline_distance_hours': baseline.get('distance_hours'),
+    }
+    if baseline_at is not None:
+        out['elapsed_hours'] = round(
+            (generated_at - baseline_at).total_seconds() / 3600, 3)
     for label, member, path in (
             ('total_files', 'campaign_progress', ('total_files',)),
             ('outputs_complete', 'campaign_progress', ('outputs_complete',)),
             ('lifetime_jobs_finished', 'panda_health', ('jobs', 'nfinished')),
-            ('lifetime_jobs_failed', 'panda_health', ('jobs', 'nfailed')),
+            ('lifetime_jobs_final_failed', 'panda_health',
+             ('jobs', 'nfinalfailed')),
     ):
         cur = _n(cur_m, member, *path)
         prev = _n(prev_m, member, *path)
@@ -150,6 +164,7 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
              corun_token='', section='epicprod.assessment'):
     """Build the evidence bundle for one assessment run."""
     manifest = _Manifest()
+    generated_at = datetime.now(timezone.utc)
 
     # System status rides inside the rollup (an analytics member reading
     # the cached rows in-process) — no separately authenticated fetch.
@@ -177,82 +192,23 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
                 manifest.note(f'narrative_{label}', False,
                               f'no {label} narrative page found for {campaign}')
 
-    prior_count = int((rollup or {}).get('assessment_prior_count') or 7)
-    prior_candidates = []
-    prior_pages = manifest.fetch(
-        'prior_assessments',
-        f'{corun_url}/pages/?section={section}'
-        f'&subject_type=campaign&subject_key={campaign}', token=corun_token)
-    if prior_pages is not None:
-        for page in _page_items(prior_pages):
-            data = page.get('data') or {}
-            # The v2 cutover is deliberate: rejected v1 tuning outputs are
-            # not professional context and must never be grandfathered into
-            # the rebuilt daily or weekly series.
-            if data.get('schema_version') != spec.SCHEMA_VERSION:
-                continue
-            prior_kind = str(data.get('assessment_kind') or '').lower()
-            if prior_kind == 'nightly':
-                prior_kind = 'daily'
-            if kind == 'weekly':
-                if prior_kind not in ('daily', 'weekly'):
-                    continue
-            elif prior_kind and prior_kind not in _kind_aliases(kind):
-                continue
-            if data.get('quarantined'):
-                continue
-            structured = data.get('structured') or {}
-            prior_candidates.append({
-                'group_id': page.get('group_id') or '',
-                'created_at': page.get('created_at') or '',
-                'kind': prior_kind or kind,
-                'verdict': data.get('verdict') or '',
-                'narration': (data.get('narration') or '')[:600],
-                'slot': data.get('slot') or '',
-                # The weekly writer needs the actual daily reports, not just
-                # their ledgers. Context is intentionally generous here.
-                'report': page.get('content') or '',
-                'standing_issues': structured.get('standing_issues') or [],
-                'top_issues': [str(i.get('title') or '')[:120]
-                               for i in structured.get('top_issues') or []],
-            })
-        prior_candidates.sort(key=lambda p: p['created_at'], reverse=True)
-
-        # Reruns replace a report conceptually. The pages API retains every
-        # version, so keep only the newest report for each campaign/kind/day
-        # slot before selecting a daily sequence or preceding weekly.
-        unique = []
-        seen_slots = set()
-        for prior in prior_candidates:
-            slot_key = prior['slot'] or prior['group_id']
-            if slot_key in seen_slots:
-                continue
-            seen_slots.add(slot_key)
-            unique.append(prior)
-        prior_candidates = unique
-
-    if kind == 'weekly':
-        # A weekly is synthesized from the completed week's daily record and
-        # re-baselined against the immediately preceding weekly.
-        dailies = [p for p in prior_candidates if p['kind'] == 'daily'][:7]
-        weeklies = [p for p in prior_candidates if p['kind'] == 'weekly'][:1]
-        priors = sorted(dailies + weeklies,
-                        key=lambda p: p['created_at'], reverse=True)
-    else:
-        priors = prior_candidates[:prior_count]
-
-    previous = _previous_bundle(corun_url, corun_token, section,
-                                campaign, kind, manifest)
-    return {
+    baseline = _baseline_24h_status(
+        monitor_url, campaign, generated_at, manifest)
+    deltas = _deltas(baseline, rollup, generated_at)
+    evidence = {
         'schema': BUNDLE_SCHEMA,
-        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'generated_at': generated_at.isoformat(),
         'params': {'campaign': campaign, 'kind': kind,
                    'window_days': window_days},
         'degraded': manifest.degraded,
+        'degraded_meaning': (
+            'one or more required bundle fetches failed; this field does not '
+            'assert semantic consistency or source freshness'),
         'manifest': manifest.entries,
         'rollup': rollup,
-        'deltas': _deltas(previous, rollup),
+        'deltas': deltas,
         'narratives': narratives,
-        'priors_supplied': len(priors),
-        'priors': priors,
+        'prior_ai_reports_supplied': 0,
     }
+    evidence['facts'] = reporting.build_fact_set(rollup, deltas)
+    return evidence

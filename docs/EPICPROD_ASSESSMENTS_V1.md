@@ -32,8 +32,8 @@ artifact → registration → live stream/Mattermost), the weekly assessment as
 the same machinery with a seven-day window and a standalone-report brief,
 and an analytics library whose v1 members wrap computations the system
 already performs. The two kinds carry distinct roles: the daily reports the
-window — productivity, new problems, the standing-issues ledger carried run
-to run, deltas against the previous bundle, the mechanical floor alarming
+window — productivity, new problems, deltas against the production analytics
+snapshot closest to 24 hours prior, and the mechanical floor alarming
 on the window rather than the lifetime; the weekly is the standalone report,
 complete in itself and re-baselined each week.
 
@@ -62,7 +62,7 @@ V1 members formalize existing computations; no new credentialed sweeps:
 | Member | Source | Data block |
 |---|---|---|
 | `campaign_progress` | cached progress snapshot (`refresh_campaign_progress_snapshot` / `load_campaign_progress_snapshot`) | per-task completion percent, file counts, expected jobs and source; aggregates: task count, tasks with processing, complete count, total files/bytes |
-| `rucio_arrivals` | precomputed arrivals timeline (`load_rucio_timeline`) + `campaign.data['arrivals']` | daily files/bytes series by stage; last-arrival age; window totals |
+| `rucio_arrivals` | recorded JLab file-arrival sweeps + `campaign.data['arrivals']` + the precomputed dataset-first-arrival timeline | newly created file DIDs in each sweep's actual interval; last-arrival age; separate lifetime dataset-first-arrival context |
 | `panda_health` | bounded PanDA summaries already used by progress + the `nfinalfailed`/`computed_finalfailurerate` family (`monitor_app/panda/api.py`), error rollup per `panda_error_summary` | job-state counts, final-failure rate, top error codes with counts, active/finished task counts |
 | `disposition_mix` | dataset `propagation` fields + history (PCS.md § Datasets) | counts by disposition; flips within window with comments |
 | `action_stream_activity` | AppLog `app_name='epicprod'` | actions by id and outcome in window; chain-step durations; catalog_sync freshness (age of last successful chain) |
@@ -83,7 +83,6 @@ status document and computes the **mechanical verdict floor** —
 | `assessment_ffail_alarm` | `0.30` | final-failure rate ≥ → `alarm` |
 | `assessment_sync_stale_hours` | `26` | catalog_sync older → at least `attention` |
 | `assessment_arrivals_stall_days` | `2` | no arrivals while tasks incomplete → at least `attention` |
-| `assessment_prior_count` | `7` | prior assessments supplied as trend context |
 
 Credential warning/expiry reuses `CREDENTIAL_EXPIRY_WARN_DAYS`: warning →
 `attention`, expired/missing → `alarm`.
@@ -95,6 +94,17 @@ Surfaces, peers over one service per the standing rule:
   corun-ai worker calls for its evidence, and later the dashboard's source.
 - REST: `GET /pcs/api/campaigns/status/?campaign=&window_days=` — same
   service function.
+- History: the normal campaign-progress refresh records each computed status
+  as a `campaign_analytics_snapshot` in the existing epicprod action record;
+  `history_at=<ISO timestamp>` returns the snapshot closest to the requested
+  time. This production-owned series, not a prior AI report or prompt, is the
+  comparison basis.
+- Evidence artifacts: each complete input bundle is a corun Page in the
+  dedicated hidden `epicprod.assessment.bundle` section, with
+  `data.ui_visible: false` and
+  `artifact_type: campaign_assessment_evidence_bundle`. It is not registered
+  as an assessment or shown in normal corun browsing. The published report
+  links its direct Page URL explicitly.
 
 The rollup carries each member's `computed_at` so the harness can mark
 staleness rather than silently accept old evidence.
@@ -126,21 +136,22 @@ grows with it.
 2. assembles the Task 1 basis deterministically: the campaign status
    rollup (one fetch carrying all seven analytics members — progress,
    PanDA health, arrivals, dispositions, action stream, system status,
-   credentials — and the verdict floor), plus the narratives
-   (`campaign_<name>` current, latest `campaign_general_*`) and the last
-   N prior assessments over corun REST. Identical calls every run,
+   credentials — and the verdict floor), the production analytics snapshot
+   closest to 24 hours earlier, plus the narratives (`campaign_<name>`
+   current, latest `campaign_general_*`). Prior AI reports are not evidence
+   and are not supplied. Identical calls every run,
    per-call outcomes recorded; a failed must-look — including an absent
    campaign narrative — marks the run degraded in the bundle itself. The
    must-look set is versioned configuration here.
-3. submits the run: the evidence bundle and run parameters `{campaign,
+3. stores the complete JSON artifact as a hidden corun bundle Page and then
+   submits the run: the evidence bundle and run parameters `{campaign,
    kind, window_days, requested_by}` ARE the prompt content
    (`POST /api/v1/prompts/` into the assessment section), then the job
    (`POST /api/v1/jobs/` with the kind's definition —
    `campaign_assessment_daily` or `campaign_assessment_weekly`).
-   corun's Prompt versioning thereby archives every nightly evidence
-   bundle — durable storage for the system-state-over-time direction
-   (recorded 2026-07-12: present monitoring is snapshot-oriented; a ~30 s
-   state history is wanted) with no new machinery.
+   The resulting Page group ID and URL are added to the submitted evidence,
+   registration metadata, and rendered report; the Page content is the
+   original production evidence before that self-locator is attached.
 4. records an `assessment_triggered` action-stream event per run, outcome
    `error` on any failure — a slot that never fills must be visible.
 
@@ -156,42 +167,38 @@ tools through the authenticated SWF MCP service.
 The prompt describes the knowledge held by each service,
 the evidence layer it represents, and the investigation routes connecting
 them. The bundle is the starting record; the model decides which material
-signals warrant drill-down, reconciles contradictions, and writes for the
-human reader. The JSON artifact is a secondary machine contract, not the
-organizing form of the prose.
+signals warrant drill-down and returns bounded structured judgment. It does
+not rewrite the deterministic facts or compose the Markdown report.
 
 The daily is a focused operational delta report: activity, advancement,
-material changes, present attention, and the evolution of prior concerns. The
+material changes, and present attention. The
 weekly is a standalone synthesis: campaign state, the week's production,
 software/release state, responsibilities, and outlook. Both finish with a
 substantive `### Generation report` naming context and evidence consulted,
 actual tools and contributions, conflicts and failures, unavailable evidence,
-and the resulting confidence. Nothing follows that section.
+and the resulting confidence. Production code renders that final section and
+nothing follows it.
 
 **Enforcement end (completion callback → prod-ops agent handler):** the
 corun completion callback already lands at swf-monitor; a handler:
 
 - fetches the result page and the run record (status, stderr) over REST;
-- validates the structured block against the exact schema and the prose
-  against the report form (the substantive `### Generation report` must be
-  the final H3); on failure, one bounded repair run receives the exact
+- validates the model's structured judgment against the exact schema and
+  rejects any model-written remainder; on failure, one bounded repair run receives the exact
   validation failures and prior output; a second
   failure quarantines the artifact (marked malformed, raw output
   retained, excluded from later context and from the assessments page)
   or records the failure — every scheduled slot resolves to a visible
   outcome;
-- verifies numbers against the submitted bundle (designed, not yet
-  implemented); verifying model-fetched numbers against the MCP
-  server's own session record is the designed tightening — the
-  drill-down calls hit our MCP server, so the tool-side transcript is
-  ours;
+- renders the report's fact tables directly from the submitted bundle and
+  inserts model judgment only in the assessment, software, issue, outlook,
+  and generation sections;
 - enforces the floor: the artifact's verdict may exceed the bundle's
   floor with justification, never fall below it;
 - stores the harness manifest, per-call outcomes, run timing, and enforcement
-  state as registration metadata beside the model's final Generation report;
-  the human report itself remains model-written and ends with that section;
-- treats the newest artifact for each (campaign, kind, date) as authoritative
-  prior context while retaining older rerun pages as audit history;
+  state and immutable bundle reference as registration metadata;
+- retains reruns as audit history but never feeds generated reports back as
+  production evidence;
 - registers: `epic_register_ai_assessment(subject_type='campaign',
   subject_key=<campaign>, ...)`, titled with the report's H1 (markdown
   links flattened to text — the assessments page leads with the
@@ -269,14 +276,14 @@ the assessor to calibrate its work and submit a complete report within ten
 minutes, leaving five minutes only as termination margin (operator directive
 2026-07-13).
 
-### Artifact schema (v2, `schema_version: 2`)
+### Artifact schema (v3, `schema_version: 3`)
 
 The operative schema is `spec.validate_artifact` in
 `swf_epicprod/assessment/spec.py`; the shape:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "verdict": "ok | attention | alarm",
   "axes": {
     "arrivals":       {"status": "ok|attention|alarm", "note": "..."},
@@ -285,25 +292,25 @@ The operative schema is `spec.validate_artifact` in
     "dispositions":   {"status": "...", "note": "..."},
     "infrastructure": {"status": "...", "note": "..."}
   },
-  "key_metrics": [
-    {"name": "...", "value": "<as it appeared in evidence>",
-     "delta": "<vs previous run, from the deltas member>", "ref": "<source>"}
+  "assessment": ["<concise conclusion or operational implication>"],
+  "activity_interpretation": ["<weekly relationship or trend>"],
+  "software_findings": [
+    {"finding": "...", "evidence": ["<link or tool reference>"],
+     "significance": "<production effect>"}
   ],
   "top_issues": [
     {"title": "...", "severity": "attention|alarm",
      "evidence": ["<metric/action refs>"], "action": "<what a human should do>",
      "owner": "<who acts>"}
   ],
-  "standing_issues": [
-    {"title": "...", "status": "new|unchanged|improved|worsened|resolved",
-     "since": "<date first seen>", "note": "<one line on its shape>"}
-  ],
   "dismissed": [
     {"signal": "<what looked anomalous>", "reason": "<why it is not an issue>"}
   ],
+  "outlook": ["<evidence-grounded expectation or decision>"],
   "narration": "2-4 self-contained sentences",
   "cites": {"narrative": "campaign_26.06.0", "narrative_version": 8,
-            "priors": ["<page group ids>"], "evidence_computed_at": "<iso8601>"},
+            "evidence_computed_at": "<iso8601>",
+            "bundle_id": "<hidden corun Page group id>"},
   "generation": {
     "consulted": [{"source": "<tool or document>", "contribution": "..."}],
     "problems": ["<tool errors, gaps, workarounds>"],
@@ -313,9 +320,12 @@ The operative schema is `spec.validate_artifact` in
 ```
 
 The verdict and per-axis status vocabulary is exactly `ok | attention |
-alarm`; `standing_issues` is the run-to-run ledger. The prose block is the
-page body; the structured block is `Page.data`; the `narration` field is
-the single payload for every thin delivery channel.
+alarm`. The model emits this JSON and nothing else. Production code builds
+the human report: deterministic interval and current-state tables from the
+bundle, followed by the bounded judgment fields above. `narration` remains
+the single payload for thin delivery channels. Before registration the
+harness matches `bundle_id`, `evidence_computed_at`, and the narrative name
+and version to the submitted bundle.
 
 ### Prompt templates
 
@@ -329,23 +339,23 @@ copies. Their stable professional contract is:
   investigation discipline are explicit. Editorial judgment belongs to the
   expert model; templates do not accumulate symptom-level presentation rules.
 - The daily's subject is operational activity and change in the interval. The
-  weekly is standalone and re-baselined against campaign intent, the week's
-  daily record, and the preceding weekly.
+  weekly is standalone and re-baselined against campaign intent and the
+  production analytics record. Generated reports are not fed back as evidence.
 - The readers are ePIC production and computing experts. Reports use their
   working vocabulary, identify and link concrete objects, and present time in
   ET.
-- The model interprets and investigates; it does not calculate. The FLOOR
-  is the minimum verdict, raise-only.
-- Output is exactly two parts: the fenced JSON artifact (schema above), then
-  the reader-oriented prose report. Narration remains metadata and is never
-  appended after the mandatory closing `### Generation report`.
+- The model interprets and investigates; it does not calculate or restate the
+  deterministic tables. The FLOOR is the minimum verdict, raise-only.
+- Output is exactly one fenced JSON artifact. The harness renders the
+  reader-oriented Markdown, including `###` sections, the bundle link, and the
+  mandatory final `### Generation report`.
 
 ## Sequencing
 
 During tuning, scheduled daily and weekly crons remain disabled. Manual runs
 use the normal assessment path and register in the official AI assessment
-series. Schema v2 prevents the rejected v1 reports from entering their prior
-context. Scheduling is restored only after the corresponding report form
+series. Schema v3 separates deterministic facts from model judgment.
+Scheduling is restored only after the corresponding report form
 passes human review.
 
 1. **Production side, first pass** — analytics members, rollup + floor, MCP

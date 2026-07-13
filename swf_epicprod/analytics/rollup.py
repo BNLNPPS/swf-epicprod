@@ -133,6 +133,19 @@ def _floor(blocks):
         verdict = _worst(verdict, cred_verdict)
         reasons.append(f"credential check outcome '{creds.get('outcome')}'")
 
+    system = blocks['system_status']['data']
+    if not system.get('available'):
+        verdict = _worst(verdict, 'attention')
+        reasons.append('production platform status unavailable')
+    else:
+        platform = str(system.get('overall_status') or 'unknown').lower()
+        if platform == 'error':
+            verdict = _worst(verdict, 'alarm')
+            reasons.append('production platform status error')
+        elif platform not in ('ok', 'healthy'):
+            verdict = _worst(verdict, 'attention')
+            reasons.append(f'production platform status {platform}')
+
     return {'verdict': verdict, 'reasons': reasons,
             'standing_context': {
                 'lifetime_final_failure_rate':
@@ -140,7 +153,85 @@ def _floor(blocks):
             }}
 
 
-def campaign_status(campaign=None, window_days=1):
+def _record_status_snapshot(campaign, status, generated_by):
+    """Persist one analytics computation as production history."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    row_id = log_epicprod_action(
+        'campaign-analytics', 'campaign_analytics_snapshot',
+        subject_type='campaign', subject_key=campaign.name,
+        username=str(generated_by or '')[:100], outcome='ok',
+        sublevel='low', live_default=False,
+        message=f'campaign analytics snapshot {campaign.name}',
+        status=status,
+    )
+    if row_id is None:
+        raise RuntimeError('campaign analytics snapshot could not be recorded')
+
+
+def campaign_status_snapshot(campaign, target_at):
+    """Return the recorded campaign state closest to ``target_at``.
+
+    Snapshot history belongs to production analytics. This query does not
+    inspect assessment prompts or generated reports.
+    """
+    from monitor_app.models import AppLog
+    from pcs.models import Campaign
+    from pcs.services import ServiceError
+
+    try:
+        camp = Campaign.objects.get(name=str(campaign or '').strip())
+    except Campaign.DoesNotExist:
+        raise ServiceError(f'Unknown campaign {campaign!r}.', status=404)
+    try:
+        target = _dt.datetime.fromisoformat(
+            str(target_at or '').replace('Z', '+00:00'))
+    except (TypeError, ValueError):
+        raise ServiceError('history_at must be an ISO-8601 timestamp.', status=400)
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=_dt.timezone.utc)
+
+    snapshots = AppLog.objects.filter(
+        app_name='epicprod',
+        extra_data__action='campaign_analytics_snapshot',
+        extra_data__subject_type='campaign',
+        extra_data__subject_key=camp.name,
+    )
+    before = snapshots.filter(timestamp__lte=target).order_by(
+        '-timestamp', '-id').first()
+    after = snapshots.filter(timestamp__gt=target).order_by(
+        'timestamp', 'id').first()
+    choices = [row for row in (before, after) if row is not None]
+    if not choices:
+        return {
+            'available': False,
+            'campaign': camp.name,
+            'target_at': target.isoformat(),
+            'reason': 'no recorded campaign analytics snapshots',
+        }
+    selected = min(
+        choices,
+        key=lambda row: abs((row.timestamp - target).total_seconds()))
+    extra = selected.extra_data if isinstance(selected.extra_data, dict) else {}
+    status = extra.get('status') if isinstance(extra.get('status'), dict) else {}
+    selected_at = str(status.get('generated_at') or selected.timestamp.isoformat())
+    selected_dt = _dt.datetime.fromisoformat(selected_at.replace('Z', '+00:00'))
+    if selected_dt.tzinfo is None:
+        selected_dt = selected_dt.replace(tzinfo=_dt.timezone.utc)
+    return {
+        'available': True,
+        'campaign': camp.name,
+        'target_at': target.isoformat(),
+        'selected_at': selected_at,
+        'distance_hours': round(
+            abs((selected_dt - target).total_seconds()) / 3600, 3),
+        'generated_by': str(extra.get('username') or ''),
+        'status': status,
+    }
+
+
+def campaign_status(campaign=None, window_days=1, *, record=False,
+                    generated_by=''):
     """Build the campaign status evidence document.
 
     campaign: name string, or None for the default target (first
@@ -172,7 +263,7 @@ def campaign_status(campaign=None, window_days=1):
     for member in _members.MEMBERS:
         blocks[member.__name__] = member(camp, window_start, window_end)
 
-    return {
+    status = {
         'schema_version': 1,
         'campaign': camp.name,
         'lifecycle': camp.lifecycle or '',
@@ -183,8 +274,9 @@ def campaign_status(campaign=None, window_days=1):
         'targets': targets,
         'assessment_enabled': bool(
             SysConfig.get_setting('assessment_enabled', True)),
-        'assessment_prior_count': int(
-            SysConfig.get_setting('assessment_prior_count', 7)),
         'members': blocks,
         'floor': _floor(blocks),
     }
+    if record:
+        _record_status_snapshot(camp, status, generated_by)
+    return status

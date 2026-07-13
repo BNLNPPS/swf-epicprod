@@ -31,7 +31,7 @@ django.setup()
 
 from monitor_app.epicprod_logging import log_epicprod_action  # noqa: E402
 from monitor_app.mcp.ai_content import _register_ai_assessment_sync  # noqa: E402
-from swf_epicprod.assessment import spec  # noqa: E402
+from swf_epicprod.assessment import reporting, spec  # noqa: E402
 from swf_epicprod.assessment.bundle import _get  # noqa: E402
 
 CORUN_API_URL = (os.environ.get('CORUN_API_URL', '').rstrip('/')
@@ -143,10 +143,11 @@ def main():
     page = _get(f'{CORUN_API_URL}/pages/{args.page_group_id}/',
                 token=CORUN_API_TOKEN)
     content = page.get('content') or ''
-    artifact, prose, problems = spec.extract_artifact(content)
+    artifact, remainder, problems = spec.extract_artifact(content)
     if artifact is not None:
         problems += spec.validate_artifact(artifact)
-        problems += spec.validate_prose(prose, kind)
+        problems += spec.validate_remainder(remainder)
+        problems += spec.validate_bundle_citations(artifact, bundle)
 
     if problems:
         is_repair = bool(submitted.get('repair'))
@@ -156,10 +157,9 @@ def main():
                 'validation_problems': problems,
                 'previous_output': content,
                 'instruction': (
-                    'Produce a complete replacement report. Correct every '
+                    'Produce a complete replacement JSON artifact. Correct every '
                     'listed validation problem while preserving supported '
-                    'production findings. Do not discuss the repair request '
-                    'outside the Generation report.'),
+                    'production finding.'),
             }
             retry_prompt = _post(
                 f'{CORUN_API_URL}/prompts/',
@@ -177,8 +177,8 @@ def main():
                  retry_job_id=str(job.get('id') or ''),
                  reason='; '.join(problems)[:300])
             return 0
-        # Second failure: quarantine — raw output retained, excluded from
-        # later context (priors skip quarantined), verdict pinned to floor.
+        # Second failure: quarantine — raw output retained and never rendered
+        # as a valid report; verdict pinned to the mechanical floor.
         result = _register_ai_assessment_sync(
             subject_type='campaign', subject_key=campaign,
             assessment=content or '(empty model output)',
@@ -192,6 +192,7 @@ def main():
                   'generation_harness': {
                       'manifest': bundle.get('manifest'),
                       'degraded': bundle.get('degraded'),
+                      'bundle': bundle.get('artifact'),
                       'elapsed_s': elapsed_s,
                       'job_id': args.job_id, 'enforcement': 'quarantined'}})
         _log('assessment_enforce', outcome='error', subject_key=campaign,
@@ -208,14 +209,13 @@ def main():
         artifact['verdict'] = verdict = floor_verdict
 
     narration = str(artifact.get('narration') or '').strip()
+    report = reporting.render_report(bundle, artifact, kind)
     result = _register_ai_assessment_sync(
         subject_type='campaign', subject_key=campaign,
-        # Narration is structured metadata for compact UI consumers. The
-        # human report must end with its provenance account.
-        assessment=prose,
+        assessment=report,
         username='assessment-harness', ai='corun-job',
         subject_label='', subject_url='',
-        title=_report_title(prose, slot),
+        title=_report_title(report, slot),
         data={'assessment_kind': kind, 'origin': 'scheduled',
               'schema_version': spec.SCHEMA_VERSION, 'slot': slot,
               'verdict': verdict, 'narration': narration,
@@ -229,6 +229,7 @@ def main():
                   'degraded': bundle.get('degraded'),
                   'elapsed_s': elapsed_s,
                   'bundle_generated_at': bundle.get('generated_at'),
+                  'bundle': bundle.get('artifact'),
                   'floor_enforced': floor_enforced}})
     if not result.get('success'):
         _log('assessment_enforce', outcome='error', subject_key=campaign,

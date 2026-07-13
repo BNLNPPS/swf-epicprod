@@ -135,8 +135,18 @@ def main():
         return 2
 
     ensure_section(args.section)
+    ensure_section(
+        spec.DEFAULT_BUNDLE_SECTION,
+        title='epicprod campaign assessment evidence bundles',
+        description=(
+            'Full input evidence bundles for campaign assessment runs. '
+            'Hidden from normal corun presentation; linked explicitly from '
+            'the corresponding human report.'),
+        ui_visible=False,
+    )
     print('\nEnvironment for the trigger and enforcement:')
     print(f'CORUN_ASSESSMENT_SECTION={args.section}')
+    print(f'CORUN_ASSESSMENT_BUNDLE_SECTION={spec.DEFAULT_BUNDLE_SECTION}')
     for kind in ('daily', 'weekly'):
         sp_group = ensure_system_prompt(kind)
         definition_id = ensure_definition(

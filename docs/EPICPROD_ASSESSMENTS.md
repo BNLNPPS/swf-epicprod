@@ -40,9 +40,13 @@ the concrete contract.)
 - **Trigger and evidence.** A scheduled script on the production host —
   the harness front end — assembles the evidence deterministically (the
   campaign-status rollup and landscape summaries, campaign and general
-  narratives, prior assessments) and submits the run with the bundle and
-  the subject reference — campaign, assessment kind (`daily` or
-  `weekly`), evidence window — as the run's prompt content. During the
+  narratives, and production-owned status history; generated assessments are
+  not evidence). It stores the complete bundle as a Page in the hidden
+  `epicprod.assessment.bundle` corun section, then submits the run with the
+  bundle and subject reference — campaign, assessment kind (`daily` or
+  `weekly`), evidence window — as prompt content. The hidden bundle is never
+  registered or presented as an assessment; the human report links its direct
+  Page URL. During the
   run the model additionally holds the swf-monitor MCP (Model Context
   Protocol) toolset, the same access path the DISpatcher bot uses, for
   drill-down beyond the bundle. Production state is served by the
@@ -85,17 +89,24 @@ Staleness is visible: an assessment generated against analytics older
 than its evidence window is marked as such rather than silently
 accepted.
 
+Normal production refresh records campaign-status snapshots independently of
+assessment runs. Daily comparisons select the recorded snapshot closest to 24
+hours before the current state and report the actual elapsed interval.
+
 ## The Assessment Artifact
 
 Each assessment is one artifact with a deterministic shape, carrying a
 `schema_version`:
 
-- **Structured block** — the machine-readable result: verdict, per-axis
-  status, key metrics and deltas with references to the objects behind
-  them, and the top issues. The dashboard and downstream automation
-  consume this block only.
-- **Prose block** — the bounded interpretation, for humans reading the
-  assessment itself.
+- **Evidence bundle** — the complete original production input, retained as a
+  hidden corun Page and linked explicitly for audit.
+- **Structured judgment** — the model result: verdict, per-axis status,
+  conclusions, software findings, issues, outlook, citations, and generation
+  provenance. The model does not reproduce deterministic metrics.
+- **Human report** — assembled by production code. The facts appropriate for
+  an expert reader are rendered directly from the bundle; model judgment is
+  inserted only in its named sections. Bulky raw blocks remain behind the
+  bundle link.
 - **Narration** — a self-contained summary of a few sentences, written
   to stand alone without the charts: campaign, date, verdict, and the
   one or two things that matter. This single field is the payload for
@@ -110,11 +121,10 @@ The model is treated as an untrusted generator inside a deterministic
 envelope. The template and schema define the contract; the harness
 enforces it.
 
-- **The model interprets; it does not invent precision.** Every number in the
-  artifact must originate in supplied evidence or a tool result. The v2
-  harness validates structure and provenance but does not yet mechanically
-  reconcile every emitted number; bundle-number and MCP-session verification
-  remain planned tightening.
+- **The model interprets; it does not own the facts.** Production code renders
+  metrics, deltas, intervals, and evidence labels from the bundle. The harness
+  validates the model's bundle ID, evidence timestamp, and narrative citation
+  against the exact submitted artifact.
 - **Verdict floor.** Mechanical criteria — final-failure rate,
   catalog-sync freshness, stalled arrivals — compute a minimum verdict
   before the model runs. The model may raise the severity with
@@ -145,20 +155,16 @@ the completion handler — guides the operation and cleans up after it:
   the catalog-sync freshness pattern. A malformed result is never
   dropped: the display shows the quarantined artifact or a red failure
   state.
-- Treats the newest artifact per (campaign, kind, date) as authoritative
-  context while retaining superseded reruns as audit history. Daily artifacts
-  roll up under retention rules; the dashboard reads the latest N.
+- Retains reruns as audit history without feeding generated reports back into
+  later evidence.
 
 ## Cadence
 
 The daily assessment is short and operational; its subject is the last
-day's window — productivity, new problems, and whether yesterday's
-problems still stand, carried in a standing-issues ledger inherited run
-to run. It runs even when little has changed: a quiet entry is
-inexpensive and is itself information, and the unbroken daily sequence
-is what makes trend statements in later assessments verifiable, since
-the assessor's trend awareness is its own prior artifacts read back as
-context. The weekly assessment is the standalone report: complete in
+day's window — productivity, new problems, and current conditions — compared
+with production analytics recorded closest to 24 hours earlier. It runs even
+when little has changed: a quiet entry is itself information. The weekly
+assessment is the standalone report: complete in
 itself, re-baselining each week, it measures the campaign against its
 narrative's stated goals over a seven-day window with the same schema
 and a larger prose budget, since trend interpretation is where the
