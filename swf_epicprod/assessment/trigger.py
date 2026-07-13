@@ -31,6 +31,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from swf_epicprod.assessment import bundle as bundle_mod
+from swf_epicprod.assessment import reporting
 from swf_epicprod.assessment import spec
 
 MONITOR_URL = os.environ.get('SWF_MONITOR_URL', '').rstrip('/')
@@ -112,8 +113,7 @@ def persist_bundle(evidence):
         payload={
             'section': CORUN_ASSESSMENT_BUNDLE_SECTION,
             'title': title,
-            'content': '```json\n' + json.dumps(
-                evidence, indent=2, sort_keys=True) + '\n```',
+            'content': reporting.render_bundle_page(evidence),
             'data': {
                 'ui_visible': False,
                 'artifact_type': 'campaign_assessment_evidence_bundle',
@@ -128,6 +128,7 @@ def persist_bundle(evidence):
                     str(evidence.get('schema') or '/0').rsplit('/', 1)[-1]),
                 'evidence_generated_at': evidence.get('generated_at') or '',
                 'generated_at': evidence.get('generated_at') or '',
+                'evidence_bundle': evidence,
             },
             'tags': ['evidence-bundle', 'epicprod', f'campaign:{campaign}',
                      f'assessment:{kind}'],

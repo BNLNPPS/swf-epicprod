@@ -99,7 +99,9 @@ Each assessment is one artifact with a deterministic shape, carrying a
 `schema_version`:
 
 - **Evidence bundle** — the complete original production input, retained as a
-  hidden corun Page and linked explicitly for audit.
+  hidden corun Page and linked explicitly for audit. Its body is a
+  deterministic Markdown review document, sectioned by evidence artifact and
+  primarily tabular; the exact machine object is retained in Page metadata.
 - **Structured judgment** — the model result: verdict, per-axis status,
   conclusions, software findings, issues, outlook, citations, and generation
   provenance. The model does not reproduce deterministic metrics.

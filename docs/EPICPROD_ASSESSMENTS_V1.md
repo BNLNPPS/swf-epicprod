@@ -104,7 +104,11 @@ Surfaces, peers over one service per the standing rule:
   `data.ui_visible: false` and
   `artifact_type: campaign_assessment_evidence_bundle`. It is not registered
   as an assessment or shown in normal corun browsing. The published report
-  links its direct Page URL explicitly.
+  links its direct Page URL explicitly. The Page is a deterministic human
+  review surface: production facts, comparison basis, manifest, source
+  freshness, narratives, and each analytics member are rendered as sectioned
+  Markdown with tabular data. The exact machine object remains in the Page's
+  data field for harness verification; it is not the human presentation.
 
 The rollup carries each member's `computed_at` so the harness can mark
 staleness rather than silently accept old evidence.
