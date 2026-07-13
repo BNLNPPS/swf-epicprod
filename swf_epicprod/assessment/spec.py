@@ -219,7 +219,7 @@ deterministic fact tables to produce the human report.
      "cites": {{
        "narrative": "<name or empty>",
        "narrative_version": 0,
-       "evidence_computed_at": "<from bundle>",
+       "evidence_computed_at": "<copy bundle.rollup.generated_at exactly>",
        "bundle_id": "<bundle artifact id>"
      }},
      "generation": {{

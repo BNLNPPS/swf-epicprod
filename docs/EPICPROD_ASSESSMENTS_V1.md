@@ -314,7 +314,7 @@ The operative schema is `spec.validate_artifact` in
   "outlook": ["<evidence-grounded expectation or decision>"],
   "narration": "2-4 self-contained sentences",
   "cites": {"narrative": "campaign_26.06.0", "narrative_version": 8,
-            "evidence_computed_at": "<iso8601>",
+            "evidence_computed_at": "<copy bundle.rollup.generated_at exactly>",
             "bundle_id": "<hidden corun Page group id>"},
   "generation": {
     "consulted": [{"source": "<tool or document>", "contribution": "..."}],
