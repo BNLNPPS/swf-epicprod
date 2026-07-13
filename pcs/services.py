@@ -3617,16 +3617,21 @@ def sweep_rucio_arrivals(*, roots=('/RECO', '/SIMU'), scope='epic',
         for campaign_name, info in sorted(per_campaign.items()):
             for location, count in sorted(info['locations'].items()):
                 lines.append(f'{count:>7} {location}')
-        shown = lines[:20]
-        more = len(lines) - len(shown)
         message = (
             f'{total} new file(s) in JLab Rucio since '
             f'{_timezone.localtime(start_dt).strftime("%Y-%m-%d %H:%M %Z")} '
-            f'[{", ".join(sorted(per_campaign))}]:\n' + '\n'.join(shown)
-            + (f'\n… and {more} more location(s)' if more > 0 else ''))
+            f'[{", ".join(sorted(per_campaign))}]:\n' + '\n'.join(lines))
         extra = {
             'total_files': total,
             'campaigns': {c: i['files'] for c, i in per_campaign.items()},
+            'campaign_details': {
+                campaign_name: {
+                    'files': info['files'],
+                    'by_root': dict(info['by_root']),
+                    'locations': dict(info['locations']),
+                }
+                for campaign_name, info in per_campaign.items()
+            },
             'window_start': window_start,
             'roots': list(roots),
         }

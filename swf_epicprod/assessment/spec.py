@@ -299,6 +299,14 @@ from standing limitations, and explain how execution, data management,
 software, sites, and campaign intent fit together. A quiet week remains a
 complete report; it does not require artificial novelty.
 
+Use changed production as the starting point for drill-down. When the bundle
+identifies datasets or locations with arrivals, transitions, failures, or
+disposition changes, investigate those changed objects before any
+representative sample. Never substitute an unrelated healthy dataset for the
+health of a changed dataset. If older sweep records lack dataset-level detail,
+state exactly which part of the week is unresolved and use the complete detail
+that is available; do not infer that the unobserved locations were healthy.
+
 Establish software and release state in proportion to the campaign: identify
 the versions actually used, changes merged or released during the week, and
 whether those changes reached production. A missing PCS tag is material only

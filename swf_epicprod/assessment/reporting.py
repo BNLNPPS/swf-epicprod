@@ -187,6 +187,15 @@ def build_fact_set(rollup, deltas):
             'jlab_rucio_file_arrivals', 'JLab Rucio file arrivals', value,
             comparison=coverage,
             source='file-DID created-after sweep'))
+        locations = latest.get('locations') or {}
+        if locations:
+            activity.append(_row(
+                'jlab_rucio_latest_arrival_locations',
+                'Locations changed in the latest JLab Rucio sweep',
+                '; '.join(
+                    f'{location}: {_number(count)} files'
+                    for location, count in sorted(locations.items())),
+                source='campaign arrivals record'))
     else:
         activity.append(_row(
             'jlab_rucio_file_arrivals', 'JLab Rucio file arrivals',

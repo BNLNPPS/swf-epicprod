@@ -299,11 +299,15 @@ def rucio_arrivals(campaign, window_start, window_end):
         count = int((extra.get('campaigns') or {}).get(campaign.name) or 0)
         if not count:
             continue
+        detail = (extra.get('campaign_details') or {}).get(campaign.name) or {}
         sweeps.append({
             'window_start': str(extra.get('window_start') or ''),
             'window_end': row['timestamp'].isoformat(),
             'files': count,
             'roots': list(extra.get('roots') or []),
+            'by_root': dict(detail.get('by_root') or {}),
+            'locations': dict(detail.get('locations') or {}),
+            'location_detail_available': bool(detail),
         })
 
     sweep_intervals = []
@@ -355,10 +359,7 @@ def rucio_arrivals(campaign, window_start, window_end):
         'file_sweeps_ending_in_window': sweeps,
         'files_in_recorded_sweeps': sum(row['files'] for row in sweeps),
         'sweep_coverage': sweep_coverage,
-        'latest_sweep': {
-            key: value for key, value in arrivals.items()
-            if key != 'locations'
-        },
+        'latest_sweep': dict(arrivals),
     }
     timeline = load_rucio_timeline(campaign.name)
     if timeline:
