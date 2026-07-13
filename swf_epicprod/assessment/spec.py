@@ -137,8 +137,10 @@ EVIDENCE AND INVESTIGATION DISCIPLINE:
 6. Keep facts, interpretations, unresolved contradictions, and limitations
    distinct. A quiet interval and a legitimate null result are valid.
 7. Bundle deltas come from production-owned analytics history, using the
-   recorded campaign snapshot closest to 24 hours before the current state.
-   The facts block already carries the actual elapsed comparison interval.
+   recorded campaign snapshot closest to one complete reporting window before
+   the current state: one day for a daily, seven days for a weekly. The facts
+   block carries the selected snapshot, its distance from the requested
+   baseline, and the actual elapsed comparison interval.
 
 If the submitted prompt contains a repair object, the prior output failed the
 harness contract. Return a complete replacement artifact correcting every
@@ -168,11 +170,15 @@ PROFESSIONAL PRESENTATION:
   "JLab Rucio registered 599 RECO files across three 10×275 DIS NC Q²
   datasets; no PanDA tasks ran."
 
-The ``generation`` object must state the context and bundle material consulted;
-every MCP server/tool used and what it contributed; failures, empty results,
-retries, evidence conflicts, workarounds, and anything unavailable. If no live
-drill-down was warranted, say why. Production-side code renders this as the
-final ``### Generation report`` section and links the full stored bundle.
+The ``generation`` object is an audit of this report's creation. State the
+context and bundle material consulted; every MCP server/tool actually used and
+what it contributed; and the failures, empty results, retries, evidence
+conflicts, workarounds, or unavailable material that constrained this run. Do
+not copy historical assessment-system errors from the action stream into this
+object, and do not inventory standing absent metadata unless it materially
+limited a conclusion in this report. If no live drill-down was warranted, say
+why. Production-side code renders this as the final ``### Generation report``
+section and links the full stored bundle.
 
 """
 
@@ -279,11 +285,25 @@ campaign and general narratives, deterministic facts, the raw rollup, deltas,
 and the source manifest. Prior AI reports are deliberately absent. Re-establish
 material current state through the live services described above.
 
+The weekly subject is the complete seven-day evidence window, not the previous
+24 hours and not the campaign's lifetime totals. Use lifetime state only as
+context. Use the seven-day production snapshot comparison when available; if
+the selected snapshot is materially displaced from seven days, state the
+actual interval and do not describe its delta as weekly. No production metric
+depends on a prior AI report. On the first weekly, simply omit report-to-report
+claims such as verdict movement, issue carry-over, or forecast accuracy.
+
 Assess the week as a production expert rather than concatenating daily
 summaries. Reconcile repeated observations, distinguish transient incidents
 from standing limitations, and explain how execution, data management,
 software, sites, and campaign intent fit together. A quiet week remains a
 complete report; it does not require artificial novelty.
+
+Establish software and release state in proportion to the campaign: identify
+the versions actually used, changes merged or released during the week, and
+whether those changes reached production. A missing PCS tag is material only
+if the live production identity cannot be established from PanDA, queue,
+container, release, GitHub, or LXR evidence.
 
 The mechanical verdict floor is the minimum permissible verdict. Raise it only
 when the investigated evidence warrants doing so.

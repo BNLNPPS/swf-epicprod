@@ -33,9 +33,10 @@ the same machinery with a seven-day window and a standalone-report brief,
 and an analytics library whose v1 members wrap computations the system
 already performs. The two kinds carry distinct roles: the daily reports the
 window — productivity, new problems, deltas against the production analytics
-snapshot closest to 24 hours prior, and the mechanical floor alarming
-on the window rather than the lifetime; the weekly is the standalone report,
-complete in itself and re-baselined each week.
+snapshot closest to one reporting window prior, and the mechanical floor
+alarming on the window rather than the lifetime; the weekly is the standalone
+report, complete in itself and re-baselined against production state closest
+to seven days earlier.
 
 Deferred, deliberately: analytics renderings (plots) beyond what pages already
 show — v1 blocks are data-only; the campaign dashboard; assessment-page
@@ -141,7 +142,7 @@ grows with it.
    rollup (one fetch carrying all seven analytics members — progress,
    PanDA health, arrivals, dispositions, action stream, system status,
    credentials — and the verdict floor), the production analytics snapshot
-   closest to 24 hours earlier, plus the narratives (`campaign_<name>`
+   closest to one complete reporting window earlier, plus the narratives (`campaign_<name>`
    current, latest `campaign_general_*`). Prior AI reports are not evidence
    and are not supplied. Identical calls every run,
    per-call outcomes recorded; a failed must-look — including an absent

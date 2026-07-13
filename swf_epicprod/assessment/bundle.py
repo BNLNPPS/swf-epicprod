@@ -43,14 +43,14 @@ class _Manifest:
         except (urllib.error.URLError, urllib.error.HTTPError,
                 json.JSONDecodeError, OSError) as e:
             self.entries.append({'source': source, 'url': url, 'ok': False,
-                                 'error': str(e)[:300],
+                                 'error': str(e),
                                  'ms': int((time.monotonic() - t0) * 1000)})
             return None
 
     def note(self, source, ok, detail=''):
         entry = {'source': source, 'ok': ok}
         if detail:
-            entry['detail' if ok else 'error'] = str(detail)[:300]
+            entry['detail' if ok else 'error'] = str(detail)
         self.entries.append(entry)
 
     @property
@@ -75,9 +75,10 @@ def _parse_timestamp(value):
     return parsed.astimezone(timezone.utc)
 
 
-def _baseline_24h_status(monitor_url, campaign, generated_at, manifest):
-    """Production analytics snapshot closest to 24 hours earlier."""
-    target = generated_at - timedelta(hours=24)
+def _baseline_status(monitor_url, campaign, generated_at, comparison_days,
+                     manifest):
+    """Production analytics snapshot closest to one reporting window earlier."""
+    target = generated_at - timedelta(days=comparison_days)
     query = urllib.parse.urlencode({
         'campaign': campaign,
         'history_at': target.isoformat(),
@@ -87,14 +88,17 @@ def _baseline_24h_status(monitor_url, campaign, generated_at, manifest):
         f'{monitor_url}/pcs/api/campaigns/status/?{query}')
 
 
-def _deltas(baseline, rollup, generated_at):
-    """Movement from recorded production state closest to 24 hours earlier."""
+def _deltas(baseline, rollup, generated_at, comparison_days):
+    """Movement from recorded state closest to one reporting window earlier."""
+    target = generated_at - timedelta(days=comparison_days)
+    target_hours = comparison_days * 24
     if not rollup:
         return {'available': False, 'reason': 'current rollup unavailable'}
     if not baseline or not baseline.get('available'):
         return {
             'available': False,
-            'target_generated_at': (generated_at - timedelta(hours=24)).isoformat(),
+            'target_generated_at': target.isoformat(),
+            'target_span_hours': target_hours,
             'reason': str((baseline or {}).get('reason')
                           or 'production analytics history unavailable'),
         }
@@ -114,8 +118,11 @@ def _deltas(baseline, rollup, generated_at):
 
     out = {
         'available': True,
-        'basis': 'recorded production analytics closest to 24 hours prior',
-        'target_generated_at': (generated_at - timedelta(hours=24)).isoformat(),
+        'basis': (
+            'recorded production analytics closest to one reporting window '
+            'before the current state'),
+        'target_generated_at': target.isoformat(),
+        'target_span_hours': target_hours,
         'baseline_generated_at': (baseline.get('selected_at')
                                   or previous.get('generated_at') or ''),
         'baseline_distance_hours': baseline.get('distance_hours'),
@@ -124,8 +131,14 @@ def _deltas(baseline, rollup, generated_at):
         out['elapsed_hours'] = round(
             (generated_at - baseline_at).total_seconds() / 3600, 3)
     for label, member, path in (
+            ('task_count', 'campaign_progress', ('task_count',)),
+            ('tasks_with_processing', 'campaign_progress',
+             ('tasks_with_processing',)),
+            ('outputs_total', 'campaign_progress', ('outputs_total',)),
             ('total_files', 'campaign_progress', ('total_files',)),
+            ('total_bytes', 'campaign_progress', ('total_bytes',)),
             ('outputs_complete', 'campaign_progress', ('outputs_complete',)),
+            ('panda_task_count', 'panda_health', ('panda_task_count',)),
             ('lifetime_jobs_finished', 'panda_health', ('jobs', 'nfinished')),
             ('lifetime_jobs_final_failed', 'panda_health',
              ('jobs', 'nfinalfailed')),
@@ -192,9 +205,9 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
                 manifest.note(f'narrative_{label}', False,
                               f'no {label} narrative page found for {campaign}')
 
-    baseline = _baseline_24h_status(
-        monitor_url, campaign, generated_at, manifest)
-    deltas = _deltas(baseline, rollup, generated_at)
+    baseline = _baseline_status(
+        monitor_url, campaign, generated_at, window_days, manifest)
+    deltas = _deltas(baseline, rollup, generated_at, window_days)
     evidence = {
         'schema': BUNDLE_SCHEMA,
         'generated_at': generated_at.isoformat(),

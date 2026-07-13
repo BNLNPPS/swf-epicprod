@@ -61,6 +61,28 @@ def _delta(deltas, name):
     return f'{int(change):+,}{span}'
 
 
+def _bytes_delta(deltas, name):
+    entry = (deltas or {}).get(name)
+    if not isinstance(entry, dict) or entry.get('delta') is None:
+        return ''
+    change = int(entry.get('delta') or 0)
+    sign = '+' if change >= 0 else '-'
+    elapsed = (deltas or {}).get('elapsed_hours')
+    span = f' over {elapsed:g} h' if isinstance(elapsed, (int, float)) else ''
+    return f'{sign}{_bytes(abs(change))}{span}'
+
+
+def _comparisons(*items):
+    return '; '.join(item for item in items if item)
+
+
+def _disposition_changes(deltas):
+    changed = (deltas or {}).get('dispositions_changed') or {}
+    return '; '.join(
+        f'{state} {_number(item.get("previous"))}→{_number(item.get("current"))}'
+        for state, item in sorted(changed.items()))
+
+
 def _row(row_id, fact, value, comparison='', source=''):
     return {
         'id': row_id,
@@ -78,6 +100,7 @@ def build_fact_set(rollup, deltas):
     activity = []
     current = []
     notes = []
+    problems = []
 
     panda_window = _member(rollup, 'window_activity')
     if panda_window.get('available'):
@@ -101,9 +124,36 @@ def build_fact_set(rollup, deltas):
         activity.append(_row(
             'panda_job_activity', 'PanDA job activity', jobs,
             source='direct PanDA DB modification-time window'))
+        jobs_by_site = panda_window.get('jobs_by_site') or {}
+        if jobs_by_site:
+            activity.append(_row(
+                'panda_site_activity', 'PanDA activity by site',
+                '; '.join(
+                    f'{site}: {_number(sum(states.values()))} jobs'
+                    for site, states in sorted(
+                        jobs_by_site.items(),
+                        key=lambda item: (-sum(item[1].values()), item[0]))),
+                source='direct PanDA DB modification-time window'))
     else:
-        notes.append('PanDA window activity unavailable: '
-                     + str(panda_window.get('reason') or 'unknown reason'))
+        problems.append('PanDA window activity unavailable: '
+                        + str(panda_window.get('reason') or 'unknown reason'))
+
+    usage = _member(rollup, 'resource_usage')
+    if usage.get('available'):
+        totals = usage.get('totals') or {}
+        efficiency = totals.get('allocation_efficiency')
+        activity.append(_row(
+            'panda_resource_usage', 'PanDA resource usage',
+            f'{_number(totals.get("job_count"))} finished jobs; '
+            f'{float(totals.get("allocated_core_hours") or 0):,.1f} allocated '
+            'core-hours; '
+            f'{float(totals.get("used_core_hours") or 0):,.1f} used core-hours'
+            + (f'; {float(efficiency):.1%} allocation efficiency'
+               if efficiency is not None else ''),
+            source='direct PanDA DB runtime and CPU accounting for the interval'))
+    else:
+        problems.append('PanDA resource usage unavailable: '
+                        + str(usage.get('reason') or 'unknown reason'))
 
     arrivals = _member(rollup, 'rucio_arrivals')
     sweeps = arrivals.get('file_sweeps_ending_in_window') or []
@@ -119,12 +169,23 @@ def build_fact_set(rollup, deltas):
         value = f'{_number(total)} newly created file DIDs'
         if len(sweeps) == 1 and detail:
             value += f' ({detail})'
-        coverage = '; '.join(
-            _interval(row.get('window_start'), row.get('window_end'))
-            for row in sweeps if row.get('window_start') and row.get('window_end'))
+        sweep_coverage = arrivals.get('sweep_coverage') or {}
+        coverage = ''
+        if sweep_coverage:
+            overlap = sweep_coverage.get('report_window_overlap_hours')
+            report_hours = sweep_coverage.get('report_window_hours')
+            gap = sweep_coverage.get('report_window_gap_hours')
+            outside = sweep_coverage.get('outside_report_window_hours')
+            coverage = (
+                f'recorded sweeps overlap {overlap:g} of {report_hours:g} '
+                'report hours')
+            if gap:
+                coverage += f'; {gap:g} report hours uncovered'
+            if outside:
+                coverage += f'; {outside:g} measured hours outside the interval'
         activity.append(_row(
             'jlab_rucio_file_arrivals', 'JLab Rucio file arrivals', value,
-            comparison=(f'sweep coverage: {coverage}' if coverage else ''),
+            comparison=coverage,
             source='file-DID created-after sweep'))
     else:
         activity.append(_row(
@@ -155,6 +216,17 @@ def build_fact_set(rollup, deltas):
             'production_actions', 'Production automation',
             'No campaign-attributed production action recorded',
             source='epicprod action stream; assessment actions excluded'))
+    system = _member(rollup, 'system_status')
+    history = system.get('window_history') or {}
+    if history.get('observations'):
+        by_status = history.get('by_status') or {}
+        activity.append(_row(
+            'platform_window_history', 'Production platform observations',
+            f'{_number(history.get("observations"))} recorded observations; '
+            + '; '.join(
+                f'{status} {_number(count)}'
+                for status, count in sorted(by_status.items())),
+            source='append-only system-status history for the interval'))
 
     progress = _member(rollup, 'campaign_progress')
     if progress.get('available'):
@@ -164,30 +236,58 @@ def build_fact_set(rollup, deltas):
                 'pcs_campaign_tasks', 'PCS campaign tasks',
                 f'{_number(progress.get("task_count"))} catalog rows; '
                 f'{_number(progress.get("tasks_with_processing"))} with processing',
+                comparison=_comparisons(
+                    ('tasks ' + _delta(deltas, 'task_count'))
+                    if _delta(deltas, 'task_count') else '',
+                    ('with processing '
+                     + _delta(deltas, 'tasks_with_processing'))
+                    if _delta(deltas, 'tasks_with_processing') else ''),
                 source=f'cached PCS progress view as of {source_at}'),
             _row(
                 'pcs_output_completion', 'PCS output completion',
                 f'{_number(progress.get("outputs_complete"))} of '
                 f'{_number(progress.get("outputs_total"))} unique outputs complete',
-                comparison=_delta(deltas, 'outputs_complete'),
+                comparison=_comparisons(
+                    ('complete ' + _delta(deltas, 'outputs_complete'))
+                    if _delta(deltas, 'outputs_complete') else '',
+                    ('total ' + _delta(deltas, 'outputs_total'))
+                    if _delta(deltas, 'outputs_total') else ''),
                 source=f'cached PCS output view, unique DID, as of {source_at}'),
             _row(
                 'pcs_output_volume', 'PCS recorded output volume',
                 f'{_number(progress.get("total_files"))} files; '
                 f'{_bytes(progress.get("total_bytes"))}',
-                comparison=_delta(deltas, 'total_files'),
+                comparison=_comparisons(
+                    ('files ' + _delta(deltas, 'total_files'))
+                    if _delta(deltas, 'total_files') else '',
+                    ('volume ' + _bytes_delta(deltas, 'total_bytes'))
+                    if _bytes_delta(deltas, 'total_bytes') else ''),
                 source=f'cached PCS output view, unique DID, as of {source_at}'),
         ])
         duplicates = int(progress.get('duplicate_output_records') or 0)
         if duplicates:
+            patterns = progress.get('duplicate_status_patterns') or []
+            expected_overlap = bool(patterns) and all(
+                ':submitted' in str(item.get('task_representations') or '')
+                and ':past_output' in str(item.get('task_representations') or '')
+                for item in patterns)
+            consistency = progress.get('duplicate_consistency') or {}
+            agreement = (
+                not consistency.get('file_count_conflicts')
+                and not consistency.get('stage_conflicts')
+                and not consistency.get('completion_conflicts'))
             notes.append(
-                f'{duplicates:,} duplicate PCS output records were excluded '
-                'from output totals by DID.')
+                f'{duplicates:,} PCS output DIDs occur in multiple '
+                + ('submitted-task and past-output rows. '
+                   if expected_overlap else 'task rows. ')
+                + ('File counts, stages, and completion agree; '
+                   if agreement else 'Some repeated records disagree; ')
+                + 'totals use the most recently checked record for each DID.')
         for error in progress.get('source_errors') or []:
-            notes.append(f'PCS progress source warning: {error}')
+            problems.append(f'PCS progress source warning: {error}')
     else:
-        notes.append('PCS campaign progress unavailable: '
-                     + str(progress.get('reason') or 'unknown reason'))
+        problems.append('PCS campaign progress unavailable: '
+                        + str(progress.get('reason') or 'unknown reason'))
 
     panda = _member(rollup, 'panda_health')
     if panda.get('available'):
@@ -197,10 +297,12 @@ def build_fact_set(rollup, deltas):
         jobs = panda.get('jobs') or {}
         comparison = ''
         if deltas and deltas.get('available'):
-            comparison = (
-                f'finished {_delta(deltas, "lifetime_jobs_finished")}; '
-                f'final failures {_delta(deltas, "lifetime_jobs_final_failed")}'
-            )
+            comparison = _comparisons(
+                ('tasks ' + _delta(deltas, 'panda_task_count'))
+                if _delta(deltas, 'panda_task_count') else '',
+                'finished ' + _delta(deltas, 'lifetime_jobs_finished'),
+                'final failures '
+                + _delta(deltas, 'lifetime_jobs_final_failed'))
         current.append(_row(
             'panda_lifetime_state', 'PanDA lifetime campaign state',
             f'{_number(panda.get("panda_task_count"))} tasks'
@@ -210,8 +312,8 @@ def build_fact_set(rollup, deltas):
             comparison=comparison,
             source='direct PanDA DB; PCS associations plus campaign-name discovery'))
     else:
-        notes.append('PanDA lifetime state unavailable: '
-                     + str(panda.get('reason') or 'unknown reason'))
+        problems.append('PanDA lifetime state unavailable: '
+                        + str(panda.get('reason') or 'unknown reason'))
 
     if dispositions.get('available'):
         counts = dispositions.get('dispositions') or {}
@@ -219,9 +321,9 @@ def build_fact_set(rollup, deltas):
             'disposition_state', 'Dataset dispositions',
             '; '.join(f'{state} {_number(count)}'
                       for state, count in sorted(counts.items())),
+            comparison=_disposition_changes(deltas),
             source='current PCS state'))
 
-    system = _member(rollup, 'system_status')
     if system.get('available'):
         counts = system.get('counts') or {}
         current.append(_row(
@@ -232,7 +334,7 @@ def build_fact_set(rollup, deltas):
             f'{_number(counts.get("error"))} error',
             source=f'system-status cache as of {_timestamp(system.get("latest_checked_at"))}'))
     else:
-        notes.append('Production platform status unavailable.')
+        problems.append('Production platform status unavailable.')
 
     credentials = _member(rollup, 'credential_status')
     if credentials.get('available'):
@@ -242,12 +344,12 @@ def build_fact_set(rollup, deltas):
             comparison=credentials.get('reason') or '',
             source=f'credential check as of {_timestamp(credentials.get("checked_at"))}'))
     else:
-        notes.append('Automation credential status unavailable: '
-                     + str(credentials.get('reason') or 'no check record'))
+        problems.append('Automation credential status unavailable: '
+                        + str(credentials.get('reason') or 'no check record'))
 
     if not (deltas and deltas.get('available')):
-        notes.append(str((deltas or {}).get('reason')
-                         or 'No earlier production analytics snapshot is available for state comparisons.'))
+        problems.append(str((deltas or {}).get('reason')
+                            or 'No earlier production analytics snapshot is available for state comparisons.'))
 
     return {
         'schema': FACTS_SCHEMA,
@@ -261,6 +363,7 @@ def build_fact_set(rollup, deltas):
         'activity': activity,
         'current_state': current,
         'evidence_notes': notes,
+        'evidence_problems': problems,
     }
 
 
@@ -278,6 +381,24 @@ def _table(rows):
             **{key: _escape(row.get(key))
                for key in ('fact', 'value', 'comparison', 'source')}))
     return '\n'.join(lines)
+
+
+def _fact_notes(facts):
+    notes = list((facts or {}).get('evidence_notes') or [])
+    if not notes:
+        return ''
+    return '**Accounting notes**\n\n' + '\n'.join(
+        f'- {_escape(note)}' for note in notes)
+
+
+def _comparison_span(deltas):
+    hours = (deltas or {}).get('target_span_hours')
+    if not isinstance(hours, (int, float)):
+        return 'the reporting window'
+    if hours % 24 == 0:
+        days = hours / 24
+        return f'{days:g} d'
+    return f'{hours:g} h'
 
 
 def _bullets(items, empty='No additional interpretation was required.'):
@@ -430,23 +551,32 @@ def _structured_markdown(value, heading_level=5):
 def _delta_table(deltas):
     if not (deltas or {}).get('available'):
         return str((deltas or {}).get('reason') or 'No comparison is available.')
-    labels = {
-        'total_files': 'Recorded output files',
-        'outputs_complete': 'Complete outputs',
-        'lifetime_jobs_finished': 'Lifetime finished jobs',
-        'lifetime_jobs_final_failed': 'Lifetime final-failed jobs',
-    }
+    labels = (
+        ('task_count', 'PCS task rows', _number),
+        ('tasks_with_processing', 'PCS tasks with processing', _number),
+        ('outputs_total', 'Unique outputs', _number),
+        ('outputs_complete', 'Complete outputs', _number),
+        ('total_files', 'Recorded output files', _number),
+        ('total_bytes', 'Recorded output volume', _bytes),
+        ('panda_task_count', 'PanDA tasks', _number),
+        ('lifetime_jobs_finished', 'Lifetime finished jobs', _number),
+        ('lifetime_jobs_final_failed', 'Lifetime final-failed jobs', _number),
+    )
     lines = [
         '| State | Earlier | Current | Change |',
         '|---|---:|---:|---:|',
     ]
-    for key, label in labels.items():
+    for key, label, formatter in labels:
         item = deltas.get(key)
         if not isinstance(item, dict):
             continue
+        change = int(item.get('delta') or 0)
+        formatted_change = (
+            f'{"+" if change >= 0 else "-"}{formatter(abs(change))}'
+            if formatter is _bytes else f'{change:+,}')
         lines.append(
-            f'| {label} | {_number(item.get("previous"))} | '
-            f'{_number(item.get("current"))} | {int(item.get("delta") or 0):+,} |')
+            f'| {label} | {formatter(item.get("previous"))} | '
+            f'{formatter(item.get("current"))} | {formatted_change} |')
     return '\n'.join(lines)
 
 
@@ -526,6 +656,12 @@ def render_bundle_page(bundle):
             '#### Evidence notes',
             '\n'.join(f'- {_escape(note)}' for note in notes),
         ])
+    problems = facts.get('evidence_problems') or []
+    if problems:
+        sections.extend([
+            '#### Evidence problems and limitations',
+            '\n'.join(f'- {_escape(problem)}' for problem in problems),
+        ])
 
     for label, heading in (
             ('campaign', 'Campaign narrative'),
@@ -543,7 +679,7 @@ def render_bundle_page(bundle):
 
     sections.extend([
         '<a id="analytics-evidence"></a>', '### Analytics evidence',
-        'Each bounded member below is the complete structured evidence block '
+        'Each member below is the complete structured evidence block '
         'used to construct the report facts.',
     ])
     for name, block in sorted((rollup.get('members') or {}).items()):
@@ -596,7 +732,7 @@ def _generation(bundle, artifact):
         if not entry.get('ok'):
             problems.append(
                 f'{entry.get("source")}: {entry.get("error") or "fetch failed"}')
-    problems.extend((bundle.get('facts') or {}).get('evidence_notes') or [])
+    problems.extend((bundle.get('facts') or {}).get('evidence_problems') or [])
 
     if problems:
         problem_text = '\n'.join(
@@ -643,14 +779,16 @@ def render_report(bundle, artifact, kind):
     if deltas.get('available'):
         comparison = (
             f'**State comparison:** {_timestamp(deltas.get("baseline_generated_at"))} '
-            f'({deltas.get("elapsed_hours")} h elapsed; snapshot closest to '
-            '24 h prior)')
+            f'({deltas.get("elapsed_hours")} h elapsed; requested '
+            f'{_comparison_span(deltas)} baseline; selected snapshot '
+            f'{deltas.get("baseline_distance_hours")} h from target)')
 
     if kind == 'weekly':
         sections = [
             f'# {title}', metadata, artifact_nav, comparison,
             '### Executive assessment', _bullets(artifact.get('assessment')),
             '### Campaign state', _table(facts.get('current_state') or []),
+            _fact_notes(facts),
             '### Production this week', _table(facts.get('activity') or []),
             _bullets(artifact.get('activity_interpretation')),
             '### Software and release state', _software(artifact.get('software_findings')),
@@ -667,6 +805,7 @@ def render_report(bundle, artifact, kind):
             '### Production facts', '#### Interval activity',
             _table(facts.get('activity') or []),
             '#### Current state', _table(facts.get('current_state') or []),
+            _fact_notes(facts),
             '### Operational assessment', _bullets(interpretation),
         ]
         if artifact.get('software_findings'):

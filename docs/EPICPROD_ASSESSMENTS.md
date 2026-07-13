@@ -167,11 +167,12 @@ day's window — productivity, new problems, and current conditions — compared
 with production analytics recorded closest to 24 hours earlier. It runs even
 when little has changed: a quiet entry is itself information. The weekly
 assessment is the standalone report: complete in
-itself, re-baselining each week, it measures the campaign against its
-narrative's stated goals over a seven-day window with the same schema
-and a larger prose budget, since trend interpretation is where the
-model's judgment carries the most value. A quiet week rightly reads
-much like the previous week's report.
+itself, re-baselining against production analytics recorded closest to seven
+days earlier, it measures the campaign against its narrative's stated goals
+over a seven-day window with the same schema and a larger prose budget, since
+trend interpretation is where the model's judgment carries the most value.
+Prior AI reports are not evidence and are not required. A quiet week rightly
+reads much like the previous week's report.
 
 ## Dashboard Relationship
 

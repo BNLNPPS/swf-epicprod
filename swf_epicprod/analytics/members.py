@@ -16,12 +16,6 @@ import datetime as _dt
 
 from django.utils import timezone
 
-# Bounds keep the rollup a bounded evidence document, not a dump.
-LEAST_COMPLETE_LIMIT = 10
-DISPOSITION_FLIPS_LIMIT = 20
-TOP_ERRORS_LIMIT = 5
-TIMELINE_TAIL_BINS = 14
-ACTION_ROWS_MAX = 5000
 ASSESSMENT_ACTIONS = {
     'assessment_triggered', 'assessment_enforce', 'assessment_register',
     'assessment_retry', 'assessment_completed',
@@ -57,7 +51,7 @@ def campaign_progress(campaign, window_start, window_end):
 
     rows = list((snap.get('rows') or {}).values())
     unique_outputs = {}
-    duplicate_dids = {}
+    did_records = {}
     anonymous = 0
     for row in rows:
         for output in row.get('outputs') or []:
@@ -68,8 +62,15 @@ def campaign_progress(campaign, window_start, window_end):
                 anonymous += 1
                 key = f'anonymous:{row.get("task_id")}:{anonymous}'
             prior = unique_outputs.get(key)
-            if prior is not None and did:
-                duplicate_dids[did] = duplicate_dids.get(did, 1) + 1
+            if did:
+                did_records.setdefault(did, []).append({
+                    'task_id': row.get('task_id'),
+                    'file_count': output.get('file_count'),
+                    'bytes': output.get('bytes'),
+                    'stage': output.get('stage'),
+                    'complete': output.get('complete'),
+                    'checked_at': output.get('checked_at'),
+                })
             checked = str(output.get('checked_at') or '')
             prior_checked = str((prior or {}).get('checked_at') or '')
             if prior is None or checked >= prior_checked:
@@ -100,6 +101,62 @@ def campaign_progress(campaign, window_start, window_end):
             })
     incomplete.sort(key=lambda o: (o['completion_percent'] is None,
                                    o['completion_percent'] or 0))
+    duplicate_groups = {
+        did: records for did, records in did_records.items()
+        if len(records) > 1
+    }
+    task_ids = {
+        record.get('task_id') for records in duplicate_groups.values()
+        for record in records if record.get('task_id') is not None
+    }
+    task_metadata = {}
+    if task_ids:
+        from pcs.models import ProdTask
+
+        task_metadata = {
+            row['id']: row for row in ProdTask.objects.filter(
+                id__in=task_ids).values('id', 'status', 'created_by')
+        }
+    duplicate_details = []
+    status_patterns = {}
+    consistency = {
+        'file_count_conflicts': 0,
+        'byte_value_differences': 0,
+        'stage_conflicts': 0,
+        'completion_conflicts': 0,
+    }
+    for did, records in sorted(duplicate_groups.items()):
+        states = []
+        for record in records:
+            meta = task_metadata.get(record.get('task_id')) or {}
+            states.append(
+                f"{meta.get('created_by') or 'unknown'}:"
+                f"{meta.get('status') or 'unknown'}")
+        pattern = ' + '.join(sorted(states))
+        status_patterns[pattern] = status_patterns.get(pattern, 0) + 1
+        for field, counter in (
+                ('file_count', 'file_count_conflicts'),
+                ('bytes', 'byte_value_differences'),
+                ('stage', 'stage_conflicts'),
+                ('complete', 'completion_conflicts')):
+            if len({record.get(field) for record in records}) > 1:
+                consistency[counter] += 1
+        duplicate_details.append({
+            'did': did,
+            'records': len(records),
+            'task_ids': ', '.join(
+                str(record.get('task_id') or '') for record in records),
+            'task_representations': '; '.join(states),
+            'file_counts': '; '.join(
+                str(record.get('file_count')) for record in records),
+            'bytes': '; '.join(str(record.get('bytes')) for record in records),
+            'stages': '; '.join(str(record.get('stage')) for record in records),
+            'complete': '; '.join(
+                str(record.get('complete')) for record in records),
+            'checked_at': '; '.join(
+                str(record.get('checked_at')) for record in records),
+        })
+
     return _block('campaign_progress', window_start, window_end, {
         'available': True,
         'source_generated_at': snap.get('generated_at') or '',
@@ -110,14 +167,15 @@ def campaign_progress(campaign, window_start, window_end):
         'total_files': total_files,
         'total_bytes': total_bytes,
         'output_identity': 'unique DID; outputs without a DID remain distinct',
-        'duplicate_output_records': sum(n - 1 for n in duplicate_dids.values()),
-        'duplicate_dids': [
-            {'did': did, 'records': count}
-            for did, count in sorted(duplicate_dids.items())[:10]
+        'duplicate_output_records': sum(
+            len(records) - 1 for records in duplicate_groups.values()),
+        'duplicate_status_patterns': [
+            {'task_representations': pattern, 'dids': count}
+            for pattern, count in sorted(status_patterns.items())
         ],
-        'duplicate_dids_truncated': max(0, len(duplicate_dids) - 10),
-        'least_complete': incomplete[:LEAST_COMPLETE_LIMIT],
-        'least_complete_truncated': max(0, len(incomplete) - LEAST_COMPLETE_LIMIT),
+        'duplicate_consistency': consistency,
+        'duplicate_dids': duplicate_details,
+        'least_complete': incomplete,
         'source_errors': snap.get('errors') or [],
     })
 
@@ -189,11 +247,11 @@ def panda_health(campaign, window_start, window_end):
         statuses[status] = statuses.get(status, 0) + 1
         dialog = str(summary.get('errordialog') or '').strip()
         if dialog:
-            errors[dialog[:200]] = errors.get(dialog[:200], 0) + 1
+            errors[dialog] = errors.get(dialog, 0) + 1
 
     terminal = sums['nfinalfailed'] + sums['nfinished']
     rate = round(sums['nfinalfailed'] / terminal, 4) if terminal else None
-    top_errors = sorted(errors.items(), key=lambda kv: -kv[1])[:TOP_ERRORS_LIMIT]
+    top_errors = sorted(errors.items(), key=lambda kv: (-kv[1], kv[0]))
     return _block('panda_health', window_start, window_end, {
         'available': True,
         'panda_task_count': len(seen),
@@ -248,6 +306,47 @@ def rucio_arrivals(campaign, window_start, window_end):
             'roots': list(extra.get('roots') or []),
         })
 
+    sweep_intervals = []
+    for sweep in sweeps:
+        try:
+            start = _dt.datetime.fromisoformat(
+                str(sweep.get('window_start') or '').replace('Z', '+00:00'))
+            end = _dt.datetime.fromisoformat(
+                str(sweep.get('window_end') or '').replace('Z', '+00:00'))
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=_dt.timezone.utc)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=_dt.timezone.utc)
+            if end > start:
+                sweep_intervals.append((start, end))
+        except (TypeError, ValueError):
+            continue
+    sweep_intervals.sort()
+    merged = []
+    for start, end in sweep_intervals:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    report_hours = (window_end - window_start).total_seconds() / 3600
+    measured_hours = sum(
+        (end - start).total_seconds() / 3600 for start, end in merged)
+    overlap_hours = sum(
+        max(0.0, (min(end, window_end) - max(start, window_start))
+            .total_seconds() / 3600)
+        for start, end in merged
+    )
+    sweep_coverage = {
+        'first_start': merged[0][0].isoformat() if merged else '',
+        'last_end': merged[-1][1].isoformat() if merged else '',
+        'measured_hours': round(measured_hours, 3),
+        'report_window_hours': round(report_hours, 3),
+        'report_window_overlap_hours': round(overlap_hours, 3),
+        'report_window_gap_hours': round(max(0.0, report_hours - overlap_hours), 3),
+        'outside_report_window_hours': round(
+            max(0.0, measured_hours - overlap_hours), 3),
+    }
+
     data = {
         'available': bool(arrivals or sweeps),
         'measurement': 'newly created JLab Rucio file DIDs',
@@ -255,6 +354,7 @@ def rucio_arrivals(campaign, window_start, window_end):
         'last_arrival_age_hours': age_hours,
         'file_sweeps_ending_in_window': sweeps,
         'files_in_recorded_sweeps': sum(row['files'] for row in sweeps),
+        'sweep_coverage': sweep_coverage,
         'latest_sweep': {
             key: value for key, value in arrivals.items()
             if key != 'locations'
@@ -263,21 +363,20 @@ def rucio_arrivals(campaign, window_start, window_end):
     timeline = load_rucio_timeline(campaign.name)
     if timeline:
         dates = timeline.get('dates') or []
-        tail = slice(max(0, len(dates) - TIMELINE_TAIL_BINS), len(dates))
-        series = {'dates': dates[tail]}
+        series = {'dates': dates}
         for stage in ('reco', 'simu'):
             cum_files = (timeline.get(stage) or {}).get('cum_files') or []
             cum_bytes = (timeline.get(stage) or {}).get('cum_bytes') or []
             if cum_files:
-                series[f'{stage}_cum_files'] = cum_files[tail]
+                series[f'{stage}_cum_files'] = cum_files
             if cum_bytes:
-                series[f'{stage}_cum_bytes'] = cum_bytes[tail]
+                series[f'{stage}_cum_bytes'] = cum_bytes
         data['dataset_first_arrival_timeline'] = {
             'measurement': (
                 'dataset file count assigned at the dataset earliest replica '
                 'creation time; later file additions do not move the series'),
             'snapshot_fetched_at': timeline.get('snapshot_fetched_at') or '',
-            'tail': series,
+            'series': series,
         }
     if not arrivals and not sweeps and not timeline:
         data.update(_unavailable('no arrivals recorded for this campaign'))
@@ -311,7 +410,7 @@ def disposition_mix(campaign, window_start, window_end):
                 'dataset': ds.composed_name,
                 'state': entry.get('state') or '',
                 'previous': entry.get('previous') or '',
-                'comment': str(entry.get('comment') or '')[:200],
+                'comment': str(entry.get('comment') or ''),
                 'changed_by': entry.get('changed_by') or '',
                 'changed_at': changed.isoformat(),
             })
@@ -319,8 +418,7 @@ def disposition_mix(campaign, window_start, window_end):
     return _block('disposition_mix', window_start, window_end, {
         'available': True,
         'dispositions': counts,
-        'window_flips': flips[:DISPOSITION_FLIPS_LIMIT],
-        'window_flips_truncated': max(0, len(flips) - DISPOSITION_FLIPS_LIMIT),
+        'window_flips': flips,
     })
 
 
@@ -333,7 +431,7 @@ def action_stream_activity(campaign, window_start, window_end):
         .filter(app_name='epicprod', timestamp__gte=window_start,
                 timestamp__lt=window_end)
         .order_by('-timestamp')
-        .values('timestamp', 'extra_data')[:ACTION_ROWS_MAX]
+        .values('timestamp', 'extra_data')
     )
     by_action = {}
     campaign_by_action = {}
@@ -387,7 +485,6 @@ def action_stream_activity(campaign, window_start, window_end):
         'assessment_actions': assessment_by_action,
         'system_actions': by_action,
         'window_rows': len(rows),
-        'window_truncated': len(rows) >= ACTION_ROWS_MAX,
         'catalog_sync_age_hours': sync_age_hours,
         'catalog_sync_outcome': sync_outcome,
     })
@@ -462,13 +559,115 @@ def window_activity(campaign, window_start, window_end):
         'window_jobs_failed': window_failed,
         'window_failure_rate': (round(window_failed / terminal, 4)
                                 if terminal else None),
-        'tasks_initiated': initiated[:20],
-        'tasks_initiated_truncated': max(0, len(initiated) - 20),
-        'tasks_completed': completed[:20],
-        'tasks_completed_truncated': max(0, len(completed) - 20),
-        'tasks_newly_failed': failed[:20],
-        'tasks_newly_failed_truncated': max(0, len(failed) - 20),
+        'tasks_initiated': initiated,
+        'tasks_completed': completed,
+        'tasks_newly_failed': failed,
         'quiet': not jobs_by and not initiated and not completed and not failed,
+    })
+
+
+def resource_usage(campaign, window_start, window_end):
+    """Campaign-attributed finished-job resource use in the exact window."""
+    from django.db import connections
+    from monitor_app.panda.constants import PANDA_SCHEMA
+
+    try:
+        task_ids, population = _campaign_panda_task_ids(campaign)
+        if not task_ids:
+            return _block('resource_usage', window_start, window_end, {
+                'available': True,
+                'population': population,
+                'totals': {
+                    'job_count': 0,
+                    'allocated_core_hours': 0.0,
+                    'used_core_hours': 0.0,
+                    'wall_hours': 0.0,
+                    'allocation_efficiency': None,
+                },
+                'by_site': [],
+            })
+        marks = ','.join(['%s'] * len(task_ids))
+        sql = f'''
+            SELECT "computingsite",
+                   COUNT(*),
+                   COALESCE(SUM(
+                       EXTRACT(EPOCH FROM ("endtime" - "starttime"))
+                       * COALESCE("actualcorecount", "corecount", 1)
+                   ), 0) / 3600.0,
+                   COALESCE(SUM("cpuconsumptiontime"), 0) / 3600.0,
+                   COALESCE(SUM(
+                       EXTRACT(EPOCH FROM ("endtime" - "starttime"))
+                   ), 0) / 3600.0
+            FROM (
+                SELECT "computingsite", "cpuconsumptiontime",
+                       "actualcorecount", "corecount", "starttime", "endtime"
+                FROM "{PANDA_SCHEMA}"."jobsactive4"
+                WHERE "jeditaskid" IN ({marks})
+                  AND "modificationtime" >= %s
+                  AND "modificationtime" < %s
+                  AND "jobstatus" = 'finished'
+                  AND "starttime" IS NOT NULL AND "endtime" IS NOT NULL
+                UNION ALL
+                SELECT "computingsite", "cpuconsumptiontime",
+                       "actualcorecount", "corecount", "starttime", "endtime"
+                FROM "{PANDA_SCHEMA}"."jobsarchived4"
+                WHERE "jeditaskid" IN ({marks})
+                  AND "modificationtime" >= %s
+                  AND "modificationtime" < %s
+                  AND "jobstatus" = 'finished'
+                  AND "starttime" IS NOT NULL AND "endtime" IS NOT NULL
+            ) jobs
+            GROUP BY "computingsite"
+            ORDER BY 3 DESC, 1
+        '''
+        params = (
+            list(task_ids) + [window_start, window_end]
+            + list(task_ids) + [window_start, window_end]
+        )
+        with connections['panda'].cursor() as cursor:
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+    except Exception as e:
+        return _block('resource_usage', window_start, window_end,
+                      _unavailable(f'PanDA resource query failed: {e}'))
+
+    by_site = []
+    totals = {
+        'job_count': 0,
+        'allocated_core_hours': 0.0,
+        'used_core_hours': 0.0,
+        'wall_hours': 0.0,
+    }
+    for site, jobs, allocated, used, wall in rows:
+        allocated = float(allocated or 0)
+        used = float(used or 0)
+        entry = {
+            'site': site or 'unknown',
+            'job_count': int(jobs or 0),
+            'allocated_core_hours': round(allocated, 1),
+            'used_core_hours': round(used, 1),
+            'wall_hours': round(float(wall or 0), 1),
+            'allocation_efficiency': (
+                round(used / allocated, 4) if allocated else None),
+        }
+        by_site.append(entry)
+        for key in ('job_count', 'allocated_core_hours',
+                    'used_core_hours', 'wall_hours'):
+            totals[key] += entry[key]
+    totals['allocated_core_hours'] = round(totals['allocated_core_hours'], 1)
+    totals['used_core_hours'] = round(totals['used_core_hours'], 1)
+    totals['wall_hours'] = round(totals['wall_hours'], 1)
+    totals['allocation_efficiency'] = (
+        round(totals['used_core_hours'] / totals['allocated_core_hours'], 4)
+        if totals['allocated_core_hours'] else None)
+    return _block('resource_usage', window_start, window_end, {
+        'available': True,
+        'population': population,
+        'measurement': (
+            'finished jobs modified in the reporting window; allocated core '
+            'hours are reserved cores times wall time; used core hours are CPU time'),
+        'totals': totals,
+        'by_site': by_site,
     })
 
 
@@ -478,10 +677,30 @@ def system_status(campaign, window_start, window_end):
     Read in-process (the cache rows the ops agent refreshes), so the
     assessment bundle needs no separately authenticated fetch.
     """
+    from monitor_app.models import SystemStatusHistory
     from monitor_app.viewdir.system_status import status_summary
 
     summary = status_summary()
     latest = summary.get('latest_checked_at')
+    history = list(
+        SystemStatusHistory.objects.filter(
+            checked_at__gte=window_start, checked_at__lt=window_end)
+        .order_by('checked_at', 'name')
+        .values('name', 'category', 'status', 'summary', 'checked_at')
+    )
+    history_by_status = {}
+    non_ok = []
+    for row in history:
+        status = str(row.get('status') or 'unknown')
+        history_by_status[status] = history_by_status.get(status, 0) + 1
+        if status not in ('ok', 'healthy'):
+            non_ok.append({
+                'name': row.get('name') or '',
+                'category': row.get('category') or '',
+                'status': status,
+                'summary': row.get('summary') or '',
+                'checked_at': row['checked_at'].isoformat(),
+            })
     return _block('system_status', window_start, window_end, {
         'available': bool(summary.get('total')),
         'overall_status': summary.get('overall_status', 'unknown'),
@@ -489,6 +708,14 @@ def system_status(campaign, window_start, window_end):
         'latest_checked_at': latest.isoformat() if latest else None,
         'counts': {k: summary.get(k, 0)
                    for k in ('ok', 'warning', 'error', 'unknown', 'total')},
+        'window_history': {
+            'measurement': (
+                'append-only system observations recorded on status change '
+                'or at least every six hours'),
+            'observations': len(history),
+            'by_status': history_by_status,
+            'non_ok_observations': non_ok,
+        },
     })
 
 
@@ -517,7 +744,7 @@ def credential_status(campaign, window_start, window_end):
             (timezone.now() - row['timestamp']).total_seconds() / 3600, 1),
         'outcome': str(extra.get('outcome') or ''),
         'reason': str(extra.get('reason') or ''),
-        'message': str(row['message'] or '')[:500],
+        'message': str(row['message'] or ''),
         'details': {k: v for k, v in extra.items() if k not in known},
     })
 
@@ -526,6 +753,7 @@ MEMBERS = (
     campaign_progress,
     panda_health,
     window_activity,
+    resource_usage,
     rucio_arrivals,
     disposition_mix,
     action_stream_activity,
