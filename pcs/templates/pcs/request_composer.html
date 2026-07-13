@@ -96,11 +96,11 @@
             <datalist id="rc-sample-opts">{% for o in sample_options %}<option value="{{ o }}">{% endfor %}</datalist>
           </div>
           <div class="col-12">
-            <label>Background overlay <span class="text-muted">(defaults to no background overlay)</span></label>
+            <label title="Defaults to no background overlay">Background overlay</label>
             <div class="border rounded p-2 d-flex align-items-start justify-content-between gap-3">
               <div>
-                <strong id="rc-background-summary">No background overlay</strong>
-                <div id="rc-background-detail" class="form-text">Open the panel only if background should be added.</div>
+                <strong id="rc-background-summary">Not specified</strong>
+                <div id="rc-background-detail" class="form-text">Choose whether to add background.</div>
               </div>
               <button type="button" class="btn btn-sm btn-dark-green flex-shrink-0"
                       data-bs-toggle="modal" data-bs-target="#rc-background-panel">
@@ -271,7 +271,7 @@
   const el = id => document.getElementById(id);
   const dataPageUrl = name => "{% url 'pcs:pcs_edition_data' name='__NAME__' %}".replace('__NAME__', encodeURIComponent(name));
   let adoptedAnchor = '';
-  let backgroundMode = 'none';
+  let backgroundMode = '';
   let backgroundTag = '';
   let backgroundOther = '';
 
