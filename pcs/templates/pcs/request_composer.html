@@ -96,11 +96,11 @@
             <datalist id="rc-sample-opts">{% for o in sample_options %}<option value="{{ o }}">{% endfor %}</datalist>
           </div>
           <div class="col-12">
-            <label>Background overlay</label>
+            <label>Background overlay <span class="text-muted">(defaults to no background overlay)</span></label>
             <div class="border rounded p-2 d-flex align-items-start justify-content-between gap-3">
               <div>
-                <strong id="rc-background-summary">Not specified</strong>
-                <div id="rc-background-detail" class="form-text">Choose whether to add background.</div>
+                <strong id="rc-background-summary">No background overlay</strong>
+                <div id="rc-background-detail" class="form-text">Open the panel only if background should be added.</div>
               </div>
               <button type="button" class="btn btn-sm btn-dark-green flex-shrink-0"
                       data-bs-toggle="modal" data-bs-target="#rc-background-panel">
@@ -271,7 +271,7 @@
   const el = id => document.getElementById(id);
   const dataPageUrl = name => "{% url 'pcs:pcs_edition_data' name='__NAME__' %}".replace('__NAME__', encodeURIComponent(name));
   let adoptedAnchor = '';
-  let backgroundMode = '';
+  let backgroundMode = 'none';
   let backgroundTag = '';
   let backgroundOther = '';
 
@@ -461,10 +461,6 @@
   if (submit) submit.addEventListener('click', async () => {
     const status = el('rc-status');
     const axes = currentAxes();
-    if (!backgroundMode) {
-      status.textContent = 'Please choose whether this production needs background.';
-      return;
-    }
     if (backgroundMode === 'other' && !backgroundOther) {
       status.textContent = 'Please describe the background that is not registered.';
       return;
@@ -488,7 +484,7 @@
       simu_path: el('rc-simupath').value.trim(),
       repository: el('rc-repository').value.trim(),
       intended_use: el('rc-intended').value.trim(),
-      background_mode: backgroundMode,
+      background_mode: backgroundMode || 'none',
       background_tag: backgroundTag,
       background_other: backgroundOther,
       pc_anchor: adoptedAnchor,
