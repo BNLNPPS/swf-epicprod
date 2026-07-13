@@ -137,7 +137,7 @@ def main():
             log.warning('job log fetch failed: %s', e)
         _log('assessment_enforce', outcome='error', subject_key=campaign,
              sublevel='high', slot=slot, job_id=args.job_id,
-             reason=f"run {args.status}: {str(run_log.get('error') or '')[:200]}")
+             reason=f"run {args.status}: {str(run_log.get('error') or '')}")
         return 0
 
     page = _get(f'{CORUN_API_URL}/pages/{args.page_group_id}/',
@@ -175,7 +175,7 @@ def main():
                  slot=slot, prompt_group_id=args.prompt_group_id,
                  retry_prompt_group_id=retry_prompt_group_id,
                  retry_job_id=str(job.get('id') or ''),
-                 reason='; '.join(problems)[:300])
+                 reason='; '.join(problems))
             return 0
         # Second failure: quarantine — raw output retained and never rendered
         # as a valid report; verdict pinned to the mechanical floor.
@@ -198,7 +198,7 @@ def main():
         _log('assessment_enforce', outcome='error', subject_key=campaign,
              sublevel='high', slot=slot, quarantined=True,
              corun_page_group_id=result.get('corun_page_group_id') or '',
-             reason='quarantined after retry: ' + '; '.join(problems)[:250])
+             reason='quarantined after retry: ' + '; '.join(problems))
         return 0
 
     verdict = artifact.get('verdict')

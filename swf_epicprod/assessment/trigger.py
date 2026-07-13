@@ -78,11 +78,11 @@ def log_action(action, *, outcome, subject_key='', reason='', **counts):
         extra['subject_key'] = str(subject_key)
         extra['subject_type'] = 'campaign'
     if reason:
-        extra['reason'] = str(reason)[:300]
+        extra['reason'] = str(reason)
     extra.update(counts)
     message = ' '.join(x for x in (action, subject_key, outcome) if x)
     if reason:
-        message += f' — {str(reason)[:300]}'
+        message += f' — {str(reason)}'
     try:
         _request(f'{MONITOR_URL}/api/logs/', payload={
             'app_name': 'epicprod',
@@ -258,7 +258,7 @@ def main():
                        window_days=window_days, job_id=job_id,
                        degraded=evidence['degraded'])
         except urllib.error.HTTPError as e:
-            body = e.read().decode(errors='replace')[:300]
+            body = e.read().decode(errors='replace')
             print(f'ERROR: {campaign}: run creation failed: {e.code} {body}',
                   file=sys.stderr)
             log_action('assessment_triggered', outcome='error',
