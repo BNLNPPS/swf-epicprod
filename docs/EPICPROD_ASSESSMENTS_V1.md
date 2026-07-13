@@ -164,7 +164,7 @@ The daily is a focused operational delta report: activity, advancement,
 material changes, present attention, and the evolution of prior concerns. The
 weekly is a standalone synthesis: campaign state, the week's production,
 software/release state, responsibilities, and outlook. Both finish with a
-substantive `## Generation report` naming context and evidence consulted,
+substantive `### Generation report` naming context and evidence consulted,
 actual tools and contributions, conflicts and failures, unavailable evidence,
 and the resulting confidence. Nothing follows that section.
 
@@ -173,8 +173,8 @@ corun completion callback already lands at swf-monitor; a handler:
 
 - fetches the result page and the run record (status, stderr) over REST;
 - validates the structured block against the exact schema and the prose
-  against the report form (the substantive `## Generation report` must be
-  the final H2); on failure, one bounded repair run receives the exact
+  against the report form (the substantive `### Generation report` must be
+  the final H3); on failure, one bounded repair run receives the exact
   validation failures and prior output; a second
   failure quarantines the artifact (marked malformed, raw output
   retained, excluded from later context and from the assessments page)
@@ -338,7 +338,7 @@ copies. Their stable professional contract is:
   is the minimum verdict, raise-only.
 - Output is exactly two parts: the fenced JSON artifact (schema above), then
   the reader-oriented prose report. Narration remains metadata and is never
-  appended after the mandatory closing `## Generation report`.
+  appended after the mandatory closing `### Generation report`.
 
 ## Sequencing
 

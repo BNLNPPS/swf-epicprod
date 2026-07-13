@@ -134,8 +134,25 @@ PROFESSIONAL PRESENTATION:
 - Select structure and level of detail through professional editorial judgment.
 - Be concise for a quiet daily and comprehensive for a weekly. Depth follows
   operational substance and the reader's needs, not a fixed word target.
+- Respect the reader's time sentence by sentence. Do not restate the campaign,
+  report interval, or verdict when the title and artifact already establish
+  them. Do not narrate source mechanics in place of findings, and compress
+  lifecycle nulls to their operational meaning. This is a specific example of
+  sloppy writing:
 
-The final prose section MUST be "## Generation report". It must state the
+  "Attention. Campaign 26.06.0 advanced during the interval, 06:12 EDT 12 July
+  through 06:12 EDT 13 July, through new JLab Rucio registrations rather than
+  PanDA execution. The nightly action stream reported 599 new RECO files in the
+  three 10×275 DIS NC Q² datasets. No 26.06.0 PanDA task began, completed,
+  failed, or recovered."
+
+  It spends 51 words repeating known framing and expanding a simple null.
+  Convey the same information in 17 words:
+
+  "JLab Rucio registered 599 RECO files across three 10×275 DIS NC Q²
+  datasets; no PanDA tasks ran."
+
+The final prose section MUST be "### Generation report". It must state the
 context and bundle material consulted; every MCP server/tool used and what it
 contributed; failures, empty results, retries, evidence conflicts, and
 workarounds; anything unavailable; and the effect on confidence. If no live
@@ -232,19 +249,19 @@ After the JSON artifact, write a polished markdown report with:
 
 # ePIC Production Campaign {campaign} — Daily Report, {date}
 
-## Operational assessment
+### Operational assessment
 A conclusion-first account of the interval and its significance.
 
-## Production activity
+### Production activity
 The production accomplished or attempted: data products, processing, sites,
 task transitions, campaign advancement, and material software/release activity.
 
-## Issues and follow-up
+### Issues and follow-up
 New or changed problems, decisions or actions required, and the current state
 of concerns inherited from the preceding daily. Identify owners and link the
 objects that require attention.
 
-## Generation report
+### Generation report
 The mandatory final provenance and limitations account defined above.
 
 Choose tables, bullets, or prose according to the evidence and the reader's
@@ -283,31 +300,31 @@ After the JSON artifact, write a polished markdown report with:
 
 # ePIC Production Campaign {campaign} — Weekly Summary, {date}
 
-## Executive assessment
+### Executive assessment
 The campaign status and the week's operational meaning, including the most
 important actions or decisions.
 
-## Campaign state
+### Campaign state
 Purpose, scope, accumulated production, completion, dispositions, processing
 state, and the resource picture needed to understand the campaign now.
 
-## Production this week
+### Production this week
 What the week produced and advanced, task and job outcomes, site performance,
 data registration and movement, and changes relative to the preceding week.
 
-## Software and release state
+### Software and release state
 The versions actually used, relevant PR/release/CI developments, and whether
 software capability or deployment state enabled or constrained production.
 
-## Issues and responsibilities
+### Issues and responsibilities
 The standing and newly material issues, their trajectory, evidence, owner, and
 required action.
 
-## Outlook
+### Outlook
 Expected production and decisions for the coming week, grounded in campaign
 intent and current readiness.
 
-## Generation report
+### Generation report
 The mandatory final provenance and limitations account defined above.
 
 Choose tables, bullets, or prose according to the evidence and the reader's
@@ -473,7 +490,7 @@ def validate_artifact(artifact):
 def validate_prose(prose, kind):
     """Validate the human report's structural reading contract."""
     problems = []
-    headings = re.findall(r'^##\s+(.+?)\s*$', prose or '', re.MULTILINE)
+    headings = re.findall(r'^###\s+(.+?)\s*$', prose or '', re.MULTILINE)
     required = (
         ('Executive assessment', 'Campaign state', 'Production this week',
          'Software and release state', 'Issues and responsibilities', 'Outlook',
@@ -485,17 +502,17 @@ def validate_prose(prose, kind):
     )
     for heading in required:
         if heading not in headings:
-            problems.append(f'prose is missing required section: ## {heading}')
+            problems.append(f'prose is missing required section: ### {heading}')
     if not headings or headings[-1] != 'Generation report':
-        problems.append('## Generation report must be the final H2 section')
+        problems.append('### Generation report must be the final H3 section')
         return problems
 
     match = re.search(
-        r'^##\s+Generation report\s*$([\s\S]*)\Z',
+        r'^###\s+Generation report\s*$([\s\S]*)\Z',
         prose or '', re.MULTILINE)
     body = (match.group(1) if match else '').strip()
     if len(body) < 80:
-        problems.append('## Generation report is missing substantive provenance')
+        problems.append('### Generation report is missing substantive provenance')
     if re.search(r'(?im)^\s*(?:---\s*)?\*\*Narration:', body):
         problems.append('narration must remain metadata, not follow the report')
     return problems
