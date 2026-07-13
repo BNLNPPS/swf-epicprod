@@ -62,12 +62,12 @@ V1 members formalize existing computations; no new credentialed sweeps:
 
 | Member | Source | Data block |
 |---|---|---|
-| `campaign_progress` | cached progress snapshot (`refresh_campaign_progress_snapshot` / `load_campaign_progress_snapshot`) | per-task completion percent, file counts, expected jobs and source; aggregates: task count, tasks with processing, complete count, total files/bytes |
+| `campaign_progress` | cached progress snapshot (`refresh_campaign_progress_snapshot` / `load_campaign_progress_snapshot`) | unique-DID file counts and bytes, managed-RSE placement completeness, source-observation range, task count, and tasks with processing. Configured/observed job counts are not treated as output targets. |
 | `rucio_arrivals` | recorded JLab file-arrival sweeps + `campaign.data['arrivals']` + the precomputed dataset-first-arrival timeline | newly created file DIDs in each sweep's actual interval; last-arrival age; separate lifetime dataset-first-arrival context |
 | `panda_health` | bounded PanDA summaries already used by progress + the `nfinalfailed`/`computed_finalfailurerate` family (`monitor_app/panda/api.py`), error rollup per `panda_error_summary` | job-state counts, final-failure rate, top error codes with counts, active/finished task counts |
 | `disposition_mix` | dataset `propagation` fields + history (PCS.md § Datasets) | counts by disposition; flips within window with comments |
 | `action_stream_activity` | AppLog `app_name='epicprod'` | actions by id and outcome in window; chain-step durations; catalog_sync freshness (age of last successful chain) |
-| `system_status` | cached platform status rows (the System page's source, in-process) | overall status and reason, per-state counts, staleness |
+| `system_status` | cached platform status rows (the System page's source, in-process) | current state plus complete window history, affected checks, recovery time, and unresolved non-OK observations |
 | `credential_status` | latest `credential_expiry_check` action record | days left per credential |
 
 ### Rollup service, verdict floor, surfaces
@@ -83,7 +83,7 @@ status document and computes the **mechanical verdict floor** —
 | `assessment_ffail_attention` | `0.10` | final-failure rate ≥ → at least `attention` |
 | `assessment_ffail_alarm` | `0.30` | final-failure rate ≥ → `alarm` |
 | `assessment_sync_stale_hours` | `26` | catalog_sync older → at least `attention` |
-| `assessment_arrivals_stall_days` | `2` | no arrivals while tasks incomplete → at least `attention` |
+| `assessment_arrivals_stall_days` | `2` | no arrivals while a validated production target is incomplete → at least `attention`; no stall verdict is inferred when target completion is unavailable |
 
 Credential warning/expiry reuses `CREDENTIAL_EXPIRY_WARN_DAYS`: warning →
 `attention`, expired/missing → `alarm`.
@@ -281,14 +281,14 @@ the assessor to calibrate its work and submit a complete report within ten
 minutes, leaving five minutes only as termination margin (operator directive
 2026-07-13).
 
-### Artifact schema (v3, `schema_version: 3`)
+### Artifact schema (v4, `schema_version: 4`)
 
 The operative schema is `spec.validate_artifact` in
 `swf_epicprod/assessment/spec.py`; the shape:
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "verdict": "ok | attention | alarm",
   "axes": {
     "arrivals":       {"status": "ok|attention|alarm", "note": "..."},
@@ -318,6 +318,12 @@ The operative schema is `spec.validate_artifact` in
             "bundle_id": "<hidden corun Page group id>"},
   "generation": {
     "consulted": [{"source": "<tool or document>", "contribution": "..."}],
+    "investigation": [
+      {"claim": "<claim supported by a live result>",
+       "source": "<MCP server and exact tool>",
+       "request": {"<argument>": "<exact value>"},
+       "result": {"<field>": "<exact supporting value>"}}
+    ],
     "problems": ["<tool errors, gaps, workarounds>"],
     "unavailable": ["<sources or members that could not be obtained>"]
   }
@@ -331,6 +337,12 @@ bundle, followed by the bounded judgment fields above. `narration` remains
 the single payload for thin delivery channels. Before registration the
 harness matches `bundle_id`, `evidence_computed_at`, and the narrative name
 and version to the submitted bundle.
+
+On acceptance the harness stores a second hidden, one-off Page in
+`epicprod.assessment.bundle`: the structured live-investigation records, exact
+model contract artifact, and corun runner transcript. The human report links
+that Page directly. It is not an assessment, is not used as later production
+evidence, and does not version or alter the original input bundle.
 
 ### Prompt templates
 

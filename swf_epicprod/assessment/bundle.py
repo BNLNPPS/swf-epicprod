@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from swf_epicprod.assessment import reporting
 
 TIMEOUT = 60
-BUNDLE_SCHEMA = 'epicprod-evidence-bundle/3'
+BUNDLE_SCHEMA = 'epicprod-evidence-bundle/4'
 NARRATIVE_SECTION = 'epicprod.narrative'
 
 
@@ -137,7 +137,8 @@ def _deltas(baseline, rollup, generated_at, comparison_days):
             ('outputs_total', 'campaign_progress', ('outputs_total',)),
             ('total_files', 'campaign_progress', ('total_files',)),
             ('total_bytes', 'campaign_progress', ('total_bytes',)),
-            ('outputs_complete', 'campaign_progress', ('outputs_complete',)),
+            ('outputs_placement_complete', 'campaign_progress',
+             ('outputs_placement_complete',)),
             ('panda_task_count', 'panda_health', ('panda_task_count',)),
             ('lifetime_jobs_finished', 'panda_health', ('jobs', 'nfinished')),
             ('lifetime_jobs_final_failed', 'panda_health',

@@ -40,6 +40,11 @@ CORUN_API_URL = (os.environ.get('CORUN_API_URL', '').rstrip('/')
 CORUN_API_TOKEN = os.environ.get('CORUN_API_TOKEN', '')
 CORUN_ASSESSMENT_SECTION = os.environ.get(
     'CORUN_ASSESSMENT_SECTION', spec.DEFAULT_SECTION)
+CORUN_ASSESSMENT_BUNDLE_SECTION = os.environ.get(
+    'CORUN_ASSESSMENT_BUNDLE_SECTION', spec.DEFAULT_BUNDLE_SECTION)
+CORUN_WEB_URL = os.environ.get('CORUN_WEB_URL', '').rstrip('/')
+if not CORUN_WEB_URL and CORUN_API_URL.endswith('/api/v1'):
+    CORUN_WEB_URL = CORUN_API_URL[:-len('/api/v1')]
 
 
 def _definition_for(kind):
@@ -71,6 +76,65 @@ def _post(url, payload):
     import urllib.error
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode() or '{}')
+
+
+def _persist_investigation_evidence(bundle, artifact, *, job_id,
+                                    page_group_id, model_output):
+    """Store one directly linked, hidden post-run evidence Page."""
+    run_log = {}
+    try:
+        run_log = _get(f'{CORUN_API_URL}/jobs/{job_id}/log/',
+                       token=CORUN_API_TOKEN)
+    except Exception as e:
+        artifact['generation']['problems'].append(
+            f'corun runner transcript fetch failed: {e}')
+    params = bundle.get('params') or {}
+    campaign = str(params.get('campaign') or '')
+    kind = str(params.get('kind') or '')
+    content = reporting.render_investigation_page(
+        bundle, artifact, job_id=job_id, model_output=model_output,
+        run_log=run_log)
+    page = _post(
+        f'{CORUN_API_URL}/pages/',
+        {
+            'section': CORUN_ASSESSMENT_BUNDLE_SECTION,
+            'title': (
+                f'ePIC {campaign} {kind} assessor investigation evidence — '
+                f'{bundle.get("generated_at") or ""}'),
+            'content': content,
+            'data': {
+                'ui_visible': False,
+                'artifact_type': 'campaign_assessment_investigation_evidence',
+                'source_system': 'epicprod',
+                'subject_type': 'campaign',
+                'subject_key': campaign,
+                'campaign': campaign,
+                'assessment_kind': kind,
+                'kind': kind,
+                'schema_version': spec.SCHEMA_VERSION,
+                'evidence_generated_at': bundle.get('generated_at') or '',
+                'input_bundle_id': str(
+                    (bundle.get('artifact') or {}).get('id') or ''),
+                'job_id': job_id,
+                'model_result_page_id': page_group_id,
+            },
+            'tags': [
+                'investigation-evidence', 'epicprod',
+                f'campaign:{campaign}', f'assessment:{kind}',
+            ],
+        })
+    evidence_id = str(page.get('group_id') or '')
+    if not evidence_id:
+        raise RuntimeError(
+            'corun investigation Page response contained no group id')
+    artifact_ref = {
+        'type': 'corun_page',
+        'id': evidence_id,
+        'url': f'{CORUN_WEB_URL}/page/{evidence_id}/',
+        'section': CORUN_ASSESSMENT_BUNDLE_SECTION,
+    }
+    bundle['investigation_artifact'] = artifact_ref
+    return artifact_ref
 
 
 
@@ -209,6 +273,15 @@ def main():
         artifact['verdict'] = verdict = floor_verdict
 
     narration = str(artifact.get('narration') or '').strip()
+    investigation_artifact = {}
+    try:
+        investigation_artifact = _persist_investigation_evidence(
+            bundle, artifact, job_id=args.job_id,
+            page_group_id=args.page_group_id, model_output=content)
+    except Exception as e:
+        log.warning('investigation evidence persistence failed: %s', e)
+        artifact['generation']['problems'].append(
+            f'investigation evidence persistence failed: {e}')
     report = reporting.render_report(bundle, artifact, kind)
     result = _register_ai_assessment_sync(
         subject_type='campaign', subject_key=campaign,
@@ -230,6 +303,7 @@ def main():
                   'elapsed_s': elapsed_s,
                   'bundle_generated_at': bundle.get('generated_at'),
                   'bundle': bundle.get('artifact'),
+                  'investigation': investigation_artifact,
                   'floor_enforced': floor_enforced}})
     if not result.get('success'):
         _log('assessment_enforce', outcome='error', subject_key=campaign,

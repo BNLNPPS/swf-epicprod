@@ -11,7 +11,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
-FACTS_SCHEMA = 'epicprod-report-facts/1'
+FACTS_SCHEMA = 'epicprod-report-facts/2'
 ET = ZoneInfo('America/New_York')
 
 
@@ -104,16 +104,26 @@ def build_fact_set(rollup, deltas):
 
     panda_window = _member(rollup, 'window_activity')
     if panda_window.get('available'):
+        panda_population = int(
+            panda_window.get('task_population')
+            or (panda_window.get('population') or {}).get('union')
+            or 0)
+        panda_scope = f'campaign PanDA population: {panda_population} tasks'
         task_counts = {
             'initiated': len(panda_window.get('tasks_initiated') or []),
             'completed': len(panda_window.get('tasks_completed') or []),
             'newly failed': len(panda_window.get('tasks_newly_failed') or []),
         }
         activity.append(_row(
-            'panda_task_activity', 'PanDA task transitions',
+            'panda_task_activity',
+            f'Campaign PanDA task transitions ({panda_population} tasks)',
             '; '.join(f'{_number(value)} {label}'
                       for label, value in task_counts.items()),
-            source='direct PanDA DB window query'))
+            comparison=(
+                'last campaign-task change '
+                + _timestamp(panda_window.get('last_task_modification_at'))
+                if panda_window.get('last_task_modification_at') else ''),
+            source=f'direct PanDA DB window query; {panda_scope}'))
         job_states = panda_window.get('jobs_by_status') or {}
         if job_states:
             jobs = '; '.join(
@@ -122,35 +132,48 @@ def build_fact_set(rollup, deltas):
         else:
             jobs = '0 jobs modified in the interval'
         activity.append(_row(
-            'panda_job_activity', 'PanDA job activity', jobs,
-            source='direct PanDA DB modification-time window'))
+            'panda_job_activity',
+            f'Campaign PanDA job activity ({panda_population} tasks)', jobs,
+            comparison=(
+                'last campaign-job change '
+                + _timestamp(panda_window.get('last_job_modification_at'))
+                if panda_window.get('last_job_modification_at') else ''),
+            source=f'direct PanDA DB modification-time window; {panda_scope}'))
         jobs_by_site = panda_window.get('jobs_by_site') or {}
         if jobs_by_site:
             activity.append(_row(
-                'panda_site_activity', 'PanDA activity by site',
+                'panda_site_activity',
+                f'Campaign PanDA activity by site ({panda_population} tasks)',
                 '; '.join(
                     f'{site}: {_number(sum(states.values()))} jobs'
                     for site, states in sorted(
                         jobs_by_site.items(),
                         key=lambda item: (-sum(item[1].values()), item[0]))),
-                source='direct PanDA DB modification-time window'))
+                source=f'direct PanDA DB modification-time window; {panda_scope}'))
     else:
         problems.append('PanDA window activity unavailable: '
                         + str(panda_window.get('reason') or 'unknown reason'))
 
     usage = _member(rollup, 'resource_usage')
     if usage.get('available'):
+        usage_population = int(
+            usage.get('task_population')
+            or (usage.get('population') or {}).get('union')
+            or 0)
         totals = usage.get('totals') or {}
         efficiency = totals.get('allocation_efficiency')
         activity.append(_row(
-            'panda_resource_usage', 'PanDA resource usage',
+            'panda_resource_usage',
+            f'Campaign PanDA resource usage ({usage_population} tasks)',
             f'{_number(totals.get("job_count"))} finished jobs; '
             f'{float(totals.get("allocated_core_hours") or 0):,.1f} allocated '
             'core-hours; '
             f'{float(totals.get("used_core_hours") or 0):,.1f} used core-hours'
             + (f'; {float(efficiency):.1%} allocation efficiency'
                if efficiency is not None else ''),
-            source='direct PanDA DB runtime and CPU accounting for the interval'))
+            source=(
+                'direct PanDA DB runtime and CPU accounting for the interval; '
+                f'campaign PanDA population: {usage_population} tasks')))
     else:
         problems.append('PanDA resource usage unavailable: '
                         + str(usage.get('reason') or 'unknown reason'))
@@ -184,7 +207,8 @@ def build_fact_set(rollup, deltas):
             if outside:
                 coverage += f'; {outside:g} measured hours outside the interval'
         activity.append(_row(
-            'jlab_rucio_file_arrivals', 'JLab Rucio file arrivals', value,
+            'jlab_rucio_file_arrivals',
+            'Campaign-attributed JLab Rucio file arrivals', value,
             comparison=coverage,
             source='file-DID created-after sweep'))
         locations = latest.get('locations') or {}
@@ -198,7 +222,8 @@ def build_fact_set(rollup, deltas):
                 source='campaign arrivals record'))
     else:
         activity.append(_row(
-            'jlab_rucio_file_arrivals', 'JLab Rucio file arrivals',
+            'jlab_rucio_file_arrivals',
+            'Campaign-attributed JLab Rucio file arrivals',
             'No file-arrival sweep ended in the interval',
             source='epicprod action stream'))
 
@@ -228,18 +253,47 @@ def build_fact_set(rollup, deltas):
     system = _member(rollup, 'system_status')
     history = system.get('window_history') or {}
     if history.get('observations'):
-        by_status = history.get('by_status') or {}
+        non_ok_by_check = history.get('non_ok_by_check') or {}
+        non_ok_count = int(history.get('non_ok_observations_count') or 0)
+        if non_ok_by_check:
+            detail = '; '.join(
+                f'{name} {_number(count)}'
+                for name, count in sorted(non_ok_by_check.items()))
+            value = (
+                f'{_number(history.get("observations"))} observations; '
+                f'{_number(non_ok_count)} non-OK ({detail})')
+        else:
+            value = (
+                f'{_number(history.get("observations"))} observations; '
+                'no non-OK observation')
+        recovery = ''
+        if non_ok_count:
+            recovery = (
+                f'{_number(history.get("recovered_count"))} recovered; '
+                f'{_number(history.get("unresolved_count"))} unresolved')
+            longest = history.get('longest_recovery_minutes')
+            if longest is not None:
+                recovery += f'; longest recovery {float(longest):.1f} min'
         activity.append(_row(
             'platform_window_history', 'Production platform observations',
-            f'{_number(history.get("observations"))} recorded observations; '
-            + '; '.join(
-                f'{status} {_number(count)}'
-                for status, count in sorted(by_status.items())),
+            value,
+            comparison=recovery,
             source='append-only system-status history for the interval'))
 
     progress = _member(rollup, 'campaign_progress')
     if progress.get('available'):
-        source_at = _timestamp(progress.get('source_generated_at'))
+        source_built_at = _timestamp(progress.get('source_generated_at'))
+        observed_start = _timestamp(progress.get('source_observed_start'))
+        observed_end = _timestamp(progress.get('source_observed_end'))
+        if observed_start and observed_end:
+            observed_at = (observed_start if observed_start == observed_end
+                           else f'{observed_start} to {observed_end}')
+        else:
+            observed_at = observed_start or observed_end or 'unknown time'
+        output_source = (
+            f'PCS output records observed {observed_at}; '
+            f'progress cache built {source_built_at}')
+        task_source = f'PCS task/processing view built {source_built_at}'
         current.extend([
             _row(
                 'pcs_campaign_tasks', 'PCS campaign tasks',
@@ -251,17 +305,21 @@ def build_fact_set(rollup, deltas):
                     ('with processing '
                      + _delta(deltas, 'tasks_with_processing'))
                     if _delta(deltas, 'tasks_with_processing') else ''),
-                source=f'cached PCS progress view as of {source_at}'),
+                source=task_source),
             _row(
-                'pcs_output_completion', 'PCS output completion',
-                f'{_number(progress.get("outputs_complete"))} of '
-                f'{_number(progress.get("outputs_total"))} unique outputs complete',
+                'pcs_output_placement', 'PCS Rucio placement',
+                f'{_number(progress.get("outputs_placement_complete"))} of '
+                f'{_number(progress.get("outputs_total"))} unique outputs '
+                'fully placed; '
+                f'{_number(progress.get("outputs_placement_incomplete"))} '
+                'incompletely placed',
                 comparison=_comparisons(
-                    ('complete ' + _delta(deltas, 'outputs_complete'))
-                    if _delta(deltas, 'outputs_complete') else '',
+                    ('fully placed '
+                     + _delta(deltas, 'outputs_placement_complete'))
+                    if _delta(deltas, 'outputs_placement_complete') else '',
                     ('total ' + _delta(deltas, 'outputs_total'))
                     if _delta(deltas, 'outputs_total') else ''),
-                source=f'cached PCS output view, unique DID, as of {source_at}'),
+                source=output_source),
             _row(
                 'pcs_output_volume', 'PCS recorded output volume',
                 f'{_number(progress.get("total_files"))} files; '
@@ -271,8 +329,14 @@ def build_fact_set(rollup, deltas):
                     if _delta(deltas, 'total_files') else '',
                     ('volume ' + _bytes_delta(deltas, 'total_bytes'))
                     if _bytes_delta(deltas, 'total_bytes') else ''),
-                source=f'cached PCS output view, unique DID, as of {source_at}'),
+                source=output_source),
         ])
+        if not progress.get('target_completion_available'):
+            notes.append(
+                'PCS records establish managed Rucio placement, not '
+                'production-target completion. '
+                + str(progress.get('target_completion_reason') or '').rstrip('.')
+                + '.')
         duplicates = int(progress.get('duplicate_output_records') or 0)
         if duplicates:
             patterns = progress.get('duplicate_status_patterns') or []
@@ -289,7 +353,7 @@ def build_fact_set(rollup, deltas):
                 f'{duplicates:,} PCS output DIDs occur in multiple '
                 + ('submitted-task and past-output rows. '
                    if expected_overlap else 'task rows. ')
-                + ('File counts, stages, and completion agree; '
+                + ('File counts, stages, and placement states agree; '
                    if agreement else 'Some repeated records disagree; ')
                 + 'totals use the most recently checked record for each DID.')
         for error in progress.get('source_errors') or []:
@@ -313,7 +377,9 @@ def build_fact_set(rollup, deltas):
                 'final failures '
                 + _delta(deltas, 'lifetime_jobs_final_failed'))
         current.append(_row(
-            'panda_lifetime_state', 'PanDA lifetime campaign state',
+            'panda_lifetime_state',
+            f'PanDA lifetime campaign state '
+            f'({_number(panda.get("panda_task_count"))} tasks)',
             f'{_number(panda.get("panda_task_count"))} tasks'
             + (f' ({status_text})' if status_text else '')
             + f'; {_number(jobs.get("nfinished"))} finished jobs; '
@@ -564,7 +630,7 @@ def _delta_table(deltas):
         ('task_count', 'PCS task rows', _number),
         ('tasks_with_processing', 'PCS tasks with processing', _number),
         ('outputs_total', 'Unique outputs', _number),
-        ('outputs_complete', 'Complete outputs', _number),
+        ('outputs_placement_complete', 'Fully placed outputs', _number),
         ('total_files', 'Recorded output files', _number),
         ('total_bytes', 'Recorded output volume', _bytes),
         ('panda_task_count', 'PanDA tasks', _number),
@@ -706,6 +772,65 @@ def render_bundle_page(bundle):
     return '\n\n'.join(part for part in sections if part).strip()
 
 
+def _raw_fence(value, language='text'):
+    """Fence unmodified run evidence without colliding with its contents."""
+    text = str(value or '')
+    longest = max((len(match.group(0)) for match in re.finditer(r'`+', text)),
+                  default=0)
+    fence = '`' * max(3, longest + 1)
+    return f'{fence}{language}\n{text}\n{fence}'
+
+
+def render_investigation_page(bundle, artifact, *, job_id, model_output,
+                              run_log):
+    """Render the post-run evidence used to audit model-derived findings."""
+    params = bundle.get('params') or {}
+    campaign = params.get('campaign') or ''
+    kind = str(params.get('kind') or '').capitalize()
+    bundle_artifact = bundle.get('artifact') or {}
+    bundle_url = bundle_artifact.get('url') or ''
+    generation = artifact.get('generation') or {}
+    records = generation.get('investigation') or []
+    sections = [
+        f'# ePIC Campaign {campaign} — {kind} Assessor Investigation Evidence',
+        f'**Job:** `{job_id}` · **Input bundle:** '
+        + (f'[evidence bundle]({bundle_url})' if bundle_url else 'unavailable'),
+        'This one-off Page preserves the assessor-supplied live-evidence '
+        'records, its exact contract artifact, and the runner transcript. '
+        'It is not an assessment and is not used as production evidence by '
+        'later reports.',
+        '### Live investigation records',
+    ]
+    if records:
+        for index, record in enumerate(records, 1):
+            sections.extend([
+                f'#### {index}. {_escape(record.get("claim"))}',
+                f'**Source:** `{_escape(record.get("source"))}`',
+                '##### Request',
+                _structured_markdown(record.get('request') or {}),
+                '##### Supporting result fields',
+                _structured_markdown(record.get('result') or {}),
+            ])
+    else:
+        sections.append(
+            'No live tool result was used in a concrete model-derived claim.')
+    sections.extend([
+        '### Exact model artifact',
+        _raw_fence(model_output, 'markdown'),
+        '### Runner execution transcript',
+        (_raw_fence((run_log or {}).get('stderr'), 'text')
+         if (run_log or {}).get('stderr') else
+         'No runner execution transcript was returned by corun.'),
+    ])
+    thinking = (run_log or {}).get('thinking')
+    if thinking:
+        sections.extend(['### Runner thinking trace', _raw_fence(thinking, 'text')])
+    error = (run_log or {}).get('error')
+    if error:
+        sections.extend(['### Runner error', _raw_fence(error, 'text')])
+    return '\n\n'.join(part for part in sections if part).strip()
+
+
 def _generation(bundle, artifact):
     generation = artifact.get('generation') or {}
     consulted = generation.get('consulted') or []
@@ -715,12 +840,20 @@ def _generation(bundle, artifact):
         f'- Production facts and comparisons were rendered procedurally from '
         f'[{_escape(facts_schema)}]({bundle_url}#production-facts); '
         'the assessment, issues, '
-        'software findings, and outlook came from the validated model artifact.'
+        'software findings, and outlook came from the contract-validated '
+        'model artifact.'
         if bundle_url else
         '- Production facts and comparisons were rendered procedurally from '
-        'the evidence bundle; judgment came from the validated model artifact.'
+        'the evidence bundle; judgment came from the contract-validated '
+        'model artifact.'
     )
     blocks = [f'**Assembly**\n\n{assembly}']
+    investigation = bundle.get('investigation_artifact') or {}
+    if investigation.get('url'):
+        blocks.append(
+            '**Investigation evidence**\n\n'
+            f'- [Live evidence records, exact model artifact, and runner '
+            f'transcript]({investigation["url"]}).')
     if bundle_url:
         blocks.append(
             '**Bundle artifacts**\n\n'
@@ -772,6 +905,8 @@ def render_report(bundle, artifact, kind):
     metadata = (f'**Verdict:** {verdict} · **Evidence window:** '
                 f'{facts.get("evidence_window", {}).get("display_et") or "unknown"}')
     bundle_url = ((bundle.get('artifact') or {}).get('url') or '')
+    investigation_url = (
+        (bundle.get('investigation_artifact') or {}).get('url') or '')
     if bundle_url:
         metadata += f' · [Evidence bundle]({bundle_url})'
         artifact_nav = (
@@ -781,6 +916,9 @@ def render_report(bundle, artifact, kind):
             f'[general context]({bundle_url}#general-narrative) · '
             f'[source manifest]({bundle_url}#acquisition-manifest) · '
             f'[analytics members]({bundle_url}#analytics-evidence)')
+        if investigation_url:
+            artifact_nav += (
+                f' · [investigation evidence]({investigation_url})')
     else:
         artifact_nav = ''
     deltas = bundle.get('deltas') or {}

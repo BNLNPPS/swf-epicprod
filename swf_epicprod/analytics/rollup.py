@@ -113,10 +113,13 @@ def _floor(blocks):
     arrivals = blocks['rucio_arrivals']['data']
     progress = blocks['campaign_progress']['data']
     age_hours = arrivals.get('last_arrival_age_hours')
-    incomplete = (progress.get('available')
-                  and progress.get('outputs_complete', 0)
-                  < progress.get('outputs_total', 0))
-    if age_hours is not None and incomplete and age_hours > stall_days * 24:
+    target_incomplete = (
+        progress.get('available')
+        and progress.get('target_completion_available') is True
+        and progress.get('outputs_target_complete', 0)
+        < progress.get('outputs_total', 0))
+    if (age_hours is not None and target_incomplete
+            and age_hours > stall_days * 24):
         verdict = _worst(verdict, 'attention')
         reasons.append(f'no arrivals for {age_hours / 24:.1f}d with '
                        f'incomplete outputs')

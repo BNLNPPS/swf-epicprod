@@ -82,25 +82,27 @@ def campaign_progress(campaign, window_start, window_end):
     total_files = 0
     total_bytes = 0
     outputs_total = 0
-    outputs_complete = 0
-    incomplete = []
+    outputs_placement_complete = 0
+    placement_incomplete = []
+    observed_at = []
     for output in unique_outputs.values():
         outputs_total += 1
         total_files += int(output.get('file_count') or 0)
         total_bytes += int(output.get('bytes') or 0)
-        pct = output.get('completion_percent')
-        if output.get('complete') and (pct is None or pct >= 100):
-            outputs_complete += 1
+        checked_at = str(output.get('checked_at') or '')
+        if checked_at:
+            observed_at.append(checked_at)
+        if output.get('complete'):
+            outputs_placement_complete += 1
         else:
-            incomplete.append({
+            placement_incomplete.append({
                 'task_name': output.get('_task_name') or '',
                 'did': output.get('did') or '',
-                'completion_percent': pct,
                 'file_count': int(output.get('file_count') or 0),
-                'expected_jobs': output.get('expected_jobs'),
+                'stage': output.get('stage') or '',
+                'checked_at': checked_at,
             })
-    incomplete.sort(key=lambda o: (o['completion_percent'] is None,
-                                   o['completion_percent'] or 0))
+    placement_incomplete.sort(key=lambda o: o['did'])
     duplicate_groups = {
         did: records for did, records in did_records.items()
         if len(records) > 1
@@ -163,7 +165,17 @@ def campaign_progress(campaign, window_start, window_end):
         'task_count': snap.get('task_count') or len(rows),
         'tasks_with_processing': sum(1 for r in rows if r.get('has_processing')),
         'outputs_total': outputs_total,
-        'outputs_complete': outputs_complete,
+        'outputs_placement_complete': outputs_placement_complete,
+        'outputs_placement_incomplete': (
+            outputs_total - outputs_placement_complete),
+        'placement_definition': (
+            'the PCS output record reports every managed RSE placement complete'),
+        'target_completion_available': False,
+        'target_completion_reason': (
+            'PCS output rows do not carry a validated expected-output target; '
+            'configured or observed PanDA job counts are not output-file targets'),
+        'source_observed_start': min(observed_at) if observed_at else '',
+        'source_observed_end': max(observed_at) if observed_at else '',
         'total_files': total_files,
         'total_bytes': total_bytes,
         'output_identity': 'unique DID; outputs without a DID remain distinct',
@@ -175,7 +187,7 @@ def campaign_progress(campaign, window_start, window_end):
         ],
         'duplicate_consistency': consistency,
         'duplicate_dids': duplicate_details,
-        'least_complete': incomplete,
+        'placement_incomplete_outputs': placement_incomplete,
         'source_errors': snap.get('errors') or [],
     })
 
@@ -256,6 +268,7 @@ def panda_health(campaign, window_start, window_end):
         'available': True,
         'panda_task_count': len(seen),
         'population': population,
+        'task_ids': task_ids,
         'task_statuses': statuses,
         'jobs': sums,
         'final_failure_rate': rate,
@@ -506,6 +519,7 @@ def window_activity(campaign, window_start, window_end):
         with connections['panda'].cursor() as cursor:
             tasks = []
             jobs_by = {}
+            job_last_modified = []
             if task_ids:
                 marks = ','.join(['%s'] * len(task_ids))
                 cursor.execute(
@@ -526,6 +540,13 @@ def window_activity(campaign, window_start, window_end):
                     for site, status, n in cursor.fetchall():
                         entry = jobs_by.setdefault(site or 'unknown', {})
                         entry[status] = entry.get(status, 0) + int(n)
+                    cursor.execute(
+                        f'SELECT MAX("modificationtime") '
+                        f'FROM "{PANDA_SCHEMA}"."{table}" '
+                        f'WHERE "jeditaskid" IN ({marks})', task_ids)
+                    latest = cursor.fetchone()[0]
+                    if latest:
+                        job_last_modified.append(latest)
     except Exception as e:
         return _block('window_activity', window_start, window_end,
                       _unavailable(f'PanDA window query failed: {e}'))
@@ -551,9 +572,23 @@ def window_activity(campaign, window_start, window_end):
     for states in jobs_by.values():
         for status, count in states.items():
             jobs_by_status[status] = jobs_by_status.get(status, 0) + count
+    task_modified = [row[4] for row in tasks if row[4]]
+
+    def _utc(value):
+        if value is None:
+            return ''
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=_dt.timezone.utc)
+        return value.astimezone(_dt.timezone.utc).isoformat()
+
     return _block('window_activity', window_start, window_end, {
         'available': True,
         'population': population,
+        'task_ids': task_ids,
+        'task_population': len(task_ids),
+        'last_task_modification_at': _utc(max(task_modified)) if task_modified else '',
+        'last_job_modification_at': (
+            _utc(max(job_last_modified)) if job_last_modified else ''),
         'jobs_by_site': jobs_by,
         'jobs_by_status': jobs_by_status,
         'window_jobs_finished': window_finished,
@@ -578,6 +613,8 @@ def resource_usage(campaign, window_start, window_end):
             return _block('resource_usage', window_start, window_end, {
                 'available': True,
                 'population': population,
+                'task_ids': task_ids,
+                'task_population': 0,
                 'totals': {
                     'job_count': 0,
                     'allocated_core_hours': 0.0,
@@ -664,6 +701,8 @@ def resource_usage(campaign, window_start, window_end):
     return _block('resource_usage', window_start, window_end, {
         'available': True,
         'population': population,
+        'task_ids': task_ids,
+        'task_population': len(task_ids),
         'measurement': (
             'finished jobs modified in the reporting window; allocated core '
             'hours are reserved cores times wall time; used core hours are CPU time'),
@@ -678,7 +717,7 @@ def system_status(campaign, window_start, window_end):
     Read in-process (the cache rows the ops agent refreshes), so the
     assessment bundle needs no separately authenticated fetch.
     """
-    from monitor_app.models import SystemStatusHistory
+    from monitor_app.models import SystemStatus, SystemStatusHistory
     from monitor_app.viewdir.system_status import status_summary
 
     summary = status_summary()
@@ -702,6 +741,40 @@ def system_status(campaign, window_start, window_end):
                 'summary': row.get('summary') or '',
                 'checked_at': row['checked_at'].isoformat(),
             })
+    current_by_name = {
+        row['name']: row for row in SystemStatus.objects.values(
+            'name', 'status', 'summary', 'checked_at')
+    }
+    for incident in non_ok:
+        started = _dt.datetime.fromisoformat(incident['checked_at'])
+        recovery = next((
+            row for row in history
+            if row['name'] == incident['name']
+            and row['checked_at'] > started
+            and str(row.get('status') or '') in ('ok', 'healthy')
+        ), None)
+        if recovery is None:
+            current = current_by_name.get(incident['name']) or {}
+            current_at = current.get('checked_at')
+            if (current_at and started < current_at <= window_end
+                    and str(current.get('status') or '') in ('ok', 'healthy')):
+                recovery = current
+        recovered_at = recovery.get('checked_at') if recovery else None
+        incident['recovered'] = recovered_at is not None
+        incident['recovered_at'] = (
+            recovered_at.isoformat() if recovered_at else '')
+        incident['recovery_minutes'] = (
+            round((recovered_at - started).total_seconds() / 60, 3)
+            if recovered_at else None)
+    non_ok_by_check = {}
+    for incident in non_ok:
+        key = f'{incident["name"]} {incident["status"]}'
+        non_ok_by_check[key] = non_ok_by_check.get(key, 0) + 1
+    recovered = sum(1 for incident in non_ok if incident['recovered'])
+    recovery_times = [
+        incident['recovery_minutes'] for incident in non_ok
+        if incident['recovery_minutes'] is not None
+    ]
     return _block('system_status', window_start, window_end, {
         'available': bool(summary.get('total')),
         'overall_status': summary.get('overall_status', 'unknown'),
@@ -715,6 +788,12 @@ def system_status(campaign, window_start, window_end):
                 'or at least every six hours'),
             'observations': len(history),
             'by_status': history_by_status,
+            'non_ok_observations_count': len(non_ok),
+            'non_ok_by_check': non_ok_by_check,
+            'recovered_count': recovered,
+            'unresolved_count': len(non_ok) - recovered,
+            'longest_recovery_minutes': (
+                max(recovery_times) if recovery_times else None),
             'non_ok_observations': non_ok,
         },
     })

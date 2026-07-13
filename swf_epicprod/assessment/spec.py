@@ -11,7 +11,7 @@ describes it.
 import json
 import re
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 VERDICTS = ('ok', 'attention', 'alarm')
 AXES = ('arrivals', 'processing', 'failures', 'dispositions', 'infrastructure')
 
@@ -141,6 +141,11 @@ EVIDENCE AND INVESTIGATION DISCIPLINE:
    the current state: one day for a daily, seven days for a weekly. The facts
    block carries the selected snapshot, its distance from the requested
    baseline, and the actual elapsed comparison interval.
+8. Every PanDA null must name its population. A zero over the campaign's
+   attributed tasks means only that those tasks were quiet; it never means
+   PanDA globally was idle. Do not write "no PanDA work ran", "PanDA was
+   idle", or equivalent global language unless a separate global query
+   establishes that claim.
 
 If the submitted prompt contains a repair object, the prior output failed the
 harness contract. Return a complete replacement artifact correcting every
@@ -165,10 +170,12 @@ PROFESSIONAL PRESENTATION:
   failed, or recovered."
 
   It spends 51 words repeating known framing and expanding a simple null.
-  Convey the same information in 17 words:
+  Compress it without losing the campaign scope:
 
   "JLab Rucio registered 599 RECO files across three 10×275 DIS NC Q²
-  datasets; no PanDA tasks ran."
+  datasets; none of the campaign-attributed PanDA tasks ran."
+- A source tag proves that source tag exists. Do not call that alone release
+  readiness, container availability, deployment, or production use.
 
 The ``generation`` object is an audit of this report's creation. State the
 context and bundle material consulted; every MCP server/tool actually used and
@@ -179,6 +186,13 @@ object, and do not inventory standing absent metadata unless it materially
 limited a conclusion in this report. If no live drill-down was warranted, say
 why. Production-side code renders this as the final ``### Generation report``
 section and links the full stored bundle.
+
+For every live tool result used in a concrete report claim, add one
+``generation.investigation`` record. Copy the tool name and request arguments,
+then preserve the exact result fields supporting the claim. Do not substitute
+a prose recollection. Production stores these records with the raw model
+artifact and the runner's execution transcript as a separate, directly linked
+investigation-evidence Page.
 
 """
 
@@ -226,6 +240,12 @@ deterministic fact tables to produce the human report.
        "consulted": [
          {{"source": "<tool or document>",
            "contribution": "<what it established>"}}
+       ],
+       "investigation": [
+         {{"claim": "<concrete claim supported by a live tool result>",
+           "source": "<MCP server and exact tool name>",
+           "request": {{"<argument>": "<exact value>"}},
+           "result": {{"<field>": "<exact supporting value>"}}}}
        ],
        "problems": ["<errors, conflicts, retries, workarounds>"],
        "unavailable": ["<what could not be obtained>"]
@@ -298,6 +318,12 @@ summaries. Reconcile repeated observations, distinguish transient incidents
 from standing limitations, and explain how execution, data management,
 software, sites, and campaign intent fit together. A quiet week remains a
 complete report; it does not require artificial novelty.
+
+The platform-history fact records non-OK observations, affected checks,
+recovery times, and unresolved observations. Account for that history in the
+weekly interpretation. A recovered transient is not a current defect, but a
+recurring transient pattern must not disappear merely because every check is
+green at report time.
 
 Use changed production as the starting point for drill-down. When the bundle
 identifies datasets or locations with arrivals, transitions, failures, or
@@ -467,10 +493,12 @@ def validate_artifact(artifact):
 
     generation = _req('generation', dict)
     if generation is not None:
-        generation_keys = {'consulted', 'problems', 'unavailable'}
+        generation_keys = {
+            'consulted', 'investigation', 'problems', 'unavailable'}
         if set(generation) != generation_keys:
             problems.append(
-                'generation keys must be exactly consulted, problems, unavailable')
+                'generation keys must be exactly consulted, investigation, '
+                'problems, unavailable')
         consulted = generation.get('consulted')
         if not isinstance(consulted, list) or not consulted:
             problems.append('generation.consulted must be a non-empty list')
@@ -482,6 +510,20 @@ def validate_artifact(artifact):
                         or not str(item.get('contribution') or '').strip()):
                     problems.append(
                         f'generation.consulted[{index}] is incomplete')
+        investigation = generation.get('investigation')
+        if not isinstance(investigation, list):
+            problems.append('generation.investigation must be a list')
+        else:
+            evidence_keys = {'claim', 'source', 'request', 'result'}
+            for index, item in enumerate(investigation):
+                if (not isinstance(item, dict)
+                        or set(item) != evidence_keys
+                        or not str(item.get('claim') or '').strip()
+                        or not str(item.get('source') or '').strip()
+                        or not isinstance(item.get('request'), dict)
+                        or not isinstance(item.get('result'), dict)):
+                    problems.append(
+                        f'generation.investigation[{index}] is incomplete')
         for key in ('problems', 'unavailable'):
             if not isinstance(generation.get(key), list):
                 problems.append(f'generation.{key} must be a list')

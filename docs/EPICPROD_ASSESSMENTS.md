@@ -109,6 +109,10 @@ Each assessment is one artifact with a deterministic shape, carrying a
   an expert reader are rendered directly from the bundle; model judgment is
   inserted only in its named sections. Bulky raw blocks remain behind the
   bundle link.
+- **Investigation evidence** — a separate hidden, one-off corun Page produced
+  after the run, containing the model's structured live-tool evidence records,
+  exact contract artifact, and runner transcript. The human report links it;
+  it is never registered as an assessment or reused as production evidence.
 - **Narration** — a self-contained summary of a few sentences, written
   to stand alone without the charts: campaign, date, verdict, and the
   one or two things that matter. This single field is the payload for

@@ -139,9 +139,9 @@ def main():
         spec.DEFAULT_BUNDLE_SECTION,
         title='epicprod campaign assessment evidence bundles',
         description=(
-            'Full input evidence bundles for campaign assessment runs. '
-            'Hidden from normal corun presentation; linked explicitly from '
-            'the corresponding human report.'),
+            'Full input bundles and post-run investigation evidence for '
+            'campaign assessment runs. Hidden from normal corun presentation; '
+            'linked explicitly from the corresponding human report.'),
         ui_visible=False,
     )
     print('\nEnvironment for the trigger and enforcement:')
