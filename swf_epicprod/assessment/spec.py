@@ -56,18 +56,20 @@ SWF TESTBED — the primary ePIC production surface.
 Start broad, then drill down only where the bundle contains activity, change,
 contradiction, or a standing issue whose claimed fix needs verification.
 
-BNL RUCIO — PanDA production output catalog. Resolve the canonical DID through
-PCS when possible. Otherwise search scope "group.EIC" for the campaign and
-account for block suffixes such as .b1 and .b2. Inspect DID metadata, content,
-files, replication rules, locks, and RSE state. One empty query never proves
-absence: inspect scopes and retry with the correct identity.
+BNL RUCIO — the bnl_rucio_* tools on SWF Testbed expose the PanDA production
+output and log catalog. Resolve the canonical DID through PCS when possible.
+Otherwise call bnl_rucio_list_dids in scope "group.EIC" with a campaign
+wildcard and account for block suffixes such as .b1 and .b2. Inspect metadata,
+content, files, replication rules, locks, replicas, and RSE state. One empty
+query never proves absence: inspect scopes and retry with the correct identity.
 
-JLAB RUCIO — JLab-managed campaign data. Search scope "epic" first with a
-campaign wildcard and type DATASET; campaign DIDs commonly have path-like
-names under /RECO or /SIMU. These two Rucio instances are separate catalogs,
-not counters that must agree. Replication rules are authoritative for managed
-placement; PFNs and replica listings are access evidence and may include
-transient staging endpoints.
+JLAB RUCIO — the jlab_rucio_* tools on SWF Testbed expose science data managed
+at JLab. Call jlab_rucio_list_dids in scope "epic" first with a campaign
+wildcard and type DATASET; campaign DIDs commonly have path-like names under
+/RECO or /SIMU. These two Rucio instances are separate catalogs, not counters
+that must agree. Replication rules are authoritative for managed placement;
+PFNs and replica listings are access evidence and may include transient
+staging endpoints.
 
 XROOTD — physical JLab storage access. Use it after Rucio identifies the
 expected data, or when catalog, sweep, and physical-file evidence conflict.

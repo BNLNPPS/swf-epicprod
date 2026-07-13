@@ -148,8 +148,11 @@ grows with it.
 senior ePIC production and operations expert writing for expert peers. Before
 assessment it loads the user profile, general/SWF worker guidance, and
 documentation-writing guidance from TJAI. Its read-only investigation surface
-is SWF Testbed (PanDA, PCS, epicprod), BNL Rucio, JLab Rucio, XRootD, LXR, and
-a separately fenced GitHub service exposing its complete read-only surface.
+is SWF Testbed (PanDA, PCS, epicprod, and the locally credentialed JLab and BNL
+Rucio catalogs), XRootD, LXR, and a separately fenced GitHub service exposing
+its complete read-only surface. Rucio credentials and the BNL proxy remain on
+swf-testbed; corun consumes the prefixed `jlab_rucio_*` and `bnl_rucio_*`
+tools through the authenticated SWF MCP service.
 The prompt describes the knowledge held by each service,
 the evidence layer it represents, and the investigation routes connecting
 them. The bundle is the starting record; the model decides which material
@@ -248,10 +251,10 @@ with no human hands on corun configuration:
 4. **Run-outcome completeness**: `GET /api/v1/jobs/<id>/` exposing the
    run's error and stderr/output (the worker already captures them), or a
    `/jobs/<id>/log/` endpoint — failures must be machine-readable.
-5. **MCP registry**: register TJAI, SWF Testbed, BNL Rucio, JLab Rucio,
-   XRootD, LXR, and a separately fenced read-only GitHub service in the
-   worker's `MCP_SERVERS` registry. BNL uses a renewable worker-side service
-   proxy; no personal proxy path is embedded in the definition.
+5. **MCP registry**: register TJAI, SWF Testbed, XRootD, LXR, and a separately
+   fenced read-only GitHub service in the worker's `MCP_SERVERS` registry.
+   SWF Testbed carries both Rucio catalogs; no Rucio credential or proxy is
+   installed on the corun worker.
 6. **A token** for the epicprod service account.
 
 Everything else epicprod does itself over the existing surface: creates
@@ -365,5 +368,5 @@ after the corresponding report form passes human review.
 
 The decision points held by the operator: floor thresholds and template
 wording after the dry run (step 3), and the go for the crons (step 4).
-Model/effort is Codex 5.6 (`gpt-5.6-sol`) at `xhigh` throughout tuning and
+Model/effort is Codex Sol (`gpt-5.6-sol`) at `xhigh` throughout tuning and
 production.

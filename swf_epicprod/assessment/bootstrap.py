@@ -90,8 +90,6 @@ def ensure_definition(name, sp_group_id, model, effort, timeout_s):
                    'mcp_tools': [
                        'tjai',
                        'swf-testbed',
-                       'rucio-jlab',
-                       'rucio-bnl',
                        'xrootd',
                        'lxr',
                        'github-readonly',
