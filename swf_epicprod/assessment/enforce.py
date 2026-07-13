@@ -125,7 +125,6 @@ def main():
     campaign = params.get('campaign') or 'unknown'
     kind = params.get('kind') or 'daily'
     slot = submitted.get('slot') or ''
-    evaluation = bool(submitted.get('evaluation'))
     floor = (((bundle.get('rollup') or {}).get('floor')) or {})
     floor_verdict = floor.get('verdict') or 'ok'
 
@@ -164,8 +163,7 @@ def main():
             }
             retry_prompt = _post(
                 f'{CORUN_API_URL}/prompts/',
-                {'section': (spec.DEFAULT_EVAL_SECTION if evaluation
-                             else CORUN_ASSESSMENT_SECTION),
+                {'section': CORUN_ASSESSMENT_SECTION,
                  'content': json.dumps(repair_submission),
                  'definition_id': _definition_for(kind)})
             retry_prompt_group_id = str(
@@ -178,16 +176,6 @@ def main():
                  retry_prompt_group_id=retry_prompt_group_id,
                  retry_job_id=str(job.get('id') or ''),
                  reason='; '.join(problems)[:300])
-            return 0
-        if evaluation:
-            _log('assessment_evaluation', outcome='error',
-                 subject_key=campaign, sublevel='high', slot=slot,
-                 job_id=args.job_id,
-                 corun_page_group_id=args.page_group_id,
-                 reason='candidate failed validation: '
-                        + '; '.join(problems)[:250])
-            print(f'{campaign} {slot}: evaluation candidate failed: '
-                  + '; '.join(problems))
             return 0
         # Second failure: quarantine — raw output retained, excluded from
         # later context (priors skip quarantined), verdict pinned to floor.
@@ -220,16 +208,6 @@ def main():
         artifact['verdict'] = verdict = floor_verdict
 
     narration = str(artifact.get('narration') or '').strip()
-    if evaluation:
-        _log('assessment_evaluation', outcome='ok', subject_key=campaign,
-             slot=slot, verdict=verdict, floor_enforced=floor_enforced,
-             degraded=bool(bundle.get('degraded')),
-             corun_page_group_id=args.page_group_id,
-             job_id=args.job_id)
-        print(f'{campaign} {slot}: evaluation candidate validated '
-              f'verdict={verdict} page={args.page_group_id}')
-        return 0
-
     result = _register_ai_assessment_sync(
         subject_type='campaign', subject_key=campaign,
         # Narration is structured metadata for compact UI consumers. The

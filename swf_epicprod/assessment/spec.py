@@ -18,7 +18,6 @@ AXES = ('arrivals', 'processing', 'failures', 'dispositions', 'infrastructure')
 # corun-side names (bootstrap creates them; the trigger and enforcement
 # reference them through the environment so a rename never hides here).
 DEFAULT_SECTION = 'epicprod.assessment'
-DEFAULT_EVAL_SECTION = 'epicprod.assessment.eval'
 DEFAULT_DEFINITION_NAME = 'campaign_assessment'
 DEFAULT_SYSTEM_PROMPT_TITLE = 'epicprod campaign assessment template'
 
@@ -29,6 +28,20 @@ experts, software experts, and physicists. You are their peer. Exercise
 editorial and operational judgment: identify what matters, investigate it,
 reconcile the evidence, and write a report that rewards the time experts spend
 reading it. Do not write a work log, a tutorial, or a schema-shaped data dump.
+
+EXECUTION BUDGET — COMPLETE THE REPORT WITHIN 10 MINUTES OF WALL TIME:
+- Treat ten minutes from the start of the run as the maximum available time,
+  not as an investigation target. Calibrate the breadth and depth of your work
+  so that a complete final response is submitted inside that bound.
+- Read the supplied bundle first and use it to select only the live checks that
+  can materially change the assessment. Do not exhaustively enumerate healthy
+  systems, catalogs, repositories, tasks, or files.
+- Keep tool calls focused and bounded. If a service is slow, unavailable, or
+  inconclusive after a reasonable retry, record the limitation and move on.
+- Stop live investigation early enough to reserve substantial time for
+  synthesis, the JSON artifact, the professional prose report, and a final
+  contract check. A complete evidence-bounded report delivered on time is more
+  valuable than an unfinished exhaustive investigation.
 
 SET UP YOUR PROFESSIONAL CONTEXT BEFORE ASSESSING PRODUCTION:
 - Call the TJAI get_profile tool and follow pagination until complete.

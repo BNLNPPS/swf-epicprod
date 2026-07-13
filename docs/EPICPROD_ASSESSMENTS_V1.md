@@ -264,9 +264,10 @@ already deployed); receives completion through the existing subscription →
 swf-monitor callback → Mattermost relay, unchanged; reads result pages,
 run records, and prompt history over REST. Model settings epicprod sets in
 the definition it creates: Codex Sol (`gpt-5.6-sol`) at `xhigh` reasoning
-effort; timeout 10,800 seconds (three hours), generous against the observed
-runtime of roughly 3.5 minutes while still bounding a pathological run
-(operator directive 2026-07-12).
+effort; a 900-second (15-minute) worker timeout. The system prompt requires
+the assessor to calibrate its work and submit a complete report within ten
+minutes, leaving five minutes only as termination margin (operator directive
+2026-07-13).
 
 ### Artifact schema (v2, `schema_version: 2`)
 
@@ -341,12 +342,11 @@ copies. Their stable professional contract is:
 
 ## Sequencing
 
-During tuning, scheduled daily and weekly crons remain disabled. Candidate runs
-use `assessment.trigger --kind daily|weekly --evaluation`; their prompts and
-result pages live in `epicprod.assessment.eval`. They pass through the same
-schema, prose, floor, and repair enforcement, but are never registered on the
-campaign and never enter production prior context. Scheduling is restored only
-after the corresponding report form passes human review.
+During tuning, scheduled daily and weekly crons remain disabled. Manual runs
+use the normal assessment path and register in the official AI assessment
+series. Schema v2 prevents the rejected v1 reports from entering their prior
+context. Scheduling is restored only after the corresponding report form
+passes human review.
 
 1. **Production side, first pass** — analytics members, rollup + floor, MCP
    tool + REST, `campaign` subject, trigger script. Two deploy cycles
@@ -363,8 +363,8 @@ after the corresponding report form passes human review.
    inspect the artifact, tune the floor thresholds and template.
 4. **Scheduling gated on acceptance** — both cron lines were disabled
    2026-07-12 after the first outputs failed review. Restore daily only after
-   an evaluation candidate is accepted; restore weekly only after the daily
-   form is stable and a weekly candidate is accepted.
+   an accepted daily report; restore weekly only after the daily form is
+   stable and a weekly report is accepted.
 
 The decision points held by the operator: floor thresholds and template
 wording after the dry run (step 3), and the go for the crons (step 4).

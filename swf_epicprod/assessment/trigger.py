@@ -6,11 +6,6 @@ Stdlib only; runs from cron under the deployed venv python:
     45 3 * * *  python -m swf_epicprod.assessment.trigger --kind daily
      0 6 * * 1  python -m swf_epicprod.assessment.trigger --kind weekly
 
-Candidate tuning run (same definition and enforcement, no production
-registration):
-
-    python -m swf_epicprod.assessment.trigger --kind daily --evaluation
-
 Per target campaign: assemble the evidence bundle deterministically,
 submit it as the run's prompt content (POST /prompts/), then the job
 (POST /jobs/), and record an assessment_triggered action either way —
@@ -101,8 +96,7 @@ def log_action(action, *, outcome, subject_key='', reason='', **counts):
         print(f'WARNING: action log post failed: {e}', file=sys.stderr)
 
 
-def submit_run(campaign, kind, window_days, *, dry_run=False,
-               evaluation=False):
+def submit_run(campaign, kind, window_days, *, dry_run=False):
     """Assemble the bundle and create the corun run. Returns job id ''
     on dry runs; raises on submission failure."""
     evidence = bundle_mod.assemble(
@@ -115,7 +109,6 @@ def submit_run(campaign, kind, window_days, *, dry_run=False,
     content = json.dumps({
         'slot': spec.slot(campaign, kind, date),
         'bundle': evidence,
-        'evaluation': bool(evaluation),
     })
     if dry_run:
         print(f'{campaign}: dry run — bundle degraded={evidence["degraded"]}, '
@@ -125,9 +118,7 @@ def submit_run(campaign, kind, window_days, *, dry_run=False,
     definition = _definition_for(kind)
     prompt = _request(
         f'{CORUN_API_URL}/prompts/',
-        payload={'section': (spec.DEFAULT_EVAL_SECTION if evaluation
-                             else CORUN_ASSESSMENT_SECTION),
-                 'content': content,
+        payload={'section': CORUN_ASSESSMENT_SECTION, 'content': content,
                  'definition_id': definition},
         token=CORUN_API_TOKEN)
     job = _request(
@@ -148,10 +139,6 @@ def main():
                         help='override the target campaign(s)')
     parser.add_argument('--dry-run', action='store_true',
                         help='assemble and report the bundle; no submission')
-    parser.add_argument(
-        '--evaluation', action='store_true',
-        help=('generate a candidate in the evaluation section; do not '
-              'register it on the production campaign'))
     args = parser.parse_args()
     window_days = args.window_days or (7 if args.kind == 'weekly' else 1)
 
@@ -188,13 +175,10 @@ def main():
     for campaign in targets:
         try:
             job_id, evidence = submit_run(campaign, args.kind, window_days,
-                                          dry_run=args.dry_run,
-                                          evaluation=args.evaluation)
+                                          dry_run=args.dry_run)
             if args.dry_run:
                 continue
-            print(f'{campaign}: {args.kind} '
-                  f'{"evaluation " if args.evaluation else "assessment "}'
-                  f'job {job_id} created'
+            print(f'{campaign}: {args.kind} assessment job {job_id} created'
                   f'{" (degraded evidence)" if evidence["degraded"] else ""}')
             log_action('assessment_triggered', outcome='ok',
                        subject_key=campaign, kind=args.kind,
