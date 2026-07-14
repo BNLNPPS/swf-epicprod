@@ -1,0 +1,33 @@
+{# Master production dashboard panels (EPICPROD_DASHBOARD.md v1) — included by the production home page's Ops tab. #}
+<style>
+  .pcs-dashboard .card-header { background: #f6f8fb; }
+  .pcs-dashboard .ai-fill .list-group-item { background: transparent; }
+  .pcs-dashboard .list-group-item { padding-top: .3rem; padding-bottom: .3rem; }
+  .pcs-dashboard .dash-when { color: #5d6b7a; white-space: nowrap; margin-right: .5rem; }
+  .pcs-dashboard .dash-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+<div class="row row-cols-1 row-cols-lg-2 row-cols-xxl-3 g-3 pcs-dashboard">
+  {% for panel in dashboard.panels %}
+  <div class="col">
+    <div class="card h-100{% if panel.ai %} ai-fill{% endif %}" id="dash-{{ panel.id }}">
+      <div class="card-header d-flex justify-content-between align-items-baseline">
+        <strong>{% if panel.ai %}<span class="ai-attr-text">{{ panel.title }}</span>{% else %}{{ panel.title }}{% endif %}</strong>
+        <span>
+          {% for link in panel.links %}<a class="ms-3" href="{{ link.url }}">{{ link.label }}</a>{% endfor %}
+        </span>
+      </div>
+      <ul class="list-group list-group-flush">
+        {% for e in panel.entries %}
+        <li class="list-group-item d-flex">
+          {% if e.when %}<span class="dash-when">{{ e.when|date:"m-d H:i" }}</span>{% endif %}
+          {% if e.url %}<a class="dash-text" href="{{ e.url }}" title="{{ e.text }}">{{ e.text }}</a>
+          {% else %}<span class="dash-text" title="{{ e.text }}">{{ e.text }}</span>{% endif %}
+        </li>
+        {% empty %}
+        <li class="list-group-item text-muted">{{ panel.empty }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endfor %}
+</div>
