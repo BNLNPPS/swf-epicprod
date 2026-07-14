@@ -47,7 +47,9 @@ PCS documentation:
 The epicprod documentation set lives in [`docs/`](docs/). The campaign
 assessments design — the campaign analytics library, its rollup
 service, and the scheduled assessments — is
-[EPICPROD_ASSESSMENTS.md](docs/EPICPROD_ASSESSMENTS.md).
+[EPICPROD_ASSESSMENTS.md](docs/EPICPROD_ASSESSMENTS.md). The master
+production dashboard plan is
+[EPICPROD_DASHBOARD.md](docs/EPICPROD_DASHBOARD.md).
 
 The official system-level documentation of the ePIC WFMS is
 <https://epic-wfms-docs.readthedocs.io>.
