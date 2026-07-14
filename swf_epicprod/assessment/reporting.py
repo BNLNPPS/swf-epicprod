@@ -942,7 +942,7 @@ def render_report(bundle, artifact, kind):
             '### Issues and responsibilities', _issues(artifact.get('top_issues')),
             '### Outlook', _bullets(artifact.get('outlook'),
                                      empty='No evidence-grounded change to the near-term outlook was identified.'),
-            '### Generation report', _generation(bundle, artifact),
+            '### Generation of the report', _generation(bundle, artifact),
         ]
     else:
         interpretation = list(artifact.get('assessment') or [])
@@ -966,7 +966,7 @@ def render_report(bundle, artifact, kind):
         if artifact.get('outlook'):
             sections.extend(['### Outlook', _bullets(artifact.get('outlook'))])
         sections.extend([
-            '### Generation report', _generation(bundle, artifact),
+            '### Generation of the report', _generation(bundle, artifact),
         ])
     sections = [part for part in sections if part]
     return '\n\n'.join(sections).strip()

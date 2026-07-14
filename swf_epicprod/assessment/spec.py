@@ -184,8 +184,8 @@ conflicts, workarounds, or unavailable material that constrained this run. Do
 not copy historical assessment-system errors from the action stream into this
 object, and do not inventory standing absent metadata unless it materially
 limited a conclusion in this report. If no live drill-down was warranted, say
-why. Production-side code renders this as the final ``### Generation report``
-section and links the full stored bundle.
+why. Production-side code renders this as the final ``### Generation of the
+report`` section and links the full stored bundle.
 
 For every live tool result used in a concrete report claim, add one
 ``generation.investigation`` record. Copy the tool name and request arguments,
