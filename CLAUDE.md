@@ -29,7 +29,7 @@ lives here (moved from `swf-monitor/docs/` 2026-07-10, each doc
 leaving a permanent stub at its old path): the PCS docs, the
 `EPICPROD_*` set (task catalog, ops, ops agent, data lineage, EVGEN
 inputs, questionnaire, validation, narratives, assessments, LLM
-operations), `JEDI_INTEGRATION.md`, `JEDI_EPIC_PROPOSAL.md`,
+operations, succession), `JEDI_INTEGRATION.md`, `JEDI_EPIC_PROPOSAL.md`,
 `CAMPAIGN_CONTINUUM.md`, and `COMMISSIONING_RELAXATIONS.md`.
 Platform-service docs (action stream, SSE, external access, MCP,
 deployment) remain in `swf-monitor/docs/`.
