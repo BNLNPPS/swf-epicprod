@@ -140,12 +140,8 @@ identity `wenaus`) can perform:
 - corun-ai and swf-remote operations run on `epic-devcloud.org`;
   `EXTERNAL_ACCESS.md` covers the contract, and the host inventory is
   `DEVCLOUD_SUCCESSION.md`.
-- Apache/SSL lifecycle and volume-level backup belong to the SDCC
+- Apache/SSL lifecycle and volume-level backup belong to the SCDF
   system layer and have no local runbook.
-- The external-face name (`epic-devcloud.org`) is intended to be a
-  single configuration value but is currently embedded at several code
-  sites (base template link, status probes, publisher default,
-  corun-ai URL defaults); consolidation is pending.
 
 ## Re-establishment
 

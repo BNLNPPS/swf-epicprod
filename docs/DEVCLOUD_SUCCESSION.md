@@ -105,7 +105,7 @@ institutional counterpart.
 - **Host administration.** Deployment scripts, service control, and
   `/etc` changes require sudo on the single `admin` account.
 - **Tunnel identity.** The SSH tunnel authenticates as the operator's
-  BNL account through the SDCC gateway; a successor needs their own BNL
+  BNL account through the SCDF gateway; a successor needs their own BNL
   account and gateway access.
 - **AI subscriptions.** The corun-worker runners authenticate against
   the operator's personal Claude, ChatGPT, and Google subscriptions via
