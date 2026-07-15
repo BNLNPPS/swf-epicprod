@@ -303,19 +303,42 @@ def ordered_panel_ids(saved_order):
     return known + [p for p in PANEL_ORDER if p not in known]
 
 
+# Panel content is user-independent, so panels cache individually and
+# assemble per request in the user's order. The live panel stays fresher.
+PANEL_CACHE_DEFAULT_TTL = 120
+PANEL_CACHE_TTL = {'live': 30}
+
+
+def _build_panel(panel_id):
+    try:
+        return _PROVIDERS[panel_id]()
+    except Exception as exc:
+        logger.exception('dashboard panel %s failed', panel_id)
+        return {
+            'id': panel_id, 'title': panel_id, 'ai': False,
+            'entries': [_entry(f'panel error: {exc}')],
+            'links': [], 'empty': '', 'error': True,
+        }
+
+
 def build_dashboard(panel_order=None):
-    """Panels in the given (or default) order; provider errors surface in place."""
+    """Panels in the given (or default) order; provider errors surface in place.
+
+    Panels come from a short-TTL cache; error panels are never cached, so
+    a recovered provider reappears on the next load.
+    """
+    from django.core.cache import cache
+
     panels = []
     for panel_id in ordered_panel_ids(panel_order):
-        try:
-            panels.append(_PROVIDERS[panel_id]())
-        except Exception as exc:
-            logger.exception('dashboard panel %s failed', panel_id)
-            panels.append({
-                'id': panel_id, 'title': panel_id, 'ai': False,
-                'entries': [_entry(f'panel error: {exc}')],
-                'links': [], 'empty': '',
-            })
+        key = f'pcs_dashboard_panel_{panel_id}'
+        panel = cache.get(key)
+        if panel is None:
+            panel = _build_panel(panel_id)
+            if not panel.get('error'):
+                cache.set(key, panel,
+                          PANEL_CACHE_TTL.get(panel_id, PANEL_CACHE_DEFAULT_TTL))
+        panels.append(panel)
     return {'panels': panels}
 
 
