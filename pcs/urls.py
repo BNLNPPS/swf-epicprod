@@ -1,5 +1,5 @@
 from django.urls import path, include
-from . import views
+from . import dashboard, views
 
 app_name = 'pcs'
 
@@ -84,6 +84,9 @@ urlpatterns = [
     path('tasks/<str:name>/commands/', views.prod_task_generate_commands, name='prod_task_generate_commands'),
     # On-demand compose hydration (taskParamMap + commands) — light payload, fetched on open
     path('tasks/<str:name>/compose-detail/', views.prod_task_compose_task_detail, name='compose_task_detail'),
+
+    # Production dashboard preference save (EPICPROD_DASHBOARD.md)
+    path('dashboard/prefs/', dashboard.dashboard_prefs, name='dashboard_prefs'),
 
     # REST API
     path('api/', include('pcs.api_urls')),

@@ -270,11 +270,43 @@ _PROVIDERS = {
     'live': _panel_live,
 }
 
+DASHBOARD_PREFS_KEY = 'dashboard'
 
-def build_dashboard():
-    """Panels in default order. Every provider error is surfaced in place."""
+
+def get_dashboard_prefs(username):
+    from monitor_app.models import UserPreference
+
+    if not username:
+        return {}
+    row = UserPreference.objects.filter(username=username).first()
+    section = (row.prefs or {}).get(DASHBOARD_PREFS_KEY) if row else None
+    return section if isinstance(section, dict) else {}
+
+
+def save_dashboard_prefs(username, updates):
+    from monitor_app.models import UserPreference
+
+    row, _ = UserPreference.objects.get_or_create(username=username)
+    prefs = row.prefs if isinstance(row.prefs, dict) else {}
+    section = prefs.get(DASHBOARD_PREFS_KEY)
+    if not isinstance(section, dict):
+        section = {}
+    section.update(updates)
+    prefs[DASHBOARD_PREFS_KEY] = section
+    row.prefs = prefs
+    row.save(update_fields=['prefs', 'updated_at'])
+
+
+def ordered_panel_ids(saved_order):
+    """Saved order first, unknown ids dropped, missing panels appended."""
+    known = [p for p in (saved_order or []) if p in _PROVIDERS]
+    return known + [p for p in PANEL_ORDER if p not in known]
+
+
+def build_dashboard(panel_order=None):
+    """Panels in the given (or default) order; provider errors surface in place."""
     panels = []
-    for panel_id in PANEL_ORDER:
+    for panel_id in ordered_panel_ids(panel_order):
         try:
             panels.append(_PROVIDERS[panel_id]())
         except Exception as exc:
@@ -285,3 +317,33 @@ def build_dashboard():
                 'links': [], 'empty': '',
             })
     return {'panels': panels}
+
+
+def dashboard_prefs(request):
+    """POST endpoint saving per-account dashboard preferences."""
+    import json
+
+    from django.http import JsonResponse
+
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'POST required'}, status=405)
+    if not request.user.is_authenticated:
+        return JsonResponse({'ok': False, 'error': 'login required'}, status=403)
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except (UnicodeDecodeError, ValueError) as exc:
+        return JsonResponse({'ok': False, 'error': f'invalid JSON: {exc}'},
+                            status=400)
+    updates = {}
+    tab = payload.get('home_tab')
+    if tab in ('nav', 'ops'):
+        updates['home_tab'] = tab
+    order = payload.get('panel_order')
+    if isinstance(order, list):
+        updates['panel_order'] = [
+            str(p) for p in order if str(p) in _PROVIDERS]
+    if not updates:
+        return JsonResponse({'ok': False, 'error': 'nothing to save'},
+                            status=400)
+    save_dashboard_prefs(request.user.username, updates)
+    return JsonResponse({'ok': True, 'saved': sorted(updates)})

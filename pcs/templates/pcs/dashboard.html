@@ -1,15 +1,21 @@
-{# Master production dashboard panels (EPICPROD_DASHBOARD.md v1) — included by the production home page's Ops tab. #}
+{# Master production dashboard panels (EPICPROD_DASHBOARD.md) — included by the production home page's Ops tab. #}
 <style>
   .pcs-dashboard .card-header { background: #f6f8fb; }
-  .pcs-dashboard .ai-fill .list-group-item { background: transparent; }
+  .pcs-dashboard .card-header:hover { cursor: grab; }
   .pcs-dashboard .list-group-item { padding-top: .3rem; padding-bottom: .3rem; }
   .pcs-dashboard .dash-when { color: #5d6b7a; white-space: nowrap; margin-right: .5rem; }
   .pcs-dashboard .dash-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pcs-dashboard .col.sortable-ghost { opacity: .4; }
 </style>
-<div class="row row-cols-1 row-cols-lg-2 row-cols-xxl-3 g-3 pcs-dashboard">
+<div class="mb-1" id="dash-save-note">
+  {% if not can_save_layout %}<span class="text-muted">Drag panels to reorder — log in to save your layout.</span>{% endif %}
+</div>
+<div class="row row-cols-1 row-cols-lg-2 row-cols-xxl-3 g-3 pcs-dashboard"
+     data-can-save="{% if can_save_layout %}1{% else %}0{% endif %}"
+     data-prefs-url="{% url 'pcs:dashboard_prefs' %}">
   {% for panel in dashboard.panels %}
   <div class="col">
-    <div class="card h-100{% if panel.ai %} ai-fill{% endif %}" id="dash-{{ panel.id }}">
+    <div class="card h-100" id="dash-{{ panel.id }}">
       <div class="card-header d-flex justify-content-between align-items-baseline">
         <strong>{% if panel.ai %}<span class="ai-attr-text">{{ panel.title }}</span>{% else %}{{ panel.title }}{% endif %}</strong>
         <span>
@@ -31,3 +37,40 @@
   </div>
   {% endfor %}
 </div>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+<script>
+(function () {
+  var grid = document.querySelector('.pcs-dashboard');
+  if (!grid || typeof Sortable === 'undefined') return;
+  var canSave = grid.dataset.canSave === '1';
+  var note = document.getElementById('dash-save-note');
+
+  function csrfToken() {
+    var match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? match[1] : '';
+  }
+
+  new Sortable(grid, {
+    animation: 150,
+    handle: '.card-header',
+    filter: 'a',
+    onEnd: function () {
+      if (!canSave) return;
+      var order = Array.prototype.map.call(grid.children, function (col) {
+        var card = col.querySelector('.card');
+        return card ? card.id.replace(/^dash-/, '') : '';
+      }).filter(Boolean);
+      fetch(grid.dataset.prefsUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
+        body: JSON.stringify({panel_order: order}),
+      }).then(function (resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        note.textContent = '';
+      }).catch(function (err) {
+        note.innerHTML = '<span class="text-danger">Layout not saved: ' + err.message + '</span>';
+      });
+    }
+  });
+})();
+</script>
