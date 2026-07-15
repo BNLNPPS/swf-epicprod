@@ -252,6 +252,7 @@ def _panel_live():
     ]
     return {
         'id': 'live', 'title': 'epicprod live', 'ai': False,
+        'show_age': True,
         'entries': entries,
         'links': [{'label': 'Live feed',
                    'url': f"{reverse('monitor_app:log_list')}?app_name=epicprod"}],
@@ -311,14 +312,16 @@ PANEL_CACHE_TTL = {'live': 30}
 
 def _build_panel(panel_id):
     try:
-        return _PROVIDERS[panel_id]()
+        panel = _PROVIDERS[panel_id]()
     except Exception as exc:
         logger.exception('dashboard panel %s failed', panel_id)
-        return {
+        panel = {
             'id': panel_id, 'title': panel_id, 'ai': False,
             'entries': [_entry(f'panel error: {exc}')],
             'links': [], 'empty': '', 'error': True,
         }
+    panel['built_at'] = timezone.now()
+    return panel
 
 
 def build_dashboard(panel_order=None):

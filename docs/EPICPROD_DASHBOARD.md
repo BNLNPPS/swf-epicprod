@@ -54,10 +54,12 @@ legible.
 The two AI panels use the purple-on-lavender AI-attribution
 convention: an `ai-fill` container with an `ai-attr-text` title.
 
-The live panel renders its recent entries at page load and offers a
-control that opens the live stream (Server-Sent Events through the
-existing relay) on demand. No stream is opened on page load, per the
-platform rule for long-held connections.
+The live panel renders its recent entries at page load and carries an
+"updated N s ago" indicator beside its title; its cache holds the
+content within 30 seconds of current. The panel opens no stream — a
+viewer who needs real-time delivery follows the panel's link to the
+live feed. (An on-demand stream control was considered and rejected:
+the indicator plus the link cover the need without a held connection.)
 
 ## Presentation rules
 
@@ -107,5 +109,5 @@ Each step is a functional delivery and a release boundary:
    and linked.
 2. Drag reordering and per-account persistence of panel order and tab
    choice.
-3. The live panel's stream control.
+3. The live panel's updated-age indicator.
 4. The summary strip on the Nav tab.

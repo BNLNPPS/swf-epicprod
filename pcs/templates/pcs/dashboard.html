@@ -6,6 +6,7 @@
   .pcs-dashboard .dash-when { color: #5d6b7a; white-space: nowrap; margin-right: .5rem; }
   .pcs-dashboard .dash-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pcs-dashboard .col.sortable-ghost { opacity: .4; }
+  .pcs-dashboard .dash-age { color: #5d6b7a; margin-left: .6rem; }
 </style>
 <div class="mb-1" id="dash-save-note">
   {% if not can_save_layout %}<span class="text-muted">Drag panels to reorder — log in to save your layout.</span>{% endif %}
@@ -17,7 +18,10 @@
   <div class="col">
     <div class="card h-100" id="dash-{{ panel.id }}">
       <div class="card-header d-flex justify-content-between align-items-baseline">
-        <strong>{% if panel.ai %}<span class="ai-attr-text">{{ panel.title }}</span>{% else %}{{ panel.title }}{% endif %}</strong>
+        <span>
+          <strong>{% if panel.ai %}<span class="ai-attr-text">{{ panel.title }}</span>{% else %}{{ panel.title }}{% endif %}</strong>
+          {% if panel.show_age %}<span class="dash-age" data-built="{{ panel.built_at.isoformat }}"></span>{% endif %}
+        </span>
         <span>
           {% for link in panel.links %}<a class="ms-3" href="{{ link.url }}">{{ link.label }}</a>{% endfor %}
         </span>
@@ -40,6 +44,17 @@
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 <script>
 (function () {
+  function tickAges() {
+    document.querySelectorAll('.dash-age').forEach(function (el) {
+      var built = Date.parse(el.dataset.built);
+      if (!built) return;
+      var age = Math.max(0, Math.round((Date.now() - built) / 1000));
+      el.textContent = 'updated ' + age + ' s ago';
+    });
+  }
+  tickAges();
+  setInterval(tickAges, 1000);
+
   var grid = document.querySelector('.pcs-dashboard');
   if (!grid || typeof Sortable === 'undefined') return;
   var canSave = grid.dataset.canSave === '1';
