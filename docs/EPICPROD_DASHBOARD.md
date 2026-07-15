@@ -71,6 +71,18 @@ the indicator plus the link cover the need without a held connection.)
 - Text follows the monitor's readability defaults; no small or
   low-contrast rendering.
 
+## Serving and freshness
+
+Panel content is user-independent and cached per panel (Redis in
+production). Serving never waits on freshness: the page renders
+instantly from whatever is cached, however old, and each panel then
+revalidates itself — immediately after load and every 30 seconds for
+the live panel, every 120 seconds for the rest — through a per-panel
+refresh endpoint that rebuilds only when the cached copy is older than
+the panel's freshness window. The live panel shows its age beside its
+title; a counter climbing past its window is the visible signal that
+refresh has stopped. The only synchronous build is a cold cache.
+
 ## Grid and interaction
 
 Panels are Bootstrap cards in a responsive `row-cols` grid: one column

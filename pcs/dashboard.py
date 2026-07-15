@@ -305,9 +305,13 @@ def ordered_panel_ids(saved_order):
 
 
 # Panel content is user-independent, so panels cache individually and
-# assemble per request in the user's order. The live panel stays fresher.
-PANEL_CACHE_DEFAULT_TTL = 120
-PANEL_CACHE_TTL = {'live': 30}
+# assemble per request in the user's order. Serving never waits on
+# freshness: a built panel is retained and served instantly for
+# PANEL_CACHE_STORE_TTL, and the freshness windows below govern only
+# when the refresh endpoint rebuilds. The live panel stays fresher.
+PANEL_CACHE_STORE_TTL = 3600
+PANEL_FRESH_DEFAULT = 120
+PANEL_FRESH_FOR = {'live': 30}
 
 
 def _build_panel(panel_id):
@@ -321,21 +325,36 @@ def _build_panel(panel_id):
             'links': [], 'empty': '', 'error': True,
         }
     panel['built_at'] = timezone.now()
+    panel['refresh_ms'] = 1000 * PANEL_FRESH_FOR.get(panel_id,
+                                                     PANEL_FRESH_DEFAULT)
     return panel
 
 
-def _get_panel(panel_id):
-    """One panel through the short-TTL cache; error panels are never
-    cached, so a recovered provider reappears on the next load."""
+def _panel_is_fresh(panel_id, panel):
+    built = panel.get('built_at')
+    if not built:
+        return False
+    age = (timezone.now() - built).total_seconds()
+    return age <= PANEL_FRESH_FOR.get(panel_id, PANEL_FRESH_DEFAULT)
+
+
+def _get_panel(panel_id, revalidate=False):
+    """One panel from the cache. Page renders pass revalidate=False and
+    serve whatever exists instantly, however old — the page's client-side
+    refresh brings it current. The refresh endpoint passes True and
+    rebuilds once the freshness window has lapsed. Error panels are never
+    cached, so a recovered provider reappears on the next build."""
     from django.core.cache import cache
 
     key = f'pcs_dashboard_panel_{panel_id}'
     panel = cache.get(key)
-    if panel is None:
+    if panel is not None and (not revalidate
+                              or _panel_is_fresh(panel_id, panel)):
+        return panel
+    if panel is None or revalidate:
         panel = _build_panel(panel_id)
         if not panel.get('error'):
-            cache.set(key, panel,
-                      PANEL_CACHE_TTL.get(panel_id, PANEL_CACHE_DEFAULT_TTL))
+            cache.set(key, panel, PANEL_CACHE_STORE_TTL)
     return panel
 
 
@@ -346,14 +365,14 @@ def build_dashboard(panel_order=None):
 
 
 def dashboard_panel(request, panel_id):
-    """One panel's entries as a rendered fragment — the self-refresh source
-    for panels that show their age."""
+    """One panel's entries as a rendered fragment — the revalidating
+    refresh source every panel polls after page load."""
     from django.http import Http404, JsonResponse
     from django.template.loader import render_to_string
 
     if panel_id not in _PROVIDERS:
         raise Http404('unknown panel')
-    panel = _get_panel(panel_id)
+    panel = _get_panel(panel_id, revalidate=True)
     return JsonResponse({
         'built_at': panel['built_at'].isoformat(),
         'html': render_to_string('pcs/dashboard_panel_entries.html',

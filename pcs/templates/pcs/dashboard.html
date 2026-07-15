@@ -16,7 +16,7 @@
      data-prefs-url="{% url 'pcs:dashboard_prefs' %}">
   {% for panel in dashboard.panels %}
   <div class="col">
-    <div class="card h-100" id="dash-{{ panel.id }}"{% if panel.show_age %} data-refresh-url="{% url 'pcs:dashboard_panel' panel.id %}"{% endif %}>
+    <div class="card h-100" id="dash-{{ panel.id }}" data-refresh-url="{% url 'pcs:dashboard_panel' panel.id %}" data-refresh-ms="{{ panel.refresh_ms }}">
       <div class="card-header d-flex justify-content-between align-items-baseline">
         <span>
           <strong>{% if panel.ai %}<span class="ai-attr-text">{{ panel.title }}</span>{% else %}{{ panel.title }}{% endif %}</strong>
@@ -34,11 +34,12 @@
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 <script>
 (function () {
-  // Panels that show their age refresh themselves every 30 s (served from
-  // the panel cache). A failed refresh needs no message of its own: the
-  // age counter keeps ticking upward, which is the staleness signal.
+  // Page renders serve panels instantly whatever their age; each panel
+  // then revalidates itself — immediately after load, and on its own
+  // cadence thereafter. A failed refresh needs no message of its own:
+  // the live panel's age counter ticking upward is the staleness signal.
   document.querySelectorAll('[data-refresh-url]').forEach(function (card) {
-    setInterval(function () {
+    function refresh() {
       fetch(card.dataset.refreshUrl).then(function (resp) {
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         return resp.json();
@@ -48,7 +49,9 @@
         var age = card.querySelector('[data-relative-time]');
         if (age) age.setAttribute('data-relative-time', data.built_at);
       }).catch(function () {});
-    }, 30000);
+    }
+    refresh();
+    setInterval(refresh, parseInt(card.dataset.refreshMs, 10) || 120000);
   });
 
   var grid = document.querySelector('.pcs-dashboard');
