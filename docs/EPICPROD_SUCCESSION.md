@@ -130,12 +130,16 @@ identity `wenaus`) can perform:
   `EPICPROD_OPS_AGENT.md`); the submission identity is whichever
   operator last authenticated on the host.
 - Ownership, billing, and rotation procedure for the external-service
-  credentials (Anthropic, Mattermost, corun-ai) are undocumented.
+  credentials held on this host (Anthropic, Mattermost) are
+  undocumented. The corun-ai token is issued and rotated on the serving
+  side (`corun-ai` `docs/deployment.md` § API Token Management);
+  devcloud-side credential ownership is covered in
+  `DEVCLOUD_SUCCESSION.md`.
 - The root crontab and hand-installed unit files exist only as host
   state; no version-controlled copy.
-- corun-ai and swf-remote operations run on `epic-devcloud.org` and
-  are not documented from this host; `EXTERNAL_ACCESS.md` covers the
-  contract, not the host operations.
+- corun-ai and swf-remote operations run on `epic-devcloud.org`;
+  `EXTERNAL_ACCESS.md` covers the contract, and the host inventory is
+  `DEVCLOUD_SUCCESSION.md`.
 - Apache/SSL lifecycle and volume-level backup belong to the SDCC
   system layer and have no local runbook.
 - The external-face name (`epic-devcloud.org`) is intended to be a
@@ -167,4 +171,6 @@ from backup) under a successor-controlled domain name, followed by an
 update of the external-face references in system configuration. The
 domain name and its cloud addressing are held in personal accounts
 and are not transferable; the system treats the external name as
-configuration.
+configuration. The devcloud host inventory, its operator-bound
+operations, and the state of the re-establishment work are recorded in
+`DEVCLOUD_SUCCESSION.md`.
