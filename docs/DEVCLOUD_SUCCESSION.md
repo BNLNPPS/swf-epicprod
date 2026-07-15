@@ -1,9 +1,10 @@
 # epic-devcloud.org Succession
 
 `epic-devcloud.org` is the operator-provisioned cloud host of the ePIC
-production system's external face. It carries `swf-remote` (open-internet
-PanDA monitoring at `/prod/`) and corun-ai (the AI documentation and
-assessment service at `/doc/`). This document is the devcloud counterpart
+production system's external face. It carries `swf-remote` (`/prod/`, the
+open-internet epicprod web face: PanDA, PCS, and alarms views proxied
+from swf-monitor) and corun-ai (`/doc/`, the AI documentation and
+assessment service). This document is the devcloud counterpart
 of `EPICPROD_SUCCESSION.md`: the operational inventory of what runs on
 this host, under which accounts and credentials, what a repository clone
 does not restore, and the re-establishment path. The same inventory is
@@ -31,7 +32,10 @@ and corun-ai via mod_wsgi at `/doc`. Certbot and its certificates under
 disabled by design and Caddy's certificates are canonical. The ingress
 configuration (Caddyfile, Apache vhosts) and its runbook are
 version-controlled in the operator's private repository, with
-drift-check and apply scripts.
+drift-check and apply scripts. `swf-remote` `deploy/epic-devcloud.conf`
+and `setup-apache.sh` provision a standalone Apache with certbot TLS —
+the configuration a fresh host starts from before any ingress layer of
+its own.
 
 ## Services
 
@@ -115,11 +119,6 @@ institutional counterpart.
 
 ## Known gaps
 
-- `swf-remote` `deploy/epic-devcloud.conf` predates the Caddy ingress
-  (public `*:80`/`*:443` vhosts, certbot certificate paths) and no
-  longer matches the live configuration.
-- The landing page (`/var/www/epic-devcloud-landing`) is host state, in
-  no repository.
 - There is no volume-level backup; recovery depends on the nightly
   database/configuration dumps plus the repositories.
 - The scripted recreation required by the re-establishment standard does
