@@ -324,25 +324,41 @@ def _build_panel(panel_id):
     return panel
 
 
-def build_dashboard(panel_order=None):
-    """Panels in the given (or default) order; provider errors surface in place.
-
-    Panels come from a short-TTL cache; error panels are never cached, so
-    a recovered provider reappears on the next load.
-    """
+def _get_panel(panel_id):
+    """One panel through the short-TTL cache; error panels are never
+    cached, so a recovered provider reappears on the next load."""
     from django.core.cache import cache
 
-    panels = []
-    for panel_id in ordered_panel_ids(panel_order):
-        key = f'pcs_dashboard_panel_{panel_id}'
-        panel = cache.get(key)
-        if panel is None:
-            panel = _build_panel(panel_id)
-            if not panel.get('error'):
-                cache.set(key, panel,
-                          PANEL_CACHE_TTL.get(panel_id, PANEL_CACHE_DEFAULT_TTL))
-        panels.append(panel)
-    return {'panels': panels}
+    key = f'pcs_dashboard_panel_{panel_id}'
+    panel = cache.get(key)
+    if panel is None:
+        panel = _build_panel(panel_id)
+        if not panel.get('error'):
+            cache.set(key, panel,
+                      PANEL_CACHE_TTL.get(panel_id, PANEL_CACHE_DEFAULT_TTL))
+    return panel
+
+
+def build_dashboard(panel_order=None):
+    """Panels in the given (or default) order; provider errors surface in place."""
+    return {'panels': [_get_panel(panel_id)
+                       for panel_id in ordered_panel_ids(panel_order)]}
+
+
+def dashboard_panel(request, panel_id):
+    """One panel's entries as a rendered fragment — the self-refresh source
+    for panels that show their age."""
+    from django.http import Http404, JsonResponse
+    from django.template.loader import render_to_string
+
+    if panel_id not in _PROVIDERS:
+        raise Http404('unknown panel')
+    panel = _get_panel(panel_id)
+    return JsonResponse({
+        'built_at': panel['built_at'].isoformat(),
+        'html': render_to_string('pcs/dashboard_panel_entries.html',
+                                 {'panel': panel}),
+    })
 
 
 def dashboard_prefs(request):

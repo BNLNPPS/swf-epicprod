@@ -1,0 +1,12 @@
+{# One dashboard panel's entry list — included by dashboard.html and served by the dashboard_panel refresh endpoint. #}
+<ul class="list-group list-group-flush">
+  {% for e in panel.entries %}
+  <li class="list-group-item d-flex">
+    {% if e.when %}<span class="dash-when">{{ e.when|date:"m-d H:i" }}</span>{% endif %}
+    {% if e.url %}<a class="dash-text" href="{{ e.url }}" title="{{ e.text }}">{{ e.text }}</a>
+    {% else %}<span class="dash-text" title="{{ e.text }}">{{ e.text }}</span>{% endif %}
+  </li>
+  {% empty %}
+  <li class="list-group-item text-muted">{{ panel.empty }}</li>
+  {% endfor %}
+</ul>

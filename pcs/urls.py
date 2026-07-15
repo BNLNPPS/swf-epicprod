@@ -85,8 +85,10 @@ urlpatterns = [
     # On-demand compose hydration (taskParamMap + commands) — light payload, fetched on open
     path('tasks/<str:name>/compose-detail/', views.prod_task_compose_task_detail, name='compose_task_detail'),
 
-    # Production dashboard preference save (EPICPROD_DASHBOARD.md)
+    # Production dashboard preference save + panel refresh (EPICPROD_DASHBOARD.md)
     path('dashboard/prefs/', dashboard.dashboard_prefs, name='dashboard_prefs'),
+    path('dashboard/panel/<slug:panel_id>/', dashboard.dashboard_panel,
+         name='dashboard_panel'),
 
     # REST API
     path('api/', include('pcs.api_urls')),

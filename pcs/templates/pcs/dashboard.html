@@ -16,7 +16,7 @@
      data-prefs-url="{% url 'pcs:dashboard_prefs' %}">
   {% for panel in dashboard.panels %}
   <div class="col">
-    <div class="card h-100" id="dash-{{ panel.id }}">
+    <div class="card h-100" id="dash-{{ panel.id }}"{% if panel.show_age %} data-refresh-url="{% url 'pcs:dashboard_panel' panel.id %}"{% endif %}>
       <div class="card-header d-flex justify-content-between align-items-baseline">
         <span>
           <strong>{% if panel.ai %}<span class="ai-attr-text">{{ panel.title }}</span>{% else %}{{ panel.title }}{% endif %}</strong>
@@ -26,17 +26,7 @@
           {% for link in panel.links %}<a class="ms-3" href="{{ link.url }}">{{ link.label }}</a>{% endfor %}
         </span>
       </div>
-      <ul class="list-group list-group-flush">
-        {% for e in panel.entries %}
-        <li class="list-group-item d-flex">
-          {% if e.when %}<span class="dash-when">{{ e.when|date:"m-d H:i" }}</span>{% endif %}
-          {% if e.url %}<a class="dash-text" href="{{ e.url }}" title="{{ e.text }}">{{ e.text }}</a>
-          {% else %}<span class="dash-text" title="{{ e.text }}">{{ e.text }}</span>{% endif %}
-        </li>
-        {% empty %}
-        <li class="list-group-item text-muted">{{ panel.empty }}</li>
-        {% endfor %}
-      </ul>
+      {% include 'pcs/dashboard_panel_entries.html' %}
     </div>
   </div>
   {% endfor %}
@@ -44,6 +34,23 @@
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 <script>
 (function () {
+  // Panels that show their age refresh themselves every 30 s (served from
+  // the panel cache). A failed refresh needs no message of its own: the
+  // age counter keeps ticking upward, which is the staleness signal.
+  document.querySelectorAll('[data-refresh-url]').forEach(function (card) {
+    setInterval(function () {
+      fetch(card.dataset.refreshUrl).then(function (resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+      }).then(function (data) {
+        var list = card.querySelector('ul.list-group');
+        if (list) list.outerHTML = data.html;
+        var age = card.querySelector('[data-relative-time]');
+        if (age) age.setAttribute('data-relative-time', data.built_at);
+      }).catch(function () {});
+    }, 30000);
+  });
+
   var grid = document.querySelector('.pcs-dashboard');
   if (!grid || typeof Sortable === 'undefined') return;
   var canSave = grid.dataset.canSave === '1';
