@@ -20,7 +20,7 @@
       <div class="card-header d-flex justify-content-between align-items-baseline">
         <span>
           <strong>{% if panel.ai %}<span class="ai-attr-text">{{ panel.title }}</span>{% else %}{{ panel.title }}{% endif %}</strong>
-          {% if panel.show_age %}<span class="dash-age" data-built="{{ panel.built_at.isoformat }}"></span>{% endif %}
+          {% if panel.show_age %}<span class="dash-age">updated <span data-relative-time="{{ panel.built_at.isoformat }}"></span></span>{% endif %}
         </span>
         <span>
           {% for link in panel.links %}<a class="ms-3" href="{{ link.url }}">{{ link.label }}</a>{% endfor %}
@@ -44,17 +44,6 @@
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 <script>
 (function () {
-  function tickAges() {
-    document.querySelectorAll('.dash-age').forEach(function (el) {
-      var built = Date.parse(el.dataset.built);
-      if (!built) return;
-      var age = Math.max(0, Math.round((Date.now() - built) / 1000));
-      el.textContent = 'updated ' + age + ' s ago';
-    });
-  }
-  tickAges();
-  setInterval(tickAges, 1000);
-
   var grid = document.querySelector('.pcs-dashboard');
   if (!grid || typeof Sortable === 'undefined') return;
   var canSave = grid.dataset.canSave === '1';
