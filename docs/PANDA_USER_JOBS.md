@@ -104,6 +104,40 @@ streams, shares reorder jobs only within each class.
    and sort last until they drain, a self-correcting condition lasting
    one job generation.
 
+## Queue Responsiveness
+
+Job-start latency per queue, the quantity that decides where analysis
+turnaround is acceptable, is measurable directly from PanDA accounting
+data: the interval from job creation to job start in
+`doma_panda.jobsarchived4`. Measured 2026-07-15 over the preceding 14
+days (jobs reaching finished or failed; queues with more than 50
+jobs):
+
+| Queue | Jobs | Median wait | 90th percentile |
+|---|---|---|---|
+| BNL_OSG_PanDA_1 | 741 | 3.1 min | 4.4 min |
+| BNL_OSG_PanDA_CI | 322 | 3.2 min | 6.7 min |
+| NERSC_Perlmutter_epic_dev | 260 | 6.3 min | 8.3 min |
+| NERSC_Perlmutter_epic_gpu_mps | 320 | 6.8 min | 8.6 min |
+| NERSC_Perlmutter_epic_gpu_test | 68 | 7.6 min | 8.3 min |
+| NERSC_Perlmutter_epic | 14224 | 18.8 min | 1.6 h |
+| BNL_OSG_EPIC_PROD_1 | 24038 | 2.1 h | 8.8 h |
+| BNL_PanDA_1 | 89 | 2.6 h | 2.6 h |
+| UM_GREX_PanDA_1 | 14543 | 12.0 h | 28.3 h |
+| NERSC_Perlmutter_epic_test | 27839 | 15.3 h | 16.3 h |
+
+These are overwhelmingly production jobs, so the profile is the
+no-shares baseline: the wait an analysis job would inherit by joining
+the same activated backlog. Production-saturated queues wait hours;
+lightly loaded short queues start in minutes. With global shares on a
+unified queue, an under-share analysis job bypasses the activated
+backlog and its wait reduces to slot turnover, so the fair-share
+configuration above, not queue choice alone, is what delivers analysis
+turnaround on the production queues. The per-queue profile remains the
+instrument for choosing and watching the analysis-designated set, and
+is cheap to compute on a cadence from accounting data as a monitor
+metric.
+
 ## Upstream Note
 
 The one genuine gap for generic-VO analysis steering is that
