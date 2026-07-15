@@ -6,9 +6,11 @@ PanDA monitoring at `/prod/`) and corun-ai (the AI documentation and
 assessment service at `/doc/`). This document is the devcloud counterpart
 of `EPICPROD_SUCCESSION.md`: the operational inventory of what runs on
 this host, under which accounts and credentials, what a repository clone
-does not restore, and the re-establishment path. It records host state as
-verified 2026-07-15; the live units and configuration files are the
-canonical source for their entries. Application operating procedures are
+does not restore, and the re-establishment path. The same inventory is
+the working basis for migrating these services to an ePIC-provisioned
+host when one exists. It records host state as verified 2026-07-15; the
+live units and configuration files are the canonical source for their
+entries. Application operating procedures are
 in the application repositories: `corun-ai` `docs/deployment.md` and
 `docs/job-system.md`, and the `swf-remote` README.
 
@@ -26,7 +28,10 @@ Caddy owns the public ports and the ACME/TLS certificates for
 `/var/www/epic-devcloud-landing`, `swf-remote` via mod_wsgi at `/prod`,
 and corun-ai via mod_wsgi at `/doc`. Certbot and its certificates under
 `/etc/letsencrypt` are retained only for rollback; `certbot.timer` is
-disabled by design and Caddy's certificates are canonical.
+disabled by design and Caddy's certificates are canonical. The ingress
+configuration (Caddyfile, Apache vhosts) and its runbook are
+version-controlled in the operator's private repository, with
+drift-check and apply scripts.
 
 ## Services
 
@@ -89,6 +94,10 @@ repositories (`github.com/BNLNPPS/*`).
 
 ## Operator-bound operations
 
+Operations and resources bound to the operator's personal accounts. A
+migration to an ePIC-provisioned host replaces each item here with an
+institutional counterpart.
+
 - **Domain and addressing.** `epic-devcloud.org` is registered through
   Route 53 Domains and its DNS zone hosted in Route 53, both in the
   operator's personal AWS account, which also holds the instance and the
@@ -106,10 +115,7 @@ repositories (`github.com/BNLNPPS/*`).
 
 ## Known gaps
 
-- The ingress configuration (Caddyfile, Apache vhosts), the
-  drift-check/apply scripts, and the ingress runbook live in a private
-  operator repository; the public repositories do not carry them.
-  `swf-remote` `deploy/epic-devcloud.conf` predates the Caddy ingress
+- `swf-remote` `deploy/epic-devcloud.conf` predates the Caddy ingress
   (public `*:80`/`*:443` vhosts, certbot certificate paths) and no
   longer matches the live configuration.
 - The landing page (`/var/www/epic-devcloud-landing`) is host state, in
@@ -128,8 +134,8 @@ monitor side is prepared for the name change: the external-face name is
 specified in one code location (`EXTERNAL_FACE_DEFAULT` in
 `swf-monitor/src/monitor_app/models.py`, runtime value in the SysConfig
 key `external_face_base_url`; the corun-ai URL rides the
-`CORUN_BASE_URL` environment variable). The recreation script is the
-open work item. Because the domain, DNS, and elastic IP are personal
+`CORUN_BASE_URL` environment variable). A recreation script does not yet
+exist. Because the domain, DNS, and elastic IP are personal
 account resources, a successor re-establishes under a domain they
 control rather than inheriting this one; the system treats the external
 name as configuration.
