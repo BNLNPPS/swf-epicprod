@@ -75,12 +75,13 @@ streams, shares reorder jobs only within each class.
 ## Configuration Plan
 
 1. **Share tree** (production side, via the monitor's database
-   access). Two leaves under the root to start: a production share
-   matching `prodsourcelabel` `managed|test`, and an analysis share
-   matching `user`, with values set by production coordination. The
-   tree and its values are production policy and are recorded in this
-   document when set. Changes take effect within the 1-hour share
-   reload.
+   access). Set 2026-07-15, two top-level leaves: **Production 95**
+   (`prodsourcelabel` regex `managed|test|prod_test|install`) and
+   **Analysis 5** (`user|panda`), both `vo` `eic`, unthrottled. The
+   tree and its values are production policy and this document records
+   them; changes take effect within the 1-hour share reload. The
+   Analysis page on the monitor shows the tree and the current usage
+   by share stamp.
 2. **Queue unification** (request to the PanDA service
    administrators). For the queues designated to carry analysis:
    `type: unified` in schedconfig and grandly-unified worker
