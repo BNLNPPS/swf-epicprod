@@ -33,11 +33,14 @@ content. Consumers always load the current version of each.
 
 ```
 campaign_general_YYYYMMDD          general series, dated
-campaign_<campaign>                one living page per campaign, e.g. campaign_26.07.X
+campaign_<campaign>                one living page per campaign, e.g. campaign_26.07.0
 ```
 
 `<campaign>` is the campaign's canonical name as PCS records it (the bare
-version, e.g. `26.07.X`) — never an approximation of it. The name is the
+version, e.g. `26.07.0`) — never an approximation of it. PCS names carry
+the full patch number; a planning-era placeholder such as `26.07.X` is an
+approximation, and a narrative created under one is renamed to the
+canonical name when the campaign materializes. The name is the
 series identity, carried in the corun page's `data.name`; the page title
 is the human title.
 
