@@ -225,6 +225,18 @@ corun-ai URL, token, assessment section name, and the per-kind
 definition ids (`CORUN_ASSESSMENT_DEFINITION_DAILY` / `_WEEKLY`; the
 legacy `_NIGHTLY` value remains honored) live in `production.env`.
 
+**Slot freshness (the independent alarm):** the enforcement handler can
+only resolve runs that come back; a run lost upstream — trigger, corun
+run, completion callback, handler — leaves no registration at all. The
+`campaign-assessments` System page collector
+(`swf_epicprod/assessment/freshness.py`) ages the newest
+`assessment_register` action per target campaign against SysConfig
+`assessment_daily_stale_hours` (default 26) and
+`assessment_weekly_stale_hours` (default 170): a stale or missing slot
+is an error row, a target awaiting its first daily is a warning, and a
+target with no weekly yet is noted without alarming until the first
+weekly registers.
+
 ### Surfacing (v1 minimum)
 
 The assessment renders where campaign AI content already renders (the AI

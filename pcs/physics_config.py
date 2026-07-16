@@ -79,7 +79,9 @@ def evgen_identity(dataset):
     None when unresolved. provenance: 'tag' | 'path' | 'tag+path' |
     'path-over-tag' (conflict, path won) | 'unresolved'.
     """
-    tag = dataset.evgen_tag
+    # Unsaved probe editions (pcs/reconcile.py) carry no evgen_tag; the
+    # _id guard keeps the non-nullable FK descriptor from raising on them.
+    tag = dataset.evgen_tag if dataset.evgen_tag_id else None
     params = (tag.parameters or {}) if tag else {}
     tag_key = None
     if params.get('generator'):
@@ -127,7 +129,7 @@ def physics_config_key(dataset):
     sample = sample_identity(dataset)
     if evgen is None:
         evgen_part = ('unresolved',
-                      dataset.evgen_tag.tag_label if dataset.evgen_tag else '',
+                      dataset.evgen_tag.tag_label if dataset.evgen_tag_id else '',
                       dataset.pk)
     else:
         evgen_part = evgen
