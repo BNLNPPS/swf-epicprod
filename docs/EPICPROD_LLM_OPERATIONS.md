@@ -170,3 +170,11 @@ metadata identifying the work item, model, and prompt/configuration provenance.
 - Scheduled production reports may use corun-ai artifact storage and LLM services,
   but their primary execution should be scheduled and independent of an open
   browser page.
+- Scheduled and unattended LLM operations run on subscription-authenticated
+  execution. Metered per-token API access is not used in automated paths, so an
+  automated failure or loop cannot run up API charges; the enforcement mechanism
+  is described in [DEVCLOUD_SUCCESSION.md](DEVCLOUD_SUCCESSION.md).
+- Page render paths make no remote service calls. Pages render from local
+  state — the database, `$SWF_TMP_DIR` caches, and snapshots. Remote data
+  reaches that local state through the ops agent or scheduled jobs, and SSE
+  notifies open pages when new results land.
