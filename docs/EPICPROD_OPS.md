@@ -17,6 +17,25 @@ concentrates, and human decisions act through bounded, recorded controls:
 
 ![The operations automation loop](ops_automation_loop.svg)
 
+## Operational control tiers
+
+epicprod assigns actions to a control tier according to their effect.
+Observation and reconciliation may run on schedule; decisions that change
+production intent require an authenticated human action; credential and host
+administration remain confined to the operating account. An on-demand control
+that repeats a scheduled refresh remains an automated refresh rather than a
+production decision.
+
+| Tier | Actions | Gate | Reason |
+|---|---|---|---|
+| **Unattended** | Database backup; catalog sync, including credential checks, catalog and questionnaire imports, PanDA association and auto-intake, Rucio output refresh, EVGEN assimilation, dataset definitions, matching, and progress refresh; scheduled assessments and alarms; agent liveness, duplicate reaping, and cache pruning. | Cron, timer, or agent handler. Outcomes are surfaced through the action stream, alarms, or service logs. The same refreshes may also have an on-demand control. | These actions observe, reconcile, report, or recover derived state. Auto-intake may adopt a task that already exists in PanDA, but this tier does not submit new workload or make campaign and dataset-disposition decisions. |
+| **Authenticated operator decision** | Submit a task; increase its attempt limit; restart and retry failures; rerun the complete task; promote a campaign; change readiness, priority, withdrawal state, or propagation and replacement disposition. | Authenticated UI or REST action, with confirmation or a required comment where the decision needs provenance. | These actions consume computing or storage resources, or change authoritative production intent. The system prepares and validates the operation; an operator decides whether it proceeds. |
+| **Operating-account administration** | Renew the PanDA OIDC token and Rucio or EVGEN x509 proxies; perform direct client operations for recovery; deploy or restart services; edit `production.env` or the root crontab; rotate external-service credentials. | Interactive shell under the operating account, currently `wenauseic` with PanDA identity `wenaus`, plus sudo or provider access where required. These operations are not exposed through the web or MCP services. | These actions require non-delegated credentials or host and provider authority. A successor must receive the corresponding `EIC.production` membership, host privileges, and external accounts before assuming this tier. |
+
+During alpha commissioning, a draft task may be submitted with readiness
+warnings. This relaxes the readiness-state gate; it does not remove the
+authenticated operator-decision gate.
+
 ## Identity and client
 
 **EIC/production IAM subgroup.** Official production submission requires
