@@ -2390,6 +2390,7 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
     current_v = _version_tuple(current_camp.name) if current_camp else None
 
     summary = {'campaigns': 0, 'rows': 0, 'created': 0, 'updated': 0, 'errors': []}
+    touched_campaigns = set()
 
     versions_by_stage = {}
     for stage in PAST_CAMPAIGN_STAGES:
@@ -2567,6 +2568,13 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                 data['past_summary'] = past_summary
                 campaign.data = data
                 campaign.save(update_fields=['data', 'updated_at'])
+                touched_campaigns.add(campaign.pk)
+
+    # Both stage passes are in: enforce output ownership per campaign,
+    # so a FULL row's RECO co-output settles as a ref on the FULL task
+    # and a full record on its stage owner.
+    for campaign in Campaign.objects.filter(pk__in=touched_campaigns):
+        consolidate_output_ownership(campaign)
 
     return summary
 
@@ -2995,6 +3003,144 @@ def _path_aligned_match(did_segs, req_segs):
     return False
 
 
+def _output_owner_names(campaign):
+    """did -> owning ProdTask name for one campaign.
+
+    The dataset row registered at a DID (``metadata.source.location``)
+    is the catalog's record of that physical output; its identity task
+    owns the full ``outputs`` entry, and every other task that matches
+    the DID carries a light ``output_refs`` entry instead
+    (EPICPROD_DATA_LINEAGE.md § Output ownership). When several rows
+    register the same DID (the past ingest lists a RECO co-output under
+    both stage sections), a working edition outranks a past row, and a
+    stage-matching row outranks a cross-stage one.
+    """
+    candidates = {}
+    for ds in Dataset.objects.filter(campaign=campaign).only(
+            'metadata', 'composed_name', 'dataset_name'):
+        meta = ds.metadata or {}
+        loc = (meta.get('source') or {}).get('location', '')
+        if not loc:
+            continue
+        stage = str(meta.get('stage')
+                    or (meta.get('past_output') or {}).get('stage')
+                    or '').upper()
+        candidates.setdefault(loc, []).append(
+            (ds.pk, ds.composed_name or ds.dataset_name, stage))
+    # The task bound to the registered dataset row itself is the primary
+    # resolution; the composed identity is only a fallback — FULL/RECO
+    # sibling rows share one composed identity, so resolving through it
+    # loses the stage distinction.
+    task_by_dataset = {}
+    task_by_composed = {}
+    rows = (ProdTask.objects
+            .filter(campaign=campaign)
+            .order_by('pk')
+            .values_list('dataset_id', 'dataset__composed_name',
+                         'name', 'status'))
+    for dataset_id, composed, name, status in rows:
+        current = task_by_dataset.get(dataset_id)
+        if current is None or (current[1] == 'past_output'
+                               and status != 'past_output'):
+            task_by_dataset[dataset_id] = (name, status)
+        current = task_by_composed.get(composed)
+        if current is None or (current[1] == 'past_output'
+                               and status != 'past_output'):
+            task_by_composed[composed] = (name, status)
+    owners = {}
+    for loc, lst in candidates.items():
+        match = _re.match(r'^[^:]*:/([A-Za-z]+)/', loc)
+        did_stage = match.group(1).upper() if match else ''
+
+        def resolve(item):
+            ds_pk, composed, _stage = item
+            return task_by_dataset.get(ds_pk) or task_by_composed.get(composed)
+
+        def rank(item):
+            _ds_pk, _composed, stage = item
+            resolved = resolve(item)
+            working = resolved is not None and resolved[1] != 'past_output'
+            stage_ok = bool(did_stage) and stage == did_stage
+            return (0 if working else 1, 0 if stage_ok else 1)
+
+        for item in sorted(lst, key=rank):
+            resolved = resolve(item)
+            if resolved:
+                owners[loc] = resolved[0]
+                break
+    return owners
+
+
+def _output_ref_list(existing, entry, owner):
+    refs = [r for r in (existing or []) if r.get('did') != entry.get('did')]
+    refs.append(_output_ref(entry, owner))
+    return refs
+
+
+def consolidate_output_ownership(campaign):
+    """Enforce "edition owns; others reference" across one campaign's
+    recorded outputs (EPICPROD_DATA_LINEAGE.md § Output ownership).
+
+    Idempotent. The owner keeps (or receives) the newest record per DID;
+    every other holder's full copy becomes a light ref. Writers call
+    this after bulk output writes; the one-off fan-out migration is the
+    same call across all campaigns.
+    """
+    owner_names = _output_owner_names(campaign)
+    tasks = list(ProdTask.objects.filter(campaign=campaign))
+    by_name = {t.name: t for t in tasks}
+    newest = {}
+    for task in tasks:
+        for entry in (task.overrides or {}).get('outputs') or []:
+            did = entry.get('did') or ''
+            if not did:
+                continue
+            current = newest.get(did)
+            if current is None or (str(entry.get('checked_at') or '')
+                                   > str(current.get('checked_at') or '')):
+                newest[did] = entry
+    moved = 0
+    dirty = set()
+    for task in tasks:
+        overrides = dict(task.overrides or {})
+        outputs = overrides.get('outputs') or []
+        refs = list(overrides.get('output_refs') or [])
+        kept = []
+        changed = False
+        for entry in outputs:
+            did = entry.get('did') or ''
+            owner = owner_names.get(did) or task.name
+            if owner == task.name:
+                kept.append(entry)
+                continue
+            refs = _output_ref_list(refs, entry, owner)
+            changed = True
+            moved += 1
+            owner_task = by_name.get(owner)
+            if owner_task is not None:
+                owner_overrides = dict(owner_task.overrides or {})
+                owner_outputs = [o for o in owner_overrides.get('outputs') or []
+                                 if o.get('did') != did]
+                owner_outputs.append(newest.get(did, entry))
+                owner_overrides['outputs'] = owner_outputs
+                owner_task.overrides = owner_overrides
+                dirty.add(owner)
+        if changed:
+            overrides['outputs'] = kept
+            overrides['output_refs'] = refs
+            task.overrides = overrides
+            dirty.add(task.name)
+    for name in dirty:
+        by_name[name].save(update_fields=['overrides', 'updated_at'])
+    return {'campaign': campaign.name, 'moved_to_refs': moved,
+            'tasks_touched': len(dirty)}
+
+
+def _output_ref(entry, owner):
+    return {'did': entry.get('did', ''), 'stage': entry.get('stage', ''),
+            'owner': owner, 'checked_at': entry.get('checked_at', '')}
+
+
 def match_requests_to_rucio_snapshot(snapshot, *, campaign):
     """For every ProdTask in `campaign` whose CSV input has a usable tail,
     stash an `overrides['csv_import']['output']` rollup of matching Rucio
@@ -3015,6 +3161,7 @@ def match_requests_to_rucio_snapshot(snapshot, *, campaign):
     qs = ProdTask.objects.filter(campaign=campaign).select_related('dataset')
     summary = {'tasks_seen': 0, 'tasks_matched': 0, 'tasks_unmatched': 0}
     matched_dids = set()
+    owner_names = _output_owner_names(campaign)
     for t in qs:
         summary['tasks_seen'] += 1
         # Prefer the persisted csv_import.filters block (already extracted
@@ -3034,7 +3181,18 @@ def match_requests_to_rucio_snapshot(snapshot, *, campaign):
         for m in matches:
             matched_dids.add(m['did'])
         overrides = dict(t.overrides or {})
-        overrides['outputs'] = [_rucio_match_to_output(m, checked_at) for m in matches]
+        # Edition owns; others reference: the full record goes only to
+        # the DID's owning task, every other match keeps a light ref.
+        own_entries, ref_entries = [], []
+        for m in matches:
+            entry = _rucio_match_to_output(m, checked_at)
+            owner = owner_names.get(entry['did'], '')
+            if owner and owner != t.name:
+                ref_entries.append(_output_ref(entry, owner))
+            else:
+                own_entries.append(entry)
+        overrides['outputs'] = own_entries
+        overrides['output_refs'] = ref_entries
         # Drop the superseded aggregate if present — outputs is now the home.
         cv = overrides.get('csv_import')
         if isinstance(cv, dict) and 'output' in cv:
@@ -3075,6 +3233,7 @@ def match_requests_to_rucio_snapshot(snapshot, *, campaign):
                     'filters':    _extract_past_filters(did),
                 })
     campaign.data = {**(campaign.data or {}), 'rucio_unmatched': unmatched}
+    summary['ownership'] = consolidate_output_ownership(campaign)
     campaign.save(update_fields=['data', 'updated_at'])
     summary['rucio_unmatched'] = len(unmatched)
     return summary

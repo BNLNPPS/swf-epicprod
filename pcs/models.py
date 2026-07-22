@@ -798,13 +798,26 @@ class ProdTask(models.Model):
 
     @property
     def has_output(self):
-        """True if any produced Rucio dataset is recorded."""
-        return bool(self.outputs)
+        """True if any produced Rucio dataset is recorded — owned or
+        referenced. A task that matched produced data stays findable by
+        the output facets even when another task owns the record."""
+        return bool(self.outputs or self.output_refs)
+
+    @property
+    def output_refs(self):
+        """Light references to produced datasets owned by another task:
+        ``{did, stage, owner, checked_at}`` per entry — the counterpart
+        of ``outputs`` under the edition-owns rule
+        (EPICPROD_DATA_LINEAGE.md § Output ownership)."""
+        refs = (self.overrides or {}).get('output_refs')
+        return refs if isinstance(refs, list) else []
 
     @property
     def output_stages(self):
         """Distinct production stages present in outputs, e.g. ['FULL', 'RECO']."""
-        return sorted({o.get('stage') for o in self.outputs if o.get('stage')})
+        stages = {o.get('stage') for o in self.outputs if o.get('stage')}
+        stages |= {r.get('stage') for r in self.output_refs if r.get('stage')}
+        return sorted(stages)
 
     @property
     def output_incomplete(self):

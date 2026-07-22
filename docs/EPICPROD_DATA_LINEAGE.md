@@ -143,17 +143,25 @@ past-campaign ingest writes this schema directly (one bare-named campaign per
 version, per-stage totals in `data['past_summary'][stage]`), so legacy-shaped
 task overrides are no longer produced.
 
-**Output ownership** *(decided 2026-07-22; migration pending)* — one
-produced DID has one owning record. The PCS-composed edition task holds
-the full `outputs` entry (counts, RSEs, completion); where no edition
-exists, the stage-matching past row owns it. Filter-matched request rows,
-EVGEN rows, and association rows carry a light reference (DID, stage,
-owner) rather than a second full record — the reconstructive filter match
-attaches one produced dataset to every task whose physics filters
-overlap, and independent full records on each have disagreed. Writers
-enforce ownership on write; a one-off migration consolidates the existing
-fan-out. Until then, read paths select the most-recently-checked record
-per DID.
+**Output ownership** *(decided and implemented 2026-07-22)* — one
+produced DID has one owning record. The owner is resolved through the
+dataset row registered at the DID (`metadata.source.location`, the
+catalog's record of that physical output): the task bound to that row,
+preferring a working task over a past row and a stage-matching row over
+a cross-stage one (FULL/RECO siblings share a composed identity, so
+resolution never goes through the composed name alone). Every other
+task that matches the DID — filter-matched request rows, EVGEN rows,
+association rows — carries a light `output_refs` entry
+(`{did, stage, owner, checked_at}`, the `ProdTask.output_refs`
+accessor) rather than a second full record: the reconstructive filter
+match attaches one produced dataset to every task whose physics filters
+overlap, and independent full records on each have disagreed. The
+`has_output` facet counts owned and referenced outputs alike, so
+request rows stay findable. The match, reconcile, and past-ingest
+writers each finish with `consolidate_output_ownership`
+(idempotent; `scripts/migrate_output_ownership.py` ran the same
+consolidation once across all campaigns), so ownership re-settles on
+every nightly pass.
 
 The past-campaign ingest itself is clockwork: a `catalog_sync` chain step
 (`epic-prod-past-import.py`) pulls the eic/epic-prod bookkeeping clone —

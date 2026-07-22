@@ -259,9 +259,13 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
             pc_heads[key] = edition
             created += 1
 
+    from .services import consolidate_output_ownership
+    ownership = consolidate_output_ownership(campaign)
+
     summary = {'campaign': campaign_name, 'updated': updated,
                'attached': attached, 'created': created,
-               'unresolved': len(unresolved)}
+               'unresolved': len(unresolved),
+               'ownership_moved': ownership.get('moved_to_refs', 0)}
     log_epicprod_action(
         'catalog-sync', 'rucio_reconcile',
         subject_type='campaign', subject_key=campaign_name,

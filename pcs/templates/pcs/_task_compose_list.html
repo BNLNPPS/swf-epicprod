@@ -220,6 +220,11 @@ Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
               {{ o.file_count }}f/{{ o.bytes|filesizeformat }}{% if not o.complete %} <span class="out-incomplete">!</span>{% endif %}
             </span>
           {% endfor %}
+          {% for r in t.output_refs %}
+            <span class="{% if r.stage == 'FULL' %}out-simu{% else %}out-reco{% endif %}" title="Produced data record held by task {{ r.owner }}">
+              {% if r.stage == 'FULL' %}Simu{% else %}Reco{% endif %} → {{ r.owner }}
+            </span>
+          {% endfor %}
         {% else %}
           <span class="flag-pill pill-noout">no output</span>
         {% endif %}
