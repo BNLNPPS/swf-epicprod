@@ -84,6 +84,7 @@ status document and computes the **mechanical verdict floor** —
 | `assessment_ffail_alarm` | `0.30` | final-failure rate ≥ → `alarm` |
 | `assessment_sync_stale_hours` | `26` | catalog_sync older → at least `attention` |
 | `assessment_arrivals_stall_days` | `2` | no arrivals while a validated production target is incomplete → at least `attention`; no stall verdict is inferred when target completion is unavailable |
+| `assessment_platform_floor_exclude` | `campaign-assessments` | comma-separated platform check names the floor ignores — the assessment system's own bookkeeping must not raise campaign verdicts about itself; floor reasons name the specific non-ok checks |
 
 Credential warning/expiry reuses `CREDENTIAL_EXPIRY_WARN_DAYS`: warning →
 `attention`, expired/missing → `alarm`.
@@ -354,6 +355,19 @@ bundle, followed by the bounded judgment fields above. `narration` remains
 the single payload for thin delivery channels. Before registration the
 harness matches `bundle_id`, `evidence_computed_at`, and the narrative name
 and version to the submitted bundle.
+
+The human report leads with the narration as a summary paragraph under the
+title. The header verdict carries a mechanical standing annotation computed
+from the production-owned registration series (consecutive prior
+registrations at the same verdict; a changed verdict is marked
+changed-from) — prior AI content is never read, only recorded verdicts.
+The header also marks degraded evidence and links a generation-problems
+count to the report's audit tail. A daily whose interval carried no
+campaign-attributed activity renders compactly: the interval null is one
+line and the fact tables stay behind the bundle link. The generation
+section is the short audit tail — assembly attribution, the linked audit
+record, problems, and unavailable material; per-source consulted detail
+lives on the investigation-evidence page only.
 
 On acceptance the harness stores a second hidden, one-off Page in
 `epicprod.assessment.bundle`: the structured live-investigation records, exact

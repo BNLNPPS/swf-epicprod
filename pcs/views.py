@@ -2804,8 +2804,24 @@ def pcs_catalog(request):
     inflow = _campaigns_with_inflow()
     active_lifecycle = (request.GET.get('lifecycle') or '').strip()
     producing_campaign_name = ''
+    if not active_lifecycle:
+        # Lifecycle-independent campaign link (?campaign=NAME): resolve
+        # the tab at request time, so stored links (assessment subjects,
+        # bookmarks) never go stale when a campaign's lifecycle moves.
+        requested = (request.GET.get('campaign') or '').strip()
+        if requested:
+            if any(camp.name == requested for camp, _ in inflow):
+                active_lifecycle = 'producing'
+                producing_campaign_name = requested
+            else:
+                requested_campaign = (Campaign.objects
+                                      .filter(name=requested)
+                                      .only('lifecycle').first())
+                if requested_campaign:
+                    active_lifecycle = requested_campaign.lifecycle
     if active_lifecycle == 'producing':
-        producing_campaign_name = (request.GET.get('campaign') or '').strip()
+        if not producing_campaign_name:
+            producing_campaign_name = (request.GET.get('campaign') or '').strip()
         if not Campaign.objects.filter(name=producing_campaign_name).exists():
             active_lifecycle, producing_campaign_name = 'current', ''
     elif active_lifecycle not in LIFECYCLE_KEYS:

@@ -141,13 +141,26 @@ def _floor(blocks):
         verdict = _worst(verdict, 'attention')
         reasons.append('production platform status unavailable')
     else:
-        platform = str(system.get('overall_status') or 'unknown').lower()
-        if platform == 'error':
+        # The floor considers production-relevant checks only: the
+        # assessment system's own bookkeeping (and anything else listed)
+        # must not raise campaign verdicts about itself.
+        excluded = str(SysConfig.get_setting(
+            'assessment_platform_floor_exclude', 'campaign-assessments'))
+        excluded_names = {n.strip() for n in excluded.split(',') if n.strip()}
+        non_ok = [row for row in (system.get('current_non_ok') or [])
+                  if row.get('name') not in excluded_names]
+        errors = sorted(r['name'] for r in non_ok
+                        if str(r.get('status')) == 'error')
+        others = sorted(r['name'] for r in non_ok
+                        if str(r.get('status')) != 'error')
+        if errors:
             verdict = _worst(verdict, 'alarm')
-            reasons.append('production platform status error')
-        elif platform not in ('ok', 'healthy'):
+            reasons.append(
+                f'production platform check error: {", ".join(errors)}')
+        elif others:
             verdict = _worst(verdict, 'attention')
-            reasons.append(f'production platform status {platform}')
+            reasons.append(
+                f'production platform check non-ok: {", ".join(others)}')
 
     return {'verdict': verdict, 'reasons': reasons,
             'standing_context': {

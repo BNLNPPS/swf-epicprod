@@ -123,7 +123,7 @@ def _resolve_campaign(subject_key, data):
         'subject_label': f'Campaign {campaign.name}',
         'subject_url': _url(
             'pcs:pcs_catalog',
-            query={'lifecycle': campaign.lifecycle},
+            query={'campaign': campaign.name},
         ),
     }
 

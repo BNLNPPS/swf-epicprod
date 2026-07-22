@@ -162,6 +162,35 @@ def _already_retried(prompt_group_id):
         extra_data__prompt_group_id=str(prompt_group_id)).exists()
 
 
+def _verdict_standing(campaign, kind, verdict):
+    """How long this verdict has been standing: consecutive prior
+    registrations of this campaign+kind at the same verdict. Mechanical,
+    from the production-owned registration series — prior AI content is
+    never read, only the recorded verdicts."""
+    from monitor_app.models import AppLog
+    kinds = ['daily', 'nightly'] if kind == 'daily' else [kind]
+    rows = list(AppLog.objects.filter(
+        app_name='epicprod',
+        extra_data__action='assessment_register',
+        extra_data__subject_key=str(campaign),
+        extra_data__assessment_kind__in=kinds)
+        .exclude(extra_data__quarantined=True)
+        .order_by('-timestamp')
+        .values_list('extra_data__verdict', 'timestamp')[:60])
+    prior_consecutive = 0
+    since = None
+    for row_verdict, stamp in rows:
+        if str(row_verdict or '') != str(verdict or ''):
+            break
+        prior_consecutive += 1
+        since = stamp
+    return {
+        'prior_consecutive': prior_consecutive,
+        'since': since.date().isoformat() if since else '',
+        'previous_verdict': str(rows[0][0] or '') if rows else '',
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--job-id', required=True)
@@ -282,7 +311,13 @@ def main():
         log.warning('investigation evidence persistence failed: %s', e)
         artifact['generation']['problems'].append(
             f'investigation evidence persistence failed: {e}')
-    report = reporting.render_report(bundle, artifact, kind)
+    standing = {}
+    try:
+        standing = _verdict_standing(campaign, kind, verdict)
+    except Exception as e:
+        log.warning('verdict standing lookup failed: %s', e)
+    report = reporting.render_report(bundle, artifact, kind,
+                                     standing=standing)
     result = _register_ai_assessment_sync(
         subject_type='campaign', subject_key=campaign,
         assessment=report,
@@ -292,6 +327,7 @@ def main():
         data={'assessment_kind': kind, 'origin': 'scheduled',
               'schema_version': spec.SCHEMA_VERSION, 'slot': slot,
               'verdict': verdict, 'narration': narration,
+              'verdict_standing': standing,
               'model_verdict': model_verdict,
               'floor': floor, 'floor_enforced': floor_enforced,
               'structured': artifact,

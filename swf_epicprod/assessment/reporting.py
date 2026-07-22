@@ -834,9 +834,24 @@ def render_investigation_page(bundle, artifact, *, job_id, model_output,
     return '\n\n'.join(part for part in sections if part).strip()
 
 
+def _collect_problems(bundle, artifact):
+    """Every problem the report must surface: the model's generation
+    problems, failed manifest fetches, and evidence-quality notes."""
+    generation = (artifact.get('generation') or {})
+    problems = list(generation.get('problems') or [])
+    for entry in bundle.get('manifest') or []:
+        if not entry.get('ok'):
+            problems.append(
+                f'{entry.get("source")}: {entry.get("error") or "fetch failed"}')
+    problems.extend((bundle.get('facts') or {}).get('evidence_problems') or [])
+    return list(dict.fromkeys(problems))
+
+
 def _generation(bundle, artifact):
+    """The audit tail of the human report, kept short: full consulted-source
+    and investigation detail lives on the linked investigation-evidence
+    page, not here."""
     generation = artifact.get('generation') or {}
-    consulted = generation.get('consulted') or []
     bundle_url = (bundle.get('artifact') or {}).get('url') or ''
     facts_schema = (bundle.get('facts') or {}).get('schema') or 'bundle facts'
     assembly = (
@@ -854,41 +869,64 @@ def _generation(bundle, artifact):
     investigation = bundle.get('investigation_artifact') or {}
     if investigation.get('url'):
         blocks.append(
-            '**Investigation evidence**\n\n'
-            f'- [Live evidence records, exact model artifact, and runner '
-            f'transcript]({investigation["url"]}).')
-    if bundle_url:
-        blocks.append(
-            '**Bundle artifacts**\n\n'
-            f'- Inlined here: [production facts]({bundle_url}#production-facts) '
-            f'and [state comparison]({bundle_url}#state-comparison).\n'
-            f'- Linked for review: [campaign narrative]({bundle_url}#campaign-narrative), '
-            f'[general context]({bundle_url}#general-narrative), '
-            f'[source manifest]({bundle_url}#acquisition-manifest), '
-            f'and [analytics evidence]({bundle_url}#analytics-evidence).')
-    if consulted:
-        blocks.append('**Consulted**\n\n' + '\n'.join(
-            f'- {_escape(item.get("source"))}: {_escape(item.get("contribution"))}'
-            for item in consulted))
+            '**Audit record**\n\n'
+            f'- [Sources consulted, live evidence records, exact model '
+            f'artifact, and runner transcript]({investigation["url"]}).')
 
-    problems = list(generation.get('problems') or [])
-    unavailable = list(generation.get('unavailable') or [])
-    for entry in bundle.get('manifest') or []:
-        if not entry.get('ok'):
-            problems.append(
-                f'{entry.get("source")}: {entry.get("error") or "fetch failed"}')
-    problems.extend((bundle.get('facts') or {}).get('evidence_problems') or [])
-
+    problems = _collect_problems(bundle, artifact)
+    unavailable = list(dict.fromkeys(generation.get('unavailable') or []))
     if problems:
-        problem_text = '\n'.join(
-            f'- {_escape(item)}' for item in dict.fromkeys(problems))
+        problem_text = '\n'.join(f'- {_escape(item)}' for item in problems)
     else:
         problem_text = '- None reported.'
     blocks.append(f'**Problems and limitations**\n\n{problem_text}')
     if unavailable:
         blocks.append('**Unavailable**\n\n' + '\n'.join(
-            f'- {_escape(item)}' for item in dict.fromkeys(unavailable)))
+            f'- {_escape(item)}' for item in unavailable))
     return '\n\n'.join(blocks)
+
+
+def _quiet_interval(rollup):
+    """True when the reporting interval carried no campaign-attributed
+    activity at all — the deterministic trigger for the compact daily."""
+    members = (rollup or {}).get('members') or {}
+
+    def data(name):
+        return (members.get(name) or {}).get('data') or {}
+
+    return bool(
+        data('window_activity').get('quiet')
+        and not data('rucio_arrivals').get('files_in_recorded_sweeps')
+        and not data('disposition_mix').get('window_flips')
+        and not data('action_stream_activity').get('actions'))
+
+
+def _ordinal(n):
+    if 10 <= n % 100 <= 20:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
+    return f'{n}{suffix}'
+
+
+def _verdict_text(artifact, kind, standing):
+    """The header verdict with its mechanical history annotation — a
+    standing condition must read differently from a new one."""
+    verdict = str(artifact.get('verdict') or '').capitalize()
+    text = f'**Verdict:** {verdict}'
+    if not standing:
+        return text
+    prior = int(standing.get('prior_consecutive') or 0)
+    previous = str(standing.get('previous_verdict') or '')
+    since = str(standing.get('since') or '')
+    if prior >= 1:
+        run = _ordinal(prior + 1)
+        text += f' — standing, {run} consecutive {kind}'
+        if since:
+            text += f' (since {since})'
+    elif previous and previous != str(artifact.get('verdict') or ''):
+        text += f' — changed from {previous}'
+    return text
 
 
 def report_title(campaign, kind, date):
@@ -896,7 +934,7 @@ def report_title(campaign, kind, date):
     return f'ePIC Production Campaign {campaign} — {label}, {date}'
 
 
-def render_report(bundle, artifact, kind):
+def render_report(bundle, artifact, kind, standing=None):
     """Assemble the published report from facts plus bounded judgment."""
     params = bundle.get('params') or {}
     campaign = params.get('campaign') or ''
@@ -904,9 +942,21 @@ def render_report(bundle, artifact, kind):
         str(bundle.get('generated_at')).replace('Z', '+00:00')).astimezone(ET)
     title = report_title(campaign, kind, generated.date().isoformat())
     facts = bundle.get('facts') or {}
-    verdict = str(artifact.get('verdict') or '').capitalize()
-    metadata = (f'**Verdict:** {verdict} · **Evidence window:** '
+    summary = ''
+    narration = str(artifact.get('narration') or '').strip()
+    if narration:
+        summary = f'**Summary:** {narration}'
+    metadata = (f'{_verdict_text(artifact, kind, standing)} · '
+                f'**Evidence window:** '
                 f'{facts.get("evidence_window", {}).get("display_et") or "unknown"}')
+    if bundle.get('degraded'):
+        metadata += ' · **Degraded evidence**'
+    problems = _collect_problems(bundle, artifact)
+    if problems:
+        count = len(problems)
+        noun = 'problem' if count == 1 else 'problems'
+        metadata += (f' · [⚠ {count} generation {noun}]'
+                     f'(#generation-report)')
     bundle_url = ((bundle.get('artifact') or {}).get('url') or '')
     investigation_url = (
         (bundle.get('investigation_artifact') or {}).get('url') or '')
@@ -935,7 +985,7 @@ def render_report(bundle, artifact, kind):
 
     if kind == 'weekly':
         sections = [
-            f'# {title}', metadata, artifact_nav, comparison,
+            f'# {title}', summary, metadata, artifact_nav, comparison,
             '### Executive assessment', _bullets(artifact.get('assessment')),
             '### Campaign state', _table(facts.get('current_state') or []),
             _fact_notes(facts),
@@ -945,13 +995,45 @@ def render_report(bundle, artifact, kind):
             '### Issues and responsibilities', _issues(artifact.get('top_issues')),
             '### Outlook', _bullets(artifact.get('outlook'),
                                      empty='No evidence-grounded change to the near-term outlook was identified.'),
+            '<a id="generation-report"></a>',
             '### Generation of the report', _generation(bundle, artifact),
         ]
+    elif _quiet_interval(bundle.get('rollup')):
+        # Quiet daily: a compact entry. The interval null is one line;
+        # standing state and history stay one click away in the bundle.
+        interpretation = list(artifact.get('assessment') or [])
+        interpretation.extend(artifact.get('activity_interpretation') or [])
+        quiet_line = (
+            'Quiet interval — no campaign-attributed PanDA activity, JLab '
+            'file arrivals, disposition changes, or production actions in '
+            'the window.')
+        if bundle_url:
+            quiet_line += (f' Standing state and history: '
+                           f'[production facts]({bundle_url}#production-facts).')
+        sections = [
+            f'# {title}', summary, metadata, artifact_nav, comparison,
+            quiet_line,
+            '### Operational assessment', _bullets(interpretation),
+        ]
+        if artifact.get('software_findings'):
+            sections.extend([
+                '### Software and release state',
+                _software(artifact.get('software_findings')),
+            ])
+        sections.extend([
+            '### Issues and follow-up', _issues(artifact.get('top_issues')),
+        ])
+        if artifact.get('outlook'):
+            sections.extend(['### Outlook', _bullets(artifact.get('outlook'))])
+        sections.extend([
+            '<a id="generation-report"></a>',
+            '### Generation of the report', _generation(bundle, artifact),
+        ])
     else:
         interpretation = list(artifact.get('assessment') or [])
         interpretation.extend(artifact.get('activity_interpretation') or [])
         sections = [
-            f'# {title}', metadata, artifact_nav, comparison,
+            f'# {title}', summary, metadata, artifact_nav, comparison,
             '### Production facts', '#### Interval activity',
             _table(facts.get('activity') or []),
             '#### Current state', _table(facts.get('current_state') or []),
@@ -969,6 +1051,7 @@ def render_report(bundle, artifact, kind):
         if artifact.get('outlook'):
             sections.extend(['### Outlook', _bullets(artifact.get('outlook'))])
         sections.extend([
+            '<a id="generation-report"></a>',
             '### Generation of the report', _generation(bundle, artifact),
         ])
     sections = [part for part in sections if part]

@@ -775,10 +775,16 @@ def system_status(campaign, window_start, window_end):
         incident['recovery_minutes'] for incident in non_ok
         if incident['recovery_minutes'] is not None
     ]
+    current_non_ok = [
+        {'name': row['name'], 'status': str(row.get('status') or 'unknown')}
+        for row in current_by_name.values()
+        if str(row.get('status') or '') not in ('ok', 'healthy')
+    ]
     return _block('system_status', window_start, window_end, {
         'available': bool(summary.get('total')),
         'overall_status': summary.get('overall_status', 'unknown'),
         'overall_reason': summary.get('overall_reason', ''),
+        'current_non_ok': current_non_ok,
         'latest_checked_at': latest.isoformat() if latest else None,
         'counts': {k: summary.get(k, 0)
                    for k in ('ok', 'warning', 'error', 'unknown', 'total')},
