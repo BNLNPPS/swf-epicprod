@@ -2808,17 +2808,22 @@ def pcs_catalog(request):
         # Lifecycle-independent campaign link (?campaign=NAME): resolve
         # the tab at request time, so stored links (assessment subjects,
         # bookmarks) never go stale when a campaign's lifecycle moves.
+        # A patch-level name falls back to its family, so pre-family
+        # links (?campaign=26.07.0) keep resolving.
+        from .name_tokens import campaign_family
         requested = (request.GET.get('campaign') or '').strip()
-        if requested:
-            if any(camp.name == requested for camp, _ in inflow):
+        for candidate in dict.fromkeys(
+                [requested, campaign_family(requested)] if requested else []):
+            if any(camp.name == candidate for camp, _ in inflow):
                 active_lifecycle = 'producing'
-                producing_campaign_name = requested
-            else:
-                requested_campaign = (Campaign.objects
-                                      .filter(name=requested)
-                                      .only('lifecycle').first())
-                if requested_campaign:
-                    active_lifecycle = requested_campaign.lifecycle
+                producing_campaign_name = candidate
+                break
+            requested_campaign = (Campaign.objects
+                                  .filter(name=candidate)
+                                  .only('lifecycle').first())
+            if requested_campaign:
+                active_lifecycle = requested_campaign.lifecycle
+                break
     if active_lifecycle == 'producing':
         if not producing_campaign_name:
             producing_campaign_name = (request.GET.get('campaign') or '').strip()

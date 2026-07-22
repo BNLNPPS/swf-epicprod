@@ -126,3 +126,15 @@ def sample_name_reserved_collision(sample_name):
 
 def reserved_sample_token_description():
     return 'first segment k<n> or last segment b<n>/try<n>'
+
+
+def campaign_family(name):
+    """The campaign family of a version name: its first two fields.
+
+    The campaign is the family (26.07); the third field is the patch
+    level of the monthly software release, recorded on datasets and
+    tasks but not a campaign boundary — see docs/CAMPAIGN_FAMILY.md.
+    A two-field name is already the family.
+    """
+    parts = str(name or '').split('.')
+    return '.'.join(parts[:2]) if len(parts) >= 2 else str(name or '')

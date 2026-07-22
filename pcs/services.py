@@ -34,6 +34,7 @@ from .models import (
     PhysicsCategory, PhysicsTag, EvgenTag, SimuTag, RecoTag, BackgroundTag,
 )
 from .name_tokens import (
+    campaign_family,
     logical_name_from_physical_name,
     panda_attempt_name,
     panda_name_from_physical_name,
@@ -335,14 +336,17 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
         return None, f'unparseable taskname: {task_name!r}'
 
     physics, evgen, simu, reco, cfg, _ = _ensure_csvimport_anchors()
+    # The campaign is the family; the patch edition stays on the dataset
+    # (detector_version, names) — docs/CAMPAIGN_FAMILY.md.
+    family = campaign_family(det_version)
     current_camp = Campaign.objects.filter(lifecycle='current').first()
     current_v = _version_tuple(current_camp.name) if current_camp else None
     lc = 'future' if (current_v is not None
-                      and _version_tuple(det_version) > current_v) else 'past'
+                      and _version_tuple(family) > current_v) else 'past'
 
     with transaction.atomic():
         campaign, _created = Campaign.objects.get_or_create(
-            name=det_version,
+            name=family,
             defaults={'lifecycle': lc,
                       'description': f'Auto-created on intake of direct PanDA '
                                      f'submissions for {det_version}',
@@ -2452,7 +2456,10 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
     with transaction.atomic():
         for stage, versions in versions_by_stage.items():
             for version in versions:
-                campaign_name = version
+                # The campaign row is the family; the patch edition stays
+                # in task/dataset names, detector_version, and the
+                # edition-keyed totals below (docs/CAMPAIGN_FAMILY.md).
+                campaign_name = campaign_family(version)
                 index_path = _os.path.join(epic_prod_path, 'docs', stage, version, 'index.md')
                 try:
                     with open(index_path) as f:
@@ -2595,17 +2602,28 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                     campaign_files += block['file_count']
                     campaign_bytes += block['data_size_bytes']
 
-                # Stage-keyed totals: one campaign row spans both stages, so
-                # each stage pass writes only its own entry.
+                # Edition-keyed totals under the family campaign row; the
+                # stage-keyed past_summary the views read is rebuilt as
+                # the sum over editions after each pass.
                 data = dict(campaign.data or {})
-                past_summary = data.get('past_summary')
-                if not isinstance(past_summary, dict) or 'file_count' in past_summary:
-                    past_summary = {}
-                past_summary[stage] = {
+                editions = data.get('past_summary_editions')
+                if not isinstance(editions, dict):
+                    editions = {}
+                per_edition = dict(editions.get(version) or {})
+                per_edition[stage] = {
                     'file_count': campaign_files,
                     'data_size_bytes': campaign_bytes,
                 }
-                data['past_summary'] = past_summary
+                editions[version] = per_edition
+                data['past_summary_editions'] = editions
+                stage_rollup = {}
+                for edition_totals in editions.values():
+                    for st, totals in (edition_totals or {}).items():
+                        agg = stage_rollup.setdefault(
+                            st, {'file_count': 0, 'data_size_bytes': 0})
+                        agg['file_count'] += totals.get('file_count') or 0
+                        agg['data_size_bytes'] += totals.get('data_size_bytes') or 0
+                data['past_summary'] = stage_rollup
                 campaign.data = data
                 campaign.save(update_fields=['data', 'updated_at'])
                 touched_campaigns.add(campaign.pk)
@@ -3681,17 +3699,31 @@ def import_jlab_rucio_current_snapshot(*, campaign_name=None,
         'campaign_name': campaign_name,
         'campaigns':     {},
     }
+    # A family campaign spans patch editions, each with its own Rucio
+    # path (/RECO/26.07.0, /RECO/26.07.1). Enumerate the editions from
+    # the catalog's recorded detector versions; a patch-level name (or a
+    # family with no recorded editions) fetches its own path directly.
+    editions = sorted({
+        v for v in (Dataset.objects
+                    .filter(campaign__name=campaign_name)
+                    .values_list('detector_version', flat=True)
+                    .distinct())
+        if v and campaign_family(v) == campaign_name and v != campaign_name
+    })
+    if not editions:
+        editions = [campaign_name]
     for stage in ('RECO', 'FULL'):
-        cpath = f'/{stage}/{campaign_name}'
-        try:
-            snapshot['campaigns'][cpath] = fetch_jlab_rucio_campaign(
-                cpath, token=token)
-            summary['paths'][cpath] = snapshot['campaigns'][cpath]['count']
-        except Exception as e:                                # noqa: BLE001
-            summary['errors'].append(f'{cpath}: {e}')
-            snapshot['campaigns'][cpath] = {'count': 0, 'datasets': [],
-                                            'error': str(e)}
-            summary['paths'][cpath] = 0
+        for edition in editions:
+            cpath = f'/{stage}/{edition}'
+            try:
+                snapshot['campaigns'][cpath] = fetch_jlab_rucio_campaign(
+                    cpath, token=token)
+                summary['paths'][cpath] = snapshot['campaigns'][cpath]['count']
+            except Exception as e:                            # noqa: BLE001
+                summary['errors'].append(f'{cpath}: {e}')
+                snapshot['campaigns'][cpath] = {'count': 0, 'datasets': [],
+                                                'error': str(e)}
+                summary['paths'][cpath] = 0
 
     _write_json_atomic(out_path, snapshot)
     summary['file_bytes'] = _os.path.getsize(out_path)
@@ -3848,7 +3880,9 @@ def sweep_rucio_arrivals(*, roots=('/RECO', '/SIMU'), scope='epic',
             segs = name.split('/')
             if len(segs) < 4 or not segs[2]:
                 continue
-            campaign_name, location = segs[2], '/'.join(segs[2:-1])
+            # Group by campaign family; the location paths keep the full
+            # patch-level segment, so per-edition detail is preserved.
+            campaign_name, location = campaign_family(segs[2]), '/'.join(segs[2:-1])
             camp = per_campaign.setdefault(
                 campaign_name, {'files': 0, 'by_root': {}, 'locations': {}})
             camp['files'] += 1
