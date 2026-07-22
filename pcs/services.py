@@ -403,6 +403,43 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
     return task, 'intaken'
 
 
+def _panda_executed_identity(jedi_task_id):
+    """The executed software identity of a PanDA task: the container(s)
+    recorded on its jobs — immutable execution evidence from the PanDA
+    DB, independent of whatever ProdConfig the catalog row carries.
+    Returns {} when no job records a container."""
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    sql = f'''
+        SELECT "container_name", COUNT(*) AS cnt
+        FROM (
+            SELECT "container_name" FROM "{PANDA_SCHEMA}"."jobsactive4"
+             WHERE "jeditaskid" = %s AND "container_name" IS NOT NULL
+            UNION ALL
+            SELECT "container_name" FROM "{PANDA_SCHEMA}"."jobsarchived4"
+             WHERE "jeditaskid" = %s AND "container_name" IS NOT NULL
+        ) c
+        GROUP BY "container_name"
+        ORDER BY cnt DESC
+        LIMIT 3
+    '''
+    try:
+        with connections['panda'].cursor() as cursor:
+            cursor.execute(sql, [jedi_task_id, jedi_task_id])
+            rows = cursor.fetchall()
+    except Exception as e:                                    # noqa: BLE001
+        _log.warning('executed-identity fetch failed for task %s: %s',
+                     jedi_task_id, e)
+        return {}
+    if not rows:
+        return {}
+    return {
+        'container_image': rows[0][0],
+        'containers': [{'container': r[0], 'jobs': r[1]} for r in rows],
+        'source': 'PanDA job container_name',
+        'checked_at': _timezone.now().isoformat(),
+    }
+
+
 def reconcile_panda_task_association(panda_task):
     """Create a PandaTasks row for an externally discovered PanDA task.
 
@@ -446,6 +483,9 @@ def reconcile_panda_task_association(panda_task):
         'workinggroup': panda_task.get('workinggroup') or '',
         'processingtype': panda_task.get('processingtype') or '',
     }
+    executed = _panda_executed_identity(jedi_task_id)
+    if executed:
+        metadata['executed'] = executed
     with transaction.atomic():
         row = PandaTasks.objects.select_for_update().filter(task_name=task_name).first()
         if row and row.prod_task_id != task.pk:

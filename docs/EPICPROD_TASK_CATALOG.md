@@ -373,7 +373,11 @@ Rows with no bound configuration — auto-intake, CSV import — anchor to
 the dedicated `Placeholder — no bound configuration` ProdConfig, never
 to a real config: rendering a genuine config name on an unbound row
 misstates executed software, whose truth for adopted tasks lives in the
-PanDA task and Rucio records. Legacy placeholder uses of the `26.02.0
+PanDA task and Rucio records. The association reconciler records that
+truth: each association carries the executed container(s) from the
+PanDA job records as `PandaTasks.metadata['executed']`
+(`scripts/backfill_panda_executed.py` filled pre-existing
+associations). Legacy placeholder uses of the `26.02.0
 Standard Production` row were migrated 2026-07-22 by
 `scripts/migrate_placeholder_prodconfig.py` (dry-run default; kept for
 reference).
