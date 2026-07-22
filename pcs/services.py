@@ -3604,6 +3604,7 @@ def _detect_active_releases(token=None, *, year_prefix='26.'):
         '/dids/epic/dids/search', token, type='dataset', name='/RECO/*'))
     from collections import Counter as _Counter
     counts = _Counter()
+    edition_counts = {}
     for n in names:
         if not isinstance(n, str):
             continue
@@ -3613,7 +3614,11 @@ def _detect_active_releases(token=None, *, year_prefix='26.'):
         v = parts[1]
         if v == 'main' or not v.startswith(year_prefix):
             continue
-        counts[v] += 1
+        # Releases aggregate by campaign family; the patch editions ride
+        # as detail (docs/CAMPAIGN_FAMILY.md).
+        family = campaign_family(v)
+        counts[family] += 1
+        edition_counts.setdefault(family, _Counter())[v] += 1
     def _key(v):
         out = []
         for part in v.split('.'):
@@ -3622,7 +3627,8 @@ def _detect_active_releases(token=None, *, year_prefix='26.'):
             except ValueError:
                 out.append((1, part))
         return tuple(out)
-    return [{'version': v, 'count': counts[v]}
+    return [{'version': v, 'count': counts[v],
+             'editions': dict(edition_counts[v])}
             for v in sorted(counts, key=_key, reverse=True)]
 
 

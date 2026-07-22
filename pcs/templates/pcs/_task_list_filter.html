@@ -163,6 +163,11 @@ Context expected:
     <span id="pcs-tlf-nevents-opts"></span>
   </div>
   <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label">Edition:</span>
+    <a href="#" data-filter="edition" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-edition-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
     <span class="pcs-tlf-label">Geometry:</span>
     <a href="#" data-filter="detector" data-value="" class="filter-link filter-active">All</a>
     <span id="pcs-tlf-detector-opts"></span>
@@ -276,6 +281,7 @@ Context expected:
           data-priority="{{ t.priority|default:'' }}"
           data-nevents="{{ nev|millions }}"
           data-evgen="{{ evgen }}"
+          data-edition="{{ t.dataset.detector_version|default:'' }}"
           data-detector="{{ path_filters.detector|default:'' }}"
           data-beam="{{ path_filters.beam|default:'' }}"
           data-physics="{{ path_filters.physics|default:'' }}"
@@ -499,7 +505,7 @@ Context expected:
      so the catalog stays bookmarkable. */
 
   const STR = ['status','propagation','requestor','evgen','submission_path','priority','nevents',
-               'detector','beam','physics','q2','species','energy'];
+               'edition','detector','beam','physics','q2','species','energy'];
   const BOOL = ['new_request','pre_tdr_use','early_science_use','other_use','background',
                 'has_output','no_output','incomplete_output','has_simu','has_reco',
                 'has_input','no_input','incomplete_input','ai_proposed','ai_executed'];
@@ -507,6 +513,7 @@ Context expected:
                requestor:'requestor', evgen:'evgen',
                submission_path:'submissionPath',
                priority:'priority', nevents:'nevents',
+               edition:'edition',
                detector:'detector', beam:'beam', physics:'physics',
                q2:'q2', species:'species', energy:'energy' };
   const BD = { new_request:'newRequest', pre_tdr_use:'preTdr',
@@ -543,6 +550,7 @@ Context expected:
     submission_path: initial.get('submission_path') || '',
     priority: initial.get('priority') || '',
     nevents: initial.get('nevents') || '',
+    edition: initial.get('edition') || '',
     detector: initial.get('detector') || '',
     beam: initial.get('beam') || '',
     physics: initial.get('physics') || '',
@@ -594,6 +602,7 @@ Context expected:
     // filters count rows that would still match if that boolean were ON.
     const strCounts = { status:{}, propagation:{}, requestor:{}, evgen:{}, submission_path:{},
                         priority:{}, nevents:{},
+                        edition:{},
                         detector:{}, beam:{}, physics:{}, q2:{}, species:{}, energy:{} };
     const boolCounts = { new_request:0, pre_tdr_use:0, early_science_use:0, other_use:0, background:0,
                          has_output:0, no_output:0, incomplete_output:0, has_simu:0, has_reco:0,
@@ -648,7 +657,7 @@ Context expected:
     const u = new URL(window.location.href);
     const p = u.searchParams;
     ['q','status','propagation','requestor','evgen','submission_path','priority','nevents',
-     'detector','beam','physics','q2','species','energy',
+     'edition','detector','beam','physics','q2','species','energy',
      'new_request','pre_tdr_use','early_science_use','other_use','background',
      'has_output','no_output','incomplete_output','has_simu','has_reco',
      'has_input','no_input','incomplete_input','ai_proposed','ai_executed',
