@@ -307,8 +307,17 @@ def rucio_arrivals(campaign, window_start, window_end):
         .order_by('timestamp')
         .values('timestamp', 'extra_data')
     )
+    # Coverage comes from every recorded sweep: a sweep that attributed
+    # nothing to this campaign still measured its interval, and dropping
+    # it falsely reported zero coverage for quiet campaigns. File detail
+    # entries remain campaign-attributed.
+    all_intervals = []
     for row in rows:
         extra = row['extra_data'] if isinstance(row['extra_data'], dict) else {}
+        if str(extra.get('outcome') or 'ok') not in ('', 'ok'):
+            continue
+        all_intervals.append((str(extra.get('window_start') or ''),
+                              row['timestamp'].isoformat()))
         count = int((extra.get('campaigns') or {}).get(campaign.name) or 0)
         if not count:
             continue
@@ -324,12 +333,12 @@ def rucio_arrivals(campaign, window_start, window_end):
         })
 
     sweep_intervals = []
-    for sweep in sweeps:
+    for raw_start, raw_end in all_intervals:
         try:
             start = _dt.datetime.fromisoformat(
-                str(sweep.get('window_start') or '').replace('Z', '+00:00'))
+                raw_start.replace('Z', '+00:00'))
             end = _dt.datetime.fromisoformat(
-                str(sweep.get('window_end') or '').replace('Z', '+00:00'))
+                raw_end.replace('Z', '+00:00'))
             if start.tzinfo is None:
                 start = start.replace(tzinfo=_dt.timezone.utc)
             if end.tzinfo is None:
@@ -354,6 +363,10 @@ def rucio_arrivals(campaign, window_start, window_end):
         for start, end in merged
     )
     sweep_coverage = {
+        'measurement': (
+            'coverage from every successful recorded sweep interval, '
+            'campaign-attributed or not — zero arrivals inside covered '
+            'hours is a true zero, not missing accounting'),
         'first_start': merged[0][0].isoformat() if merged else '',
         'last_end': merged[-1][1].isoformat() if merged else '',
         'measured_hours': round(measured_hours, 3),

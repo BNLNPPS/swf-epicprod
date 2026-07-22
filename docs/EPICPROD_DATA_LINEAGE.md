@@ -85,7 +85,8 @@ and a different Q² spelling than the requested EVGEN path.
 
 - Per-RSE completeness comes from each replica's available-vs-total file count in
   the snapshot record; a dataset is `complete` only when every RSE replica is
-  fully available.
+  fully available. A dataset with zero files is never complete — a trivially
+  satisfied placement rule (OK with zero locks) is not completion evidence.
 - File count and byte size are taken as the max across RSE replicas (Rucio
   reports them per replica, identical across RSEs).
 
@@ -141,6 +142,18 @@ block and the old `csv_import.output` rollup onto it, and the epic-prod
 past-campaign ingest writes this schema directly (one bare-named campaign per
 version, per-stage totals in `data['past_summary'][stage]`), so legacy-shaped
 task overrides are no longer produced.
+
+**Output ownership** *(decided 2026-07-22; migration pending)* — one
+produced DID has one owning record. The PCS-composed edition task holds
+the full `outputs` entry (counts, RSEs, completion); where no edition
+exists, the stage-matching past row owns it. Filter-matched request rows,
+EVGEN rows, and association rows carry a light reference (DID, stage,
+owner) rather than a second full record — the reconstructive filter match
+attaches one produced dataset to every task whose physics filters
+overlap, and independent full records on each have disagreed. Writers
+enforce ownership on write; a one-off migration consolidates the existing
+fan-out. Until then, read paths select the most-recently-checked record
+per DID.
 
 The past-campaign ingest itself is clockwork: a `catalog_sync` chain step
 (`epic-prod-past-import.py`) pulls the eic/epic-prod bookkeeping clone —

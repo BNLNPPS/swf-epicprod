@@ -42,6 +42,12 @@ from .name_tokens import (
 from .physics_match import derive_physics, derive_background, derive_evgen, single_particle_angle
 
 
+# The one ProdConfig row that marks "no configuration bound yet" — CSV
+# imports and direct PanDA intake anchor here until the prod team binds a
+# real configuration.
+PLACEHOLDER_PRODCONFIG_NAME = 'Placeholder — no bound configuration'
+
+
 class ServiceError(Exception):
     """Domain error with an HTTP-shaped status hint and detail message."""
     def __init__(self, detail, status=400):
@@ -619,7 +625,9 @@ def refresh_campaign_progress_snapshot(campaign, *, generated_by='operator'):
                 'stage': output.get('stage') or '',
                 'file_count': file_count,
                 'bytes': _to_int(output.get('bytes'), 0),
-                'complete': bool(output.get('complete', True)),
+                # Absent completion evidence reads as incomplete — a
+                # missing key must never present as placed output.
+                'complete': bool(output.get('complete', False)),
                 'checked_at': output.get('checked_at') or '',
                 'expected_jobs': expected_jobs,
                 'expected_source': expected_source,
@@ -1491,11 +1499,11 @@ def _ensure_csvimport_anchors():
     """Resolve the placeholder Dataset-FK targets used by CSV-imported rows.
 
     Returns ``(physics_tag, evgen_tag, simu_tag, reco_tag, prod_config,
-    campaign)``. All must already exist; this is a lookup, not a
-    creator. ``PROTECT`` FKs from Dataset to Tag and from ProdTask to
-    ProdConfig mean we cannot synthesize ad hoc — we pin to whatever's
-    already locked in the DB. The prod team can replace these per-task
-    when they bind a real Dataset/Config to a CSV-imported task.
+    campaign)``. Tags and campaign must already exist — ``PROTECT`` FKs
+    from Dataset to Tag mean we cannot synthesize those ad hoc; the
+    prod_config anchor is the dedicated placeholder row (created on first
+    use), never a real configuration. The prod team can replace these
+    per-task when they bind a real Dataset/Config to a CSV-imported task.
     """
     def first_locked(model, label):
         t = model.objects.order_by('tag_number').first()
@@ -1508,10 +1516,15 @@ def _ensure_csvimport_anchors():
     simu = first_locked(SimuTag, 'simu')
     reco = first_locked(RecoTag, 'reco')
 
-    cfg = (ProdConfig.objects.filter(name__icontains='26.02.0 Standard').first()
-           or ProdConfig.objects.first())
-    if not cfg:
-        raise ServiceError('No ProdConfig available for CSV import anchor')
+    # A dedicated placeholder row, never a real configuration: rendering a
+    # genuine config name (e.g. '26.02.0 Standard Production') on rows that
+    # merely lack a bound configuration misstates executed software.
+    cfg, _ = ProdConfig.objects.get_or_create(
+        name=PLACEHOLDER_PRODCONFIG_NAME,
+        defaults={'description': (
+            'Placeholder for tasks with no bound production configuration '
+            '(CSV import, direct PanDA intake). The executed software '
+            'identity lives in the PanDA task and Rucio records.')})
 
     campaign = Campaign.objects.filter(lifecycle='current').order_by('-updated_at').first()
     if not campaign:
@@ -2195,6 +2208,10 @@ def _parse_past_index(text):
         nonlocal block
         if block:
             yield_block, block = block, None
+            # A zero-file output is never complete: the True seed only
+            # stands when replica rows exist and files were counted.
+            if not yield_block['rses'] or not yield_block['file_count']:
+                yield_block['complete'] = False
             return yield_block
         return None
 
