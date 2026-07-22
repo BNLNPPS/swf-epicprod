@@ -316,8 +316,17 @@ def main():
         standing = _verdict_standing(campaign, kind, verdict)
     except Exception as e:
         log.warning('verdict standing lookup failed: %s', e)
+    harness_health = None
+    if kind == 'weekly':
+        try:
+            from swf_epicprod.assessment.freshness import (
+                harness_problem_aggregation)
+            harness_health = harness_problem_aggregation(days=7)
+        except Exception as e:
+            log.warning('harness health aggregation failed: %s', e)
     report = reporting.render_report(bundle, artifact, kind,
-                                     standing=standing)
+                                     standing=standing,
+                                     harness_health=harness_health)
     result = _register_ai_assessment_sync(
         subject_type='campaign', subject_key=campaign,
         assessment=report,
@@ -346,9 +355,12 @@ def main():
              sublevel='high', slot=slot,
              reason=f"registration failed: {result.get('error')}")
         return 1
+    problems = reporting._collect_problems(bundle, artifact)
     _log('assessment_enforce', outcome='ok', subject_key=campaign, slot=slot,
          verdict=verdict, floor_enforced=floor_enforced,
          degraded=bool(bundle.get('degraded')),
+         problems=[p[:300] for p in problems[:20]],
+         problems_count=len(problems),
          corun_page_group_id=result.get('corun_page_group_id') or '')
     print(f'{campaign} {slot}: registered verdict={verdict}'
           f'{" (floor-enforced)" if floor_enforced else ""}')

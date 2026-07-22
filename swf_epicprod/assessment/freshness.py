@@ -11,10 +11,56 @@ so a run lost anywhere upstream goes red on the System page instead of
 silently missing. Thresholds are SysConfig knobs at visible defaults.
 """
 
+import re
+
 from django.utils import timezone
 
 # Pre-rename registrations carry kind 'nightly'; they are daily assessments.
 DAILY_KINDS = ('daily', 'nightly')
+
+
+def harness_problem_aggregation(days=7):
+    """Distinct harness/tool problems from recent assessment runs.
+
+    Reads the ``problems`` list the enforcement handler logs on each
+    ``assessment_enforce`` action and groups recurrences (digits
+    normalized, so per-run ids and counts do not split one problem into
+    many). Returns entries sorted by days seen, then count:
+    ``{'problem', 'count', 'days_seen', 'last_seen'}`` — the mechanical
+    basis for the System-page warning and the weekly report's
+    assessment-system-health table.
+    """
+    from monitor_app.models import AppLog
+
+    cutoff = timezone.now() - timezone.timedelta(days=days)
+    rows = (AppLog.objects
+            .filter(app_name='epicprod',
+                    extra_data__action='assessment_enforce',
+                    timestamp__gte=cutoff)
+            .order_by('timestamp')
+            .values('timestamp', 'extra_data'))
+    grouped = {}
+    for row in rows:
+        extra = row['extra_data'] if isinstance(row['extra_data'], dict) else {}
+        for problem in extra.get('problems') or []:
+            text = str(problem).strip()
+            if not text:
+                continue
+            key = re.sub(r'\d+', '#', text)
+            entry = grouped.setdefault(key, {
+                'problem': text, 'count': 0, 'days': set(), 'last_seen': ''})
+            entry['problem'] = text
+            entry['count'] += 1
+            entry['days'].add(row['timestamp'].date().isoformat())
+            entry['last_seen'] = row['timestamp'].isoformat()
+    out = []
+    for entry in grouped.values():
+        out.append({'problem': entry['problem'],
+                    'count': entry['count'],
+                    'days_seen': len(entry['days']),
+                    'last_seen': entry['last_seen']})
+    out.sort(key=lambda e: (-e['days_seen'], -e['count'], e['problem']))
+    return out
 
 
 def assessment_freshness():
@@ -82,6 +128,13 @@ def assessment_freshness():
         detail[name] = rows
     if not targets:
         warnings.append('no assessment target campaigns resolved')
+    recur_days = int(SysConfig.get_setting(
+        'assessment_problem_recurrence_days', 3))
+    problems = harness_problem_aggregation(days=7)
+    recurring = [p for p in problems if p['days_seen'] >= recur_days]
+    for p in recurring[:3]:
+        warnings.append(f'recurring harness problem '
+                        f'({p["days_seen"]}d): {p["problem"][:90]}')
     status = 'error' if errors else ('warning' if warnings else 'ok')
     if errors or warnings:
         summary = '; '.join(errors + warnings)
@@ -90,5 +143,6 @@ def assessment_freshness():
     if notes:
         summary += ' (' + '; '.join(notes) + ')'
     data = {'targets': targets, 'campaigns': detail,
-            'stale_hours': {'daily': daily_stale, 'weekly': weekly_stale}}
+            'stale_hours': {'daily': daily_stale, 'weekly': weekly_stale},
+            'harness_problems': problems}
     return status, summary, data

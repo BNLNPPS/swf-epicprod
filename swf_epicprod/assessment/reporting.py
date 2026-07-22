@@ -934,7 +934,30 @@ def report_title(campaign, kind, date):
     return f'ePIC Production Campaign {campaign} — {label}, {date}'
 
 
-def render_report(bundle, artifact, kind, standing=None):
+def _harness_health_section(harness_health):
+    """The weekly's deterministic assessment-system-health table, from
+    the enforce-logged problems of the last seven days."""
+    if harness_health is None:
+        return 'The harness problem aggregation was unavailable for this report.'
+    if not harness_health:
+        return ('No assessment-harness or tool problems were recorded in '
+                'the last seven days of runs.')
+    rows = ['| Problem | Days seen (7d) | Runs | Last seen |',
+            '|---|---:|---:|---|']
+    for entry in harness_health[:12]:
+        rows.append(
+            f'| {_escape(entry.get("problem"))} '
+            f'| {entry.get("days_seen")} '
+            f'| {entry.get("count")} '
+            f'| {_timestamp(entry.get("last_seen"))} |')
+    extra = len(harness_health) - 12
+    table = '\n'.join(rows)
+    if extra > 0:
+        table += f'\n\n{extra} further problems omitted here.'
+    return table
+
+
+def render_report(bundle, artifact, kind, standing=None, harness_health=None):
     """Assemble the published report from facts plus bounded judgment."""
     params = bundle.get('params') or {}
     campaign = params.get('campaign') or ''
@@ -995,6 +1018,8 @@ def render_report(bundle, artifact, kind, standing=None):
             '### Issues and responsibilities', _issues(artifact.get('top_issues')),
             '### Outlook', _bullets(artifact.get('outlook'),
                                      empty='No evidence-grounded change to the near-term outlook was identified.'),
+            '### Assessment system health',
+            _harness_health_section(harness_health),
             '<a id="generation-report"></a>',
             '### Generation of the report', _generation(bundle, artifact),
         ]

@@ -243,6 +243,16 @@ is an error row, a target awaiting its first daily is a warning, and a
 target with no weekly yet is noted without alarming until the first
 weekly registers.
 
+The same collector carries **harness health**: the enforcement handler
+logs each run's generation problems on its `assessment_enforce` action,
+and `harness_problem_aggregation` groups the last seven days'
+recurrences (digits normalized). A problem seen on
+`assessment_problem_recurrence_days` distinct days (default 3) raises
+the collector to warning, and the weekly report renders the aggregation
+as its deterministic "Assessment system health" table — assessor-found
+tool and harness defects surface for repair instead of being
+re-discovered nightly.
+
 ### Surfacing (v1 minimum)
 
 The assessment renders where campaign AI content already renders (the AI
