@@ -158,19 +158,47 @@ def _deltas(baseline, rollup, generated_at, comparison_days):
     return out
 
 
+def _campaign_family(campaign):
+    """The narrative-bearing campaign family: the first two name fields.
+    The third field discriminates editions within the family (26.07.0,
+    26.07.1) that share one narrative."""
+    parts = str(campaign).split('.')
+    return '.'.join(parts[:2]) if len(parts) >= 2 else str(campaign)
+
+
+def _edition_order(name):
+    """Sort key for edition-suffixed narrative names, numeric-aware so
+    campaign_26.07.10 outranks campaign_26.07.9."""
+    tail = name.rsplit('.', 1)[-1]
+    if tail.isdigit():
+        return (0, int(tail), '')
+    return (1, 0, name)
+
+
 def _find_narratives(pages, campaign):
     """Pick the campaign narrative and the latest general narrative from a
     narrative-section page listing (client-side: the pages API filters by
-    section, names live in data)."""
-    campaign_page = None
+    section, names live in data). The campaign narrative belongs to the
+    family, so the campaign's edition field is ignored: a bare
+    campaign_<family> page wins outright, else the highest-edition
+    campaign_<family>.<N> page is the family narrative."""
+    family = _campaign_family(campaign)
+    bare = f'campaign_{family}'
+    bare_page = None
+    editions = []
     general = None
     for page in pages or []:
         name = str((page.get('data') or {}).get('name') or '')
-        if name == f'campaign_{campaign}':
-            campaign_page = page
+        if name == bare:
+            bare_page = page
+        elif name.startswith(f'{bare}.'):
+            editions.append((name, page))
         elif name.startswith('campaign_general_'):
             if general is None or name > str((general.get('data') or {}).get('name') or ''):
                 general = page
+    campaign_page = bare_page
+    if campaign_page is None and editions:
+        campaign_page = max(editions, key=lambda item: _edition_order(item[0]))[1]
     return campaign_page, general
 
 
@@ -202,6 +230,12 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
                     'version': page.get('version'),
                     'content': page.get('content') or '',
                 }
+                if label == 'campaign':
+                    narratives[label]['scope'] = (
+                        f'This is the campaign narrative for {campaign}: '
+                        f'narratives belong to the campaign family '
+                        f'({_campaign_family(campaign)}), whose editions '
+                        f'share one narrative.')
             else:
                 manifest.note(f'narrative_{label}', False,
                               f'no {label} narrative page found for {campaign}')

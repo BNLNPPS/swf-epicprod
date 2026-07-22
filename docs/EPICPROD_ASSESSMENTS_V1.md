@@ -142,9 +142,14 @@ grows with it.
    rollup (one fetch carrying all seven analytics members — progress,
    PanDA health, arrivals, dispositions, action stream, system status,
    credentials — and the verdict floor), the production analytics snapshot
-   closest to one complete reporting window earlier, plus the narratives (`campaign_<name>`
-   current, latest `campaign_general_*`). Prior AI reports are not evidence
-   and are not supplied. Identical calls every run,
+   closest to one complete reporting window earlier, plus the narratives:
+   the campaign-family narrative and the latest `campaign_general_*`. A
+   campaign narrative belongs to the family (the first two name fields —
+   editions such as 26.07.0 and 26.07.1 share one narrative); the harness
+   resolves it deterministically — a bare `campaign_<family>` page wins,
+   else the highest-edition `campaign_<family>.<N>` page — and the bundle
+   states the resolution, so the model never matches narratives itself.
+   Prior AI reports are not evidence and are not supplied. Identical calls every run,
    per-call outcomes recorded; a failed must-look — including an absent
    campaign narrative — marks the run degraded in the bundle itself. The
    must-look set is versioned configuration here.

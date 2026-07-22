@@ -745,10 +745,13 @@ def render_bundle_page(bundle):
         name = narrative.get('name') or 'unavailable'
         version = narrative.get('version') or 0
         content = _nested_markdown(narrative.get('content') or '')
+        source_line = (f'**Source:** `{name}` version {version} · '
+                       f'**Page group:** `{narrative.get("group_id") or ""}`')
+        if narrative.get('scope'):
+            source_line += f' · {narrative["scope"]}'
         sections.extend([
             f'<a id="{label}-narrative"></a>', f'### {heading}',
-            f'**Source:** `{name}` version {version} · '
-            f'**Page group:** `{narrative.get("group_id") or ""}`',
+            source_line,
             content or 'No narrative content was available.',
         ])
 
