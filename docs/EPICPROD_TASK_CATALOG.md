@@ -368,3 +368,12 @@ description) and carry only what a task name yields: no request linkage, no
 real generator/simulation/reconstruction configuration. Born-vs-adopted is
 therefore the standing migration metric — adopted counts belong in reports
 and trend to zero as production moves onto the campaign-task flow.
+
+Rows with no bound configuration — auto-intake, CSV import — anchor to
+the dedicated `Placeholder — no bound configuration` ProdConfig, never
+to a real config: rendering a genuine config name on an unbound row
+misstates executed software, whose truth for adopted tasks lives in the
+PanDA task and Rucio records. Legacy placeholder uses of the `26.02.0
+Standard Production` row were migrated 2026-07-22 by
+`scripts/migrate_placeholder_prodconfig.py` (dry-run default; kept for
+reference).

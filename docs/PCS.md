@@ -297,6 +297,15 @@ A production config is a reusable template capturing everything needed to build 
 - **PanDA overrides**: Site, queue, working group, resource type
 - **Rucio overrides**: RSE, replication rules
 
+Each campaign carries a `<campaign> Standard Production` config; the
+standalone creator `scripts/create_standard_prodconfig.py` (dry-run
+default) clones the fullest prior standard row — including the
+submission `data` block below — overrides the campaign identity
+(container, JUG_XL tag, RSE), and can rebind the campaign's tasks still
+pointing at a legacy config. Tasks with no bound configuration anchor to
+the dedicated `Placeholder — no bound configuration` row, never to a
+real config (see `EPICPROD_TASK_CATALOG.md` on auto-intake).
+
 **Submission parameters** (JSON `data` field, extensible without migrations):
 
 | Key | Example | Purpose |
