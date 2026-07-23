@@ -372,6 +372,20 @@ def _next_campaign_hint():
         hint['batches'].append(batch_id)
     if not hints:
         return None
+    # A hint is only "next" while its family is beyond the current
+    # campaign: once that campaign exists and is current, a leftover
+    # pending-proposal batch must not resurrect it on the Future tab.
+    from .name_tokens import campaign_family
+    current = Campaign.objects.filter(lifecycle='current').first()
+    if current:
+        current_key = _version_tuple(campaign_family(current.name))
+        if current_key:
+            hints = {
+                name: hint for name, hint in hints.items()
+                if (_version_tuple(campaign_family(name)) or (0,)) > current_key
+            }
+    if not hints:
+        return None
     name = max(hints, key=_version_tuple)
     return {'name': name, **hints[name]}
 
