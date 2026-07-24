@@ -199,8 +199,16 @@ corun completion callback already lands at swf-monitor; a handler:
   validation failures and prior output; a second
   failure quarantines the artifact (marked malformed, raw output
   retained, excluded from later context and from the assessments page)
-  or records the failure — every scheduled slot resolves to a visible
-  outcome;
+  — every scheduled slot resolves to a visible outcome;
+- on a run that fails before returning a result (timeout, crash):
+  resubmits the same prompt once (the `assessment_rerun` action marks
+  the attempt and bounds it), preserves the runner transcript as a
+  hidden crashed-run evidence page, and registers a midstream-salvage
+  report — mechanical floor verdict, the model's narration recovered
+  from the transcript, and an explicit not-a-completed-assessment
+  header — so the slot fills and the freshness check clears; a
+  completed rerun registers the real report alongside, and audit
+  history retains both;
 - renders the report's fact tables directly from the submitted bundle and
   inserts model judgment only in the assessment, software, issue, outlook,
   and generation sections;

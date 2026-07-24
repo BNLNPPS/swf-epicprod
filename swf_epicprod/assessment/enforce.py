@@ -8,7 +8,10 @@ swf_epicprod.assessment.enforce --job-id ... --prompt-group-id ...
 against the schema, enforces the verdict floor (raise-only), retries a
 malformed run once, quarantines a second failure (raw output retained,
 never dropped), and registers the assessment — every scheduled slot resolves
-to a visible outcome.
+to a visible outcome. A run that fails before returning a result (timeout,
+crash) is resubmitted once and delivers a midstream-salvage report built
+from the runner transcript, with the transcript preserved as a crashed-run
+evidence page.
 """
 
 import argparse
@@ -152,6 +155,145 @@ def _report_title(prose, slot):
                 return t[:200]
     return f'Campaign assessment {slot}'
 
+def _already_rerun(prompt_group_id):
+    """A resubmission is recorded in the action stream; its presence bounds
+    the failed-run path to one automatic rerun — same pattern as
+    _already_retried for malformed artifacts."""
+    from monitor_app.models import AppLog
+    return AppLog.objects.filter(
+        app_name='epicprod',
+        extra_data__action='assessment_rerun',
+        extra_data__prompt_group_id=str(prompt_group_id)).exists()
+
+
+def _persist_crashed_run_evidence(bundle, *, job_id, run_log):
+    """Store the crashed run's transcript as a hidden corun evidence Page."""
+    params = bundle.get('params') or {}
+    campaign = str(params.get('campaign') or '')
+    kind = str(params.get('kind') or '')
+    content = reporting.render_crashed_run_page(
+        bundle, job_id=job_id, run_log=run_log)
+    page = _post(
+        f'{CORUN_API_URL}/pages/',
+        {
+            'section': CORUN_ASSESSMENT_BUNDLE_SECTION,
+            'title': (
+                f'ePIC {campaign} {kind} assessment crashed-run evidence — '
+                f'{bundle.get("generated_at") or ""}'),
+            'content': content,
+            'data': {
+                'ui_visible': False,
+                'artifact_type': 'campaign_assessment_crashed_run_evidence',
+                'source_system': 'epicprod',
+                'subject_type': 'campaign',
+                'subject_key': campaign,
+                'campaign': campaign,
+                'assessment_kind': kind,
+                'kind': kind,
+                'schema_version': spec.SCHEMA_VERSION,
+                'evidence_generated_at': bundle.get('generated_at') or '',
+                'input_bundle_id': str(
+                    (bundle.get('artifact') or {}).get('id') or ''),
+                'job_id': job_id,
+            },
+            'tags': [
+                'crashed-run-evidence', 'epicprod',
+                f'campaign:{campaign}', f'assessment:{kind}',
+            ],
+        })
+    evidence_id = str(page.get('group_id') or '')
+    if not evidence_id:
+        raise RuntimeError(
+            'corun crashed-run Page response contained no group id')
+    return {
+        'type': 'corun_page',
+        'id': evidence_id,
+        'url': f'{CORUN_WEB_URL}/page/{evidence_id}/',
+        'section': CORUN_ASSESSMENT_BUNDLE_SECTION,
+    }
+
+
+def _handle_failed_run(args, *, bundle, campaign, kind, slot, floor,
+                       floor_verdict, elapsed_s):
+    """The failed-run path (docs/EPICPROD_ASSESSMENTS.md, Harness
+    Lifecycle): a run that dies before submitting its artifact still
+    delivers. Persist the transcript as crashed-run evidence, resubmit the
+    same prompt once, and register a midstream-salvage report — floor
+    verdict, salvaged narration, explicit not-a-completed-assessment
+    header — so the slot fills and the freshness check clears."""
+    run_log = {}
+    try:
+        run_log = _get(f'{CORUN_API_URL}/jobs/{args.job_id}/log/',
+                       token=CORUN_API_TOKEN)
+    except Exception as e:
+        log.warning('job log fetch failed: %s', e)
+    error = str(run_log.get('error') or '')
+
+    crash_evidence = {}
+    try:
+        crash_evidence = _persist_crashed_run_evidence(
+            bundle, job_id=args.job_id, run_log=run_log)
+    except Exception as e:
+        log.warning('crashed-run evidence persistence failed: %s', e)
+
+    rerun_job_id = ''
+    rerun_exhausted = _already_rerun(args.prompt_group_id)
+    if not rerun_exhausted:
+        try:
+            job = _post(f'{CORUN_API_URL}/jobs/',
+                        {'prompt_group_id': args.prompt_group_id,
+                         'definition_id': _definition_for(kind)})
+            rerun_job_id = str(job.get('id') or job.get('job_id') or '')
+            _log('assessment_rerun', outcome='ok', subject_key=campaign,
+                 slot=slot, prompt_group_id=args.prompt_group_id,
+                 rerun_job_id=rerun_job_id,
+                 reason=f'run {args.status}: {error}')
+        except Exception as e:
+            log.warning('resubmission failed: %s', e)
+            _log('assessment_rerun', outcome='error', subject_key=campaign,
+                 slot=slot, prompt_group_id=args.prompt_group_id,
+                 reason=f'resubmission failed: {e}')
+
+    salvage_registered = False
+    try:
+        salvage = reporting.render_salvage_report(
+            bundle, kind, run_log=run_log, crash_evidence=crash_evidence,
+            rerun_job_id=rerun_job_id, rerun_exhausted=rerun_exhausted)
+        result = _register_ai_assessment_sync(
+            subject_type='campaign', subject_key=campaign,
+            assessment=salvage,
+            username='assessment-harness', ai='corun-job',
+            subject_label='', subject_url='',
+            title=_report_title(salvage, slot),
+            data={'assessment_kind': kind, 'origin': 'scheduled',
+                  'schema_version': spec.SCHEMA_VERSION, 'slot': slot,
+                  'verdict': floor_verdict, 'salvaged': True,
+                  'run_failed': error or f'run {args.status}',
+                  'floor': floor,
+                  'generation_harness': {
+                      'manifest': bundle.get('manifest'),
+                      'degraded': bundle.get('degraded'),
+                      'bundle': bundle.get('artifact'),
+                      'elapsed_s': elapsed_s,
+                      'job_id': args.job_id,
+                      'crash_evidence': crash_evidence,
+                      'rerun_job_id': rerun_job_id,
+                      'enforcement': 'salvaged'}})
+        salvage_registered = bool(result.get('success'))
+        if not salvage_registered:
+            log.warning('salvage registration failed: %s',
+                        result.get('error'))
+    except Exception as e:
+        log.warning('salvage report failed: %s', e)
+
+    _log('assessment_enforce', outcome='error', subject_key=campaign,
+         sublevel='high', slot=slot, job_id=args.job_id,
+         salvaged=salvage_registered, rerun_job_id=rerun_job_id,
+         crash_evidence_page_id=str(crash_evidence.get('id') or ''),
+         reason=f'run {args.status}: {error}')
+    return 0
+
+
 def _already_retried(prompt_group_id):
     """A retry is recorded in the action stream; its presence makes this
     attempt 2 — no state model needed."""
@@ -222,16 +364,9 @@ def main():
     floor_verdict = floor.get('verdict') or 'ok'
 
     if args.status != 'completed':
-        run_log = {}
-        try:
-            run_log = _get(f'{CORUN_API_URL}/jobs/{args.job_id}/log/',
-                           token=CORUN_API_TOKEN)
-        except Exception as e:
-            log.warning('job log fetch failed: %s', e)
-        _log('assessment_enforce', outcome='error', subject_key=campaign,
-             sublevel='high', slot=slot, job_id=args.job_id,
-             reason=f"run {args.status}: {str(run_log.get('error') or '')}")
-        return 0
+        return _handle_failed_run(
+            args, bundle=bundle, campaign=campaign, kind=kind, slot=slot,
+            floor=floor, floor_verdict=floor_verdict, elapsed_s=elapsed_s)
 
     page = _get(f'{CORUN_API_URL}/pages/{args.page_group_id}/',
                 token=CORUN_API_TOKEN)

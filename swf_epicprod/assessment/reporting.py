@@ -834,6 +834,152 @@ def render_investigation_page(bundle, artifact, *, job_id, model_output,
     return '\n\n'.join(part for part in sections if part).strip()
 
 
+def _salvage_narration(stderr):
+    """Model narration blocks from the runner transcript of a crashed run.
+
+    A Codex exec transcript interleaves bare ``codex`` marker lines (each
+    opening a narration block) with ``mcp: ...`` tool-call lines; the
+    narration is the model's own account of what it was investigating.
+    Returns the blocks in order, or [] when the transcript carries no such
+    structure (another runner family) — the caller then falls back to the
+    raw transcript tail."""
+    blocks, buf, collecting = [], [], False
+
+    def flush():
+        text = '\n'.join(buf).strip()
+        if text:
+            blocks.append(text)
+
+    for line in str(stderr or '').splitlines():
+        stripped = line.strip()
+        if stripped == 'codex':
+            if collecting:
+                flush()
+            collecting, buf = True, []
+            continue
+        if collecting:
+            if stripped == 'user' or line.startswith(('mcp: ', 'tokens used')):
+                flush()
+                collecting, buf = False, []
+                continue
+            buf.append(line)
+    if collecting:
+        flush()
+    return blocks
+
+
+def render_crashed_run_page(bundle, *, job_id, run_log):
+    """Render the crashed-run evidence page: the complete runner transcript
+    of a run that failed before submitting its result, preserved for audit
+    next to the investigation-evidence pages of completed runs."""
+    params = bundle.get('params') or {}
+    campaign = params.get('campaign') or ''
+    kind = str(params.get('kind') or '').capitalize()
+    bundle_url = (bundle.get('artifact') or {}).get('url') or ''
+    sections = [
+        f'# ePIC Campaign {campaign} — {kind} Assessment Crashed-Run Evidence',
+        f'**Job:** `{job_id}` · **Input bundle:** '
+        + (f'[evidence bundle]({bundle_url})' if bundle_url else 'unavailable'),
+        'This one-off Page preserves the runner transcript of an assessment '
+        'run that failed before submitting its result. It is not an '
+        'assessment and is not used as production evidence by later reports.',
+        '### Runner error',
+        _raw_fence((run_log or {}).get('error') or 'not reported', 'text'),
+        '### Runner execution transcript',
+        (_raw_fence((run_log or {}).get('stderr'), 'text')
+         if (run_log or {}).get('stderr') else
+         'No runner execution transcript was returned by corun.'),
+    ]
+    thinking = (run_log or {}).get('thinking')
+    if thinking:
+        sections.extend(['### Runner thinking trace',
+                         _raw_fence(thinking, 'text')])
+    return '\n\n'.join(part for part in sections if part).strip()
+
+
+def render_salvage_report(bundle, kind, *, run_log, crash_evidence=None,
+                          rerun_job_id='', rerun_exhausted=False):
+    """The surfaced midstream-salvage report for a run that failed before
+    submitting its artifact: mechanical facts and floor from the submitted
+    bundle, the model's unfinished narration recovered from the runner
+    transcript, and an unmissable statement of what this entry is."""
+    params = bundle.get('params') or {}
+    campaign = params.get('campaign') or ''
+    try:
+        generated = datetime.fromisoformat(
+            str(bundle.get('generated_at')).replace('Z', '+00:00')).astimezone(ET)
+    except ValueError:
+        generated = datetime.now(ET)
+    title = (report_title(campaign, kind, generated.date().isoformat())
+             + ' — Midstream Salvage')
+    error = str((run_log or {}).get('error') or 'run failed')
+    facts = bundle.get('facts') or {}
+    floor = ((bundle.get('rollup') or {}).get('floor')) or {}
+    floor_verdict = str(floor.get('verdict') or 'ok').capitalize()
+
+    if rerun_job_id:
+        rerun_note = (f'The slot was resubmitted once (corun job '
+                      f'`{rerun_job_id}`); a completed report follows this '
+                      'entry if the rerun succeeds.')
+    elif rerun_exhausted:
+        rerun_note = ('The single resubmission for this slot was already '
+                      'used; no further automatic attempt follows.')
+    else:
+        rerun_note = 'Resubmission could not be issued.'
+    header = (
+        '**Midstream salvage — not a completed assessment.** The scheduled '
+        f'run failed (`{error}`) before submitting its result artifact. '
+        'What follows is the model\'s unfinished working narration, '
+        'recovered from the runner transcript; it is unvalidated and '
+        f'carries no model verdict. {rerun_note}')
+
+    metadata = (f'**Verdict:** {floor_verdict} (mechanical floor) · '
+                f'**Evidence window:** '
+                f'{facts.get("evidence_window", {}).get("display_et") or "unknown"}')
+    if bundle.get('degraded'):
+        metadata += ' · **Degraded evidence**'
+    bundle_url = (bundle.get('artifact') or {}).get('url') or ''
+    if bundle_url:
+        metadata += f' · [Evidence bundle]({bundle_url})'
+    evidence_url = (crash_evidence or {}).get('url') or ''
+    if evidence_url:
+        metadata += f' · [Crashed-run transcript]({evidence_url})'
+
+    reasons = floor.get('reasons') or []
+    floor_section = ('\n'.join(f'- {_escape(reason)}' for reason in reasons)
+                     if reasons else
+                     '- No mechanical floor condition was raised.')
+
+    narration_blocks = _salvage_narration((run_log or {}).get('stderr'))
+    if narration_blocks:
+        narration_section = '\n\n'.join(narration_blocks)
+    elif (run_log or {}).get('stderr'):
+        narration_section = (
+            'The transcript carried no extractable narration; its raw tail:'
+            '\n\n' + _raw_fence(str(run_log.get('stderr'))[-3000:], 'text'))
+    else:
+        narration_section = ('No runner transcript was returned by corun; '
+                             'nothing could be salvaged from the run.')
+
+    generation = [
+        f'- The run failed before returning a result: {_escape(error)}.',
+        ('- Full runner transcript: '
+         f'[crashed-run evidence]({evidence_url}).') if evidence_url else
+        '- The crashed-run transcript page could not be stored.',
+        '- The verdict is the mechanical floor computed before the run; '
+        'no model artifact exists for this entry.',
+        f'- {rerun_note}',
+    ]
+
+    sections = [
+        f'# {title}', header, metadata,
+        '### Mechanical verdict floor', floor_section,
+        '### Salvaged investigation narration', narration_section,
+        '### Generation of the report', '\n'.join(generation),
+    ]
+    return '\n\n'.join(part for part in sections if part).strip()
+
+
 def _collect_problems(bundle, artifact):
     """Every problem the report must surface: the model's generation
     problems, failed manifest fetches, and evidence-quality notes."""

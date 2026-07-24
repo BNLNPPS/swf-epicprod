@@ -74,8 +74,8 @@ def assessment_freshness():
     slot plus grace) is an error. A target with no daily at all is a
     warning — its first slot is pending. A target with no weekly at all
     is noted, not alarmed, until the first weekly registers. A
-    quarantined registration fills its slot: quarantine is a visible
-    outcome with its own error event, not a missing one.
+    quarantined or midstream-salvage registration fills its slot: each is
+    a visible outcome with its own error event, not a missing one.
     """
     from monitor_app.models import AppLog, SysConfig
 

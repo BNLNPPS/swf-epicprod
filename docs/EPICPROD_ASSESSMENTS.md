@@ -156,11 +156,16 @@ the completion handler — guides the operation and cleans up after it:
 - Resolves every scheduled slot to a visible outcome. One of: a valid
   artifact; a quarantined malformed artifact — marked as malformed,
   excluded from dashboard data paths and from later assessment context,
-  raw output retained for diagnosis; or a failure record carrying the
-  error. A slot that never fills raises a freshness alarm, following
-  the catalog-sync freshness pattern. A malformed result is never
-  dropped: the display shows the quarantined artifact or a red failure
-  state.
+  raw output retained for diagnosis; or, for a run that fails before
+  submitting its result (timeout, crash), a midstream salvage: the run
+  is resubmitted once, and a salvage report is registered carrying the
+  mechanical floor verdict, the model's unfinished narration recovered
+  from the runner transcript, and an explicit statement that it is not
+  a completed assessment, with the full transcript preserved as a
+  linked crashed-run evidence page. A slot that never fills raises a
+  freshness alarm, following the catalog-sync freshness pattern. A
+  failed or malformed result is never dropped: the display shows the
+  quarantined artifact or the salvage.
 - Retains reruns as audit history without feeding generated reports back into
   later evidence.
 
