@@ -267,7 +267,7 @@ doc does not duplicate them.
 `catalog_import`, `questionnaire_import`, `questionnaire_match_update`,
 `campaign_progress_refresh`, `association_sweep` (with auto-intake of direct
 group.EIC submissions), `catalog_sync` (the nightly composite chain, cron
-02:15), `sync_epicprod_inventory`, `refresh_system_status`, `health_ping`,
+02:47), `sync_epicprod_inventory`, `refresh_system_status`, `health_ping`,
 `shutdown`. All work handlers run their doers on the `run_in_background`
 worker pool and record structured action records — see
 [ACTION_STREAM.md](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/ACTION_STREAM.md).

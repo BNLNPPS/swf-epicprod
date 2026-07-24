@@ -227,7 +227,7 @@ corun completion callback already lands at swf-monitor; a handler:
   the non-ok-verdict live-stream raise and the Mattermost relay follow
   from existing machinery.
 
-Cron (wenauseic), after the 02:15 catalog_sync chain has refreshed the state
+Cron (wenauseic), after the 02:47 catalog_sync chain has refreshed the state
 being assessed:
 
 ```

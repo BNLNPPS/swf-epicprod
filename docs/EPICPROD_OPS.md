@@ -450,7 +450,7 @@ refresh.
 
 ## Nightly catalog sync
 
-A `wenauseic` cron enqueues `catalog_sync` for the ops agent nightly at 02:15:
+A `wenauseic` cron enqueues `catalog_sync` for the ops agent nightly at 02:47:
 
 ```
 15 2 * * * bash -lc 'source ~/.env && /opt/swf-monitor/current/.venv/bin/python /opt/swf-monitor/current/scripts/enqueue-ops-message.py catalog_sync --created-by nightly_cron' >> /opt/swf-monitor/shared/logs/catalog-sync-cron.log 2>&1

@@ -52,7 +52,7 @@ the concrete contract.)
   drill-down beyond the bundle. Production state is served by the
   campaign-status MCP/REST rollup (see Analytics Library below)
   alongside the existing `epicprod_*`, `panda_*`, and `pcs_*` tools.
-  Cadence defaults: the daily at 03:45 ET, after the 02:15 catalog-sync
+  Cadence defaults: the daily at 03:45 ET, after the 02:47 catalog-sync
   chain has refreshed the production state being assessed, and the
   weekly on Monday at 06:00 ET. The trigger records an action-stream event.
 - **Registration.** The production-side completion handler — fed by

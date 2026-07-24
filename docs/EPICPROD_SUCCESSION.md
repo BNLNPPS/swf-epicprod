@@ -58,7 +58,7 @@ User crontab (`wenauseic`):
 | Schedule (ET) | Job |
 |---|---|
 | 01:30 | `backup-swfdb.sh` — pg_dump of `swfdb` to `/data/swf-shared/db-backups/`, verified and aged out |
-| 02:15 | `enqueue-ops-message.py catalog_sync` — the nightly composite catalog-sync chain (steps and runbook in `EPICPROD_OPS.md`) |
+| 02:47 | `enqueue-ops-message.py catalog_sync` — the nightly composite catalog-sync chain (steps and runbook in `EPICPROD_OPS.md`) |
 | 03:00 | `update_epicdoc.sh` — doc-repo pulls and re-ingest for the epicdoc tools |
 | 03:30 | `update_mcp_servers.sh` — pull and rebuild external MCP servers; bot restart if changed |
 | 03:45 | `assessment-trigger-cron.sh --kind daily` — daily campaign assessment |
