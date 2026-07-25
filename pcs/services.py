@@ -205,7 +205,8 @@ def panda_tasks_summary(task, *, include_live=False):
             updates = {
                 key: live.get(key)
                 for key in ('status', 'maxattempt', 'nactive', 'nfinished',
-                            'nfailed', 'nfinalfailed', 'nrunning', 'total_jobs',
+                            'nfailed', 'nfinalfailed', 'nfilesfinished',
+                            'nrunning', 'total_jobs',
                             'terminal_jobs', 'processing_percent',
                             'final_failure_rate')
                 if live.get(key) is not None
@@ -571,6 +572,7 @@ def _panda_progress_summaries(task_ids, tasknames):
         nfinished = _to_int(c.get('nfinished'))
         nfailed = _to_int(c.get('nfailed'))
         nfinalfailed = _to_int(c.get('nfinalfailed'))
+        nfilesfinished = _to_int(c.get('nfilesfinished'))
         nrunning = _to_int(c.get('nrunning'))
         total_jobs = nactive + nfinished + nfailed
         terminal_jobs = nfinished + nfailed
@@ -579,6 +581,7 @@ def _panda_progress_summaries(task_ids, tasknames):
             'nfinished': nfinished,
             'nfailed': nfailed,
             'nfinalfailed': nfinalfailed,
+            'nfilesfinished': nfilesfinished,
             'nrunning': nrunning,
             'maxattempt': c.get('maxattempt'),
             'total_jobs': total_jobs,
@@ -586,9 +589,11 @@ def _panda_progress_summaries(task_ids, tasknames):
             'processing_percent': (
                 round(100 * terminal_jobs / total_jobs, 1) if total_jobs else None
             ),
+            # Final failures are retry-exhausted input files (JEDI file-level
+            # accounting), so the rate denominator is terminal input files.
             'final_failure_rate': (
-                round(100 * nfinalfailed / (nfinalfailed + nfinished), 1)
-                if (nfinalfailed + nfinished) else None
+                round(100 * nfinalfailed / (nfinalfailed + nfilesfinished), 1)
+                if (nfinalfailed + nfilesfinished) else None
             ),
         })
         by_id[tid] = row

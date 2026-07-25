@@ -248,8 +248,11 @@ dashboard links. Four feeds are relevant:
 
 - **PanDA Monitor** — task and job state, retry counts, site status, alarm
   signals (the `nfinalfailed`/`computed_finalfailurerate` family in
-  `monitor_app/panda/api.py`; final failures are jobs with
-  `attemptnr >= maxattempt`), plus the April 21 Production WG dashboard
+  `monitor_app/panda/api.py`; final failures are input files that
+  exhausted their retry budget, from JEDI's file-level accounting in
+  `jedi_datasets` — job records cannot express exhaustion because JEDI
+  sets each record's `maxattempt` equal to its own `attemptnr`), plus
+  the April 21 Production WG dashboard
   requirement: "Develop dashboard that display usage across all resources
   in PanDA over time: How are we doing in terms of utilizing our
   allocations?" ([meeting notes](https://docs.google.com/document/d/1JA8GIQae30Ru62kgDN2pzqK90XBbQKz4LffXYbWNgIY/edit?tab=t.0#heading=h.y3evqgz3sc98)).

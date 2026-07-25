@@ -249,7 +249,8 @@ def panda_health(campaign, window_start, window_end):
     seen = by_id
 
     sums = {k: 0 for k in ('nactive', 'nfinished', 'nfailed',
-                           'nfinalfailed', 'nrunning', 'total_jobs')}
+                           'nfinalfailed', 'nfilesfinished', 'nrunning',
+                           'total_jobs')}
     statuses = {}
     errors = {}
     for summary in seen.values():
@@ -261,7 +262,9 @@ def panda_health(campaign, window_start, window_end):
         if dialog:
             errors[dialog] = errors.get(dialog, 0) + 1
 
-    terminal = sums['nfinalfailed'] + sums['nfinished']
+    # Final failures are retry-exhausted input files (JEDI file-level
+    # accounting), so the rate is over terminal input files.
+    terminal = sums['nfinalfailed'] + sums['nfilesfinished']
     rate = round(sums['nfinalfailed'] / terminal, 4) if terminal else None
     top_errors = sorted(errors.items(), key=lambda kv: (-kv[1], kv[0]))
     return _block('panda_health', window_start, window_end, {
