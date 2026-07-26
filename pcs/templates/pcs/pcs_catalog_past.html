@@ -121,7 +121,7 @@
   {# The symmetric tab strip (Current has the same one): Last activity under the tabs, promotion after it where rotation applies. #}
   <div class="small mb-2">
     <span><strong>Last activity:</strong> {{ tab_last_activity|fmt_dt|default:"none recorded" }}</span>
-    {% if active_lifecycle == 'producing' %}
+    {% if active_lifecycle == 'producing' and promote_eligible %}
     {% if user.is_authenticated %}
     <form method="post" action="{% url 'pcs:pcs_catalog_promote_current' %}" class="d-inline ms-3">
       {% csrf_token %}
@@ -139,10 +139,10 @@
   </div>
   {% endif %}
 
-  {% if active_lifecycle == 'producing' %}
+  {% if active_lifecycle == 'producing' or last_is_producing %}
     <div class="border rounded p-2 mb-3" style="max-width: 62em">
       <div>
-        <strong>{{ producing_campaign }} is producing</strong>{% if producing_arrivals %} &mdash;
+        <strong>{{ producing_banner_name }} is producing</strong>{% if producing_arrivals %} &mdash;
         {{ producing_arrivals.files }} new file{{ producing_arrivals.files|pluralize }} in JLab Rucio
         since {{ producing_arrivals.window_start|fmt_dt }} (as of the last arrivals sweep){% endif %}.
       </div>

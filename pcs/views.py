@@ -349,6 +349,20 @@ def _version_tuple(name):
         return None
 
 
+def _promotion_forward(candidate_name, current_name):
+    """Rotation must move forward: a producing campaign earns its
+    promote/populate affordances only when strictly newer than current
+    (or when no current campaign exists). An older campaign still
+    producing beside current — the 26.06 long tail — gets neither."""
+    candidate = _version_tuple(candidate_name)
+    if not candidate:
+        return False
+    if not current_name:
+        return True
+    current = _version_tuple(current_name)
+    return bool(current and candidate > current)
+
+
 def _next_campaign_hint():
     """The likely next campaign, derived from pending campaign-propagation
     proposal batches named '<next-campaign>-dispositions-<date>' (PCS.md).
@@ -2704,6 +2718,14 @@ def pcs_catalog_promote_current(request):
     if target.lifecycle == 'current':
         messages.info(request, f'{name} is already current.')
         return redirect(reverse('pcs:pcs_catalog'))
+    incumbent = (Campaign.objects.filter(lifecycle='current')
+                 .exclude(pk=target.pk).first())
+    if incumbent and not _promotion_forward(name, incumbent.name):
+        messages.error(
+            request,
+            f'{name} is not newer than current campaign {incumbent.name}; '
+            'rotation only moves forward.')
+        return redirect(reverse('pcs:pcs_catalog'))
     moves = []
     with transaction.atomic():
         for camp in Campaign.objects.filter(lifecycle='last').exclude(pk=target.pk):
@@ -2755,6 +2777,12 @@ def pcs_catalog_instancing_execute(request):
     if not (Campaign.objects.filter(name=source).exists() and target_known):
         messages.error(request, f'Unknown campaign in {source!r} -> {target!r}.')
         return redirect(reverse('pcs:pcs_catalog'))
+    if not _promotion_forward(target, source):
+        messages.error(
+            request,
+            f'Instancing {source} -> {target} refused: the target campaign '
+            'must be newer than the source.')
+        return redirect(reverse('pcs:pcs_catalog'))
     result = execute_campaign_instancing(
         source, target,
         created_by=getattr(request.user, 'username', '') or '')
@@ -2804,47 +2832,65 @@ def pcs_catalog_past_update(request):
     return redirect(reverse('pcs:pcs_catalog') + '?lifecycle=past')
 
 
-def _latest_daily_assessment(campaign_name):
-    """Latest registered daily AI assessment for a campaign, read from the
-    local assessment_register action series (the same production-owned
-    registration record _verdict_standing and the freshness check use) so
-    the page render path makes no remote call. Returns None when the
-    campaign has no registered daily."""
-    if not campaign_name:
-        return None
-    import logging
+def _assessment_register_rows(campaign_name, kinds):
+    """Registered assessments for a campaign family from the local
+    assessment_register action series (the same production-owned
+    registration record _verdict_standing and the freshness check use)
+    — no remote call in the render path. Pre-family registrations
+    (subject_key 26.07.0) match through the family prefix."""
     from monitor_app.models import AppLog
     from .name_tokens import campaign_family
-    names = list(dict.fromkeys(
-        [campaign_name, campaign_family(campaign_name)]))
-    row = (AppLog.objects.filter(
+    family = campaign_family(campaign_name)
+    names = list(dict.fromkeys([campaign_name, family]))
+    name_q = Q(extra_data__subject_key__in=names)
+    if family:
+        name_q |= Q(extra_data__subject_key__startswith=family + '.')
+    return (AppLog.objects.filter(
+        name_q,
         app_name='epicprod',
         extra_data__action='assessment_register',
         extra_data__outcome='ok',
-        extra_data__assessment_kind__in=['daily', 'nightly'],
-        extra_data__subject_key__in=names)
+        extra_data__assessment_kind__in=kinds)
         .exclude(extra_data__contains={'quarantined': True})
         .order_by('-timestamp')
-        .values('timestamp', 'extra_data')
-        .first())
+        .values('timestamp', 'extra_data'))
+
+
+def _assessment_report_url(extra, campaign_name):
+    import logging
+    group_id = str((extra or {}).get('corun_page_group_id') or '')
+    if not group_id:
+        return ''
+    try:
+        return reverse('monitor_app:ai_content_detail', args=[group_id])
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            'assessment report URL reverse failed for %s: %s',
+            campaign_name, e)
+        return ''
+
+
+def _latest_daily_assessment(campaign_name):
+    """Latest registered daily AI assessment for a campaign, plus a link
+    to the most recent weekly. Returns None when the campaign has no
+    registered daily."""
+    if not campaign_name:
+        return None
+    row = _assessment_register_rows(
+        campaign_name, ['daily', 'nightly']).first()
     if not row:
         return None
     extra = row['extra_data'] or {}
-    url = ''
-    group_id = str(extra.get('corun_page_group_id') or '')
-    if group_id:
-        try:
-            url = reverse('monitor_app:ai_content_detail', args=[group_id])
-        except Exception as e:
-            logging.getLogger(__name__).warning(
-                'assessment report URL reverse failed for %s: %s',
-                campaign_name, e)
+    weekly = _assessment_register_rows(campaign_name, ['weekly']).first()
+    weekly_url = (_assessment_report_url(weekly['extra_data'], campaign_name)
+                  if weekly else '')
     return {
         'campaign': campaign_name,
         'verdict': str(extra.get('verdict') or ''),
         'narration': str(extra.get('narration') or ''),
         'title': str(extra.get('report_title') or ''),
-        'url': url,
+        'url': _assessment_report_url(extra, campaign_name),
+        'weekly_url': weekly_url,
         'timestamp': row['timestamp'],
     }
 
@@ -2886,8 +2932,17 @@ def pcs_catalog(request):
     if active_lifecycle == 'producing':
         if not producing_campaign_name:
             producing_campaign_name = (request.GET.get('campaign') or '').strip()
-        if not Campaign.objects.filter(name=producing_campaign_name).exists():
-            active_lifecycle, producing_campaign_name = 'current', ''
+        if not any(camp.name == producing_campaign_name
+                   for camp, _ in inflow):
+            # Not actually producing (no fresh inflow): fall back to the
+            # campaign's stored lifecycle tab instead of rendering a
+            # producing page with nothing behind it.
+            stored = (Campaign.objects.filter(name=producing_campaign_name)
+                      .only('lifecycle').first())
+            active_lifecycle = (stored.lifecycle
+                                if stored and stored.lifecycle in LIFECYCLE_KEYS
+                                else 'current')
+            producing_campaign_name = ''
     elif active_lifecycle not in LIFECYCLE_KEYS:
         active_lifecycle = 'current'
     catalog_view = (request.GET.get('view') or 'catalog').strip()
@@ -2921,11 +2976,11 @@ def pcs_catalog(request):
     lifecycle_tabs = [
         _tab('past', 'Past', 'secondary'),
         _tab('last', 'Last', 'last-green'),
-        _tab('current', 'Current', 'success'),
     ]
     # Derived producing tabs: campaigns with fresh Rucio inflow, whatever
     # their stored lifecycle — current by the data's definition, so they
-    # dress like Current.
+    # dress like Current. Placed left of Current: producing campaigns are
+    # the current campaign's predecessors on the timeline.
     for camp, arrivals in inflow:
         lifecycle_tabs.append({
             'key': 'producing',
@@ -2937,6 +2992,7 @@ def pcs_catalog(request):
             'active': (active_lifecycle == 'producing'
                        and producing_campaign_name == camp.name),
         })
+    lifecycle_tabs.append(_tab('current', 'Current', 'success'))
     next_hint = _next_campaign_hint()
     future_tab = _tab('future', 'Future', 'primary')
     if next_hint and not future_tab['detail']:
@@ -3101,6 +3157,9 @@ def pcs_catalog(request):
 
         producing_arrivals = None
         promote_cascade_note = ''
+        promote_eligible = False
+        last_is_producing = False
+        producing_banner_name = producing_campaign_name
         producing_task_mix = None
         producing_table_html = None
         instancing = None
@@ -3169,20 +3228,45 @@ def pcs_catalog(request):
                 producing_table_html, _, _ = _cached_current_task_list_html(
                     producing_camp, 'catalog', {}, None, timings=timings,
                     rebuild_on_miss=True)
+            # Populate and promote exist for the pre-promotion state only:
+            # a NEWER campaign producing ahead of its promotion click
+            # (_promotion_forward).
             current_names = [c.name for c in campaigns_by_lifecycle['current']]
-            if current_names and producing_campaign_name not in current_names:
+            promote_eligible = _promotion_forward(
+                producing_campaign_name,
+                current_names[0] if current_names else '')
+            if (current_names and producing_campaign_name not in current_names
+                    and promote_eligible):
                 instancing = _instancing_context(current_names[0],
                                                  producing_campaign_name)
+        if active_lifecycle == 'last' and campaigns_by_lifecycle['last']:
+            last_name = campaigns_by_lifecycle['last'][0].name
+            last_arr = next((arr for camp, arr in inflow
+                             if camp.name == last_name), None)
+            if last_arr is not None:
+                # The Last campaign is still producing (fresh inflow):
+                # same active treatment as the Producing tab — arrivals
+                # banner, task mix, and the assessment strip.
+                last_is_producing = True
+                producing_banner_name = last_name
+                producing_arrivals = dict(last_arr)
+                producing_task_mix = dict(
+                    ProdTask.objects.filter(campaign__name=last_name)
+                    .values_list('status').annotate(Count('id')))
 
         return render(request, 'pcs/pcs_catalog_past.html', {
             'show_tabs': True,
             'campaign_assessment': (
-                _latest_daily_assessment(producing_campaign_name)
-                if active_lifecycle == 'producing' else None),
+                _latest_daily_assessment(producing_banner_name)
+                if (active_lifecycle == 'producing' or last_is_producing)
+                else None),
+            'last_is_producing': last_is_producing,
+            'producing_banner_name': producing_banner_name,
             'next_campaign_hint': (next_hint
                                    if active_lifecycle == 'future' else None),
             'producing_campaign': producing_campaign_name,
             'producing_arrivals': producing_arrivals,
+            'promote_eligible': promote_eligible,
             'tab_last_activity': tab_last_activity,
             'producing_task_mix': producing_task_mix,
             'task_list_html': producing_table_html,
@@ -3304,6 +3388,8 @@ def pcs_catalog(request):
             {'name': camp.name,
              'note': _promote_cascade_note(campaigns_by_lifecycle, camp.name)}
             for camp, _ in inflow
+            if _promotion_forward(
+                camp.name, current_camp.name if current_camp else '')
         ],
         'show_tabs': True,
         'columns_mode': 'full',
