@@ -2840,6 +2840,7 @@ def _latest_daily_assessment(campaign_name):
                 'assessment report URL reverse failed for %s: %s',
                 campaign_name, e)
     return {
+        'campaign': campaign_name,
         'verdict': str(extra.get('verdict') or ''),
         'narration': str(extra.get('narration') or ''),
         'title': str(extra.get('report_title') or ''),
