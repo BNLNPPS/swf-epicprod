@@ -2832,7 +2832,7 @@ def pcs_catalog_past_update(request):
     return redirect(reverse('pcs:pcs_catalog') + '?lifecycle=past')
 
 
-def _assessment_register_rows(campaign_name, kinds):
+def assessment_register_rows(campaign_name, kinds):
     """Registered assessments for a campaign family from the local
     assessment_register action series (the same production-owned
     registration record _verdict_standing and the freshness check use)
@@ -2856,17 +2856,18 @@ def _assessment_register_rows(campaign_name, kinds):
         .values('timestamp', 'extra_data'))
 
 
-def _assessment_report_url(extra, campaign_name):
+def assessment_human_url(campaign_name, kind, date):
+    """Human-addressed assessment URL (campaign + kind + ET date or
+    'latest') — the house URL form; the UUID route remains for stored
+    links."""
     import logging
-    group_id = str((extra or {}).get('corun_page_group_id') or '')
-    if not group_id:
-        return ''
     try:
-        return reverse('monitor_app:ai_content_detail', args=[group_id])
+        return reverse('monitor_app:ai_content_by_name',
+                       args=[campaign_name, kind, date])
     except Exception as e:
         logging.getLogger(__name__).warning(
-            'assessment report URL reverse failed for %s: %s',
-            campaign_name, e)
+            'assessment URL reverse failed for %s/%s/%s: %s',
+            campaign_name, kind, date, e)
         return ''
 
 
@@ -2876,21 +2877,21 @@ def _latest_daily_assessment(campaign_name):
     registered daily."""
     if not campaign_name:
         return None
-    row = _assessment_register_rows(
+    row = assessment_register_rows(
         campaign_name, ['daily', 'nightly']).first()
     if not row:
         return None
     extra = row['extra_data'] or {}
-    weekly = _assessment_register_rows(campaign_name, ['weekly']).first()
-    weekly_url = (_assessment_report_url(weekly['extra_data'], campaign_name)
-                  if weekly else '')
+    report_date = timezone.localtime(row['timestamp']).date().isoformat()
+    weekly = assessment_register_rows(campaign_name, ['weekly']).first()
     return {
         'campaign': campaign_name,
         'verdict': str(extra.get('verdict') or ''),
         'narration': str(extra.get('narration') or ''),
         'title': str(extra.get('report_title') or ''),
-        'url': _assessment_report_url(extra, campaign_name),
-        'weekly_url': weekly_url,
+        'url': assessment_human_url(campaign_name, 'daily', report_date),
+        'weekly_url': (assessment_human_url(campaign_name, 'weekly', 'latest')
+                       if weekly else ''),
         'timestamp': row['timestamp'],
     }
 
