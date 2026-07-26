@@ -2804,6 +2804,50 @@ def pcs_catalog_past_update(request):
     return redirect(reverse('pcs:pcs_catalog') + '?lifecycle=past')
 
 
+def _latest_daily_assessment(campaign_name):
+    """Latest registered daily AI assessment for a campaign, read from the
+    local assessment_register action series (the same production-owned
+    registration record _verdict_standing and the freshness check use) so
+    the page render path makes no remote call. Returns None when the
+    campaign has no registered daily."""
+    if not campaign_name:
+        return None
+    import logging
+    from monitor_app.models import AppLog
+    from .name_tokens import campaign_family
+    names = list(dict.fromkeys(
+        [campaign_name, campaign_family(campaign_name)]))
+    row = (AppLog.objects.filter(
+        app_name='epicprod',
+        extra_data__action='assessment_register',
+        extra_data__outcome='ok',
+        extra_data__assessment_kind__in=['daily', 'nightly'],
+        extra_data__subject_key__in=names)
+        .exclude(extra_data__contains={'quarantined': True})
+        .order_by('-timestamp')
+        .values('timestamp', 'extra_data')
+        .first())
+    if not row:
+        return None
+    extra = row['extra_data'] or {}
+    url = ''
+    group_id = str(extra.get('corun_page_group_id') or '')
+    if group_id:
+        try:
+            url = reverse('monitor_app:ai_content_detail', args=[group_id])
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                'assessment report URL reverse failed for %s: %s',
+                campaign_name, e)
+    return {
+        'verdict': str(extra.get('verdict') or ''),
+        'narration': str(extra.get('narration') or ''),
+        'title': str(extra.get('report_title') or ''),
+        'url': url,
+        'timestamp': row['timestamp'],
+    }
+
+
 def pcs_catalog(request):
     """Production Task Catalog — lifecycle-grouped task listing.
 
@@ -3131,6 +3175,9 @@ def pcs_catalog(request):
 
         return render(request, 'pcs/pcs_catalog_past.html', {
             'show_tabs': True,
+            'campaign_assessment': (
+                _latest_daily_assessment(producing_campaign_name)
+                if active_lifecycle == 'producing' else None),
             'next_campaign_hint': (next_hint
                                    if active_lifecycle == 'future' else None),
             'producing_campaign': producing_campaign_name,
@@ -3250,6 +3297,8 @@ def pcs_catalog(request):
         'ai_executed_names': _executed_proposal_names(),
         'current_last_activity': (_campaign_last_activity(current_camp)
                                   if current_camp else ''),
+        'campaign_assessment': (_latest_daily_assessment(current_camp.name)
+                                if current_camp else None),
         'promote_offers': [
             {'name': camp.name,
              'note': _promote_cascade_note(campaigns_by_lifecycle, camp.name)}

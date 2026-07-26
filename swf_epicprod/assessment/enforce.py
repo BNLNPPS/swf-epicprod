@@ -316,7 +316,7 @@ def _verdict_standing(campaign, kind, verdict):
         extra_data__action='assessment_register',
         extra_data__subject_key=str(campaign),
         extra_data__assessment_kind__in=kinds)
-        .exclude(extra_data__quarantined=True)
+        .exclude(extra_data__contains={'quarantined': True})
         .order_by('-timestamp')
         .values_list('extra_data__verdict', 'timestamp')[:60])
     prior_consecutive = 0

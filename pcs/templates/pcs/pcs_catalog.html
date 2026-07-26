@@ -421,6 +421,8 @@
   </div>
   {% endif %}
 
+  {% if active_lifecycle == 'current' %}{% include 'pcs/_campaign_assessment.html' %}{% endif %}
+
   {% if active_lifecycle == 'current' %}
   <div class="small mb-2">
     <span><strong>Last activity:</strong> {{ current_last_activity|fmt_dt|default:"none recorded" }}</span>

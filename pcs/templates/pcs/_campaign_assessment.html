@@ -1,0 +1,14 @@
+{# Latest daily AI assessment strip: verdict, narration, report link — context key campaign_assessment (pcs.views._latest_daily_assessment). #}
+{% if campaign_assessment %}
+<div class="ai-fill border rounded px-3 py-2 mb-3" style="max-width: 75rem;">
+  <div class="d-flex align-items-center flex-wrap gap-2">
+    <span class="ai-attr-text">AI daily assessment</span>
+    <span class="badge {% if campaign_assessment.verdict == 'alarm' %}bg-danger{% elif campaign_assessment.verdict == 'attention' %}bg-warning text-dark{% elif campaign_assessment.verdict == 'ok' %}bg-success{% else %}bg-secondary{% endif %}">{{ campaign_assessment.verdict|default:"unknown" }}</span>
+    {% if campaign_assessment.url %}<a href="{{ campaign_assessment.url }}">Full report</a>{% endif %}
+    <span class="text-muted" data-relative-time="{{ campaign_assessment.timestamp|date:'c' }}">{{ campaign_assessment.timestamp }}</span>
+  </div>
+  {% if campaign_assessment.narration %}
+  <div class="mt-1">{{ campaign_assessment.narration }}</div>
+  {% endif %}
+</div>
+{% endif %}
