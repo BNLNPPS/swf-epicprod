@@ -87,8 +87,10 @@ disk/tape metric.
 2. **Events/job in adopted configurations** — the placeholder-config
    backfill (e.g. the association-sweep adoptions), which the events
    metric depends on.
-3. **N-way categorization assignment** — the lens labelings: named
-   tag-sets a PC can carry N of, with the assignment surface.
+3. **N-way categorization assignment** — the lens labelings a PC can
+   carry N of, with the assignment surface. These live on the
+   `PhysicsConfig` entity (PCS.md § Datasets), whose first association
+   is the requesting-group list seeded from PC-anchored requests.
 
 ## Surfaces
 
