@@ -276,6 +276,25 @@ class DatasetViewSet(viewsets.ModelViewSet):
             return Response({'detail': e.detail}, status=e.status)
         return Response(result, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['post'], url_path='expected-events')
+    def expected_events(self, request):
+        """Single or bulk expected-events target set with required comment.
+
+        Body: ``entries`` (list of ``{name, expected_events, source}``;
+        ``expected_events: null`` clears), ``comment`` (required). Thin
+        wrapper over ``services.dataset_expected_events_set``; one
+        action-stream event per call. CAMPAIGN_DELIVERY.md extension 1.
+        """
+        try:
+            result = services.dataset_expected_events_set(
+                request.data.get('entries') or [],
+                request.data.get('comment'),
+                changed_by=request.user.username,
+            )
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(result, status=status.HTTP_200_OK)
+
 
 class ProdConfigViewSet(viewsets.ModelViewSet):
     """Production configuration templates. Owner-only edit; anyone can create."""

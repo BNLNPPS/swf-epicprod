@@ -3507,6 +3507,140 @@ def dataset_propagation_set(composed_names, state, comment, *, replaced_by='',
             'state': state, 'log_id': log_id}
 
 
+EXPECTED_EVENTS_SOURCES = ('included', 'requested', 'derived')
+
+
+def dataset_expected_events_set(entries, comment, *, changed_by='',
+                                origin=None):
+    """Set campaign-included expected events on dataset editions.
+
+    One call = one operator action, single or bulk. Values differ per
+    dataset (unlike propagation's one state), so the unit is an entry
+    list: each entry is ``{'name': <composed identity>,
+    'expected_events': <non-negative int> or None, 'source': 'included'
+    | 'requested' | 'derived'}``. ``expected_events: None`` clears the
+    target (source must then be empty). One append-only history entry
+    lands on the identity's head row — first by (block, pk) — under
+    ``metadata['expected_events']['history']``: value, previous, source,
+    previous_source when it changed, comment (required), changed_by,
+    changed_at. The columns mirror the newest entry on every block row.
+
+    Exactly one ``dataset_expected_events_set`` action-stream event is
+    logged per call, carrying the changed count and the comment — never
+    one event per dataset. Unknown names and no-op sets are counted and
+    returned, never silently dropped. Raises ServiceError on an invalid
+    source, a negative value, an empty comment, or malformed entries.
+
+    ``origin`` marks an AI-proposed change approved by a human, as in
+    ``dataset_propagation_set``.
+    """
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from monitor_app.models import UserPreference
+
+    comment = (comment or '').strip()
+    if not comment:
+        raise ServiceError(
+            'comment is required on every expected-events change')
+    if not entries:
+        raise ServiceError('no entries supplied')
+    cleaned = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ServiceError('each entry must be an object')
+        name = str(entry.get('name') or '').strip()
+        if not name:
+            raise ServiceError('each entry needs a dataset name')
+        value = entry.get('expected_events')
+        source = str(entry.get('source') or '').strip()
+        if value is None:
+            if source:
+                raise ServiceError(
+                    f'{name}: a cleared target takes no source')
+        else:
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                raise ServiceError(
+                    f'{name}: expected_events must be an integer')
+            if value < 0:
+                raise ServiceError(
+                    f'{name}: expected_events must be non-negative')
+            if source not in EXPECTED_EVENTS_SOURCES:
+                raise ServiceError(
+                    f'{name}: source must be one of '
+                    f'{", ".join(EXPECTED_EVENTS_SOURCES)}; got {source!r}')
+        cleaned.append((name, value, source))
+
+    changed, unchanged, unknown = [], [], []
+    now = _timezone.now().isoformat()
+    with transaction.atomic():
+        for name, value, source in cleaned:
+            rows = list(Dataset.objects
+                        .filter(composed_name=name)
+                        .order_by('block_num', 'pk'))
+            if not rows:
+                unknown.append(name)
+                continue
+            head = rows[0]
+            if (head.expected_events == value
+                    and head.expected_events_source == source):
+                unchanged.append(name)
+                continue
+            entry = {
+                'expected_events': value,
+                'previous': head.expected_events,
+                'source': source,
+                'comment': comment,
+                'changed_by': changed_by or '',
+                'changed_at': now,
+            }
+            if head.expected_events_source != source:
+                entry['previous_source'] = head.expected_events_source
+            if origin:
+                entry['origin'] = str(origin.get('kind') or 'ai_proposal')
+                if origin.get('proposer'):
+                    entry['proposer'] = str(origin.get('proposer'))
+            metadata = dict(head.metadata or {})
+            block = dict(metadata.get('expected_events') or {})
+            history = list(block.get('history') or [])
+            history.append(entry)
+            block['history'] = history
+            metadata['expected_events'] = block
+            head.metadata = metadata
+            for row in rows:
+                row.expected_events = value
+                row.expected_events_source = source
+            head.save(update_fields=['expected_events',
+                                     'expected_events_source', 'metadata'])
+            for row in rows[1:]:
+                row.save(update_fields=['expected_events',
+                                        'expected_events_source'])
+            changed.append(name)
+
+    if changed_by:
+        UserPreference.set_pref(changed_by, 'expected_events_last_comment',
+                                comment)
+
+    extra = {'changed': len(changed), 'unchanged': len(unchanged),
+             'unknown': len(unknown), 'comment': comment}
+    if origin:
+        extra['origin'] = str(origin.get('kind') or 'ai_proposal')
+        if origin.get('proposer'):
+            extra['proposer'] = str(origin['proposer'])
+    log_id = log_epicprod_action(
+        'web', 'dataset_expected_events_set',
+        subject_type='dataset' if len(changed) == 1 else '',
+        subject_key=changed[0] if len(changed) == 1 else '',
+        username=changed_by,
+        sublevel='normal', live_default=True,
+        message=(f'expected events set on {len(changed)} dataset(s): '
+                 f'{comment}'),
+        **extra,
+    )
+    return {'changed': changed, 'unchanged': unchanged, 'unknown': unknown,
+            'log_id': log_id}
+
+
 def summarize_rucio_timeline(snapshot, *, bin_hours=12):
     """Build a per-bin cumulative arrival timeline from a Rucio snapshot.
 

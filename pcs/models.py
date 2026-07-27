@@ -237,6 +237,20 @@ class Dataset(models.Model):
     # replacement (campaign-level changes such as an energy migration). A name
     # reference, not an FK: the successor may not be materialized yet.
     replaced_by = models.CharField(max_length=255, blank=True, default='')
+    # Campaign-included expected events for THIS edition — what the campaign
+    # is set up to produce for the physics configuration
+    # (CAMPAIGN_DELIVERY.md). Null = no target; readers fall back to the
+    # linked request's nevents, then to an explicit no-target presentation.
+    # Set only through dataset_expected_events_set (append-only history under
+    # metadata['expected_events']); block rows mirror the head row, like
+    # propagation.
+    expected_events = models.BigIntegerField(null=True, blank=True)
+    EXPECTED_EVENTS_SOURCES = [
+        ('included', 'included'), ('requested', 'requested'),
+        ('derived', 'derived'),
+    ]
+    expected_events_source = models.CharField(
+        max_length=16, choices=EXPECTED_EVENTS_SOURCES, blank=True, default='')
     block_num = models.PositiveIntegerField(default=1)
     blocks = models.PositiveIntegerField(default=1)
     did = models.CharField(max_length=300, unique=True)
