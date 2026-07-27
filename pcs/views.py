@@ -2196,6 +2196,164 @@ def rucio_did_files(request, scope, name):
     return JsonResponse({'files': files, 'count': len(files)})
 
 
+def pcs_campaign_plan(request):
+    """The campaign plan list (CAMPAIGN_DELIVERY.md surface 1): one
+    active or future campaign's physics configurations with the
+    campaign-included target-events column — filled where set, visibly
+    missing where not. The curation surface for the delivery
+    denominator: per-row entry saved in bulk through the
+    expected-events REST endpoint with one required comment. Read-open;
+    saving requires login.
+    """
+    plan_campaigns = list(
+        Campaign.objects.filter(lifecycle__in=('current', 'future'))
+        .order_by('-name'))
+    selected_name = (request.GET.get('campaign') or '').strip()
+    campaign = None
+    if selected_name:
+        campaign = Campaign.objects.filter(name=selected_name).first()
+    if campaign is None:
+        campaign = next((c for c in plan_campaigns
+                         if c.lifecycle == 'current'), None)
+    if campaign is None and plan_campaigns:
+        campaign = plan_campaigns[0]
+    if campaign is not None and campaign not in plan_campaigns:
+        plan_campaigns.append(campaign)
+
+    heads = []
+    requested = {}
+    if campaign is not None:
+        heads = list(
+            Dataset.objects.filter(campaign=campaign)
+            .select_related('physics_tag', 'evgen_tag', 'background_tag')
+            .order_by('composed_name', 'block_num', 'pk')
+            .distinct('composed_name'))
+        # Requested-tier fallback via the PC-request anchor (the
+        # CAMPAIGN_DELIVERY.md denominator chain: included -> requested
+        # -> absent). Several requests can anchor to one configuration;
+        # the largest single ask stands in, never a sum of possible
+        # duplicates.
+        projection = services.pc_request_projection(heads)
+        requested = {}
+        for name, reqs in projection.items():
+            values = [r.nevents for r in reqs if r.nevents]
+            if values:
+                requested[name] = max(values)
+
+    gen_case = _generator_display_case()
+    rows = []
+    with_target = 0
+    target_total = 0
+    for head in heads:
+        params = (head.physics_tag.parameters or {}) if head.physics_tag_id \
+            else {}
+        evgen_params = (head.evgen_tag.parameters or {}) if head.evgen_tag_id \
+            else {}
+        generator = evgen_params.get('generator', '')
+        generator = gen_case.get(generator, generator)
+        version = evgen_params.get('generator_version', '')
+        be = str(params.get('beam_energy_electron', '') or '')
+        bh = str(params.get('beam_energy_hadron', '') or '')
+        if be.upper() == 'N/A':
+            be = ''
+        if bh.upper() == 'N/A':
+            bh = ''
+        if head.expected_events is not None:
+            with_target += 1
+            target_total += head.expected_events
+        rows.append({
+            'name': head.composed_name,
+            'physics': head.physics_tag.tag_label if head.physics_tag_id
+                       else '',
+            'process': params.get('process', ''),
+            'beam': f'{be}x{bh}' if be and bh else (be or bh),
+            'q2': params.get('q2_range', ''),
+            'generator': ' '.join(p for p in (generator, version) if p),
+            'sample': head.sample_name,
+            'propagation': head.propagation,
+            'expected_events': head.expected_events,
+            'expected_source': head.expected_events_source,
+            'requested_events': requested.get(head.composed_name),
+        })
+    rows.sort(key=lambda r: (
+        (int(r['physics'][1:]) if r['physics'][1:].isdigit() else 0)
+        if r['physics'] else 0, r['sample']))
+
+    def url_with(**updates):
+        params = request.GET.copy()
+        for key, value in updates.items():
+            if value:
+                params[key] = value
+            else:
+                params.pop(key, None)
+        encoded = params.urlencode()
+        return f'{request.path}?{encoded}' if encoded else request.path
+
+    # Facet filters over the campaign's rows, the physics-page approach,
+    # plus the target-status facet (specified/unspecified nev) — the
+    # speed-filling workflow filters to a coherent slice first.
+    rows_all = rows
+    filters = {key: (request.GET.get(key) or '').strip()
+               for key in ('process', 'generator', 'beam', 'q2', 'sample')}
+    for key, value in filters.items():
+        if value:
+            rows = [r for r in rows if r[key] == value]
+    nev = (request.GET.get('nev') or '').strip()
+    if nev == 'specified':
+        rows = [r for r in rows if r['expected_events'] is not None]
+    elif nev == 'unspecified':
+        rows = [r for r in rows if r['expected_events'] is None]
+
+    def facet(param):
+        counts = {}
+        for r in rows_all:
+            value = r[param]
+            if value:
+                counts[value] = counts.get(value, 0) + 1
+        return {'items': [{'value': v, 'count': n,
+                           'url': url_with(**{param: v}),
+                           'active': filters[param] == v}
+                          for v, n in sorted(counts.items())],
+                'all_url': url_with(**{param: ''}),
+                'all_active': not filters[param]}
+
+    facet_rows = [
+        ('Process', facet('process')),
+        ('Generator', facet('generator')),
+        ('Beam', facet('beam')),
+        ('Q²', facet('q2')),
+        ('Sample', facet('sample')),
+    ]
+    specified_count = sum(
+        1 for r in rows_all if r['expected_events'] is not None)
+    facet_rows.append(('Target', {
+        'items': [
+            {'value': 'specified', 'count': specified_count,
+             'url': url_with(nev='specified'), 'active': nev == 'specified'},
+            {'value': 'unspecified',
+             'count': len(rows_all) - specified_count,
+             'url': url_with(nev='unspecified'),
+             'active': nev == 'unspecified'},
+        ],
+        'all_url': url_with(nev=''),
+        'all_active': not nev,
+    }))
+
+    return render(request, 'pcs/campaign_plan.html', {
+        'campaign': campaign,
+        'plan_campaigns': plan_campaigns,
+        'rows': rows,
+        'total': len(rows_all),
+        'shown': len(rows),
+        'facet_rows': facet_rows,
+        'clear_url': url_with(process='', generator='', beam='', q2='',
+                              sample='', nev=''),
+        'with_target': with_target,
+        'without_target': len(rows_all) - with_target,
+        'target_total': target_total,
+    })
+
+
 def pcs_physics_configs(request):
     """The physics-configuration view (CAMPAIGN_CONTINUUM.md): physics
     first, fulfillment through time. One row per physics configuration,
