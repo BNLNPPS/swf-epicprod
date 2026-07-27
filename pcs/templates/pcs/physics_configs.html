@@ -66,6 +66,7 @@
   <table class="table table-sm table-striped pcs-pc-table dataTable">
     <thead>
       <tr>
+        <th class="pcs-pc-sort sorting">PC</th>
         <th class="pcs-pc-sort sorting_asc">Physics &amp; #requests</th>
         <th class="pcs-pc-sort sorting">Process</th>
         <th class="pcs-pc-sort sorting">Beam</th>
@@ -75,7 +76,7 @@
         {% for c in campaigns %}<th class="pcs-pc-cell pcs-pc-sort sorting" data-default-dir="desc">{{ c }}</th>{% endfor %}
       </tr>
       <tr class="table-light small">
-        <th colspan="6" class="text-end fw-normal text-muted">produced, over the rows below:</th>
+        <th colspan="7" class="text-end fw-normal text-muted">produced, over the rows below:</th>
         {% for t in campaign_totals %}
         <th class="pcs-pc-cell fw-normal">
           {% if t.produced %}
@@ -91,6 +92,7 @@
     <tbody>
       {% for r in rows %}
       <tr>
+        <td>{% if r.pc_label %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc_label %}" title="The physics configuration page: identity, associations, editions, requests">{{ r.pc_label }}</a>{% endif %}</td>
         <td>{{ r.physics }}{% for pr in r.prod_requests %} <a href="{% url 'pcs:pcs_edition_data' name=pr.data.physics_config_anchor %}" class="small" title="{{ pr.requestor }}{% if pr.nevents %} · {{ pr.nevents }} events{% endif %} — production request on this configuration; click for its data page">req#{{ pr.pk }}</a>{% endfor %}{% for rid in r.requests %} <a href="{% url 'pcs:questionnaire_detail' rid %}" class="small" title="matched production request #{{ rid }}">#{{ rid }}</a>{% endfor %}</td>
         <td>{{ r.process }}</td>
         <td>{{ r.beam }}</td>
@@ -113,7 +115,7 @@
         {% endfor %}
       </tr>
       {% empty %}
-      <tr><td colspan="{{ campaigns|length|add:6 }}" class="text-center text-muted py-3">No configurations match this filter.</td></tr>
+      <tr><td colspan="{{ campaigns|length|add:7 }}" class="text-center text-muted py-3">No configurations match this filter.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -56,7 +56,7 @@ from monitor_app.utils import DataTablesProcessor, get_filter_params, format_dat
 
 from .models import (
     PhysicsCategory, PhysicsTag, EvgenTag, SimuTag, RecoTag, BackgroundTag,
-    Dataset, ProdConfig, ProdTask,
+    Dataset, PhysicsConfig, ProdConfig, ProdTask,
     Campaign, Questionnaire, ProdRequest,
     PRODTASK_STATUS_CHOICES,
 )
@@ -2196,6 +2196,40 @@ def rucio_did_files(request, scope, name):
     return JsonResponse({'files': files, 'count': len(files)})
 
 
+def pcs_config_detail(request, label):
+    """The physics-configuration page: identity (read-only — identity
+    flows only through composition), associations (requestors, edited
+    here with the required comment), editions across campaigns, and
+    anchored requests. The PC's home; the plan and physics lists link
+    into it."""
+    from .physics_config import physics_config_key
+
+    config = get_object_or_404(PhysicsConfig, label=label)
+    editions = list(
+        Dataset.objects.filter(physics_config=config)
+        .select_related('campaign', 'simu_tag', 'reco_tag')
+        .order_by('-composed_name', 'block_num', 'pk')
+        .distinct('composed_name'))
+    projection = services.pc_request_projection(editions)
+    requests_seen = {}
+    for reqs in projection.values():
+        for req in reqs:
+            requests_seen[req.pk] = req
+    known_labels = sorted({
+        value for values in PhysicsConfig.objects.exclude(requestors=[])
+        .values_list('requestors', flat=True) for value in values})
+    history = list(reversed(
+        ((config.metadata or {}).get('requestors') or {})
+        .get('history') or []))[:10]
+    return render(request, 'pcs/config_detail.html', {
+        'config': config,
+        'editions': editions,
+        'requests': sorted(requests_seen.values(), key=lambda r: r.pk),
+        'known_labels': known_labels,
+        'history': history,
+    })
+
+
 def pcs_campaign_plan(request):
     """The campaign plan list (CAMPAIGN_DELIVERY.md surface 1): one
     active or future campaign's physics configurations with the
@@ -2225,7 +2259,8 @@ def pcs_campaign_plan(request):
     if campaign is not None:
         heads = list(
             Dataset.objects.filter(campaign=campaign)
-            .select_related('physics_tag', 'evgen_tag', 'background_tag')
+            .select_related('physics_tag', 'evgen_tag', 'background_tag',
+                            'physics_config')
             .order_by('composed_name', 'block_num', 'pk')
             .distinct('composed_name'))
         # Requested-tier fallback via the PC-request anchor (the
@@ -2270,6 +2305,10 @@ def pcs_campaign_plan(request):
             'q2': params.get('q2_range', ''),
             'generator': ' '.join(p for p in (generator, version) if p),
             'sample': head.sample_name,
+            'pc_label': (head.physics_config.label
+                         if head.physics_config_id else ''),
+            'requestors': (list(head.physics_config.requestors or [])
+                           if head.physics_config_id else []),
             'propagation': head.propagation,
             'expected_events': head.expected_events,
             'expected_source': head.expected_events_source,
@@ -2298,6 +2337,13 @@ def pcs_campaign_plan(request):
     for key, value in filters.items():
         if value:
             rows = [r for r in rows if r[key] == value]
+    # Requestor is multi-membership: a row matches when it carries the
+    # label; 'Unassigned' matches the empty list.
+    requestor_filter = (request.GET.get('requestor') or '').strip()
+    if requestor_filter == 'Unassigned':
+        rows = [r for r in rows if not r['requestors']]
+    elif requestor_filter:
+        rows = [r for r in rows if requestor_filter in r['requestors']]
     nev = (request.GET.get('nev') or '').strip()
     if nev == 'specified':
         rows = [r for r in rows if r['expected_events'] is not None]
@@ -2317,7 +2363,27 @@ def pcs_campaign_plan(request):
                 'all_url': url_with(**{param: ''}),
                 'all_active': not filters[param]}
 
+    requestor_counts = {}
+    unassigned_count = 0
+    for r in rows_all:
+        if not r['requestors']:
+            unassigned_count += 1
+        for label in r['requestors']:
+            requestor_counts[label] = requestor_counts.get(label, 0) + 1
+    requestor_items = [
+        {'value': label, 'count': count,
+         'url': url_with(requestor=label),
+         'active': requestor_filter == label}
+        for label, count in sorted(requestor_counts.items())]
+    if unassigned_count:
+        requestor_items.append(
+            {'value': 'Unassigned', 'count': unassigned_count,
+             'url': url_with(requestor='Unassigned'),
+             'active': requestor_filter == 'Unassigned'})
     facet_rows = [
+        ('Requestor', {'items': requestor_items,
+                       'all_url': url_with(requestor=''),
+                       'all_active': not requestor_filter}),
         ('Process', facet('process')),
         ('Generator', facet('generator')),
         ('Beam', facet('beam')),
@@ -2347,7 +2413,7 @@ def pcs_campaign_plan(request):
         'shown': len(rows),
         'facet_rows': facet_rows,
         'clear_url': url_with(process='', generator='', beam='', q2='',
-                              sample='', nev=''),
+                              sample='', requestor='', nev=''),
         'with_target': with_target,
         'without_target': len(rows_all) - with_target,
         'target_total': target_total,
@@ -2384,7 +2450,7 @@ def pcs_physics_configs(request):
     heads = list(
         Dataset.objects.filter(campaign__name__in=campaigns)
         .select_related('physics_tag', 'evgen_tag', 'background_tag',
-                        'campaign')
+                        'campaign', 'physics_config')
         .order_by('composed_name', 'block_num', 'pk')
         .distinct('composed_name'))
     groups = group_editions(heads)
@@ -2442,6 +2508,8 @@ def pcs_physics_configs(request):
         beam = f'{be}x{bh}' if be and bh else (be or bh)
         row = {
             'physics': head.physics_tag.tag_label if head.physics_tag else '',
+            'pc_label': (head.physics_config.label
+                         if head.physics_config_id else ''),
             'process': params.get('process', ''),
             'beam': beam,
             'species': species,

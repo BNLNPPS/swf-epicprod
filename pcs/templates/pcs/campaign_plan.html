@@ -59,12 +59,14 @@
         <thead>
             <tr>
                 <th></th>
+                <th>PC</th>
                 <th>Physics</th>
                 <th>Process</th>
                 <th>Beam</th>
                 <th>Q²</th>
                 <th>Generator</th>
                 <th>Sample</th>
+                <th>Requestor</th>
                 <th>Disposition</th>
                 <th>Target events</th>
                 <th>Set target</th>
@@ -74,12 +76,14 @@
         {% for r in rows %}
             <tr data-name="{{ r.name }}">
                 <td><input type="checkbox" class="form-check-input plan-tick"></td>
+                <td>{% if r.pc_label %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc_label %}" title="The physics configuration page: identity, associations, editions, requests">{{ r.pc_label }}</a>{% endif %}</td>
                 <td><a href="{% url 'pcs:pcs_catalog' %}?q={{ r.name|urlencode }}" title="{{ r.name }}">{{ r.physics }}</a></td>
                 <td>{{ r.process }}</td>
                 <td>{{ r.beam }}</td>
                 <td>{{ r.q2 }}</td>
                 <td>{{ r.generator }}</td>
                 <td>{{ r.sample }}</td>
+                <td>{% if r.requestors %}{{ r.requestors|join:", " }}{% else %}<span class="swf-no-target">Unassigned</span>{% endif %}</td>
                 <td>{% if r.propagation != 'continue' %}<span class="badge bg-secondary">{{ r.propagation }}</span>{% else %}{{ r.propagation }}{% endif %}</td>
                 <td class="text-end">
                     {% if r.expected_events is not None %}

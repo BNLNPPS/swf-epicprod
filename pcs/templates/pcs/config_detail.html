@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ config.label }} - Physics Configuration - SWF Monitor{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <h2>{{ config.label }} <span class="text-muted">· physics configuration</span></h2>
+
+    <!-- Identity is read-only here: it flows only through composition. -->
+    <div class="card mb-4" style="max-width: 60em;">
+        <div class="card-header"><strong>Identity</strong></div>
+        <div class="card-body">
+            <table class="table table-sm table-bordered align-middle w-auto mb-0">
+                <tr><th>Physics tag</th>
+                    <td><a href="{% url 'pcs:tag_compose' tag_type='p' %}?tag={{ config.physics_tag.tag_label }}">{{ config.physics_tag.tag_label }}</a>
+                        <span class="text-muted">{{ config.physics_tag.description }}</span></td></tr>
+                <tr><th>Event generation</th><td>{{ config.evgen_display }}</td></tr>
+                {% if config.background_tag %}
+                <tr><th>Background</th><td>{{ config.background_tag.tag_label }}</td></tr>
+                {% endif %}
+                {% if config.sample_name %}
+                <tr><th>Sample</th><td>{{ config.sample_name }}</td></tr>
+                {% endif %}
+                <tr><th>Identity key</th><td class="text-muted">{{ config.config_key }}</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Associations: edited here, with the required comment. -->
+    <div class="card mb-4" style="max-width: 60em;">
+        <div class="card-header"><strong>Requestors</strong>
+            <span class="text-muted ms-2">PWG / DSC groups this configuration belongs to</span>
+        </div>
+        <div class="card-body">
+            <div class="mb-2 d-flex flex-wrap align-items-center gap-3">
+                {% for label in known_labels %}
+                <label class="form-check form-check-inline mb-0">
+                    <input type="checkbox" class="form-check-input pc-requestor-box" value="{{ label }}"
+                           {% if label in config.requestors %}checked{% endif %}> {{ label }}
+                </label>
+                {% endfor %}
+                <input type="text" id="pc-requestor-new" class="form-control form-control-sm"
+                       style="width: 14em;" placeholder="Add a new group label">
+            </div>
+            <div class="d-flex align-items-center flex-wrap gap-2">
+                <input type="text" id="pc-requestor-comment" class="form-control form-control-sm"
+                       style="max-width: 34em;"
+                       placeholder="Comment (required): the reason and its source">
+                <button type="button" id="pc-requestor-save" class="btn btn-sm btn-primary">Save requestors</button>
+                <span id="pc-requestor-status"></span>
+            </div>
+            {% if history %}
+            <details class="mt-3">
+                <summary>Change history</summary>
+                <table class="table table-sm table-bordered w-auto mt-2 mb-0">
+                    <thead><tr><th>When</th><th>Requestors</th><th>Previous</th><th>By</th><th>Comment</th></tr></thead>
+                    <tbody>
+                    {% for h in history %}
+                    <tr>
+                        <td class="text-nowrap">{{ h.changed_at|slice:":16" }}</td>
+                        <td>{{ h.requestors|join:", " }}</td>
+                        <td>{{ h.previous|join:", " }}</td>
+                        <td>{{ h.changed_by }}{% if h.origin %} <span class="ai-attr-text">AI</span>{% endif %}</td>
+                        <td>{{ h.comment }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </details>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><strong>Editions</strong>
+            <span class="text-muted ms-2">this configuration × campaign</span>
+        </div>
+        <div class="card-body">
+            <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
+                <thead><tr><th>Campaign</th><th>Edition</th><th>Target events</th><th>Disposition</th><th>Files</th></tr></thead>
+                <tbody>
+                {% for e in editions %}
+                <tr>
+                    <td>{{ e.campaign.name|default:"—" }}</td>
+                    <td><a href="{% url 'pcs:pcs_catalog' %}?q={{ e.composed_name|urlencode }}">{{ e.composed_name }}</a></td>
+                    <td class="text-end">{% if e.expected_events is not None %}{{ e.expected_events }} <span class="text-muted">· {{ e.expected_events_source }}</span>{% else %}<span class="text-muted">no target</span>{% endif %}</td>
+                    <td>{{ e.propagation }}</td>
+                    <td class="text-end">{{ e.file_count }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if requests %}
+    <div class="card mb-4" style="max-width: 60em;">
+        <div class="card-header"><strong>Requests</strong>
+            <span class="text-muted ms-2">anchored to this configuration</span>
+        </div>
+        <div class="card-body">
+            <table class="table table-sm table-bordered w-auto mb-0">
+                <thead><tr><th>Request</th><th>Requestor</th><th>Events</th><th>Description</th></tr></thead>
+                <tbody>
+                {% for r in requests %}
+                <tr>
+                    <td>req#{{ r.pk }}</td>
+                    <td>{{ r.requestor }}</td>
+                    <td class="text-end">{{ r.nevents|default:"—" }}</td>
+                    <td>{{ r.description|truncatechars:120 }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+<script>
+(function () {
+    const saveBtn = document.getElementById('pc-requestor-save');
+    const statusEl = document.getElementById('pc-requestor-status');
+    saveBtn.addEventListener('click', function () {
+        const comment = document.getElementById('pc-requestor-comment').value.trim();
+        statusEl.textContent = '';
+        statusEl.style.color = '';
+        if (!comment) {
+            statusEl.textContent = 'A comment is required.';
+            statusEl.style.color = '#c62828';
+            return;
+        }
+        const labels = Array.from(
+            document.querySelectorAll('.pc-requestor-box'))
+            .filter(function (box) { return box.checked; })
+            .map(function (box) { return box.value; });
+        const extra = document.getElementById('pc-requestor-new').value.trim();
+        if (extra && labels.indexOf(extra) < 0) labels.push(extra);
+        saveBtn.disabled = true;
+        const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1];
+        fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/physics-configs/requestors/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json',
+                      'X-CSRFToken': csrf || ''},
+            body: JSON.stringify({
+                entries: [{config: '{{ config.label }}', requestors: labels}],
+                comment: comment}),
+        }).then(function (r) {
+            if (!r.ok) {
+                return r.json().catch(function () { return {}; })
+                    .then(function (body) {
+                        throw new Error(body.detail
+                            || ('save failed (HTTP ' + r.status + ')'));
+                    });
+            }
+            window.location.reload();
+        }).catch(function (error) {
+            statusEl.textContent = String(error.message || error);
+            statusEl.style.color = '#c62828';
+            saveBtn.disabled = false;
+        });
+    });
+})();
+</script>
+{% endblock %}

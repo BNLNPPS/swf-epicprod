@@ -181,3 +181,92 @@ def group_editions(datasets):
         if dataset.campaign_id:
             entry['campaigns'].add(dataset.campaign.name)
     return groups
+
+
+def config_name(detail):
+    """Canonical physics-configuration name from a physics_config_key
+    result: the invariant parts composed — physics tag, semantic evgen
+    identity, background tag, sample. One string serving as display
+    name, URL slug, and the stored PhysicsConfig.config_key; matched
+    whole, never parsed."""
+    physics, evgen_part, background, sample = detail['key']
+    evgen = detail['evgen']
+    if evgen is not None:
+        generator, version, radiative = evgen
+        segment = generator + (f'-{version}' if version else '')
+        if radiative == 'off':
+            segment += '.norad'
+        elif radiative == 'on':
+            segment += '.rad'
+        elif radiative:
+            segment += f'.{radiative}'
+    else:
+        segment = '.'.join(str(part) for part in evgen_part if part != '')
+    parts = [physics or 'p0', segment]
+    if background:
+        parts.append(background)
+    if sample:
+        parts.append(sample)
+    return '.'.join(parts)
+
+
+def evgen_display(detail):
+    """Human-readable evgen identity segment for presentation."""
+    evgen = detail['evgen']
+    if evgen is None:
+        return 'unresolved'
+    generator, version, radiative = evgen
+    bits = [generator, version]
+    if radiative == 'off':
+        bits.append('noRad')
+    elif radiative == 'on':
+        bits.append('Rad')
+    elif radiative:
+        bits.append(radiative)
+    return ' '.join(bit for bit in bits if bit)
+
+
+def ensure_physics_config(dataset):
+    """Find-or-create the PhysicsConfig row for an edition's identity —
+    the single bind path (Dataset.save and the backfill both land
+    here). Composition implies the configuration; nothing else creates
+    one."""
+    from .models import PhysicsConfig, _allocate_simple_tag
+
+    detail = physics_config_key(dataset)
+    key = config_name(detail)
+    row = PhysicsConfig.objects.filter(config_key=key).first()
+    if row is None:
+        row = PhysicsConfig.objects.create(
+            label=f"pc{_allocate_simple_tag('pcs_next_physics_config')}",
+            config_key=key,
+            physics_tag=dataset.physics_tag,
+            background_tag=(dataset.background_tag
+                            if dataset.background_tag_id else None),
+            sample_name=detail['sample'],
+            evgen_display=evgen_display(detail),
+            created_by=dataset.created_by or '',
+        )
+    return row
+
+
+def backfill_physics_configs():
+    """Idempotent sweep binding every existing edition to its
+    configuration row. Uses queryset update, not save(), so legacy rows
+    are bound without re-validation side effects. Returns counts."""
+    from .models import Dataset, PhysicsConfig
+
+    before = PhysicsConfig.objects.count()
+    bound = 0
+    rows = (Dataset.objects
+            .select_related('physics_tag', 'evgen_tag', 'background_tag')
+            .all())
+    for dataset in rows.iterator():
+        config = ensure_physics_config(dataset)
+        if dataset.physics_config_id != config.pk:
+            Dataset.objects.filter(pk=dataset.pk).update(
+                physics_config=config)
+            bound += 1
+    return {'editions_bound': bound,
+            'configs_total': PhysicsConfig.objects.count(),
+            'configs_created': PhysicsConfig.objects.count() - before}

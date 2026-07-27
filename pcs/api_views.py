@@ -772,6 +772,27 @@ def prod_request_compose(request):
     return Response(result, status=status.HTTP_201_CREATED)
 
 
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def physics_configs_requestors(request):
+    """Single or bulk requestors set on physics configurations with a
+    required comment. Body: ``entries`` (list of ``{config,
+    requestors}``), ``comment``. Thin wrapper over
+    ``services.physics_config_requestors_set``; one action-stream event
+    per call."""
+    try:
+        result = services.physics_config_requestors_set(
+            request.data.get('entries') or [],
+            request.data.get('comment'),
+            changed_by=request.user.username,
+        )
+    except ServiceError as e:
+        return Response({'detail': e.detail}, status=e.status)
+    return Response(result, status=status.HTTP_200_OK)
+
+
 @api_view(['GET'])
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])

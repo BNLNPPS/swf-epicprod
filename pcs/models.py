@@ -182,6 +182,50 @@ class BackgroundTag(models.Model):
         return _allocate_simple_tag('pcs_next_background')
 
 
+class PhysicsConfig(models.Model):
+    """The physics configuration — the campaign-invariant identity
+    behind dataset editions (an edition is a physics configuration ×
+    campaign) and the home of its associations.
+
+    Identity is the physics tag + the semantic evgen identity
+    (generator, version, radiative — not the e-tag label, which may
+    differ across campaigns) + optional background tag + sample name.
+    ``config_key`` is its canonical serialization, computed only by
+    ``pcs.physics_config`` (the single authority). Rows are created and
+    bound automatically as editions save; associations (``requestors``
+    now, categorization lenses to follow) are set only through the
+    ``pcs.services`` setters, with append-only history in metadata."""
+    # The name: a minted short label in the house tag vocabulary
+    # (pc1, pc2, ...), used in URLs, UI, and service calls. The
+    # composition is always displayed beside it.
+    label = models.CharField(max_length=16, unique=True)
+    config_key = models.CharField(max_length=500, unique=True)
+    physics_tag = models.ForeignKey(
+        PhysicsTag, on_delete=models.PROTECT,
+        related_name='physics_configs')
+    background_tag = models.ForeignKey(
+        BackgroundTag, on_delete=models.PROTECT,
+        related_name='physics_configs', null=True, blank=True)
+    sample_name = models.CharField(max_length=120, blank=True, default='')
+    # Human-readable form of the semantic evgen identity segment.
+    evgen_display = models.CharField(max_length=200, blank=True, default='')
+    # Requesting groups (PWG/DSC labels), a small multi-membership list;
+    # empty renders as Unassigned. JSONB queries use contains, never
+    # exclude-on-missing-key.
+    requestors = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.CharField(max_length=100, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'pcs_physics_config'
+        ordering = ['config_key']
+
+    def __str__(self):
+        return self.config_key
+
+
 class Dataset(models.Model):
     """
     Production dataset composed from four tags plus an optional background.
@@ -215,6 +259,13 @@ class Dataset(models.Model):
         BackgroundTag, on_delete=models.PROTECT, related_name='datasets',
         null=True, blank=True,
     )
+    # The campaign-invariant identity this edition realizes (an edition
+    # is a physics configuration × campaign). Bound automatically on
+    # every save from the tag composition; pcs.physics_config is the
+    # single authority for the key.
+    physics_config = models.ForeignKey(
+        PhysicsConfig, on_delete=models.PROTECT, related_name='editions',
+        null=True, blank=True)
     # Sample-variant discriminator: the trailing identity segment that tells
     # apart datasets sharing one tag composition (e.g. the single-particle
     # angular range '130to177deg'). It is a production discriminator, not a
@@ -338,6 +389,10 @@ class Dataset(models.Model):
         # Recompute the stored composed identity on every save so it can never
         # drift from the tag composition, and is read directly at query time.
         self.composed_name = self.build_dataset_name()
+        # Bind the campaign-invariant physics configuration the same way:
+        # recomputed on every save, single authority in pcs.physics_config.
+        from .physics_config import ensure_physics_config
+        self.physics_config = ensure_physics_config(self)
         if len(self.dataset_name) > 255:
             raise ValidationError("Dataset name exceeds 255 characters.")
         self.full_clean()

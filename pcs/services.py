@@ -3641,6 +3641,98 @@ def dataset_expected_events_set(entries, comment, *, changed_by='',
             'log_id': log_id}
 
 
+def physics_config_requestors_set(entries, comment, *, changed_by='',
+                                  origin=None):
+    """Set the requesting groups (PWG/DSC labels) on physics
+    configurations. One call = one operator action, single or bulk;
+    each entry is ``{'config': <pc label, e.g. 'pc147'>, 'requestors': [labels]}``
+    (an empty list clears to Unassigned). One append-only history entry
+    lands under ``metadata['requestors']['history']`` per changed
+    configuration; exactly one ``physics_config_requestors_set``
+    action-stream event is logged per call. Unknown keys and no-op sets
+    are counted and returned. ``origin`` marks an AI-derived change as
+    in ``dataset_propagation_set``."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    from .models import PhysicsConfig
+
+    comment = (comment or '').strip()
+    if not comment:
+        raise ServiceError('comment is required on every requestors change')
+    if not entries:
+        raise ServiceError('no entries supplied')
+    cleaned = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ServiceError('each entry must be an object')
+        key = str(entry.get('config') or '').strip()
+        if not key:
+            raise ServiceError('each entry needs a config key')
+        raw = entry.get('requestors')
+        if not isinstance(raw, list):
+            raise ServiceError(f'{key}: requestors must be a list')
+        labels = []
+        for label in raw:
+            label = str(label or '').strip()
+            if not label:
+                raise ServiceError(f'{key}: empty requestor label')
+            if label not in labels:
+                labels.append(label)
+        cleaned.append((key, labels))
+
+    changed, unchanged, unknown = [], [], []
+    now = _timezone.now().isoformat()
+    with transaction.atomic():
+        for key, labels in cleaned:
+            row = PhysicsConfig.objects.filter(label=key).first()
+            if row is None:
+                unknown.append(key)
+                continue
+            if list(row.requestors or []) == labels:
+                unchanged.append(key)
+                continue
+            entry = {
+                'requestors': labels,
+                'previous': list(row.requestors or []),
+                'comment': comment,
+                'changed_by': changed_by or '',
+                'changed_at': now,
+            }
+            if origin:
+                entry['origin'] = str(origin.get('kind') or 'ai_proposal')
+                if origin.get('proposer'):
+                    entry['proposer'] = str(origin.get('proposer'))
+            metadata = dict(row.metadata or {})
+            block = dict(metadata.get('requestors') or {})
+            history = list(block.get('history') or [])
+            history.append(entry)
+            block['history'] = history
+            metadata['requestors'] = block
+            row.requestors = labels
+            row.metadata = metadata
+            row.save(update_fields=['requestors', 'metadata', 'updated_at'])
+            changed.append(key)
+
+    extra = {'changed': len(changed), 'unchanged': len(unchanged),
+             'unknown': len(unknown), 'comment': comment}
+    if origin:
+        extra['origin'] = str(origin.get('kind') or 'ai_proposal')
+        if origin.get('proposer'):
+            extra['proposer'] = str(origin['proposer'])
+    log_id = log_epicprod_action(
+        'web', 'physics_config_requestors_set',
+        subject_type='physics_config' if len(changed) == 1 else '',
+        subject_key=changed[0] if len(changed) == 1 else '',
+        username=changed_by,
+        sublevel='normal', live_default=True,
+        message=(f'requestors set on {len(changed)} physics '
+                 f'configuration(s): {comment}'),
+        **extra,
+    )
+    return {'changed': changed, 'unchanged': unchanged, 'unknown': unknown,
+            'log_id': log_id}
+
+
 def summarize_rucio_timeline(snapshot, *, bin_hours=12):
     """Build a per-bin cumulative arrival timeline from a Rucio snapshot.
 
