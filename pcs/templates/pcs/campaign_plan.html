@@ -8,7 +8,9 @@
     <p>One row per physics configuration in the campaign, with the
     campaign-included target event count — the campaign's production
     plan (docs/CAMPAIGN_DELIVERY.md). Targets entered here are saved
-    with a comment through the expected-events service.</p>
+    with a comment through the expected-events service. Note that one
+    target event count can be applied to every selected configuration
+    in a single step.</p>
 
     <div class="mb-3">
         <strong>Campaign:</strong>
@@ -49,7 +51,7 @@
         <button type="button" id="plan-select-none" class="btn btn-sm btn-secondary">None</button>
         <span><strong id="plan-selected-count">0</strong> selected</span>
         <input type="number" min="0" id="plan-fill-value" class="form-control form-control-sm"
-               style="width: 12em;" placeholder="Target events">
+               style="width: 12em; margin-left: 1cm;" placeholder="Target events">
         <button type="button" id="plan-fill" class="btn btn-sm btn-primary" disabled>Fill all selected</button>
     </div>
 
