@@ -185,26 +185,37 @@ def build_snaps(campaigns):
     snaps = []
     cumulative = {}
     for day in sorted(per_day_pc):
-        for campaign, leaves in per_day_pc[day].items():
+        day_leaves = per_day_pc[day]
+        for campaign, leaves in day_leaves.items():
             camp_state = cumulative.setdefault(campaign, {})
             for pc, counts in leaves.items():
                 slot = camp_state.setdefault(pc, {'files': 0, 'bytes': 0})
                 slot['files'] += counts['files']
                 slot['bytes'] += counts['bytes']
+        # The daily arrivals record: per PC, the day's registered
+        # arrivals (the bumps) and the running cumulative — both on the
+        # registered basis throughout, so the series never mixes bases
+        # with the live placed-basis component (which feeds cards, not
+        # curves).
         projection = {'campaigns': {}, 'backfill': {
             'denominators_as_of': denominators_as_of}}
         for campaign, camp_state in cumulative.items():
             leaves = {}
             totals = {'configs': 0, 'with_target': 0, 'events': 0,
-                      'expected': 0, 'files': 0, 'bytes': 0}
+                      'expected': 0, 'arrived_files': 0,
+                      'cum_files': 0, 'cum_bytes': 0}
+            day_counts = day_leaves.get(campaign, {})
             for pc, counts in camp_state.items():
                 exp, tier = expected.get(campaign, {}).get(pc, (None, ''))
-                leaves[pc] = {'events': None, 'expected': exp,
-                              'tier': tier, 'files': counts['files'],
-                              'bytes': counts['bytes'], 'complete': True}
+                arrived = day_counts.get(pc, {}).get('files', 0)
+                leaves[pc] = {'arrived_files': arrived,
+                              'cum_files': counts['files'],
+                              'cum_bytes': counts['bytes'],
+                              'expected': exp, 'tier': tier}
                 totals['configs'] += 1
-                totals['files'] += counts['files']
-                totals['bytes'] += counts['bytes']
+                totals['arrived_files'] += arrived
+                totals['cum_files'] += counts['files']
+                totals['cum_bytes'] += counts['bytes']
                 if exp is not None:
                     totals['with_target'] += 1
                     totals['expected'] += exp
@@ -223,22 +234,21 @@ def main():
                       if c.strip())
 
     snaps, unmapped = build_snaps(campaigns)
-    first_live = (SystemSnap.objects
-                  .filter(scope='epicprod',
-                          state__components__has_key='delivery')
-                  .exclude(capture_policy=CAPTURE_POLICY)
-                  .order_by('snap_time').first())
-    cutoff = first_live.snap_time if first_live else timezone.now()
+    # Complete days only: the daily record runs through the end of
+    # yesterday (UTC) and advances by rerun — the nightly path.
+    cutoff = timezone.now().replace(hour=0, minute=0, second=0,
+                                    microsecond=0)
     writable = [
         (day, projection) for day, projection in snaps
         if dt.datetime.fromisoformat(day + 'T23:59:59+00:00') < cutoff]
 
-    print(f'\ndays reconstructed: {len(snaps)}, writable before live '
-          f'record ({cutoff:%Y-%m-%d %H:%M}Z): {len(writable)}')
+    print(f'\ndays reconstructed: {len(snaps)}, complete days through '
+          f'yesterday: {len(writable)}')
     for day, projection in writable[-5:]:
-        totals = {name: block['totals']['files']
+        totals = {name: (block['totals']['cum_files'],
+                         block['totals']['arrived_files'])
                   for name, block in projection['campaigns'].items()}
-        print(f'  {day}: cumulative files {totals}')
+        print(f'  {day}: (cumulative, arrived) files {totals}')
     print(f'unmapped locations: {len(unmapped)} '
           f'({sum(unmapped.values())} files)')
     for (family, location), count in sorted(unmapped.items())[:10]:

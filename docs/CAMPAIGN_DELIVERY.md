@@ -104,10 +104,16 @@ disk/tape metric.
    machine-readable production plan and the input to future
    automation.
 2. **Snapper campaign view**: one campaign shown at a time, selected
-   by tab, defaulting to the current campaign. The first click selects
-   the lens; the plot then shows only that audience's groups. Curves:
-   events available (absolute and fraction), bytes, arrivals/day, per
-   lens group. The cut card provides the drilldown, from a group to
+   by tab, defaulting to the current campaign; the window opens at the
+   campaign's first recorded delivery. The primary display is the
+   arrivals quilt: stacked per-configuration daily arrivals, one color
+   per PC, production bursts visible as attributed bumps. Cumulative
+   series (absolute, and fraction of target where events are known)
+   are a secondary family, off by default. Curves draw only from the
+   daily registered-basis record, so the plotted series ends at the
+   last complete day and never mixes bases with the live
+   placement-checked component, which feeds the cut cards. Lens
+   factorization applies over the quilt as the noise-reduction knob. The cut card provides the drilldown, from a group to
    its samples with completion to each sample's PCS dataset page. The
    lens and campaign are carried in the URL, so a group's view is a
    bookmarkable link. The view is a report-page preset over the existing scope
