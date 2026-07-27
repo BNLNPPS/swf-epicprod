@@ -19,6 +19,9 @@
            class="btn btn-sm {% if campaign and c.name == campaign.name %}btn-secondary active{% else %}btn-outline-secondary{% endif %} me-1">{{ c.name }}
             <span class="text-lowercase">· {{ c.lifecycle }}</span></a>
         {% endfor %}
+        {% if campaign %}
+        <a style="margin-left: 1cm;" href="{% url 'snapper_ai:snapper_report' scope='epicprod' %}?families=Delivery%20{{ campaign.name|urlencode }}&window=30d">{{ campaign.name }} delivery time history</a>
+        {% endif %}
     </div>
 
     {% if not campaign %}
