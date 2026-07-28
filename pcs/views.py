@@ -9,6 +9,9 @@ import json
 import time
 import hashlib
 from functools import wraps
+from zoneinfo import ZoneInfo
+
+_ET = ZoneInfo('America/New_York')
 from urllib.request import urlopen
 from urllib.parse import quote as urlquote
 from django.shortcuts import render, get_object_or_404, redirect
@@ -2420,27 +2423,13 @@ def pcs_campaign_plan(request):
     })
 
 
-def pcs_physics_configs(request):
-    """The physics-configuration view (CAMPAIGN_CONTINUUM.md): physics
-    first, fulfillment through time. One row per physics configuration,
-    its editions along the campaign axis — presentation only, no compose,
-    no editing; anything actionable cross-links to the catalog. Read-open.
-    """
+def _build_physics_rows(years):
+    """The physics-configuration assembly — the expensive whole-catalog
+    build behind the physics page and its cached product: campaigns for
+    the year selection and one plain-data row per configuration with
+    its editions along the campaign axis."""
     from .physics_config import group_editions
 
-    def url_with(**updates):
-        params = request.GET.copy()
-        for key, value in updates.items():
-            if value:
-                params[key] = value
-            else:
-                params.pop(key, None)
-        encoded = params.urlencode()
-        return f'{request.path}?{encoded}' if encoded else request.path
-
-    years = (request.GET.get('years') or '2026').strip()
-    if years not in ('2026', '2025', 'all'):
-        years = '2026'
     # Newest first, left to right — the eye lands on the most recent.
     campaigns = sorted(
         (c.name for c in Campaign.objects.all()
@@ -2480,12 +2469,6 @@ def pcs_physics_configs(request):
                   size=Sum('data_size'))
     }
 
-    filters = {key: (request.GET.get(key) or '').strip()
-               for key in ('process', 'generator', 'beam', 'species', 'q2',
-                           'sample')}
-    q = (request.GET.get('q') or '').strip().lower()
-    produced_in = (request.GET.get('produced') or '').strip()
-
     gen_case = _generator_display_case()
     rows = []
     for key, group in groups.items():
@@ -2524,10 +2507,15 @@ def pcs_physics_configs(request):
             for d, _ in group['editions'])))
         # PC-anchored production requests: a request whose anchor is any
         # of this configuration's editions belongs to the configuration.
-        row['prod_requests'] = sorted(
-            {req.pk: req for d, _ in group['editions']
-             for req in requests_by_anchor.get(d.composed_name, ())}.values(),
-            key=lambda r: r.pk)
+        # Plain data — the row set is a cached product.
+        row['prod_requests'] = [
+            {'pk': req.pk, 'requestor': req.requestor,
+             'nevents': req.nevents,
+             'anchor': (req.data or {}).get('physics_config_anchor', '')}
+            for req in sorted(
+                {req.pk: req for d, _ in group['editions']
+                 for req in requests_by_anchor.get(d.composed_name, ())
+                 }.values(), key=lambda r: r.pk)]
         for dataset, edition_detail in group['editions']:
             camp = dataset.campaign.name if dataset.campaign_id else ''
             data = produced.get(dataset.composed_name) or {}
@@ -2548,8 +2536,52 @@ def pcs_physics_configs(request):
              row['q2'], row['gen_display'], row['sample']]
             + [e['name'] for e in row['editions'].values()]).lower()
         rows.append(row)
+    return {'campaigns': campaigns, 'rows': rows, 'total': len(groups)}
 
-    rows_all = rows
+
+def pcs_physics_configs(request):
+    """The physics-configuration view (CAMPAIGN_CONTINUUM.md): physics
+    first, fulfillment through time. One row per physics configuration,
+    its editions along the campaign axis — presentation only, no
+    compose, no editing; anything actionable cross-links to the
+    catalog. Read-open. The whole-catalog assembly serves as a cached
+    product (swf-monitor docs/CACHED_PRODUCTS.md): the stored result
+    immediately, staleness rebuilding behind, Update rebuilding now.
+    Filters, facets, and totals are cheap projections applied to the
+    cached rows per request.
+    """
+    from monitor_app.cached_product import get_product
+
+    def url_with(**updates):
+        params = request.GET.copy()
+        params.pop('refresh', None)
+        for key, value in updates.items():
+            if value:
+                params[key] = value
+            else:
+                params.pop(key, None)
+        encoded = params.urlencode()
+        return f'{request.path}?{encoded}' if encoded else request.path
+
+    years = (request.GET.get('years') or '2026').strip()
+    if years not in ('2026', '2025', 'all'):
+        years = '2026'
+    refresh = request.GET.get('refresh') == '1'
+    product = get_product(f'pcs_physics:v1:{years}',
+                          lambda: _build_physics_rows(years),
+                          ttl_seconds=300, refresh=refresh)
+    cached = product['value'] or {'campaigns': [], 'rows': [], 'total': 0}
+    campaigns = cached['campaigns']
+    total_groups = cached.get('total') or 0
+
+    filters = {key: (request.GET.get(key) or '').strip()
+               for key in ('process', 'generator', 'beam', 'species', 'q2',
+                           'sample')}
+    q = (request.GET.get('q') or '').strip().lower()
+    produced_in = (request.GET.get('produced') or '').strip()
+
+    rows_all = cached['rows']
+    rows = rows_all
     for key, value in filters.items():
         if value:
             rows = [r for r in rows if r[key] == value]
@@ -2650,19 +2682,20 @@ def pcs_physics_configs(request):
         'facet_rows': facet_rows,
         'q': request.GET.get('q', ''),
         'clear_url': request.path,
-        'total': len(groups),
+        'total': total_groups,
         'shown': len(rows),
+        'product_built_at_text': (
+            product['built_at'].astimezone(_ET)
+            .strftime('%Y-%m-%d %H:%M ET')
+            if product['built_at'] else ''),
+        'product_refreshing': product['refreshing'],
+        'product_update_url': url_with(refresh='1'),
     })
 
 
-def pcs_request_composer(request):
-    """The request composer — a friendly front door for asking for
-    production, and the first 'my epicprod' surface: the signed-in
-    user's past requests and remembered defaults guide the next one.
-    The mapping to PCS is deterministic (axes → the request's filter
-    block; adopting an existing configuration sets the same anchor the
-    CSV import writes). Read-open; submission is login-gated.
-    """
+def _build_composer_configs():
+    """The composer's configuration list — the whole-catalog assembly
+    behind the request composer, served as a cached product."""
     from .physics_config import group_editions
     select = ('physics_tag', 'evgen_tag', 'background_tag', 'campaign')
     heads = list(Dataset.objects.select_related(*select)
@@ -2701,6 +2734,27 @@ def pcs_request_composer(request):
                          for d, _ in group['editions']),
         })
     configs.sort(key=lambda c: (c['process'], c['beam'], c['q2']))
+    return {'configs': configs}
+
+
+def pcs_request_composer(request):
+    """The request composer — a friendly front door for asking for
+    production, and the first 'my epicprod' surface: the signed-in
+    user's past requests and remembered defaults guide the next one.
+    The mapping to PCS is deterministic (axes → the request's filter
+    block; adopting an existing configuration sets the same anchor the
+    CSV import writes). Read-open; submission is login-gated. The
+    whole-catalog configuration list serves as a cached product
+    (swf-monitor docs/CACHED_PRODUCTS.md); the user's own requests and
+    preferences build per request.
+    """
+    from monitor_app.cached_product import get_product
+
+    refresh = request.GET.get('refresh') == '1'
+    product = get_product('pcs_composer_configs:v1',
+                          _build_composer_configs,
+                          ttl_seconds=300, refresh=refresh)
+    configs = (product['value'] or {}).get('configs') or []
 
     def _options(field):
         return sorted({c[field] for c in configs if c[field]})
@@ -2800,6 +2854,11 @@ def pcs_request_composer(request):
         'my_requests_json': json.dumps(my_requests),
         'default_contact_name': default_contact_name,
         'default_contact_email': default_contact_email,
+        'product_built_at_text': (
+            product['built_at'].astimezone(_ET)
+            .strftime('%Y-%m-%d %H:%M ET')
+            if product['built_at'] else ''),
+        'product_refreshing': product['refreshing'],
     })
 
 

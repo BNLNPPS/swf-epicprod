@@ -21,7 +21,15 @@
 </style>
 
 <div class="container-fluid mt-3">
-  <h1>Physics Configurations</h1>
+  <h1>Physics Configurations
+    {% if product_built_at_text %}
+    <span class="fs-6 fw-normal ms-3">
+      <span class="text-muted">Data as of <strong>{{ product_built_at_text }}</strong>
+      {% if product_refreshing %}<span>· refreshing…</span>{% endif %}</span>
+      <a href="{{ product_update_url }}" class="btn btn-sm btn-secondary ms-2">Update</a>
+    </span>
+    {% endif %}
+  </h1>
   <p style="max-width: 62em">
     Physics first: one row per physics configuration — the campaign-invariant
     identity a request asks for — with its editions along the campaign axis,
@@ -93,7 +101,7 @@
       {% for r in rows %}
       <tr>
         <td>{% if r.pc_label %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc_label %}" title="The physics configuration page: identity, associations, editions, requests">{{ r.pc_label }}</a>{% endif %}</td>
-        <td>{{ r.physics }}{% for pr in r.prod_requests %} <a href="{% url 'pcs:pcs_edition_data' name=pr.data.physics_config_anchor %}" class="small" title="{{ pr.requestor }}{% if pr.nevents %} · {{ pr.nevents }} events{% endif %} — production request on this configuration; click for its data page">req#{{ pr.pk }}</a>{% endfor %}{% for rid in r.requests %} <a href="{% url 'pcs:questionnaire_detail' rid %}" class="small" title="matched production request #{{ rid }}">#{{ rid }}</a>{% endfor %}</td>
+        <td>{{ r.physics }}{% for pr in r.prod_requests %} <a href="{% url 'pcs:pcs_edition_data' name=pr.anchor %}" class="small" title="{{ pr.requestor }}{% if pr.nevents %} · {{ pr.nevents }} events{% endif %} — production request on this configuration; click for its data page">req#{{ pr.pk }}</a>{% endfor %}{% for rid in r.requests %} <a href="{% url 'pcs:questionnaire_detail' rid %}" class="small" title="matched production request #{{ rid }}">#{{ rid }}</a>{% endfor %}</td>
         <td>{{ r.process }}</td>
         <td>{{ r.beam }}</td>
         <td>{{ r.q2 }}</td>

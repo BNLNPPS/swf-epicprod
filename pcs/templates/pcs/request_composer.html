@@ -15,7 +15,12 @@
 </style>
 
 <div class="container-fluid mt-3" style="max-width: 76em">
-  <h1 style="font-size:1.5rem">Request Production</h1>
+  <h1 style="font-size:1.5rem">Request Production
+    {% if product_built_at_text %}
+    <span class="fs-6 fw-normal ms-3 text-muted">Catalog as of <strong>{{ product_built_at_text }}</strong>{% if product_refreshing %} · refreshing…{% endif %}
+      <a href="?refresh=1" class="btn btn-sm btn-secondary ms-2">Update</a></span>
+    {% endif %}
+  </h1>
   <p style="max-width: 56em">
     Tell us the physics you need. As you fill this in, the panel on the right
     shows what the system already has — if your physics exists, base your
