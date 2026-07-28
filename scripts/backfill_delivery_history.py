@@ -94,6 +94,7 @@ def collect_files(campaigns):
     print(f'inventory: {len(names)} files under roots, '
           f'{len(wanted)} in target campaigns')
 
+    file_events = load_file_events()
     daily = {name: {} for name in campaigns}
     ordered = sorted(wanted)
     for start in range(0, len(ordered), BULK_CHUNK):
@@ -108,13 +109,39 @@ def collect_files(campaigns):
                 created, '%a, %d %b %Y %H:%M:%S %Z').date().isoformat()
             location = '/'.join(name.split('/')[:-1])
             slot = daily[family].setdefault(
-                (location, day), {'files': 0, 'bytes': 0})
+                (location, day), {'files': 0, 'bytes': 0, 'events': 0,
+                                  'unmeasured': 0})
             slot['files'] += 1
             slot['bytes'] += int(row.get('bytes') or 0)
+            events = file_events.get(name)
+            if events is None:
+                slot['unmeasured'] += 1
+            else:
+                slot['events'] += events
         done = min(start + BULK_CHUNK, len(ordered))
         if done % 10000 < BULK_CHUNK:
             print(f'  bulkmeta {done}/{len(ordered)}')
     return daily
+
+
+EVENTS_DB = '/data/wenauseic/swf-delivery/file_events.sqlite'
+
+
+def load_file_events():
+    """{file DID name: events} from the measurement store written by
+    measure_file_events.py; empty (with a warning) when absent — the
+    record then reports every file as unmeasured."""
+    import sqlite3
+    if not os.path.exists(EVENTS_DB):
+        print(f'WARNING: no events store at {EVENTS_DB}; '
+              f'events will read as unmeasured')
+        return {}
+    db = sqlite3.connect(EVENTS_DB)
+    out = dict(db.execute('SELECT name, events FROM file_events'
+                          ' WHERE events IS NOT NULL'))
+    db.close()
+    print(f'events store: {len(out)} files carry measured events')
+    return out
 
 
 def location_map(campaigns):
@@ -177,9 +204,13 @@ def build_snaps(campaigns):
                 continue
             campaign, pc = mapped
             slot = per_day_pc.setdefault(day, {}).setdefault(
-                campaign, {}).setdefault(pc, {'files': 0, 'bytes': 0})
+                campaign, {}).setdefault(
+                    pc, {'files': 0, 'bytes': 0, 'events': 0,
+                         'unmeasured': 0})
             slot['files'] += counts['files']
             slot['bytes'] += counts['bytes']
+            slot['events'] += counts.get('events', 0)
+            slot['unmeasured'] += counts.get('unmeasured', 0)
 
     denominators_as_of = timezone.now().isoformat()
     snaps = []
@@ -189,9 +220,13 @@ def build_snaps(campaigns):
         for campaign, leaves in day_leaves.items():
             camp_state = cumulative.setdefault(campaign, {})
             for pc, counts in leaves.items():
-                slot = camp_state.setdefault(pc, {'files': 0, 'bytes': 0})
+                slot = camp_state.setdefault(
+                    pc, {'files': 0, 'bytes': 0, 'events': 0,
+                         'unmeasured': 0})
                 slot['files'] += counts['files']
                 slot['bytes'] += counts['bytes']
+                slot['events'] += counts['events']
+                slot['unmeasured'] += counts['unmeasured']
         # The daily arrivals record: per PC, the day's registered
         # arrivals (the bumps) and the running cumulative — both on the
         # registered basis throughout, so the series never mixes bases
@@ -203,19 +238,28 @@ def build_snaps(campaigns):
             leaves = {}
             totals = {'configs': 0, 'with_target': 0, 'events': 0,
                       'expected': 0, 'arrived_files': 0,
-                      'cum_files': 0, 'cum_bytes': 0}
+                      'arrived_events': 0, 'cum_files': 0,
+                      'cum_bytes': 0, 'unmeasured_files': 0}
             day_counts = day_leaves.get(campaign, {})
             for pc, counts in camp_state.items():
                 exp, tier = expected.get(campaign, {}).get(pc, (None, ''))
-                arrived = day_counts.get(pc, {}).get('files', 0)
+                day_slot = day_counts.get(pc, {})
+                arrived = day_slot.get('files', 0)
+                arrived_events = day_slot.get('events', 0)
                 leaves[pc] = {'arrived_files': arrived,
+                              'arrived_events': arrived_events,
+                              'events': counts['events'],
                               'cum_files': counts['files'],
                               'cum_bytes': counts['bytes'],
+                              'unmeasured_files': counts['unmeasured'],
                               'expected': exp, 'tier': tier}
                 totals['configs'] += 1
                 totals['arrived_files'] += arrived
+                totals['arrived_events'] += arrived_events
+                totals['events'] += counts['events']
                 totals['cum_files'] += counts['files']
                 totals['cum_bytes'] += counts['bytes']
+                totals['unmeasured_files'] += counts['unmeasured']
                 if exp is not None:
                     totals['with_target'] += 1
                     totals['expected'] += exp

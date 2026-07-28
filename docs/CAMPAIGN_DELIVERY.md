@@ -74,6 +74,34 @@ distinguishable from observed evidence. The placement split does not
 reconstruct (no lock-state history) and is deferred with the
 disk/tape metric.
 
+### The events source
+
+No per-output-file event count is recorded anywhere the system reads
+(verified 2026-07-28, confirmed with the production operator): the
+live production tasks bind no configuration carrying a rate, Rucio's
+native `events` field is unpopulated at registration, and the condor
+chunker computed each submission's chunk size from that day's timing
+without retaining the chunk lists — chunk sizes therefore vary by
+dataset and submission. Two recorded facts substitute: Rucio has every
+file's size, and the ANL campaign catalog (the timing feed the condor
+submitter reads) has exact event totals per EVGEN source file.
+
+`scripts/measure_file_events.py` derives per-file events from them:
+files in one dataset location cluster into uniform byte-size classes,
+one per chunking; one xrootd read per class (the `events` tree entry
+count, via uproot on a disk replica) anchors the class rate, and
+members inherit it. Classes with no readable replica (tape-only) are
+derived from the catalog where the source's chunks are fully delivered
+and the location is dormant; derived rows recompute on every run.
+Provenance per file: `measured`, `sampled-rate`, or `catalog-derived`.
+Results accumulate in a SQLite store
+(`/data/wenauseic/swf-delivery/file_events.sqlite`) that the daily
+record builder joins at build time, emitting per-PC `arrived_events`,
+cumulative `events`, and an explicit `unmeasured_files` count — event
+sums are floors wherever measurement is incomplete, and the campaign
+view states that coverage. Catalog totals cross-check the assignment
+per location.
+
 ## PCS extensions
 
 1. **Campaign-included expected events per PC** — a validated field on
