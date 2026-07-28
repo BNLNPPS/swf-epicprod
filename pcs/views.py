@@ -1057,8 +1057,15 @@ TAG_MODELS = {
 }
 
 
+def _tag_schema_or_404(tag_type):
+    """An unknown tag type in the URL is a 404, never a server error."""
+    if tag_type not in TAG_SCHEMAS:
+        raise Http404(f'Unknown tag type {tag_type!r}')
+    return TAG_SCHEMAS[tag_type]
+
+
 def tags_list(request, tag_type):
-    schema = TAG_SCHEMAS[tag_type]
+    schema = _tag_schema_or_404(tag_type)
     model = TAG_MODELS[tag_type]
 
     status_filter = request.GET.get('status', '')
@@ -1150,7 +1157,7 @@ def tags_datatable_ajax(request, tag_type):
 
 def tag_detail(request, tag_type, tag_number):
     model = TAG_MODELS[tag_type]
-    schema = TAG_SCHEMAS[tag_type]
+    schema = _tag_schema_or_404(tag_type)
     tag = get_object_or_404(model, tag_number=tag_number)
 
     datasets = []
@@ -1172,7 +1179,7 @@ def tag_detail(request, tag_type, tag_number):
 
 @_login_required_flash
 def tag_create(request, tag_type):
-    schema = TAG_SCHEMAS[tag_type]
+    schema = _tag_schema_or_404(tag_type)
 
     if tag_type == 'p':
         FormClass = PhysicsTagForm
@@ -1226,7 +1233,7 @@ def tag_create(request, tag_type):
 
 def tag_compose(request, tag_type):
     """Split-panel browse + compose UI for physics tags."""
-    schema = TAG_SCHEMAS[tag_type]
+    schema = _tag_schema_or_404(tag_type)
     model = TAG_MODELS[tag_type]
 
     if tag_type == 'p':
@@ -1433,7 +1440,7 @@ def tag_lock(request, tag_type, tag_number):
 @_login_required_flash
 def tag_edit(request, tag_type, tag_number):
     model = TAG_MODELS[tag_type]
-    schema = TAG_SCHEMAS[tag_type]
+    schema = _tag_schema_or_404(tag_type)
     tag = get_object_or_404(model, tag_number=tag_number)
 
     compose_url = reverse('pcs:tag_compose', kwargs={'tag_type': tag_type})
