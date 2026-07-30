@@ -485,13 +485,25 @@ def _issues(items):
     if not items:
         return 'No issue requiring human action was identified.'
     lines = [
-        '| Severity | Issue | Evidence | Action | Owner |',
-        '|---|---|---|---|---|',
+        '| Severity | Issue | Attribution | Evidence | Action | Owner |',
+        '|---|---|---|---|---|---|',
     ]
     for item in items:
-        lines.append('| {severity} | {title} | {evidence} | {action} | {owner} |'.format(
+        attribution = item.get('attribution') or {}
+        if (not attribution
+                or attribution.get('confidence') == 'unresolved'):
+            cause = 'Unresolved'
+        else:
+            cause = '{layer}: {entity}, {phase} ({confidence})'.format(
+                layer=attribution.get('layer') or 'unknown',
+                entity=attribution.get('entity') or '',
+                phase=attribution.get('phase') or 'unresolved',
+                confidence=attribution.get('confidence') or 'unresolved',
+            )
+        lines.append('| {severity} | {title} | {cause} | {evidence} | {action} | {owner} |'.format(
             severity=_escape(item.get('severity')),
             title=_escape(item.get('title')),
+            cause=_escape(cause),
             evidence=_escape('; '.join(item.get('evidence') or [])),
             action=_escape(item.get('action')),
             owner=_escape(item.get('owner')),

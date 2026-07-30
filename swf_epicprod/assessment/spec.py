@@ -11,9 +11,14 @@ describes it.
 import json
 import re
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 VERDICTS = ('ok', 'attention', 'alarm')
 AXES = ('arrivals', 'processing', 'failures', 'dispositions', 'infrastructure')
+ATTRIBUTION_LAYERS = (
+    'compute', 'storage', 'data_management', 'payload', 'software',
+    'network', 'operator', 'unknown',
+)
+ATTRIBUTION_CONFIDENCE = ('confirmed', 'supported', 'unresolved')
 
 # corun-side names (bootstrap creates them; the trigger and enforcement
 # reference them through the environment so a rename never hides here).
@@ -143,12 +148,24 @@ EVIDENCE AND INVESTIGATION DISCIPLINE:
    failure; and a JLab catalog or tape-rule record does not prove that JLab caused
    the execution failure. When structured evidence does not establish the causal
    component and phase, state that the cause is unresolved.
-8. Bundle deltas come from production-owned analytics history, using the
+8. For every material ``panda_error_summary`` pattern used in a causal claim,
+   select a ``representative_pandaid`` supplied by that exact pattern and inspect
+   it with ``panda_study_job``. Preserve its complete structured
+   ``epicprod_diagnosis`` in ``generation.investigation``. A job from another
+   error pattern is not representative evidence.
+9. When an error pattern has ``multi_site=true``, treat a shared dependency as
+   a candidate explanation. Do not blame any execution site unless the
+   representative job's structured diagnosis establishes that site as the
+   causal entity.
+10. Keep causal payload, storage, or data-management failures; worker/control
+   failures; operator actions; and downstream placement consequences as
+   separate findings unless structured evidence explicitly connects them.
+11. Bundle deltas come from production-owned analytics history, using the
    recorded campaign snapshot closest to one complete reporting window before
    the current state: one day for a daily, seven days for a weekly. The facts
    block carries the selected snapshot, its distance from the requested
    baseline, and the actual elapsed comparison interval.
-9. Every PanDA null must name its population. A zero over the campaign's
+12. Every PanDA null must name its population. A zero over the campaign's
    attributed tasks means only that those tasks were quiet; it never means
    PanDA globally was idle. Do not write "no PanDA work ran", "PanDA was
    idle", or equivalent global language unless a separate global query
@@ -230,7 +247,13 @@ deterministic fact tables to produce the human report.
      "top_issues": [
        {{"title": "<issue>", "severity": "<attention|alarm>",
          "evidence": ["<refs>"], "action": "<human action>",
-         "owner": "<owner>"}}
+         "owner": "<owner>",
+         "attribution": {{
+           "phase": "<structured diagnosis phase or unresolved>",
+           "layer": "<compute|storage|data_management|payload|software|network|operator|unknown>",
+           "entity": "<exact structured causal entity or empty>",
+           "confidence": "<confirmed|supported|unresolved>"
+         }}}}
      ],
      "dismissed": [
        {{"signal": "<examined signal>", "reason": "<why it was set aside>"}}
@@ -261,7 +284,12 @@ deterministic fact tables to produce the human report.
 
 Use only the defined status vocabularies and fields. Empty lists are legitimate.
 Use ``assessment`` for one to five high-information conclusions, not a summary
-of the fact tables. The narration is metadata for compact delivery channels.
+of the fact tables. For unresolved causation use exactly
+``{{"phase":"unresolved","layer":"unknown","entity":"","confidence":"unresolved"}}``.
+For confirmed or supported attribution, phase, layer, and entity must exactly
+match structured causal fields preserved in a
+``generation.investigation[].result``. The narration is metadata for compact
+delivery channels.
 
 """
 
@@ -403,6 +431,54 @@ def extract_artifact(page_content):
     return artifact, prose, problems
 
 
+def _structured_attributions(value):
+    """Yield causal records nested anywhere in preserved tool results."""
+    if isinstance(value, dict):
+        keys = {
+            'phase', 'cause_layer', 'cause_entity', 'cause_confidence'}
+        if keys <= set(value):
+            yield {
+                'phase': value.get('phase'),
+                'layer': value.get('cause_layer'),
+                'entity': value.get('cause_entity'),
+                'confidence': value.get('cause_confidence'),
+            }
+        for child in value.values():
+            yield from _structured_attributions(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _structured_attributions(child)
+
+
+def _attribution_is_supported(attribution, artifact):
+    evidence = []
+    generation = artifact.get('generation')
+    if isinstance(generation, dict):
+        for investigation in generation.get('investigation') or []:
+            if isinstance(investigation, dict):
+                evidence.extend(_structured_attributions(
+                    investigation.get('result')))
+    confidence = attribution.get('confidence')
+    acceptable_confidence = (
+        {'confirmed'} if confidence == 'confirmed'
+        else {'confirmed', 'supported'}
+    )
+    expected = {
+        'phase': str(attribution.get('phase') or '').strip().casefold(),
+        'layer': str(attribution.get('layer') or '').strip().casefold(),
+        'entity': str(attribution.get('entity') or '').strip().casefold(),
+    }
+    return any(
+        {
+            'phase': str(item.get('phase') or '').strip().casefold(),
+            'layer': str(item.get('layer') or '').strip().casefold(),
+            'entity': str(item.get('entity') or '').strip().casefold(),
+        } == expected
+        and item.get('confidence') in acceptable_confidence
+        for item in evidence
+    )
+
+
 def validate_artifact(artifact):
     """Schema validation, hand-rolled and specific. Returns problems []."""
     problems = []
@@ -469,7 +545,10 @@ def validate_artifact(artifact):
 
     required_item_keys = {
         'software_findings': {'finding', 'evidence', 'significance'},
-        'top_issues': {'title', 'severity', 'evidence', 'action', 'owner'},
+        'top_issues': {
+            'title', 'severity', 'evidence', 'action', 'owner',
+            'attribution',
+        },
         'dismissed': {'signal', 'reason'},
     }
     for field, keys in required_item_keys.items():
@@ -486,6 +565,51 @@ def validate_artifact(artifact):
         if (isinstance(item, dict)
                 and item.get('severity') not in ('attention', 'alarm')):
             problems.append(f'top_issues[{index}].severity invalid')
+        if not isinstance(item, dict):
+            continue
+        attribution = item.get('attribution')
+        if not isinstance(attribution, dict):
+            problems.append(
+                f'top_issues[{index}].attribution must be an object')
+            continue
+        if set(attribution) != {
+                'phase', 'layer', 'entity', 'confidence'}:
+            problems.append(
+                f'top_issues[{index}].attribution keys must be exactly '
+                'confidence, entity, layer, phase')
+            continue
+        phase = attribution.get('phase')
+        layer = attribution.get('layer')
+        entity = attribution.get('entity')
+        confidence = attribution.get('confidence')
+        if not isinstance(phase, str) or not phase.strip():
+            problems.append(
+                f'top_issues[{index}].attribution.phase is invalid')
+        if layer not in ATTRIBUTION_LAYERS:
+            problems.append(
+                f'top_issues[{index}].attribution.layer is invalid')
+        if not isinstance(entity, str):
+            problems.append(
+                f'top_issues[{index}].attribution.entity is invalid')
+        if confidence not in ATTRIBUTION_CONFIDENCE:
+            problems.append(
+                f'top_issues[{index}].attribution.confidence is invalid')
+        if confidence == 'unresolved':
+            if not (
+                    phase == 'unresolved'
+                    and layer == 'unknown'
+                    and entity == ''):
+                problems.append(
+                    f'top_issues[{index}].unresolved attribution must use '
+                    'phase=unresolved, layer=unknown, and an empty entity')
+        elif confidence in ('confirmed', 'supported'):
+            if layer == 'unknown' or not str(entity or '').strip():
+                problems.append(
+                    f'top_issues[{index}].causal attribution is incomplete')
+            elif not _attribution_is_supported(attribution, artifact):
+                problems.append(
+                    f'top_issues[{index}].attribution does not match '
+                    'structured investigation evidence')
 
     narration = _req('narration', str)
     if narration is not None and not narration.strip():

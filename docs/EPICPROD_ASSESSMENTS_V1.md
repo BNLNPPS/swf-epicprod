@@ -317,14 +317,14 @@ the assessor to calibrate its work and submit a complete report within ten
 minutes, leaving five minutes only as termination margin (operator directive
 2026-07-13).
 
-### Artifact schema (v4, `schema_version: 4`)
+### Artifact schema (v5, `schema_version: 5`)
 
 The operative schema is `spec.validate_artifact` in
 `swf_epicprod/assessment/spec.py`; the shape:
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "verdict": "ok | attention | alarm",
   "axes": {
     "arrivals":       {"status": "ok|attention|alarm", "note": "..."},
@@ -342,7 +342,13 @@ The operative schema is `spec.validate_artifact` in
   "top_issues": [
     {"title": "...", "severity": "attention|alarm",
      "evidence": ["<metric/action refs>"], "action": "<what a human should do>",
-     "owner": "<who acts>"}
+     "owner": "<who acts>",
+     "attribution": {
+       "phase": "<structured diagnosis phase or unresolved>",
+       "layer": "compute|storage|data_management|payload|software|network|operator|unknown",
+       "entity": "<exact structured causal entity or empty>",
+       "confidence": "confirmed|supported|unresolved"
+     }}
   ],
   "dismissed": [
     {"signal": "<what looked anomalous>", "reason": "<why it is not an issue>"}
@@ -414,6 +420,17 @@ copies. Their stable professional contract is:
   deterministic tables. The FLOOR is the minimum verdict, raise-only.
 - Causal claims require structured evidence from the current run; association
   with a compute site, service, or data-management record is not causation.
+- A material PanDA error pattern used causally must be followed from one of
+  that exact pattern's representative PandaIDs through `panda_study_job`; the
+  complete structured `epicprod_diagnosis` is preserved in the investigation
+  evidence.
+- Multi-site error patterns prompt investigation of shared dependencies.
+  Payload/storage failures, worker/control failures, operator actions, and
+  downstream placement consequences remain separate unless structured evidence
+  connects them.
+- Each actionable issue carries structured attribution. Confirmed or supported
+  phase, layer, and entity values must match the preserved tool result; otherwise
+  attribution is explicitly unresolved.
 - Output is exactly one fenced JSON artifact. The harness renders the
   reader-oriented Markdown, including `###` sections, the bundle link, and the
   mandatory final `### Generation report`.
