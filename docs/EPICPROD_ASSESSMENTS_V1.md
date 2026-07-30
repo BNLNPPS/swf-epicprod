@@ -412,6 +412,8 @@ copies. Their stable professional contract is:
   ET.
 - The model interprets and investigates; it does not calculate or restate the
   deterministic tables. The FLOOR is the minimum verdict, raise-only.
+- Causal claims require structured evidence from the current run; association
+  with a compute site, service, or data-management record is not causation.
 - Output is exactly one fenced JSON artifact. The harness renders the
   reader-oriented Markdown, including `###` sections, the bundle link, and the
   mandatory final `### Generation report`.

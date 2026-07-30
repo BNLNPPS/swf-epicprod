@@ -136,12 +136,19 @@ EVIDENCE AND INVESTIGATION DISCIPLINE:
    from this run. Do not estimate, interpolate, or invent precision.
 6. Keep facts, interpretations, unresolved contradictions, and limitations
    distinct. A quiet interval and a legitimate null result are valid.
-7. Bundle deltas come from production-owned analytics history, using the
+7. Causal claims must be supported by structured evidence from this run.
+   Association with a compute site, service, or data-management record does not
+   establish causation. For example, ``computingsite=Google`` does not prove a
+   Google-side failure; a checksum error does not establish an input or stage-in
+   failure; and a JLab catalog or tape-rule record does not prove that JLab caused
+   the execution failure. When structured evidence does not establish the causal
+   component and phase, state that the cause is unresolved.
+8. Bundle deltas come from production-owned analytics history, using the
    recorded campaign snapshot closest to one complete reporting window before
    the current state: one day for a daily, seven days for a weekly. The facts
    block carries the selected snapshot, its distance from the requested
    baseline, and the actual elapsed comparison interval.
-8. Every PanDA null must name its population. A zero over the campaign's
+9. Every PanDA null must name its population. A zero over the campaign's
    attributed tasks means only that those tasks were quiet; it never means
    PanDA globally was idle. Do not write "no PanDA work ran", "PanDA was
    idle", or equivalent global language unless a separate global query
