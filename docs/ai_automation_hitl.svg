@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 790" font-family="Arial, Helvetica, sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ad1457"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1" dy="2" stdDeviation="1.5" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="1360" height="790" fill="#ffffff"/>
+
+  <!-- ============ Title ============ -->
+  <text x="680" y="34" text-anchor="middle" font-size="19" font-weight="bold">AI automation with human in the loop</text>
+  <text x="680" y="56" text-anchor="middle" font-size="12" font-style="italic" fill="#555">the data foundation grounds AI reasoning&#160;&#183;&#160;AI composes executable proposals&#160;&#183;&#160;humans decide&#160;&#183;&#160;approval executes deterministically</text>
+
+  <!-- ============ Data foundation region ============ -->
+  <rect x="40" y="90" width="390" height="470" rx="12" fill="#f1f8e9" stroke="#33691e" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="235" y="115" text-anchor="middle" font-size="15" font-weight="bold" fill="#1b5e20">Data foundation for AI reasoning</text>
+  <text x="235" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#555">curated facts &#183; deterministic evidence &#183; durable AI-readable history</text>
+
+  <rect x="60" y="150" width="350" height="68" rx="6" fill="#ffffff" stroke="#33691e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="235" y="172" text-anchor="middle" font-size="13.5" font-weight="bold">Campaign narratives</text>
+  <text x="235" y="192" text-anchor="middle" font-size="12" fill="#555">human-authored context for LLM reasoning</text>
+  <text x="235" y="210" text-anchor="middle" font-size="12" fill="#555">objectives &#183; priorities &#183; evolution</text>
+
+  <rect x="60" y="230" width="350" height="68" rx="6" fill="#ffffff" stroke="#33691e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="235" y="252" text-anchor="middle" font-size="13.5" font-weight="bold">Daily reports &amp; AI assessments</text>
+  <text x="235" y="272" text-anchor="middle" font-size="12" fill="#555">what changed and what needs attention</text>
+  <text x="235" y="290" text-anchor="middle" font-size="12" fill="#555">attributed, durable, open to comment</text>
+
+  <rect x="60" y="310" width="350" height="68" rx="6" fill="#ffffff" stroke="#33691e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="235" y="332" text-anchor="middle" font-size="13.5" font-weight="bold">snapper-ai time history</text>
+  <text x="235" y="352" text-anchor="middle" font-size="12" fill="#555">coherent system state over time</text>
+  <text x="235" y="370" text-anchor="middle" font-size="12" fill="#555">retrieval, not reconstruction</text>
+
+  <rect x="60" y="390" width="350" height="68" rx="6" fill="#ffffff" stroke="#33691e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="235" y="412" text-anchor="middle" font-size="13.5" font-weight="bold">Action stream</text>
+  <text x="235" y="432" text-anchor="middle" font-size="12" fill="#555">one record per production action</text>
+  <text x="235" y="450" text-anchor="middle" font-size="12" fill="#555">the corpus for &#8220;what happened&#8221;</text>
+
+  <rect x="60" y="470" width="350" height="68" rx="6" fill="#ffffff" stroke="#33691e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="235" y="492" text-anchor="middle" font-size="13.5" font-weight="bold">PanDA &amp; Rucio production metadata</text>
+  <text x="235" y="512" text-anchor="middle" font-size="12" fill="#555">tasks &#183; jobs &#183; queues &#183; datasets &#183; replicas</text>
+  <text x="235" y="530" text-anchor="middle" font-size="12" fill="#555">monitor metadata, live &amp; historical, via MCP &amp; REST</text>
+
+  <!-- ============ AI proposals region ============ -->
+  <rect x="485" y="90" width="390" height="470" rx="12" fill="#e8eaf6" stroke="#3949ab" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="680" y="115" text-anchor="middle" font-size="15" font-weight="bold" fill="#283593">AI develops proposals</text>
+  <text x="680" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#555">an untrusted generator inside a deterministic envelope</text>
+
+  <rect x="505" y="218" width="350" height="108" rx="6" fill="#ffffff" stroke="#3949ab" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="680" y="242" text-anchor="middle" font-size="13.5" font-weight="bold">Untrusted AI</text>
+  <text x="680" y="262" text-anchor="middle" font-size="12" fill="#555">the model interprets &#8212; it does not own the facts</text>
+  <text x="680" y="280" text-anchor="middle" font-size="12" fill="#555">reads the foundation, holds no credentials</text>
+  <text x="680" y="298" text-anchor="middle" font-size="12" fill="#555">assessments &amp; reports are inputs</text>
+  <text x="680" y="316" text-anchor="middle" font-size="12" fill="#555">to proposal development, nothing more</text>
+
+  <rect x="505" y="370" width="350" height="108" rx="6" fill="#ffffff" stroke="#3949ab" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="680" y="394" text-anchor="middle" font-size="13.5" font-weight="bold">Deterministic proposals</text>
+  <text x="680" y="414" text-anchor="middle" font-size="12" fill="#555">executable payloads, not prose</text>
+  <text x="680" y="432" text-anchor="middle" font-size="12" fill="#555">action id + exact validated arguments</text>
+  <text x="680" y="450" text-anchor="middle" font-size="12" fill="#555">confidence, reason, and provenance</text>
+  <text x="680" y="468" text-anchor="middle" font-size="12" fill="#555">offered for human approval</text>
+
+  <!-- ============ Humans decide region ============ -->
+  <rect x="930" y="90" width="390" height="470" rx="12" fill="#fff3e0" stroke="#e65100" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="1125" y="115" text-anchor="middle" font-size="15" font-weight="bold" fill="#bf360c">Humans approve &#8212; or not</text>
+  <text x="1125" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#555">attention concentrates &#8212; humans decide</text>
+
+  <rect x="950" y="150" width="350" height="90" rx="6" fill="#ffffff" stroke="#e65100" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="1125" y="174" text-anchor="middle" font-size="13.5" font-weight="bold">Review surfaces</text>
+  <text x="1125" y="194" text-anchor="middle" font-size="12" fill="#555">catalog controls &#183; proposals page &#183; bot</text>
+  <text x="1125" y="212" text-anchor="middle" font-size="12" fill="#555">Approve &#183; Deny &#183; Undo</text>
+  <text x="1125" y="230" text-anchor="middle" font-size="12" fill="#555">wherever the work already is</text>
+
+  <rect x="950" y="252" width="350" height="90" rx="6" fill="#ffffff" stroke="#e65100" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="1125" y="276" text-anchor="middle" font-size="13.5" font-weight="bold">Visible but inert</text>
+  <text x="1125" y="296" text-anchor="middle" font-size="12" fill="#555">anyone can see a recommendation</text>
+  <text x="1125" y="314" text-anchor="middle" font-size="12" fill="#555">only an authenticated approver can act</text>
+  <text x="1125" y="332" text-anchor="middle" font-size="12" fill="#555">AI surfaces get only the propose verb</text>
+
+  <rect x="950" y="354" width="350" height="90" rx="6" fill="#ffffff" stroke="#e65100" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="1125" y="378" text-anchor="middle" font-size="13.5" font-weight="bold">Ceremony proportional to stakes</text>
+  <text x="1125" y="398" text-anchor="middle" font-size="12" fill="#555">dry run &#183; undo story &#183; required comment</text>
+  <text x="1125" y="416" text-anchor="middle" font-size="12" fill="#555">reversibility class drives the controls:</text>
+  <text x="1125" y="434" text-anchor="middle" font-size="12" fill="#555">undoable &#183; mitigable &#183; irreversible</text>
+
+  <rect x="950" y="456" width="350" height="90" rx="6" fill="#ffffff" stroke="#e65100" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="1125" y="480" text-anchor="middle" font-size="13.5" font-weight="bold">Track record</text>
+  <text x="1125" y="500" text-anchor="middle" font-size="12" fill="#555">decisions grade proposers:</text>
+  <text x="1125" y="518" text-anchor="middle" font-size="12" fill="#555">wrong &#183; poor &#183; ok &#183; good</text>
+  <text x="1125" y="536" text-anchor="middle" font-size="12" fill="#555">proposal rights earnable, revocable by data</text>
+
+  <!-- ============ Flow arrows ============ -->
+  <line x1="430" y1="325" x2="483" y2="325" stroke="#444" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="457" y="312" text-anchor="middle" font-size="11" fill="#555">evidence</text>
+
+  <line x1="875" y1="325" x2="928" y2="325" stroke="#444" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="902" y="312" text-anchor="middle" font-size="11" font-weight="bold" fill="#555">propose</text>
+
+  <!-- ============ Credential boundary ============ -->
+  <line x1="60" y1="586" x2="1300" y2="586" stroke="#b71c1c" stroke-width="2" stroke-dasharray="10 6"/>
+  <text x="680" y="579" text-anchor="middle" font-size="11" font-weight="bold" fill="#b71c1c">credential boundary &#8212; no credentials above this line</text>
+
+  <!-- Approve arrow crossing the boundary -->
+  <line x1="1125" y1="560" x2="1125" y2="610" stroke="#444" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="1113" y="604" text-anchor="end" font-size="11" font-weight="bold" fill="#bf360c">approve</text>
+  <text x="1137" y="604" text-anchor="start" font-size="11" font-style="italic" fill="#555">denied &#8594; recorded, nothing executes</text>
+
+  <!-- ============ Deterministic execution region ============ -->
+  <rect x="300" y="612" width="1020" height="90" rx="12" fill="#f3e5f5" stroke="#6a1b9a" stroke-width="2.2" filter="url(#shadow)"/>
+  <text x="810" y="637" text-anchor="middle" font-size="15" font-weight="bold" fill="#4a148c">Deterministic execution &#8212; the credentialed operations agent</text>
+  <text x="810" y="658" text-anchor="middle" font-size="11" font-style="italic" fill="#555">the identical service call an operator makes by hand &#8212; approving human as changed_by</text>
+  <text x="810" y="681" text-anchor="middle" font-size="12" fill="#555">bounded actions: submit &#183; retry &#183; recover &#183; priorities &#8212; the only holder of production credentials</text>
+
+  <!-- Results return path -->
+  <path d="M 300,660 L 235,660 L 235,566" fill="none" stroke="#ad1457" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-pink)"/>
+  <text x="225" y="606" text-anchor="end" font-size="11" font-style="italic" fill="#ad1457">actions and results recorded</text>
+  <text x="225" y="622" text-anchor="end" font-size="11" font-style="italic" fill="#ad1457">in the action stream</text>
+
+  <!-- ============ Legend ============ -->
+  <text x="680" y="730" text-anchor="middle" font-size="11" fill="#666">legend:&#160; green = data foundation (evidence &amp; curated context) &#160;&#183;&#160; indigo = AI proposers (LLM services) &#160;&#183;&#160; orange = production experts &#160;&#183;&#160; purple = credentialed operations agent</text>
+  <text x="680" y="748" text-anchor="middle" font-size="11" font-style="italic" fill="#666">solid arrows = propose &#8594; decide &#8594; execute &#160;&#183;&#160; dashed pink = results recorded back into the foundation &#160;&#183;&#160; dashed red rule = credential boundary</text>
+  <text x="680" y="766" text-anchor="middle" font-size="11.5" font-style="italic" fill="#666">implementation: narratives &amp; LLM artifacts in corun-ai &#160;&#183;&#160; evidence, proposals &amp; decisions in swf-monitor &#160;&#183;&#160; time history in snapper-ai &#160;&#183;&#160; execution by the epicprod ops agent</text>
+</svg>
