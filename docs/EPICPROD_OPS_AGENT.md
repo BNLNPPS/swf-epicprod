@@ -261,14 +261,17 @@ Running, restarting, monitoring, the systemd unit, the cleaner-killer cron
 payload-log retrieval mechanics are in [EPICPROD_OPS.md](EPICPROD_OPS.md). This
 doc does not duplicate them.
 
-**Status (2026-07-05):** deployed and live on `pandaserver02`. Handlers:
+**Status:** deployed and live on `pandaserver02`. Handlers:
 `fetch_payload_log`, `submit_task`, `submit_evgen_task`,
 `panda_task_operation`, `rucio_snapshot_update`, `evgen_rucio_update`,
-`catalog_import`, `questionnaire_import`, `questionnaire_match_update`,
-`campaign_progress_refresh`, `association_sweep` (with auto-intake of direct
-group.EIC submissions), `catalog_sync` (the nightly composite chain, cron
-02:47), `sync_epicprod_inventory`, `refresh_system_status`, `health_ping`,
-`shutdown`. All work handlers run their doers on the `run_in_background`
+`catalog_import`, `questionnaire_import`, `questionnaire_automatch`,
+`questionnaire_match_update`, `campaign_progress_refresh`,
+`association_sweep` (with auto-intake of direct group.EIC submissions),
+`catalog_sync` (the nightly composite chain, cron 02:47),
+`rucio_arrivals_sweep`, `epic_prod_past_import`, `file_events_measure`,
+`delivery_daily_rebuild` (the delivered-data daily record,
+CAMPAIGN_DELIVERY.md), `sync_epicprod_inventory`, `refresh_system_status`,
+`capture_system_snap`, `health_ping`, `shutdown`. All work handlers run their doers on the `run_in_background`
 worker pool and record structured action records — see
 [ACTION_STREAM.md](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/ACTION_STREAM.md).
 
