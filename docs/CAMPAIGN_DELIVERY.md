@@ -62,17 +62,44 @@ consequences:
   that instant, each linking to its PCS dataset page. Deep per-RSE and
   rule detail stays live in PCS and Rucio pages, outside the record.
 
-## Backfill
+## The daily record
 
-The past record is reconstructible: JLab Rucio file DIDs carry
+The record is reconstructible at any time: JLab Rucio file DIDs carry
 registration times and sizes, and events/file is time-independent
-configuration. Events and bytes arrival series for 26.06 and 26.07
-therefore reconstruct exactly, at daily resolution, keyed to PCs
-through the DID–PCS mapping. Backfilled snaps are stamped with a
-`backfill-v1` capture policy: reconstructed evidence, explicitly
-distinguishable from observed evidence. The placement split does not
-reconstruct (no lock-state history) and is deferred with the
-disk/tape metric.
+configuration. Events and bytes arrival series therefore reconstruct
+exactly, keyed to PCs through the DID–PCS mapping, at daily
+resolution on Eastern-Time calendar days. Reconstruction is the
+production method: each build rebuilds the record in full, so
+historical and current days are one record with one producer. Snaps
+carry capture policy `delivery-daily-v1`, one per complete ET day,
+stamped at day end. The placement split does not reconstruct (no
+lock-state history) and is deferred with the disk/tape metric.
+
+### Nightly production
+
+A `delivery_daily_rebuild` step of the nightly `catalog_sync` chain
+(the production-operations agent, 02:47 ET) performs the rebuild: the
+full file inventory is read from Rucio with per-file registration
+times and sizes, locations are mapped to physics configurations
+through the PCS task output records, events are joined from the
+measurement store, and every complete ET day through yesterday is
+written, replacing the previous build. Full reconstruction on every
+run means newly measured events, newly mapped locations, and revised
+denominators refine the entire history, and a missed night is covered
+by the next run with no cursor state. All campaigns in the catalog
+are covered, so a campaign leaving the active lifecycle slots keeps
+its recorded history. Unmapped locations and files of campaigns with
+no catalog row are counted in the build summary, never dropped
+silently.
+
+The preceding `file_events_measure` step keeps the measurement store
+current (The events source, below). Both steps record their outcome
+in the epicprod action stream, and the `delivery_record_freshness`
+alarm fires when the newest daily snap is older than 30 hours — one
+missed night. Build logic: `swf_epicprod/analytics/delivery_daily.py`,
+invoked by the agent through
+`swf-monitor/scripts/delivery-daily-rebuild.py`; hand runs use
+`scripts/backfill_delivery_history.py` (dry-run default).
 
 ### The events source
 
@@ -86,7 +113,9 @@ dataset and submission. Two recorded facts substitute: Rucio has every
 file's size, and the ANL campaign catalog (the timing feed the condor
 submitter reads) has exact event totals per EVGEN source file.
 
-`scripts/measure_file_events.py` derives per-file events from them:
+`swf_epicprod/analytics/file_events.py` derives per-file events from
+them — nightly as the `file_events_measure` chain step, by hand via
+`scripts/measure_file_events.py`:
 files in one dataset location cluster into uniform byte-size classes,
 one per chunking; one xrootd read per class (the `events` tree entry
 count, via uproot on a disk replica) anchors the class rate, and

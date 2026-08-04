@@ -206,7 +206,11 @@ status, whatever lifecycle slot the campaign occupies. One live
 `rucio_arrivals` event carries the breakdown when anything arrived; arrivals
 naming a campaign with no catalog row are reported in the event, never
 dropped — an unknown arrival is the first signal of a new campaign
-appearing.
+appearing. Two further chain steps maintain the delivered-data daily
+record behind the Snapper campaign view — per-file event measurement
+(`file_events_measure`) and the daily record rebuild
+(`delivery_daily_rebuild`) — described in `CAMPAIGN_DELIVERY.md` (The
+daily record).
 
 **Firsthand reconciliation** *(implemented — `pcs/reconcile.py`)* — a
 producing campaign's catalog records track Rucio directly, with no
