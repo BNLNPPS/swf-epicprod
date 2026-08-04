@@ -86,11 +86,12 @@ measurement store, and every complete ET day through yesterday is
 written, replacing the previous build. Full reconstruction on every
 run means newly measured events, newly mapped locations, and revised
 denominators refine the entire history, and a missed night is covered
-by the next run with no cursor state. All campaigns in the catalog
-are covered, so a campaign leaving the active lifecycle slots keeps
-its recorded history. Unmapped locations and files of campaigns with
-no catalog row are counted in the build summary, never dropped
-silently.
+by the next run with no cursor state. The rebuild covers every
+campaign already in the record, the current and last lifecycle slots,
+and any campaign currently producing — recorded history is never
+dropped, and the metadata pass scales with active campaigns, not the
+full catalog. Unmapped locations and files not resolving to a target
+campaign are counted in the build summary, never dropped silently.
 
 The preceding `file_events_measure` step keeps the measurement store
 current (The events source, below). Both steps record their outcome

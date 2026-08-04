@@ -51,12 +51,29 @@ def _bulkmeta(token, names, scope='epic'):
 
 
 def target_campaigns():
-    """Every campaign family in the catalog — the daily record keeps
-    the whole delivered history, never dropping a campaign that left
-    the active lifecycle slots."""
+    """Campaigns the daily record covers: every campaign already in
+    the record (recorded history is never dropped), the current and
+    last lifecycle slots, and any campaign currently producing (fresh
+    Rucio arrivals). Bounded by construction: the metadata pass scales
+    with active campaigns, not the full catalog."""
     from pcs.models import Campaign
+    from snapper_ai.models import SystemSnap
 
-    return tuple(Campaign.objects.values_list('name', flat=True))
+    from .rollup import producing_campaigns
+
+    names = set(Campaign.objects
+                .filter(lifecycle__in=('current', 'last'))
+                .values_list('name', flat=True))
+    names.update(camp.name for camp, _ in producing_campaigns())
+    newest = (SystemSnap.objects
+              .filter(scope='epicprod',
+                      capture_policy__in=REPLACED_POLICIES)
+              .order_by('-snap_time').first())
+    if newest:
+        data = (((newest.state or {}).get('components') or {})
+                .get('delivery') or {}).get('data') or {}
+        names.update((data.get('campaigns') or {}).keys())
+    return tuple(sorted(names))
 
 
 def load_file_events():
@@ -90,12 +107,17 @@ def collect_files(campaigns, limit_files=0):
                               campaign_family)
 
     token = _jlab_rucio_auth()
+    # One search per root and target campaign family: the pattern
+    # covers the family's patch-level versions, and the stream carries
+    # only the target campaigns' files instead of the full roots.
     names = []
     for root in ROOTS:
-        found = _ndjson(_jlab_rucio_get(
-            '/dids/epic/dids/search', token,
-            type='file', created_after=SEARCH_EPOCH, name=root + '/*'))
-        names.extend(n for n in found if isinstance(n, str))
+        for family in campaigns:
+            found = _ndjson(_jlab_rucio_get(
+                '/dids/epic/dids/search', token,
+                type='file', created_after=SEARCH_EPOCH,
+                name=f'{root}/{family}*'))
+            names.extend(n for n in found if isinstance(n, str))
     wanted, unknown = {}, {}
     for name in names:
         segs = name.split('/')
