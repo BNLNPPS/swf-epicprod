@@ -97,7 +97,9 @@ The preceding `file_events_measure` step keeps the measurement store
 current (The events source, below). Both steps record their outcome
 in the epicprod action stream, and the `delivery_record_freshness`
 alarm fires when the newest daily snap is older than 30 hours — one
-missed night. Build logic: `swf_epicprod/analytics/delivery_daily.py`,
+missed night. At step completion the agent posts one Capcom notice
+(listen source `swf-campaign-delivery`): the newest recorded day's
+arrivals linking to the campaign view, or a warning on failure. Build logic: `swf_epicprod/analytics/delivery_daily.py`,
 invoked by the agent through
 `swf-monitor/scripts/delivery-daily-rebuild.py`; hand runs use
 `scripts/backfill_delivery_history.py` (dry-run default).

@@ -348,6 +348,15 @@ def rebuild_delivery_daily(campaigns=None, *, apply=False, created_by='',
         'unknown_families': unknown, 'applied': bool(apply),
         'removed': 0, 'written': 0,
     }
+    if writable:
+        # The newest recorded day's arrivals, so the caller (the ops
+        # agent's Capcom notice) can state the event without a DB read.
+        day, projection = writable[-1]
+        summary['newest_day'] = day
+        summary['newest_arrivals'] = {
+            name: {'files': (block['totals'] or {}).get('arrived_files', 0),
+                   'events': (block['totals'] or {}).get('arrived_events', 0)}
+            for name, block in projection['campaigns'].items()}
     if not apply:
         print('dry run — nothing written')
         return summary
