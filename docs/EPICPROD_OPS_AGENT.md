@@ -263,7 +263,8 @@ doc does not duplicate them.
 
 **Status:** deployed and live on `pandaserver02`. Handlers:
 `fetch_payload_log`, `submit_task`, `submit_evgen_task`,
-`panda_task_operation`, `rucio_snapshot_update`, `evgen_rucio_update`,
+  `panda_task_operation` (including verified pause/resume),
+  `rucio_snapshot_update`, `evgen_rucio_update`,
 `catalog_import`, `questionnaire_import`, `questionnaire_automatch`,
 `questionnaire_match_update`, `campaign_progress_refresh`,
 `association_sweep` (with auto-intake of direct group.EIC submissions),
