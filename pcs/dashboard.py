@@ -310,8 +310,8 @@ def ordered_panel_ids(saved_order):
 # PANEL_CACHE_STORE_TTL, and the freshness windows below govern only
 # when the refresh endpoint rebuilds. The live panel stays fresher.
 PANEL_CACHE_STORE_TTL = 3600
-PANEL_FRESH_DEFAULT = 120
-PANEL_FRESH_FOR = {'live': 30}
+PANEL_FRESH_DEFAULT = 600
+PANEL_FRESH_FOR = {'live': 120}
 
 
 def _build_panel(panel_id):

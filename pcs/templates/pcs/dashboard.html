@@ -36,10 +36,17 @@
 (function () {
   // Page renders serve panels instantly whatever their age; each panel
   // then revalidates itself — immediately after load, and on its own
-  // cadence thereafter. A failed refresh needs no message of its own:
-  // the live panel's age counter ticking upward is the staleness signal.
+  // cadence thereafter while the tab is visible. A hidden tab polls
+  // nothing; on return to visibility, panels past their cadence catch
+  // up at once. A failed refresh needs no message of its own: the live
+  // panel's age counter ticking upward is the staleness signal.
+  var nudges = [];
   document.querySelectorAll('[data-refresh-url]').forEach(function (card) {
+    var cadenceMs = parseInt(card.dataset.refreshMs, 10) || 600000;
+    var lastRun = 0;
     function refresh() {
+      if (document.hidden) return;
+      lastRun = Date.now();
       fetch(card.dataset.refreshUrl).then(function (resp) {
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         return resp.json();
@@ -50,8 +57,14 @@
         if (age) age.setAttribute('data-relative-time', data.built_at);
       }).catch(function () {});
     }
+    nudges.push(function () {
+      if (Date.now() - lastRun >= cadenceMs) refresh();
+    });
     refresh();
-    setInterval(refresh, parseInt(card.dataset.refreshMs, 10) || 120000);
+    setInterval(refresh, cadenceMs);
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) nudges.forEach(function (fn) { fn(); });
   });
 
   var grid = document.querySelector('.pcs-dashboard');
