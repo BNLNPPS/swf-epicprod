@@ -76,12 +76,21 @@ the indicator plus the link cover the need without a held connection.)
 Panel content is user-independent and cached per panel (Redis in
 production). Serving never waits on freshness: the page renders
 instantly from whatever is cached, however old, and each panel then
-revalidates itself — immediately after load and every 30 seconds for
-the live panel, every 120 seconds for the rest — through a per-panel
+revalidates itself — immediately after load and every 120 seconds for
+the live panel, every 600 seconds for the rest — through a per-panel
 refresh endpoint that rebuilds only when the cached copy is older than
 the panel's freshness window. The live panel shows its age beside its
 title; a counter climbing past its window is the visible signal that
 refresh has stopped. The only synchronous build is a cold cache.
+
+Refresh runs only while the page is attended, as determined by the
+monitor's poll gate: the page is visible, and its window either holds
+focus or was interacted with within the last five minutes. An
+unattended page issues no requests, so a dashboard left open in a
+background window costs nothing; when attention returns, panels past
+their cadence refresh at once. Page visibility alone is not a
+sufficient test, because the frontmost tab of an unfocused window
+reports itself visible.
 
 ## Grid and interaction
 

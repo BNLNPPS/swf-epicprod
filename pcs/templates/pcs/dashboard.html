@@ -36,16 +36,22 @@
 (function () {
   // Page renders serve panels instantly whatever their age; each panel
   // then revalidates itself — immediately after load, and on its own
-  // cadence thereafter while the tab is visible. A hidden tab polls
-  // nothing; on return to visibility, panels past their cadence catch
-  // up at once. A failed refresh needs no message of its own: the live
-  // panel's age counter ticking upward is the staleness signal.
+  // cadence thereafter for as long as the page is attended (the base
+  // template's poll gate: visible, and either focused or interacted
+  // with recently). An unattended page polls nothing; when attention
+  // returns, panels past their cadence catch up at once. A failed
+  // refresh needs no message of its own: the live panel's age counter
+  // ticking upward is the staleness signal.
+  var gate = window.swfPollGate || {
+    attended: function () { return !document.hidden; },
+    onReturn: function () {}
+  };
   var nudges = [];
   document.querySelectorAll('[data-refresh-url]').forEach(function (card) {
     var cadenceMs = parseInt(card.dataset.refreshMs, 10) || 600000;
     var lastRun = 0;
     function refresh() {
-      if (document.hidden) return;
+      if (!gate.attended()) return;
       lastRun = Date.now();
       fetch(card.dataset.refreshUrl).then(function (resp) {
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -63,8 +69,8 @@
     refresh();
     setInterval(refresh, cadenceMs);
   });
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) nudges.forEach(function (fn) { fn(); });
+  gate.onReturn(function () {
+    nudges.forEach(function (fn) { fn(); });
   });
 
   var grid = document.querySelector('.pcs-dashboard');
