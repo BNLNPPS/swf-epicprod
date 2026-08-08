@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block title %}EVGEN Inputs - epicprod{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+  <h1>EVGEN Inputs</h1>
+  <p>Every <strong>epic:/EVGEN</strong> dataset in JLab Rucio as of the last
+  recorded inventory, with the PCS evgen dataset each one realizes.</p>
+
+  <div class="d-flex align-items-center flex-wrap mb-2">
+    <span class="fs-5 me-2">{{ totals.datasets }} datasets &middot;
+      {{ totals.files|intcomma }} files &middot;
+      {{ totals.bytes|filesizeformat }} &middot;
+      {{ totals.matched }} matched to PCS
+      {% if fetched_at %}&middot; inventory updated
+        <span data-relative-time="{{ fetched_at }}"></span>{% endif %}
+    </span>
+    {% if not is_tunnel and user.is_authenticated %}
+    <form method="post" action="{% url 'pcs:evgen_inputs_update' %}" class="ms-2 d-inline" id="evgen-update-form">
+      {% csrf_token %}
+      <button type="submit" id="evgen-update-btn" class="btn btn-sm btn-primary"
+              title="Assimilate the JLab Rucio EVGEN inventory and resolve it onto the catalog (runs in the prod-ops agent; updates live when done)">
+        Update EVGEN from Rucio
+      </button>
+    </form>
+    {% else %}
+    {# Inactive-button convention: operator actions stay visible to every viewer, disabled outside an operator session. #}
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Assimilate the JLab Rucio EVGEN inventory — operator action; sign in on pandaserver02">Update EVGEN from Rucio</button>
+    {% endif %}
+  </div>
+
+  {% if error %}<p><strong>{{ error }}</strong></p>{% endif %}
+
+  {% if rows %}
+  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
+    <thead>
+      <tr>
+        <th>EVGEN dataset (epic:)</th>
+        <th>Files</th>
+        <th>Size</th>
+        <th>RSEs</th>
+        <th>Complete</th>
+        <th>PCS dataset</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.did }}</td>
+        <td class="text-end" data-order="{{ r.files }}">{{ r.files|intcomma }}</td>
+        <td class="text-end" data-order="{{ r.bytes }}">{{ r.bytes|filesizeformat }}</td>
+        <td>{{ r.rses }}</td>
+        <td>{% if r.complete %}yes{% else %}<span class="text-muted">partial</span>{% endif %}</td>
+        <td>{% if r.dataset %}<a href="{% url 'pcs:dataset_detail' r.dataset.id %}">{{ r.dataset.composed_name }}</a>{% else %}<span class="text-muted">unmatched</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<script>
+// Update EVGEN from Rucio — fire-and-notify via the prod-ops agent + SSE push,
+// the campaign catalog's pattern. The JLab fetch + per-dataset match is too
+// slow for the web request, so the button publishes to the agent and the page
+// reloads when evgen_rucio_ready arrives. The push stream opens ONLY after the
+// action is queued — never on page load. See docs/EPICPROD_EVGEN_INPUTS.md.
+(function () {
+  const form = document.getElementById('evgen-update-form');
+  const btn = document.getElementById('evgen-update-btn');
+  if (!form || !btn) return;
+  function busy(on) {
+    btn.disabled = on;
+    btn.textContent = on ? 'Updating…' : 'Update EVGEN from Rucio';
+  }
+  form.addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    busy(true);
+    try {
+      const r = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/prod-tasks/evgen-rucio-update/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value},
+      });
+      if (!r.ok) {
+        let m = 'HTTP ' + r.status;
+        try { const j = await r.json(); m = j.detail || j.message || m; } catch (_) {}
+        throw new Error(m);
+      }
+      const es = new EventSource("{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=evgen_rucio_ready");
+      es.addEventListener('evgen_rucio_ready', function (ev) {
+        let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
+        if (d.ok === false) { es.close(); busy(false); alert('EVGEN update failed: ' + (d.error || 'unknown error')); }
+        else { window.location.reload(); }
+      });
+    } catch (err) {
+      busy(false);
+      alert('Could not queue the EVGEN update: ' + err.message);
+    }
+  });
+})();
+</script>
+{% endblock %}

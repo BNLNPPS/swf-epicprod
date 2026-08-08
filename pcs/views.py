@@ -1576,6 +1576,87 @@ def datasets_compose(request):
     return render(request, 'pcs/dataset_compose.html', context)
 
 
+def evgen_inputs(request):
+    """EVGEN inputs: every epic:/EVGEN dataset in the recorded JLab Rucio
+    inventory, with file counts, sizes, replicas, and the PCS evgen dataset
+    each realizes. A pure read of the recorded inventory (the evgen-rucio
+    snapshot plus the matched refs the EVGEN update writes) — no Rucio call
+    in the render path. See docs/EPICPROD_EVGEN_INPUTS.md.
+    """
+    import json as _json
+    import os as _os
+    from .services import (RUCIO_SNAPSHOT_DIR, EVGEN_RUCIO_SNAPSHOT_NAME,
+                           _rucio_evgen_entry)
+
+    snap_path = _os.path.join(RUCIO_SNAPSHOT_DIR, EVGEN_RUCIO_SNAPSHOT_NAME)
+    error = ''
+    fetched_at = None
+    records = []
+    try:
+        with open(snap_path) as f:
+            snap = _json.load(f)
+        fetched_at = snap.get('fetched_at')
+        records = snap.get('datasets') or []
+    except FileNotFoundError:
+        error = ('No EVGEN inventory recorded yet — run Update EVGEN from '
+                 'Rucio to fetch it.')
+    except (OSError, ValueError) as e:
+        error = f'EVGEN inventory unreadable: {e}'
+
+    # Matched DID -> PCS evgen Dataset (written by refresh_evgen_rucio).
+    matched = {}
+    for ds in Dataset.objects.filter(metadata__stage='evgen',
+                                     metadata__has_key='rucio'):
+        for entry in (ds.metadata.get('rucio') or {}).get('matched') or []:
+            did = entry.get('did')
+            if did and did not in matched:
+                matched[did] = ds
+
+    rows = []
+    for record in records:
+        entry = _rucio_evgen_entry(record)
+        ds = matched.get(entry['did'])
+        rows.append({
+            'did': entry['did'],
+            'files': entry['file_count'],
+            'bytes': entry['bytes'],
+            'rses': ', '.join(r['rse'] for r in entry['rses']),
+            'complete': entry['complete'],
+            'dataset': ds,
+        })
+    rows.sort(key=lambda r: r['did'])
+
+    totals = {
+        'datasets': len(rows),
+        'files': sum(r['files'] for r in rows),
+        'bytes': sum(r['bytes'] for r in rows),
+        'matched': sum(1 for r in rows if r['dataset'] is not None),
+    }
+    return render(request, 'pcs/evgen_inputs.html', {
+        'rows': rows, 'totals': totals, 'fetched_at': fetched_at,
+        'error': error,
+    })
+
+
+def evgen_inputs_update(request):
+    """No-JS POST fallback for the EVGEN inputs page's update button — the
+    pcs_catalog_evgen_update twin, returning here. POST-only."""
+    if request.method != 'POST':
+        return _post_only_redirect(
+            request, reverse('pcs:evgen_inputs'),
+            action_label='Update EVGEN from Rucio')
+    from .services import evgen_rucio_update_request, ServiceError
+    user = getattr(request.user, 'username', '') or 'evgen_rucio'
+    try:
+        evgen_rucio_update_request(created_by=user)
+    except ServiceError as e:
+        messages.error(request, e.detail)
+        return redirect(reverse('pcs:evgen_inputs'))
+    messages.success(request,
+                     'EVGEN update queued — refreshing in the background.')
+    return redirect(reverse('pcs:evgen_inputs'))
+
+
 def datasets_list(request):
     columns = [
         {'name': 'dataset_name', 'title': 'Dataset Name', 'orderable': True},

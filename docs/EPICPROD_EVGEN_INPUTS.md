@@ -117,17 +117,24 @@ Both unmatched populations are discoverability targets for the catalog UI: an
 operator reconciles them by adding or correcting a request, or by registering
 the missing data.
 
+The **EVGEN inputs page** (`/pcs/evgen/`) presents the assimilated inventory:
+every registered EVGEN dataset with its file count, size, RSEs, completeness,
+and the PCS evgen dataset it resolves to; a dataset no request claims shows as
+unmatched. The page reads the recorded snapshot and matched references only —
+no Rucio call in the render path — and carries the same "Update EVGEN from
+Rucio" action as the catalog.
+
 ## Current state
 
-Implemented: the assimilation sweep, the input matcher, and the catalog
+Implemented: the assimilation sweep, the input matcher, the catalog
 "Update EVGEN from Rucio" button (the production operations agent runs the sweep
-with apply and the page refreshes on completion). On the assimilated inventory
-the matcher resolves the DIS NC pythia8 samples (with the Q² fan-out above) and
-one beam-gas background; SIDIS and other classes fall to unmatched where the
-registered version, charge, or class differs from the request, as designed. Not
-yet implemented: the catalog UI surfacing of the matched and unmatched
-populations, and consuming a matched EVGEN dataset as a payload-staged
-submission input.
+with apply and the page refreshes on completion), and the EVGEN inputs page
+surfacing the inventory with its matched and unmatched-Rucio populations. On
+the assimilated inventory the matcher resolves the DIS NC pythia8 samples (with
+the Q² fan-out above) and one beam-gas background; SIDIS and other classes fall
+to unmatched where the registered version, charge, or class differs from the
+request, as designed. Not yet implemented: surfacing unmatched requests, and
+consuming a matched EVGEN dataset as a payload-staged submission input.
 
 ## The Definitions Side
 
