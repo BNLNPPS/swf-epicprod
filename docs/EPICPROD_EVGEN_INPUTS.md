@@ -118,9 +118,9 @@ operator reconciles them by adding or correcting a request, or by registering
 the missing data.
 
 The **EVGEN inputs page** (`/pcs/evgen/`) presents the assimilated inventory:
-every registered EVGEN dataset with its file count, size, RSEs, completeness,
-and the PCS evgen dataset it resolves to; a dataset no request claims shows as
-unmatched. The page reads the recorded snapshot and matched references only —
+every registered EVGEN dataset with its file count, size, last Rucio update,
+RSEs, completeness, and the PCS evgen dataset it resolves to, newest update
+first; a dataset no request claims shows as unmatched. The page reads the recorded snapshot and matched references only —
 no Rucio call in the render path — and carries the same "Update EVGEN from
 Rucio" action as the catalog.
 

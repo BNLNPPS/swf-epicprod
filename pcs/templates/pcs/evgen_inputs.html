@@ -41,6 +41,7 @@
         <th>EVGEN dataset (epic:)</th>
         <th>Files</th>
         <th>Size</th>
+        <th>Updated</th>
         <th>RSEs</th>
         <th>Complete</th>
         <th>PCS dataset</th>
@@ -52,6 +53,7 @@
         <td>{{ r.did }}</td>
         <td class="text-end" data-order="{{ r.files }}">{{ r.files|intcomma }}</td>
         <td class="text-end" data-order="{{ r.bytes }}">{{ r.bytes|filesizeformat }}</td>
+        <td class="text-nowrap" data-order="{{ r.updated|date:'Y-m-d H:i'|default:'' }}">{% if r.updated %}{{ r.updated|date:'Y-m-d' }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
         <td>{{ r.rses }}</td>
         <td>{% if r.complete %}yes{% else %}<span class="text-muted">partial</span>{% endif %}</td>
         <td>{% if r.dataset %}<a href="{% url 'pcs:dataset_detail' r.dataset.id %}">{{ r.dataset.composed_name }}</a>{% else %}<span class="text-muted">unmatched</span>{% endif %}</td>

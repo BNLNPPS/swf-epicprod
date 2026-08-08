@@ -1612,19 +1612,34 @@ def evgen_inputs(request):
             if did and did not in matched:
                 matched[did] = ds
 
+    from datetime import datetime as _dt
+
+    def _replica_stamp(value):
+        # Snapshot replicas carry Rucio's 'Thu, 04 Jun 2026 19:10:37 UTC'.
+        try:
+            return _dt.strptime(value, '%a, %d %b %Y %H:%M:%S %Z')
+        except (TypeError, ValueError):
+            return None
+
     rows = []
     for record in records:
         entry = _rucio_evgen_entry(record)
         ds = matched.get(entry['did'])
+        stamps = [_replica_stamp(r.get('updated_at'))
+                  for r in record.get('rse_replicas') or []]
+        stamps = [s for s in stamps if s]
         rows.append({
             'did': entry['did'],
             'files': entry['file_count'],
             'bytes': entry['bytes'],
+            'updated': max(stamps) if stamps else None,
             'rses': ', '.join(r['rse'] for r in entry['rses']),
             'complete': entry['complete'],
             'dataset': ds,
         })
-    rows.sort(key=lambda r: r['did'])
+    # Newest Rucio update first — the standing question this page answers;
+    # every column stays click-sortable.
+    rows.sort(key=lambda r: r['updated'] or _dt.min, reverse=True)
 
     totals = {
         'datasets': len(rows),
