@@ -96,7 +96,7 @@
                 <tbody>
                     {% for ds in datasets %}
                     <tr>
-                        <td><a href="{% url 'pcs:dataset_detail' pk=ds.pk %}">{{ ds.composed_name }}</a></td>
+                        <td><a href="{% url 'pcs:datasets_compose' %}?selected={{ ds.dataset_name|urlencode }}">{{ ds.composed_name }}</a></td>
                         <td>{{ ds.blocks }}</td>
                         <td>{{ ds.created_at|date:"Y-m-d H:i" }}</td>
                     </tr>

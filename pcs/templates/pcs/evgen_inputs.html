@@ -56,7 +56,7 @@
         <td class="text-nowrap" data-order="{{ r.updated|date:'Y-m-d H:i'|default:'' }}">{% if r.updated %}{{ r.updated|date:'Y-m-d' }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
         <td>{{ r.rses }}</td>
         <td>{% if r.complete %}yes{% else %}<span class="text-muted">partial</span>{% endif %}</td>
-        <td>{% if r.dataset %}<a href="{% url 'pcs:dataset_detail' r.dataset.id %}">{{ r.dataset.composed_name }}</a>{% else %}<span class="text-muted">unmatched</span>{% endif %}</td>
+        <td>{% if r.dataset %}<a href="{% url 'pcs:datasets_compose' %}?selected={{ r.dataset.dataset_name|urlencode }}">{{ r.dataset.composed_name }}</a>{% else %}<span class="text-muted">unmatched</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

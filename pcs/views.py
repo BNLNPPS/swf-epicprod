@@ -1715,7 +1715,8 @@ def datasets_datatable_ajax(request):
 
     data = []
     for ds in page:
-        detail_url = reverse('pcs:dataset_detail', args=[ds.id])
+        detail_url = (f"{reverse('pcs:datasets_compose')}"
+                      f"?selected={urlquote(ds.dataset_name)}")
         p_url = f"{reverse('pcs:tag_compose', args=['p'])}?selected={ds.physics_tag.tag_number}"
         e_url = f"{reverse('pcs:tag_compose', args=['e'])}?selected={ds.evgen_tag.tag_number}"
         s_url = f"{reverse('pcs:tag_compose', args=['s'])}?selected={ds.simu_tag.tag_number}"

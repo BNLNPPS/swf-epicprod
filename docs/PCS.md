@@ -224,6 +224,15 @@ The Rucio DID adds the scope prefix and a block suffix: `group.EIC:...r1.45to135
 
 The detector-version identity and the sample variants below are extensions to the dataset model, defined here.
 
+### Linking to datasets
+
+The compose view is the canonical surface for reaching a dataset from any
+other page: link `/pcs/datasets/compose/?selected=<dataset_name>` with the
+composed name as the link text. The pk detail route
+(`/pcs/datasets/<id>/`) is not a linking target — numeric ids carry no
+identity, and composed identity governs URLs and API references
+throughout (the convention already applied to task URLs).
+
 ### Composed-name Suffixes
 
 PCS separates the logical composed name from dynamic physical suffixes. The logical name is the stable PCS dataset/task identity. Physical PanDA and Rucio names may append suffixes so repeated submissions and Rucio block subdivisions have unique names.
