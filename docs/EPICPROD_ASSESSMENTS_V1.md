@@ -225,7 +225,16 @@ corun completion callback already lands at swf-monitor; a handler:
   `origin: 'scheduled'`, `verdict`, `schema_version`, narrative citation
   (name + version), the structured block, and model/prompt provenance —
   the non-ok-verdict live-stream raise and the Mattermost relay follow
-  from existing machinery.
+  from existing machinery;
+- buffers one Capcom notice per resolved slot in the monitor's notice
+  store (source `swf-campaign-assessment`): for a valid report, title
+  `<campaign> <kind>: <VERDICT>` with the narration as detail and
+  severity mapped ok/attention/alarm → info/warning/alarm; salvage and
+  quarantine outcomes are marked in the title at warning severity or
+  above. The notice links the assessment's semantic page
+  (`/ai/assessments/<campaign>/<kind>/<date>/` on the external face)
+  and carries the slot as its dedup key, so a rerun or repair of the
+  same slot threads onto the original event downstream.
 
 Cron (wenauseic), after the 02:47 catalog_sync chain has refreshed the state
 being assessed:

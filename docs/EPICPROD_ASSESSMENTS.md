@@ -198,6 +198,11 @@ designed as dashboard input.
 - The catalog's producing tab shows the latest verdict as a badge.
 - The narration field is distributed through the epicprod-live
   Mattermost publisher; email delivery follows the alarm path.
+- Each resolved slot buffers one Capcom notice in the monitor's notice
+  store, carrying the verdict and the narration; feed consumers poll
+  the store from their own side
+  ([EPICPROD_ASSESSMENTS_V1.md](EPICPROD_ASSESSMENTS_V1.md) carries the
+  notice contract).
 
 ## Implementation Plan
 

@@ -60,6 +60,9 @@ def _definition_for(kind):
 
 log = logging.getLogger('assessment_enforce')
 
+CAPCOM_ASSESSMENT_URL = 'https://epic-devcloud.org/prod/ai/assessments'
+CAPCOM_SEVERITY = {'ok': 'info', 'attention': 'warning', 'alarm': 'alarm'}
+
 
 def _log(action, *, outcome, subject_key='', reason='', sublevel='normal', **counts):
     log_epicprod_action(
@@ -67,6 +70,26 @@ def _log(action, *, outcome, subject_key='', reason='', sublevel='normal', **cou
         subject_type='campaign' if subject_key else '',
         subject_key=subject_key, outcome=outcome, reason=reason,
         sublevel=sublevel, live_default=outcome != 'ok', **counts)
+
+
+def _capcom_notice(slot, *, severity, title, detail=''):
+    """Buffer the assessment's Capcom event in the monitor notice store
+    (in-process ORM write; feed consumers drain /api/capcom/notices/
+    from their own side). One event per slot: a rerun or repair of the
+    same slot threads onto the original event downstream. A failed
+    write is logged and the event dropped — slot staleness has its own
+    freshness alarm."""
+    try:
+        from monitor_app.models import CapcomNotice
+        CapcomNotice.objects.create(
+            source='swf-campaign-assessment',
+            severity=severity,
+            title=title[:300],
+            detail=str(detail or '')[:500],
+            url=f'{CAPCOM_ASSESSMENT_URL}/{slot}/',
+            dedup_key=f'assessment:{slot}'[:200])
+    except Exception as e:
+        log.error('capcom notice write failed: %s', e)
 
 
 def _post(url, payload):
@@ -291,6 +314,12 @@ def _handle_failed_run(args, *, bundle, campaign, kind, slot, floor,
          salvaged=salvage_registered, rerun_job_id=rerun_job_id,
          crash_evidence_page_id=str(crash_evidence.get('id') or ''),
          reason=f'run {args.status}: {error}')
+    _capcom_notice(
+        slot,
+        severity='alarm' if floor_verdict == 'alarm' else 'warning',
+        title=f'{campaign} {kind}: salvage — floor {floor_verdict.upper()}',
+        detail=(error or f'run {args.status}')
+        + ('' if salvage_registered else ' · salvage registration failed'))
     return 0
 
 
@@ -427,6 +456,12 @@ def main():
              sublevel='high', slot=slot, quarantined=True,
              corun_page_group_id=result.get('corun_page_group_id') or '',
              reason='quarantined after retry: ' + '; '.join(problems))
+        _capcom_notice(
+            slot,
+            severity='alarm' if floor_verdict == 'alarm' else 'warning',
+            title=(f'{campaign} {kind}: quarantined — '
+                   f'floor {floor_verdict.upper()}'),
+            detail='; '.join(problems))
         return 0
 
     verdict = artifact.get('verdict')
@@ -497,6 +532,11 @@ def main():
          problems=[p[:300] for p in problems[:20]],
          problems_count=len(problems),
          corun_page_group_id=result.get('corun_page_group_id') or '')
+    _capcom_notice(
+        slot,
+        severity=CAPCOM_SEVERITY.get(verdict, 'warning'),
+        title=f'{campaign} {kind}: {str(verdict).upper()}',
+        detail=narration)
     print(f'{campaign} {slot}: registered verdict={verdict}'
           f'{" (floor-enforced)" if floor_enforced else ""}')
     return 0
