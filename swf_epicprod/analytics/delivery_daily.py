@@ -247,8 +247,21 @@ def build_snaps(campaigns, limit_files=0):
     denominators_as_of = timezone.now().isoformat()
     snaps = []
     cumulative = {}
-    for day in sorted(per_day_pc):
-        day_leaves = per_day_pc[day]
+    # Every ET day from first arrival through today, quiet days
+    # included: a zero-arrival day writes its snap (arrivals zero,
+    # cumulative carried forward) so the record honors its
+    # every-complete-day contract and the campaign view's daily columns
+    # never widen over a gap. The caller's writable filter trims today.
+    all_days = []
+    if per_day_pc:
+        day_cursor = dt.date.fromisoformat(min(per_day_pc))
+        last_day = max(dt.date.fromisoformat(max(per_day_pc)),
+                       timezone.now().astimezone(ET).date())
+        while day_cursor <= last_day:
+            all_days.append(day_cursor.isoformat())
+            day_cursor += dt.timedelta(days=1)
+    for day in all_days:
+        day_leaves = per_day_pc.get(day, {})
         for campaign, leaves in day_leaves.items():
             camp_state = cumulative.setdefault(campaign, {})
             for pc, counts in leaves.items():
