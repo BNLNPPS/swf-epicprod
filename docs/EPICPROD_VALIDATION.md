@@ -97,6 +97,98 @@ toward the sample, its delivered event count drops below the target, and the
 campaign continues or resumes production to restore the event count target,
 once an ops person has approved the continuation. 
 
+## REST interface (proposed)
+
+The two loop interfaces are REST endpoints hosted by Hydra under a common
+`/api/v1` base, authenticated by bearer token; epicprod is the client in both
+directions. A completion read hosted by epicprod complements them, so
+validation can also pull. Samples are identified by the PCS composed name
+([PCS.md](PCS.md)).
+
+### Availability signal endpoint
+
+    POST /api/v1/samples/{sample}/complete
+
+```json
+{
+  "sample": "group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1",
+  "campaign": "26.07.1",
+  "revision": 1,
+  "events_delivered": 5000000,
+  "event_target": 5000000,
+  "rucio": ["group.EIC:group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1.b1"],
+  "catalog_url": "https://.../pcs/catalog/?campaign=26.07.1",
+  "callback_url": "https://.../epicprod/api/validation-result/"
+}
+```
+
+- `revision` increments each time the sample re-completes after a failed
+  validation invalidated data and production restored the event count, so a
+  sample can be validated more than once and each result remains attributable
+  to a delivery state. The request is idempotent per (sample, revision).
+- `rucio` lists the produced-data references the benchmarks run over
+  ([EPICPROD_DATA_LINEAGE.md](EPICPROD_DATA_LINEAGE.md)); `catalog_url` points
+  to the campaign-catalog view carrying the full configuration context, so the
+  signal body stays minimal.
+- `callback_url` is optional; see the result delivery section below.
+- Response: `202` with a `validation_id`.
+
+The request does not select benchmarks: the benchmark set for a sample is
+Validation Working Group configuration within Hydra, and the statistics
+requirements that inform event count targets reach PCS upstream of this
+interface.
+
+### Validation results endpoints
+
+    GET /api/v1/samples/{sample}/validation        latest result; ?revision=N for history
+    GET /api/v1/campaigns/{campaign}/validation    per-sample summary for a campaign
+
+```json
+{
+  "sample": "group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1",
+  "revision": 1,
+  "status": "validated",
+  "benchmarks": [
+    {"name": "dis-nc-kinematics", "status": "passed", "events_used": 1000000,
+     "report_url": "https://hydra.../reports/..."}
+  ],
+  "invalidated": [],
+  "completed_at": "2026-08-11T14:00:00Z",
+  "details_url": "https://hydra.../samples/group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1"
+}
+```
+
+- `status` is one of `pending`, `running`, `validated`, `failed`; the
+  automated "is validated" step of the production workflow reads this field.
+- On `failed`, `invalidated` lists the Rucio references that no longer count
+  toward the sample; an empty list means the entire sample is invalidated.
+  epicprod reduces the delivered event count accordingly, and production
+  resumes after the operator gate.
+- `details_url` is the corresponding Hydra web page, the web view of the same
+  result.
+
+### Result delivery
+
+When the availability signal carried a `callback_url`, Hydra POSTs the result
+JSON to it on validation completion. The GET endpoints remain the
+authoritative record; the callback removes polling and can be added after the
+pull interface is in place.
+
+### Completion pull (epicprod-hosted)
+
+epicprod serves the same completion state for validation to read, so Hydra
+can pull on its own schedule in addition to, or instead of, acting on the
+push signal:
+
+    GET /api/v1/samples/{sample}/completion        completion state for a sample
+    GET /api/v1/campaigns/{campaign}/completion    per-sample completion for a campaign
+
+The per-sample body is the availability-signal JSON without `callback_url`;
+the campaign form lists that body per sample. These are open read-only
+endpoints, consistent with the campaign-catalog JSON ([PCS.md](PCS.md)),
+which remains the comprehensive pull-side view of the campaign with full
+configuration context.
+
 ## Assessment
 
 Validation outcomes can serve LLM assessments; argus-ai will be one mechanism
