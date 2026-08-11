@@ -64,9 +64,10 @@ completeness only; the event basis — delivered event counts from production an
 per-sample event count targets — is in development on both sides.
 
 When a sample is complete, epicprod signals its availability for validation by
-calling a REST endpoint provided by Hydra. The campaign-catalog JSON remains the
-comprehensive pull-side view of the campaign: for each task/dataset, its
-configuration tags, campaign, request, status, and the produced Rucio references
+calling a REST endpoint provided by Hydra. Separately, epicprod serves the
+campaign catalog: a complete machine-readable description of a campaign — for
+each sample, its configuration tags, physics and generator context, originating
+request, status, and the produced Rucio data references
 ([EPICPROD_DATA_LINEAGE.md](EPICPROD_DATA_LINEAGE.md)) with completeness. The
 catalog is described in [PCS.md](PCS.md).
 
@@ -100,10 +101,10 @@ once an ops person has approved the continuation.
 ## REST interface (proposed)
 
 The two loop interfaces are REST endpoints hosted by Hydra under a common
-`/api/v1` base, authenticated by bearer token; epicprod is the client in both
-directions. A completion read hosted by epicprod complements them, so
-validation can also pull. Samples are identified by the PCS composed name
-([PCS.md](PCS.md)).
+`/api/v1` base, authenticated by bearer token. epicprod provides two
+counterparts: a completion read so validation can also pull, and a result
+notification endpoint Hydra transmits finished results to. Samples are
+identified by the PCS composed name ([PCS.md](PCS.md)).
 
 ### Availability signal endpoint
 
@@ -117,20 +118,18 @@ validation can also pull. Samples are identified by the PCS composed name
   "events_delivered": 5000000,
   "event_target": 5000000,
   "rucio": ["group.EIC:group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1.b1"],
-  "catalog_url": "https://.../pcs/catalog/?campaign=26.07.1",
-  "callback_url": "https://.../epicprod/api/validation-result/"
+  "catalog_url": "https://.../pcs/catalog/?campaign=26.07.1"
 }
 ```
 
 - `revision` increments each time the sample re-completes after a failed
   validation invalidated data and production restored the event count, so a
-  sample can be validated more than once and each result remains attributable
-  to a delivery state. The request is idempotent per (sample, revision).
-- `rucio` lists the produced-data references the benchmarks run over
-  ([EPICPROD_DATA_LINEAGE.md](EPICPROD_DATA_LINEAGE.md)); `catalog_url` points
-  to the campaign-catalog view carrying the full configuration context, so the
-  signal body stays minimal.
-- `callback_url` is optional; see the result delivery section below.
+  sample can be validated more than once, each result tied to the delivery it
+  judged. The request is idempotent per (sample, revision).
+- `rucio` lists the produced data the benchmarks run over, as Rucio dataset
+  references ([EPICPROD_DATA_LINEAGE.md](EPICPROD_DATA_LINEAGE.md));
+  `catalog_url` points to the complete campaign description, so the signal
+  itself stays small.
 - Response: `202` with a `validation_id`.
 
 The request does not select benchmarks: the benchmark set for a sample is
@@ -167,12 +166,14 @@ interface.
 - `details_url` is the corresponding Hydra web page, the web view of the same
   result.
 
-### Result delivery
+### Result notification
 
-When the availability signal carried a `callback_url`, Hydra POSTs the result
-JSON to it on validation completion. The GET endpoints remain the
-authoritative record; the callback removes polling and can be added after the
-pull interface is in place.
+    POST /api/v1/validation-results        (epicprod-hosted)
+
+epicprod provides this endpoint; Hydra transmits the validation result JSON
+above to it when a validation completes, so the production workflow acts on
+the outcome without polling. The Hydra GET endpoints remain the authoritative
+record of validation results.
 
 ### Completion pull (epicprod-hosted)
 
@@ -183,11 +184,11 @@ push signal:
     GET /api/v1/samples/{sample}/completion        completion state for a sample
     GET /api/v1/campaigns/{campaign}/completion    per-sample completion for a campaign
 
-The per-sample body is the availability-signal JSON without `callback_url`;
-the campaign form lists that body per sample. These are open read-only
-endpoints, consistent with the campaign-catalog JSON ([PCS.md](PCS.md)),
-which remains the comprehensive pull-side view of the campaign with full
-configuration context.
+The per-sample body is the availability-signal JSON; the campaign form lists
+that body per sample. These are open read-only endpoints. For anything beyond
+completion state — a sample's physics process, generator configuration,
+originating request — the campaign catalog ([PCS.md](PCS.md)) serves the
+complete campaign description, and every completion body carries its URL.
 
 ## Assessment
 
