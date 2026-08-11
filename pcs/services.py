@@ -32,6 +32,7 @@ from .models import (
     Dataset, ProdConfig, ProdTask, PandaTasks,
     Campaign, Questionnaire, ProdRequest,
     PhysicsCategory, PhysicsTag, EvgenTag, SimuTag, RecoTag, BackgroundTag,
+    ValidationResult,
 )
 from .name_tokens import (
     campaign_family,
@@ -4874,3 +4875,267 @@ def catalog_import_request(source, *, created_by='catalog_import'):
         raise ServiceError(
             'Catalog import could not be queued (ops-agent queue unreachable).',
             status=503)
+
+
+# ---------------------------------------------------------------------------
+# Validation interface (EPICPROD_VALIDATION.md § REST interface)
+# ---------------------------------------------------------------------------
+
+VALIDATION_STATUSES = ('pending', 'running', 'validated', 'failed')
+
+
+def resolve_campaign(value):
+    """Resolve a campaign argument to its Campaign row. A three-part
+    detector version is accepted and truncated to its campaign family."""
+    family = campaign_family(str(value or '').strip())
+    campaign = Campaign.objects.filter(name=family).first()
+    if campaign is None:
+        raise ServiceError(f'No campaign {family!r}.', status=404)
+    return campaign
+
+
+def _sample_unique_outputs(task):
+    """Unique produced outputs by DID, most recently checked record wins —
+    the delivery accounting rule (snapper_delivery)."""
+    unique = {}
+    for output in task.outputs:
+        did = str(output.get('did') or '').strip()
+        if not did:
+            continue
+        checked = str(output.get('checked_at') or '')
+        prior = unique.get(did)
+        if prior is None or checked >= prior[0]:
+            unique[did] = (checked, output)
+    return [entry for _checked, entry in unique.values()]
+
+
+def _sample_events_per_file(task):
+    """The configured events/job is the events per output file
+    (CAMPAIGN_DELIVERY.md § The events source)."""
+    config = task.get_effective_config()
+    try:
+        return int((config.get('data') or {}).get('events_per_job'))
+    except (TypeError, ValueError):
+        return None
+
+
+def _sample_event_target(head, projection=None):
+    """Expected events for a sample: the edition's curated target, else the
+    largest PC-anchored request, else None — the recorded precedence chain
+    (CAMPAIGN_DELIVERY.md)."""
+    if head.expected_events is not None:
+        return head.expected_events, head.expected_events_source or 'included'
+    if projection is None:
+        projection = pc_request_projection([head])
+    anchored = [r.nevents for r in projection.get(head.composed_name, ())
+                if r.nevents]
+    if anchored:
+        return max(anchored), 'requested'
+    return None, ''
+
+
+def sample_completion_payload(task, *, projection=None, latest_result=...):
+    """The availability-signal body for one sample, served by the completion
+    endpoints (EPICPROD_VALIDATION.md § Completion pull). ``complete`` is
+    tri-state: yes/no on the event basis when both delivered events and a
+    target are known, unknown otherwise."""
+    head = task.dataset
+    composed = task.composed_name
+    family = (head.campaign.name if head.campaign_id
+              else campaign_family(head.detector_version))
+    outputs = _sample_unique_outputs(task)
+    files = sum(_to_int(o.get('file_count'), 0) for o in outputs)
+    events_per_file = _sample_events_per_file(task)
+    events = files * events_per_file if events_per_file else None
+    target, target_source = _sample_event_target(head, projection)
+    if latest_result is ...:
+        latest_result = (ValidationResult.objects.filter(sample=composed)
+                         .order_by('-revision', '-received_at').first())
+    if events is not None and target:
+        complete = 'yes' if events >= target else 'no'
+        basis = 'events'
+    else:
+        complete = 'unknown'
+        basis = ''
+    from django.urls import reverse
+    return {
+        'sample': composed,
+        'campaign': family,
+        'revision': latest_result.revision if latest_result else 1,
+        'events_delivered': events,
+        'event_target': target,
+        'event_target_source': target_source,
+        'complete': complete,
+        'completion_basis': basis,
+        'rucio': sorted(str(o.get('did')) for o in outputs),
+        'catalog_url': reverse('pcs:validation_campaign_catalog',
+                               args=[family]),
+    }
+
+
+def _campaign_sample_tasks(campaign):
+    """Head Dataset rows and their tasks for a campaign, keyed the way the
+    delivery projection keys them (one entry per composed name, head row
+    first)."""
+    heads = list(
+        Dataset.objects.filter(campaign=campaign)
+        .select_related('physics_tag', 'evgen_tag', 'simu_tag', 'reco_tag',
+                        'background_tag', 'physics_config')
+        .order_by('composed_name', 'block_num', 'pk')
+        .distinct('composed_name'))
+    tasks = {t.dataset.composed_name: t for t in
+             ProdTask.objects.filter(dataset__campaign=campaign)
+             .select_related('dataset', 'prod_config', 'request')}
+    return heads, tasks
+
+
+def campaign_completion_payload(campaign_value):
+    """Per-sample completion for a campaign (EPICPROD_VALIDATION.md)."""
+    campaign = resolve_campaign(campaign_value)
+    heads, tasks = _campaign_sample_tasks(campaign)
+    heads = [h for h in heads if h.composed_name in tasks]
+    projection = pc_request_projection(heads)
+    latest = {}
+    names = [h.composed_name for h in heads]
+    for row in (ValidationResult.objects.filter(sample__in=names)
+                .order_by('sample', '-revision', '-received_at')):
+        latest.setdefault(row.sample, row)
+    samples = [
+        sample_completion_payload(
+            tasks[h.composed_name], projection=projection,
+            latest_result=latest.get(h.composed_name))
+        for h in heads
+    ]
+    return {'campaign': campaign.name, 'sample_count': len(samples),
+            'samples': samples}
+
+
+def campaign_catalog_payload(campaign_value):
+    """The campaign catalog document: the complete machine-readable
+    description of a campaign and its samples served at
+    /api/v1/campaigns/{campaign}/catalog/ (EPICPROD_VALIDATION.md)."""
+    from django.urls import reverse
+
+    campaign = resolve_campaign(campaign_value)
+    heads, tasks = _campaign_sample_tasks(campaign)
+
+    def tag_entry(tag):
+        if tag is None:
+            return None
+        return {'label': tag.tag_label, 'description': tag.description,
+                'parameters': tag.parameters or {}}
+
+    samples = []
+    for head in heads:
+        task = tasks.get(head.composed_name)
+        request_row = task.request if task is not None and task.request_id else None
+        outputs = _sample_unique_outputs(task) if task is not None else []
+        samples.append({
+            'sample': head.composed_name,
+            'campaign': campaign.name,
+            'detector_version': head.detector_version,
+            'detector_config': head.detector_config,
+            'physics_config': (head.physics_config.label
+                               if head.physics_config_id else ''),
+            'sample_name': head.sample_name,
+            'tags': {
+                'physics': tag_entry(head.physics_tag),
+                'evgen': tag_entry(head.evgen_tag),
+                'simu': tag_entry(head.simu_tag),
+                'reco': tag_entry(head.reco_tag),
+                'background': tag_entry(head.background_tag
+                                        if head.background_tag_id else None),
+            },
+            'requestors': (head.physics_config.requestors or []
+                           if head.physics_config_id else []),
+            'request': ({'requestor': request_row.requestor,
+                         'nevents': request_row.nevents,
+                         'description': request_row.description}
+                        if request_row else None),
+            'status': task.status if task is not None else '',
+            'propagation': head.propagation,
+            'expected_events': {'value': head.expected_events,
+                                'source': head.expected_events_source},
+            'outputs': [{'did': o.get('did'), 'stage': o.get('stage'),
+                         'file_count': o.get('file_count'),
+                         'bytes': o.get('bytes'),
+                         'complete': o.get('complete', True)}
+                        for o in outputs],
+            'inputs': [i.get('did') for i in
+                       (task.inputs if task is not None else [])
+                       if i.get('did')],
+            'task_url': (reverse('pcs:prod_task_detail',
+                                 args=[head.composed_name])
+                         if task is not None else ''),
+        })
+    return {'campaign': campaign.name,
+            'generated_at': _timezone.now().isoformat(),
+            'sample_count': len(samples),
+            'samples': samples}
+
+
+def validation_result_receive(payload, *, received_from=''):
+    """Store one validation result POSTed by the validation system and
+    mirror the newest status onto the sample's Dataset rows
+    (EPICPROD_VALIDATION.md § Result notification). Raises ServiceError on
+    any malformed field; nothing is dropped silently."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    if not isinstance(payload, dict):
+        raise ServiceError('body must be a JSON object')
+    sample = str(payload.get('sample') or '').strip()
+    if not sample:
+        raise ServiceError('sample is required')
+    try:
+        task = resolve_prodtask(sample)
+    except ProdTask.DoesNotExist:
+        raise ServiceError(f'Unknown sample {sample!r}.', status=404)
+    composed = task.composed_name
+    status_value = str(payload.get('status') or '').strip()
+    if status_value not in VALIDATION_STATUSES:
+        raise ServiceError(
+            f'status must be one of {", ".join(VALIDATION_STATUSES)}; '
+            f'got {status_value!r}')
+    try:
+        revision = int(payload.get('revision', 1))
+    except (TypeError, ValueError):
+        raise ServiceError('revision must be a positive integer')
+    if revision < 1:
+        raise ServiceError('revision must be a positive integer')
+    benchmarks = payload.get('benchmarks') or []
+    if not isinstance(benchmarks, list):
+        raise ServiceError('benchmarks must be a list')
+    invalidated = payload.get('invalidated') or []
+    if not isinstance(invalidated, list):
+        raise ServiceError('invalidated must be a list')
+    completed_at = None
+    if payload.get('completed_at'):
+        completed_at = _parse_datetime(str(payload['completed_at']))
+        if completed_at is None:
+            raise ServiceError('completed_at must be an ISO-8601 timestamp')
+    details_url = str(payload.get('details_url') or '')
+
+    row = ValidationResult.objects.create(
+        sample=composed, revision=revision, status=status_value,
+        benchmarks=benchmarks, invalidated=invalidated,
+        completed_at=completed_at, details_url=details_url,
+        raw=payload, received_from=received_from,
+    )
+    stamp = {'status': status_value, 'revision': revision,
+             'received_at': row.received_at.isoformat(),
+             'details_url': details_url}
+    # Per-row metadata merge: block rows carry row-specific metadata, so
+    # the mirror updates each row's dict, pk-scoped to skip Dataset.save()
+    # recomputation side effects.
+    with transaction.atomic():
+        for ds in Dataset.objects.filter(composed_name=composed):
+            md = ds.get_metadata()
+            md['validation'] = stamp
+            Dataset.objects.filter(pk=ds.pk).update(metadata=md)
+    log_epicprod_action(
+        'web', 'validation_result_received',
+        subject_type='campaign_task', subject_key=composed,
+        username=received_from, sublevel='normal', live_default=True,
+        status=status_value, revision=revision)
+    return {'sample': composed, 'revision': revision, 'status': status_value,
+            'received_at': row.received_at.isoformat()}

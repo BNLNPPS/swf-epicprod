@@ -835,3 +835,77 @@ def campaigns_status(request):
     except ServiceError as e:
         return Response({'detail': str(e)}, status=getattr(e, 'status', 400))
     return Response(result)
+
+
+# ---------------------------------------------------------------------------
+# Validation interface v1 (EPICPROD_VALIDATION.md § REST interface)
+# ---------------------------------------------------------------------------
+
+@api_view(['GET'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticatedOrReadOnly])
+def validation_sample_completion(request, sample):
+    """Completion state for one sample — the availability-signal body
+    served for pulling (EPICPROD_VALIDATION.md § Completion pull). Open
+    read-only. ``sample`` is the PCS composed name."""
+    try:
+        task = services.resolve_prodtask(sample)
+    except ProdTask.DoesNotExist:
+        return Response({'detail': f"No sample '{sample}'"},
+                        status=status.HTTP_404_NOT_FOUND)
+    payload = services.sample_completion_payload(task)
+    payload['catalog_url'] = request.build_absolute_uri(payload['catalog_url'])
+    return Response(payload)
+
+
+@api_view(['GET'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticatedOrReadOnly])
+def validation_campaign_completion(request, campaign):
+    """Per-sample completion across a campaign. Open read-only.
+    ``campaign`` is the two-part family; a detector version is accepted
+    and truncated to its family."""
+    try:
+        payload = services.campaign_completion_payload(campaign)
+    except ServiceError as e:
+        return Response({'detail': e.detail}, status=e.status)
+    for entry in payload['samples']:
+        entry['catalog_url'] = request.build_absolute_uri(entry['catalog_url'])
+    return Response(payload)
+
+
+@api_view(['GET'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticatedOrReadOnly])
+def validation_campaign_catalog(request, campaign):
+    """The campaign catalog document — the complete machine-readable
+    description of a campaign and its samples. Open read-only."""
+    try:
+        payload = services.campaign_catalog_payload(campaign)
+    except ServiceError as e:
+        return Response({'detail': e.detail}, status=e.status)
+    for entry in payload['samples']:
+        if entry['task_url']:
+            entry['task_url'] = request.build_absolute_uri(entry['task_url'])
+    return Response(payload)
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def validation_results_receive(request):
+    """The validation system transmits each finished result JSON here
+    (EPICPROD_VALIDATION.md § Result notification). Token-authenticated
+    write; receipt is stored append-only, mirrored onto the sample's
+    Dataset rows, and logged to the action stream."""
+    try:
+        result = services.validation_result_receive(
+            dict(request.data),
+            received_from=getattr(request.user, 'username', '') or '')
+    except ServiceError as e:
+        return Response({'detail': e.detail}, status=e.status)
+    return Response(result, status=status.HTTP_201_CREATED)

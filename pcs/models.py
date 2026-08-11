@@ -1005,6 +1005,48 @@ class PandaTasks(models.Model):
         return f"{self.prod_task.composed_name} try{self.try_number}"
 
 
+VALIDATION_STATUS_CHOICES = [
+    ('pending', 'Pending'),
+    ('running', 'Running'),
+    ('validated', 'Validated'),
+    ('failed', 'Failed'),
+]
+
+
+class ValidationResult(models.Model):
+    """One received validation result for a sample delivery revision.
+
+    Append-only: the validation system POSTs a result per status change
+    (EPICPROD_VALIDATION.md § Result notification); the newest row per
+    (sample, revision) is the current result and the row history is the
+    validation record. Receipt mirrors the newest status onto the
+    sample's Dataset rows under ``metadata['validation']`` (the
+    ``Dataset.validation_status`` reader).
+    """
+    sample = models.CharField(max_length=255, db_index=True,
+                              help_text="PCS composed name of the validated sample")
+    revision = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=20, choices=VALIDATION_STATUS_CHOICES)
+    benchmarks = models.JSONField(default=list, blank=True)
+    invalidated = models.JSONField(default=list, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    details_url = models.CharField(max_length=500, blank=True, default='')
+    raw = models.JSONField(default=dict, blank=True)
+    received_from = models.CharField(max_length=100, blank=True, default='')
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'pcs_validation_result'
+        ordering = ['sample', 'revision', '-received_at']
+        indexes = [
+            models.Index(fields=['sample', 'revision', '-received_at'],
+                         name='pcs_valresult_latest'),
+        ]
+
+    def __str__(self):
+        return f"{self.sample} rev{self.revision} {self.status}"
+
+
 def _allocate_simple_tag(state_key):
     """Atomically allocate the next tag number using PersistentState."""
     from monitor_app.models import PersistentState

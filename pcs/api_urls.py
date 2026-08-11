@@ -5,6 +5,8 @@ from .api_views import (
     EvgenTagViewSet, SimuTagViewSet, RecoTagViewSet, BackgroundTagViewSet,
     DatasetViewSet, ProdConfigViewSet, ProdTaskViewSet, QuestionnaireViewSet,
     prod_request_compose, campaigns_status, physics_configs_requestors,
+    validation_sample_completion, validation_campaign_completion,
+    validation_campaign_catalog, validation_results_receive,
 )
 
 router = DefaultRouter()
@@ -20,6 +22,16 @@ router.register(r'prod-configs', ProdConfigViewSet, basename='prod-config')
 router.register(r'prod-tasks', ProdTaskViewSet, basename='prod-task')
 
 urlpatterns = [
+    # Validation interface v1 (EPICPROD_VALIDATION.md § REST interface)
+    path('v1/samples/<str:sample>/completion/', validation_sample_completion,
+         name='validation_sample_completion'),
+    path('v1/campaigns/<str:campaign>/completion/',
+         validation_campaign_completion,
+         name='validation_campaign_completion'),
+    path('v1/campaigns/<str:campaign>/catalog/', validation_campaign_catalog,
+         name='validation_campaign_catalog'),
+    path('v1/validation-results/', validation_results_receive,
+         name='validation_results'),
     path('prod-requests/compose/', prod_request_compose,
          name='prod_request_compose'),
     path('campaigns/status/', campaigns_status, name='campaigns_status'),

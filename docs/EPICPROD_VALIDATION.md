@@ -101,10 +101,21 @@ once an ops person has approved the continuation.
 ## REST interface (proposed)
 
 The two loop interfaces are REST endpoints hosted by Hydra under a common
-`/api/v1` base, authenticated by bearer token. epicprod provides two
-counterparts: a completion read so validation can also pull, and a result
-notification endpoint Hydra transmits finished results to. Samples are
-identified by the PCS composed name ([PCS.md](PCS.md)).
+`/api/v1` base, authenticated by bearer token. epicprod provides three
+counterparts: a completion read so validation can also pull, the campaign
+catalog document, and a result notification endpoint Hydra transmits
+finished results to.
+
+`{sample}` takes the PCS composed name, the logical identity of the produced
+dataset — for example `group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1` —
+used throughout production ([PCS.md](PCS.md)). Physical retry names derived
+from it roll up to it, so validation can treat the composed name as an opaque
+unique key. `{campaign}` takes the two-part campaign family, for example
+`26.07`; the three-part `26.07.1` inside the composed name is the detector
+version, an edition within the campaign, and a campaign covers the samples of
+all its editions. The epicprod endpoints also accept a detector version as
+the `{campaign}` value and truncate it to its family, so passing `26.07.1`
+works.
 
 ### Availability signal endpoint
 
@@ -113,12 +124,12 @@ identified by the PCS composed name ([PCS.md](PCS.md)).
 ```json
 {
   "sample": "group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1",
-  "campaign": "26.07.1",
+  "campaign": "26.07",
   "revision": 1,
   "events_delivered": 5000000,
   "event_target": 5000000,
   "rucio": ["group.EIC:group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1.b1"],
-  "catalog_url": "https://.../pcs/catalog/?campaign=26.07.1"
+  "catalog_url": "https://.../pcs/catalog/?campaign=26.07"
 }
 ```
 
@@ -183,12 +194,22 @@ push signal:
 
     GET /api/v1/samples/{sample}/completion        completion state for a sample
     GET /api/v1/campaigns/{campaign}/completion    per-sample completion for a campaign
+    GET /api/v1/campaigns/{campaign}/catalog/      the campaign catalog document
 
-The per-sample body is the availability-signal JSON; the campaign form lists
-that body per sample. These are open read-only endpoints. For anything beyond
-completion state — a sample's physics process, generator configuration,
-originating request — the campaign catalog ([PCS.md](PCS.md)) serves the
-complete campaign description, and every completion body carries its URL.
+The per-sample body is the availability-signal JSON extended with three
+served fields: `complete` (`yes` | `no` | `unknown` — unknown whenever
+delivered events or the event target is not yet known for the sample),
+`completion_basis` (`events` when the tri-state was computed, empty
+otherwise), and `event_target_source` (the target's provenance tier,
+`included` | `requested`). The campaign form lists that body per sample.
+These are open read-only endpoints.
+
+The catalog endpoint serves the complete machine-readable campaign
+description — per sample: the composed name and its tag definitions with
+parameters, physics configuration, requestors, originating request, task
+status, propagation disposition, expected events, produced outputs with
+completeness, and resolved inputs. `catalog_url` in every completion body
+points to it.
 
 ## Assessment
 
