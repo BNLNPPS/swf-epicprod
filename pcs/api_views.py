@@ -854,9 +854,7 @@ def validation_sample_completion(request, sample):
     except ProdTask.DoesNotExist:
         return Response({'detail': f"No sample '{sample}'"},
                         status=status.HTTP_404_NOT_FOUND)
-    payload = services.sample_completion_payload(task)
-    payload['catalog_url'] = request.build_absolute_uri(payload['catalog_url'])
-    return Response(payload)
+    return Response(services.sample_completion_payload(task))
 
 
 @api_view(['GET'])
@@ -871,8 +869,6 @@ def validation_campaign_completion(request, campaign):
         payload = services.campaign_completion_payload(campaign)
     except ServiceError as e:
         return Response({'detail': e.detail}, status=e.status)
-    for entry in payload['samples']:
-        entry['catalog_url'] = request.build_absolute_uri(entry['catalog_url'])
     return Response(payload)
 
 
@@ -887,9 +883,6 @@ def validation_campaign_catalog(request, campaign):
         payload = services.campaign_catalog_payload(campaign)
     except ServiceError as e:
         return Response({'detail': e.detail}, status=e.status)
-    for entry in payload['samples']:
-        if entry['task_url']:
-            entry['task_url'] = request.build_absolute_uri(entry['task_url'])
     return Response(payload)
 
 
