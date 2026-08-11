@@ -841,6 +841,84 @@ def campaigns_status(request):
 # Validation interface v1 (EPICPROD_VALIDATION.md § REST interface)
 # ---------------------------------------------------------------------------
 
+from drf_spectacular.utils import (OpenApiExample, extend_schema,
+                                   inline_serializer)
+from drf_spectacular.types import OpenApiTypes
+from rest_framework import serializers as drf_serializers
+
+_COMPLETION_EXAMPLE = OpenApiExample(
+    'sample completion',
+    value={
+        'sample': 'group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1',
+        'campaign': '26.07',
+        'revision': 1,
+        'events_delivered': 5000000,
+        'event_target': 5000000,
+        'event_target_source': 'included',
+        'complete': 'yes',
+        'completion_basis': 'events',
+        'rucio': ['epic:/RECO/26.07.1/epic_craterlake/DIS/'
+                  'pythia8.316-1.0/NC/noRad/ep/9x275/q2_1to10'],
+        'catalog_url': '/swf-monitor/pcs/api/v1/campaigns/26.07/catalog/',
+    },
+    response_only=True,
+)
+
+_VALIDATION_RESULT_REQUEST = inline_serializer(
+    name='ValidationResultRequest',
+    fields={
+        'sample': drf_serializers.CharField(
+            help_text='PCS composed name of the validated sample'),
+        'revision': drf_serializers.IntegerField(
+            required=False, default=1, min_value=1,
+            help_text='Sample delivery revision the result judges'),
+        'status': drf_serializers.ChoiceField(
+            choices=['pending', 'running', 'validated', 'failed']),
+        'benchmarks': drf_serializers.ListField(
+            child=drf_serializers.DictField(), required=False,
+            help_text='Per-benchmark outcomes '
+                      '(name, status, events_used, report_url)'),
+        'invalidated': drf_serializers.ListField(
+            child=drf_serializers.CharField(), required=False,
+            help_text='Rucio references no longer counting toward the '
+                      'sample; empty on failure means the whole sample'),
+        'completed_at': drf_serializers.DateTimeField(required=False),
+        'details_url': drf_serializers.URLField(required=False),
+    },
+)
+
+
+@extend_schema(tags=['validation'], responses={200: OpenApiTypes.OBJECT})
+@api_view(['GET'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticatedOrReadOnly])
+def validation_v1_index(request):
+    """Index of the validation interface v1: its endpoints and where the
+    interactive documentation lives. Open read-only."""
+    from django.urls import reverse
+    base = reverse('pcs:validation_v1_index')
+    return Response({
+        'interface': 'epicprod validation v1',
+        'documentation': {
+            'swagger': reverse('swagger-ui'),
+            'redoc': reverse('redoc'),
+            'schema': reverse('schema'),
+            'design': 'https://github.com/BNLNPPS/swf-epicprod/blob/main/'
+                      'docs/EPICPROD_VALIDATION.md',
+        },
+        'endpoints': {
+            'sample_completion': base + 'samples/{sample}/completion/',
+            'campaign_completion': base + 'campaigns/{campaign}/completion/',
+            'campaign_catalog': base + 'campaigns/{campaign}/catalog/',
+            'validation_results': base + 'validation-results/',
+        },
+    })
+
+
+@extend_schema(tags=['validation'],
+               responses={200: OpenApiTypes.OBJECT},
+               examples=[_COMPLETION_EXAMPLE])
 @api_view(['GET'])
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])
@@ -857,6 +935,7 @@ def validation_sample_completion(request, sample):
     return Response(services.sample_completion_payload(task))
 
 
+@extend_schema(tags=['validation'], responses={200: OpenApiTypes.OBJECT})
 @api_view(['GET'])
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])
@@ -872,6 +951,7 @@ def validation_campaign_completion(request, campaign):
     return Response(payload)
 
 
+@extend_schema(tags=['validation'], responses={200: OpenApiTypes.OBJECT})
 @api_view(['GET'])
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])
@@ -886,6 +966,9 @@ def validation_campaign_catalog(request, campaign):
     return Response(payload)
 
 
+@extend_schema(tags=['validation'],
+               request=_VALIDATION_RESULT_REQUEST,
+               responses={201: OpenApiTypes.OBJECT})
 @api_view(['POST'])
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])
