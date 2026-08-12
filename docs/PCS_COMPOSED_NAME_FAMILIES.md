@@ -36,6 +36,15 @@ existing tags; two OVERLAY background tags bound to 16 datasets; five
 EVGEN rebinds; 50 discriminator samples; ~5,640 mechanical slug
 samples. Composed-name collisions catalog-wide after execution: zero.
 
+**The slug-sample rule was retracted 2026-08-12** (operator ruling:
+the sample axis is physics vocabulary; machine tokens never belong in
+it, and the class-wide extension exceeded the recorded decision).
+Physical duplicates of existing editions folded into them, sole rows
+took authority-derived or empty samples, generator differences bound
+real EVGEN tags, and the machine-setting families took their group-7
+samples. See PCS_COMPOSED_NAME_INTEGRITY.md § The slug-sample
+retraction; the integrity collector alarms on any recurrence.
+
 ## Group 1 — Legacy DIS minQ2 scans (3 families, 54 datasets)
 
 `DIS.NC.NxN.minQN-N` (38), `DIS.CC.NxN.minQN-N` (8), and their

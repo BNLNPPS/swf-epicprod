@@ -127,6 +127,34 @@ rename is contained:
 - Validation-interface consumers: none exist yet; the catalog
   endpoint enumerates current names for when they do.
 
+## The slug-sample retraction (2026-08-12)
+
+The backfill's mechanical rule — a source-hash "slug" written into
+`sample_name` wherever no discriminator was derived, extended
+class-wide in its second pass and adopted by the Rucio reconciler for
+new siblings — was retracted the following day (operator ruling): the
+sample axis is physics vocabulary, and a machine token in it is an
+error regardless of the uniqueness it buys. The retraction, executed
+by three audited passes (`scripts/fold_slug_rows.py`,
+`scripts/resolve_slug_conflicts.py`, `scripts/apply_group7_samples.py`,
+audit JSONs under `/data/wenauseic/swf-delivery/`):
+
+- Physical re-deliveries of a configuration that already has its
+  edition are not identity rows. Their payload moved to the edition
+  task's outputs entries and the rows folded away; the reconciler now
+  attaches arrivals the same way and never creates a sibling row.
+- Sole editions kept their rows and lost the hash: the sample became
+  the authority-resolved discriminator (path-derived angle) or empty.
+- Rows whose true difference was generator identity bound real EVGEN
+  tags from their recorded paths; the background machine-setting
+  families took their group-7 samples (release/beam/runtime strings).
+
+End state: zero machine tokens in the sample axis, zero composed-name
+collisions, 37 distinct sample names catalog-wide, all physics. The
+`composed-name-integrity` collector now also alarms on any machine
+token appearing in `sample_name`, so the scheme cannot return
+silently.
+
 ## The structural conclusion
 
 Auto-intake exists because current-campaign production is submitted
