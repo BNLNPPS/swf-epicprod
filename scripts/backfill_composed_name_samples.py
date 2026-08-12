@@ -122,9 +122,16 @@ def main():
     names = Counter(
         d.composed_name for d in Dataset.objects.filter(sample_name=''))
     colliding = {n for n, c in names.items() if c > 1}
-    targets = [d for d in (Dataset.objects.filter(sample_name='')
-                           .select_related('physics_tag', 'evgen_tag'))
-               if d.composed_name in colliding]
+    # Targets: every colliding sample-less dataset, plus the whole
+    # sample-less past.*/csv_import class — the slug rule is class-wide,
+    # so a later tag rebind can never land on an unsampled archival row.
+    targets = [
+        d for d in (Dataset.objects.filter(sample_name='')
+                    .select_related('physics_tag', 'evgen_tag'))
+        if (d.composed_name in colliding
+            or PAST_RE.match(d.dataset_name or '')
+            or CSV_IMPORT_RE.match(d.dataset_name or ''))
+    ]
 
     stats = Counter()
     unparsable = []
@@ -179,10 +186,16 @@ def main():
         for key in sorted(bg_params):
             print(f'  {dict(key)}')
 
-    # Residual-collision simulation: composed base + planned changes.
+    # Residual-collision simulation over the FULL catalog: planned
+    # changes for targets, current identity for everything else.
     simulated = Counter()
     planned_by_pk = {d.pk: plan for d, plan in plans}
-    for d in targets:
+    for d in Dataset.objects.select_related(
+            'physics_tag', 'evgen_tag', 'simu_tag', 'reco_tag',
+            'background_tag').all():
+        if d.pk not in planned_by_pk:
+            simulated[d.composed_name] += 1
+            continue
         plan = planned_by_pk.get(d.pk, {})
         entry = plan.get('physics_tag')
         if entry and entry[0] is not None:
@@ -196,7 +209,9 @@ def main():
         k_label = (f'kNEW{hash(tuple(sorted(plan["background_params"].items()))) & 0xffff}'
                    if 'background_params' in plan else '')
         sample = plan.get('sample', '')
-        sim = (f'{d.detector_version}.{d.detector_config}.{p_label}.{e_label}'
+        sim = (f'{d.scope}.{d.detector_version}.{d.detector_config}'
+               f'.{p_label}.{e_label}'
+               f'.{d.simu_tag.tag_label}.{d.reco_tag.tag_label}'
                + (f'.{k_label}' if k_label else '')
                + (f'.{sample}' if sample else ''))
         simulated[sim] += 1
