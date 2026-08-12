@@ -203,18 +203,24 @@ outcomes are recorded in place.
    which creates no dispatch or `_sub` datasets at all, so the
    datasetManager name-skip has nothing to leak. No cleanup chore is
    needed.
-3. **Job Retry Module — greenfield, rule set drafted.** The live
-   `RETRYERRORS` and `RETRYACTIONS` tables are empty (no VO has rules on
-   this instance), so the module currently takes no automatic actions.
-   Proposed initial epic rules, to be loaded by the PanDA operations
-   team, passive (`Active=false`) first:
-   - DDM error 200, diagnostic matching `is closed` → `no_retry`
-     (job-level retries against a closed dataset are structurally
-     futile; task-level handling is the reopen-before-retry doer).
-   - Executor 5303, tarball download failure → `limit_retry`
-     (bounded, since the sandbox keepalive prevents the standing cause;
-     a residual occurrence is transient or terminal, not improved by
-     unbounded retries).
+3. **Job Retry Module — closed 2026-08-12: the first rules on this
+   instance are loaded.** The `RETRYERRORS`/`RETRYACTIONS` tables were
+   empty for every VO; epicprod loaded the initial epic set directly
+   (the tables are instance data and the epicprod database credential
+   holds write access), both rules passive (`active='N'`, log-only)
+   until observed flagging correctly:
+   - `ddmErrorCode` 200, diagnostic matching `is closed` → `no_retry` —
+     job-level retries against a closed dataset are structurally
+     futile; task-level handling is the reopen-before-retry doer.
+   - `exeErrorCode` 5303, diagnostic matching the sandbox tarball
+     download failure → `limit_retry` with `maxAttempt=2` — one extra
+     attempt covers transient blips; the keepalive prevents the
+     standing cause.
+
+   The retry module reloads rules on a one-hour cache; normal
+   per-job attempt retries are untouched. The live rule set is
+   displayed in the System page's PanDA Configuration section
+   (`panda-retry-rules` collector).
 4. **Throttler trap — checked, currently safe.** All six epic and wlcg
    workqueues carry `queue_share = NULL`, the value for which
    `GenJobThrottler` does not throttle. The caveat stands: assigning a
