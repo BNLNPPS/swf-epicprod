@@ -268,6 +268,9 @@ doc does not duplicate them.
   or finish — scalar commands paced one second apart, then per-task
   verification on a shared deadline; retry of an aborted task routes
   through PanDA reactivation),
+  `panda_sandbox_keepalive` (touch retryable tasks' sandbox tarballs in the
+  PanDA server cache; nightly `catalog_sync` chain step —
+  [JEDI_INTEGRATION.md](JEDI_INTEGRATION.md)),
   `rucio_snapshot_update`, `evgen_rucio_update`,
 `catalog_import`, `questionnaire_import`, `questionnaire_automatch`,
 `questionnaire_match_update`, `campaign_progress_refresh`,

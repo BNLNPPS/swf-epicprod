@@ -467,6 +467,20 @@ per manifest row.
   against the closed dataset (DDM error 200). Datasets are located by their
   `task_id` metadata, and the reopen report is carried in the operation
   result JSON (`dataset_reopen`).
+- **`scripts/panda-sandbox-keepalive.py`** — the retry-reliability
+  counterpart for the job sandbox. The PanDA server purges cached sandbox
+  tarballs whose modification time is older than seven days, so a retry of
+  an older task fails when each job's pre-process cannot download the
+  tarball (executor error 5303). The server API `touch_cache_file` resets
+  the file's clock; this doer touches the tarball of every epic-VO task in
+  a non-final state, plus tasks finished, failed, or exhausted within the
+  retention window (SysConfig `panda_sandbox_keepalive_final_days`,
+  default 30). Tarball names and their source server come from each task's
+  stored parameters. It runs nightly as a `catalog_sync` chain step on the
+  prod-ops agent; a tarball found already purged is reported per task as
+  not natively retryable. Together with the dataset reopen above, native
+  retry is dependable within the retention window; a full rerun beyond it
+  is a new `.tryN` submission.
 
 ### Output authentication
 
