@@ -274,6 +274,8 @@ Generality is bounded: a variant is a single named sample with its parameters, n
 
 Within one tag composition a sample name is unique. Identity, the duplicate check, and the completion unit all key on the tags together with the sample name; that unit is what completes and triggers validation (see [Validation](EPICPROD_VALIDATION.md)).
 
+**Uniqueness enforcement.** The composed name is unique across the catalog, enforced by monitoring rather than a DB constraint: direct-to-PanDA auto-intake derives a discriminating sample (or flags an unguardable collision) before creating a dataset; the identity resolver refuses an ambiguous name with the candidate list and resolves a pre-repair bare name to its sample-suffixed descendants; and the `composed-name-integrity` System page collector alarms above zero collisions, buffering a Capcom notice while broken. The invariant, its 2026-08-11 restoration, and the enforcement design are in [PCS_COMPOSED_NAME_INTEGRITY.md](PCS_COMPOSED_NAME_INTEGRITY.md).
+
 ### External EVGEN Inputs
 
 As an interim production-planning capability, PCS can represent externally

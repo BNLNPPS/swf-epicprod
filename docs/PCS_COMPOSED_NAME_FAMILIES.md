@@ -28,6 +28,14 @@ operator's. Dispositions: **sample** (a `sample_name`, no tag change),
 
 These decisions are the backfill dry-run specification.
 
+**Executed 2026-08-11** by `scripts/backfill_composed_name_samples.py`
+in two passes (the second extended the slug rule class-wide after
+physics rebinds surfaced collisions with unsampled past.RECO rows
+outside the first target set): 77 physics rebinds, all reusing
+existing tags; two OVERLAY background tags bound to 16 datasets; five
+EVGEN rebinds; 50 discriminator samples; ~5,640 mechanical slug
+samples. Composed-name collisions catalog-wide after execution: zero.
+
 ## Group 1 — Legacy DIS minQ2 scans (3 families, 54 datasets)
 
 `DIS.NC.NxN.minQN-N` (38), `DIS.CC.NxN.minQN-N` (8), and their
