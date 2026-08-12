@@ -11,6 +11,23 @@ operator's. Dispositions: **sample** (a `sample_name`, no tag change),
 **evgen** (the discriminator belongs on the EVGEN tag), **k-tag**
 (background-mix axis), **rule** (mechanical, no per-family judgment).
 
+## Decisions (operator, 2026-08-11)
+
+| Group | Disposition |
+|---|---|
+| 1 — DIS minQ2 scans | tag (extend q2 recognition, per-combination tags) |
+| 2 — background-mixed variants | **k background tag** |
+| 3 — DVCS polarization variants | sample |
+| 4 — single-particle scans | sample (precedent) |
+| 5 — ALP mass points | tag, via the decimal-token parsing fix |
+| 6 — DVMP generator versions | evgen tag |
+| 7 — beam-gas machine settings | sample |
+| 8 — distinct-tag families | no action beyond the past.* rule |
+| past.* class | mechanical sample from source slug |
+| unparsables (29) | manual assignment at dry-run review |
+
+These decisions are the backfill dry-run specification.
+
 ## Group 1 — Legacy DIS minQ2 scans (3 families, 54 datasets)
 
 `DIS.NC.NxN.minQN-N` (38), `DIS.CC.NxN.minQN-N` (8), and their
