@@ -31,7 +31,7 @@ import django  # noqa: E402
 django.setup()
 
 from pcs.models import Dataset  # noqa: E402
-from pcs.physics_match import derive_physics  # noqa: E402
+from pcs.physics_match import derive_physics, taskname_remainder_path  # noqa: E402
 from pcs.services import find_or_create_physics_tag  # noqa: E402
 
 TASKNAME_RE = re.compile(r'group\.EIC\.[\d.]+\.\w+\.(.+)$')
@@ -58,7 +58,7 @@ def _varying_tokens(remainders):
 def _derived_for(remainder):
     beam_match = BEAM_RE.search(remainder)
     beam = beam_match.group(1) if beam_match else ''
-    return derive_physics(remainder.replace('.', '/'), beam=beam) or {}
+    return derive_physics(taskname_remainder_path(remainder), beam=beam) or {}
 
 
 def _dry_match(derived):
@@ -126,8 +126,9 @@ def main():
             if all(re.fullmatch(r'\d+x\d+', v) for v in values):
                 captured.append(True)  # beam axis, derived per dataset
             else:
-                hit = any(v in str(dv)
-                          for v in values for dv in derived.values())
+                hit = any(
+                    v in str(dv) or v.replace('minQ2-', 'minQ2=') in str(dv)
+                    for v in values for dv in derived.values())
                 captured.append(hit)
         as_derived = _dry_match(derived)
         with_q2 = ''

@@ -35,7 +35,10 @@ def _beam_pair(beam):
 # in a filename (UPSILON). Derivation recognises tokens by pattern, not slot.
 _KNOWN_AREAS = {'SINGLE', 'DIS', 'DDIS', 'SIDIS', 'EXCLUSIVE', 'EW_BSM', 'BACKGROUNDS'}
 _BEAM_RE    = re.compile(r'^\d+x\d+$')
-_Q2_RE      = re.compile(r'^(minQ2=\d+|q2_\S+)$')
+#: minQ2 appears as ``minQ2=N`` in EVGEN paths and ``minQ2-N`` in PanDA
+#: tasknames (the submission pipeline replaces '='); both normalize to the
+#: '=' form so either source matches the same tag.
+_Q2_RE      = re.compile(r'^(minQ2[=-]\d+|q2_\S+)$')
 _ION_RE     = re.compile(r'^e(H[0-9]+|He[0-9]+|Li[0-9]*|Ca|Cu|Ru|Pb|Au|C|O)$')
 _NUCLEON    = {'ep', 'en'}
 _MASS_RE    = re.compile(r'^ma_[0-9]')
@@ -50,6 +53,15 @@ _MODEL      = {'bsat'}
 _POLAR      = {'unpolarised', 'polarised'}
 _FINAL_STATE = {'pi+', 'pi-', 'pi0', 'K+', 'K-', 'K0', 'K+Lambda'}
 #: radiation (Rad/noRad) and generator tokens are EVGEN-tag axes — not physics.
+
+
+def taskname_remainder_path(remainder):
+    """PanDA-taskname remainder -> derivation path. Dots separate tokens,
+    except inside decimal numbers, which stay intact so decimal-valued
+    physics tokens (``ma_0.1``) survive as single tokens instead of
+    fragmenting before derivation sees them."""
+    protected = re.sub(r'(\d)\.(\d)', '\\1\x00\\2', remainder or '')
+    return protected.replace('.', '/').replace('\x00', '.')
 
 
 def _split_compounds(tok):
@@ -136,7 +148,7 @@ def derive_physics(path, beam=''):
         for tok in _split_compounds(raw):
             if _BEAM_RE.match(tok):
                 sig['beam_energy_electron'], sig['beam_energy_hadron'] = _beam_split(tok)
-            elif _Q2_RE.match(tok):       sig['q2_range'] = tok
+            elif _Q2_RE.match(tok):       sig['q2_range'] = tok.replace('minQ2-', 'minQ2=')
             elif _ION_RE.match(tok):      ions.append(tok)
             elif tok in _NUCLEON:         nucleons.append(tok)
             elif tok in _BEAMCONFIG:      sig['beam_config'] = tok

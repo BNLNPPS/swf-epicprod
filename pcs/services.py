@@ -39,9 +39,13 @@ from .name_tokens import (
     logical_name_from_physical_name,
     panda_attempt_name,
     panda_name_from_physical_name,
+    sample_name_reserved_collision,
     try_number_from_physical_name,
 )
-from .physics_match import derive_physics, derive_background, derive_evgen, single_particle_angle
+from .physics_match import (
+    derive_physics, derive_background, derive_evgen, single_particle_angle,
+    taskname_remainder_path,
+)
 
 
 # The one ProdConfig row that marks "no configuration bound yet" — CSV
@@ -310,6 +314,29 @@ def _match_prod_tasks_for_panda_name(panda_task_name):
     return matches
 
 
+_INTAKE_STRUCTURE_TOKENS = frozenset((
+    'DIS', 'DDIS', 'SIDIS', 'EXCLUSIVE', 'EW_BSM', 'SINGLE', 'BACKGROUNDS',
+    'NC', 'CC', 'ep', 'en',
+))
+
+
+def _intake_sample_candidate(remainder, derived):
+    """Discriminating sample for a direct-intake dataset whose composed
+    identity would otherwise collide: the remainder tokens the physics
+    derivation did not consume, joined verbatim
+    (docs/PCS_COMPOSED_NAME_FAMILIES.md step-2 policy)."""
+    derived_values = {str(v) for v in (derived or {}).values()}
+    kept = []
+    for seg in taskname_remainder_path(remainder).split('/'):
+        if not seg or seg in _INTAKE_STRUCTURE_TOKENS:
+            continue
+        norm = seg.replace('minQ2-', 'minQ2=')
+        if _re.fullmatch(r'\d+x\d+', seg) or norm in derived_values:
+            continue
+        kept.append(seg)
+    return '.'.join(kept)
+
+
 def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
     """Auto-intake a directly submitted group.EIC production task.
 
@@ -359,7 +386,7 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
         beam_match = _re.search(r'\.(\d+x\d+)(\.|$)', remainder)
         if beam_match:
             beam = beam_match.group(1)
-        derived = derive_physics(remainder.replace('.', '/'), beam=beam)
+        derived = derive_physics(taskname_remainder_path(remainder), beam=beam)
         row_physics_tag = physics
         if derived is None:
             pass  # unresolved physics stays on the placeholder anchor
@@ -368,6 +395,33 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
         else:
             row_physics_tag, _ = find_or_create_physics_tag(
                 derived, created_by=created_by)
+
+        # Composed-identity guard (docs/PCS_COMPOSED_NAME_INTEGRITY.md
+        # step 2): a new dataset whose composed name already exists gets
+        # a discriminating sample from the underived remainder tokens;
+        # a guard that cannot discriminate is flagged, never silent.
+        from monitor_app.epicprod_logging import log_epicprod_action
+        sample_name = ''
+        probe = Dataset(
+            scope='group.EIC', detector_version=det_version,
+            detector_config=det_config, physics_tag=row_physics_tag,
+            evgen_tag=evgen, simu_tag=simu, reco_tag=reco)
+        if Dataset.objects.filter(
+                composed_name=probe.build_dataset_name()).exists():
+            candidate = _intake_sample_candidate(remainder, derived)
+            if candidate and not sample_name_reserved_collision(candidate):
+                sample_name = candidate
+                log_epicprod_action(
+                    'pcs', 'direct_intake_sample', outcome='ok',
+                    subject_type='dataset', subject_key=task_name,
+                    reason=f'composed-name collision; sample {candidate!r}')
+            else:
+                log_epicprod_action(
+                    'pcs', 'direct_intake_sample', outcome='error',
+                    sublevel='high', live_default=True,
+                    subject_type='dataset', subject_key=task_name,
+                    reason='composed-name collision with no usable '
+                           f'discriminator (candidate {candidate!r})')
 
         did = f'group.EIC:{task_name}'
         dataset, _ds_created = Dataset.objects.get_or_create(
@@ -382,6 +436,7 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
                 'evgen_tag': evgen,
                 'simu_tag': simu,
                 'reco_tag': reco,
+                'sample_name': sample_name,
                 'description': 'Auto-intake of direct PanDA submission',
                 'metadata': {
                     'source': {'kind': 'panda_taskname', 'location': task_name},
