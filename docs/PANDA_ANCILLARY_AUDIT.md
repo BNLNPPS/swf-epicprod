@@ -65,24 +65,27 @@ confirming with the PanDA team) pins every severity judgment below.
 | Axis | ATLAS tier | Generic tier (epic) | epicprod exposure |
 |---|---|---|---|
 | DDM client | `AtlasDDMClient`, 44 methods (freeze/open/delete/rules/quota/staging) | `GenDDMClient`: one stub method answering "closed" | Low if live config wires AtlasDDMClient (see above); otherwise every DDM-touching path is broken or lying |
-| Task setup | `AtlasTaskSetupper`: registers datasets/rules, reopens datasets + clears lifetime at job generation (`:313-315`) | `GenTaskSetupper.doSetup` returns success, does nothing | **Closed epicprod-side**: reopen-before-retry in the task-operation doer (JEDI_INTEGRATION.md) covers the retry case, with a lifetime refresh the ATLAS path lacks |
+| Task setup | `AtlasTaskSetupper`: registers datasets/rules, reopens datasets + clears lifetime at job generation (`:313-315`) | epic runs `SimpleTaskSetupper` (live config): registers datasets/containers/locations with a config lifetime, but has no reopen and no lifetime clear; `GenTaskSetupper` (the template default) does nothing at all | **Closed epicprod-side**: reopen-before-retry in the task-operation doer (JEDI_INTEGRATION.md) covers the retry case, with a lifetime refresh the ATLAS path lacks |
 | Post-processing | Freeze, stray-file reconciliation vs the DB, transient-dataset deletion, duplicate-task pause, exhausted transition, per-class dataset lifetimes (14d/40d/30d), completion e-mail | `GenPostProcessor`: freeze plus base bookkeeping only; no lifetime management, no reconciliation, no exhausted handling, no notification | Medium; see recommendations |
 | Task refinement | ES auto-conversion, dataset-registration flags, input-consistency checks, attempt-number filename suffixes | `GenTaskRefiner`: sane defaults (`cloudAsVO`, `messageDriven`, RAM default), none of the above | Low for the current EVGEN path (`noInput`+`noOutput` bypasses most of it) |
 | Job brokerage | ~45 selection stages (data locality, network, IO intensity, quotas, release matching, failure-rate avoidance) | `GenJobBroker`: 9 stages (status, disk, walltime, cores, memory, nPilot, availability, share weight) | Low while tasks pin `site=`; grows directly with multi-site brokered production |
-| Task brokerage | `AtlasProdTaskBroker` assigns nucleus/cloud | No implementation exists for any other VO | Apparently none today (tasks carry explicit sites); verify how epic tasks pass the assigning state |
+| Task brokerage | `AtlasProdTaskBroker` assigns nucleus/cloud | epic runs `AtlasProdTaskBroker` too (live config, `epic:managed\|test`) — no generic implementation exists, so the ATLAS one is config-assigned | Working today; its ATLAS-shaped assumptions (nucleus model, CRIC data) become relevant only with multi-site brokered production |
 | Throttling | Thin ATLAS classes over a 265-line base engine (share-aware queue limits and caps) | `GenJobThrottler`: unthrottled if the workqueue has no share value, otherwise **unconditionally throttled** (`GenJobThrottler.py:22-26`) | Latent trap: assigning a global-share value to an epic workqueue would silently stop job generation for it |
 | Watchdogs | `AtlasProdWatchDog` (failure-rate auto-pause, priority boost near completion, reassign with Rucio rule moves), `AtlasAnalWatchDog` (user quotas, priority massage), plus subtype dogs (QueueFiller, TaskWithholder, DataLocalityUpdater, DataCarousel) | `GenWatchDog`: inherits the base recovery loop (`TypicalWatchDogBase.pre_action:15-110` — pending-task reactivation, stuck-contents restart, exhausted kick, goal-reached auto-finish) but `doAction` is empty | The base recovery loop is real and epic has it. The `doAction` tier maps to epicprod's own agent chores — the alarm-pause is the failure-rate auto-pause already rebuilt |
 
 ## Findings by axis — classic server
 
-- **Adder/setupper** — epic jobs are processed by the ATLAS plugins via
-  fallback (subject to live-config verification). These are functional
-  for epic: they register log files to BNL Rucio and create `_sub`
-  datasets. One sharp edge: file scope is re-derived from the dataset
-  name only for `VO == "atlas"`
-  (`taskbuffer/db_proxy_mods/job_complex_module.py:3080`); epic files
-  keep whatever scope JEDI assigned. Dormant, but a scope mismatch would
-  surface as an adder registration failure.
+- **Adder/setupper** — epic runs the explicit generic pair (live
+  config): `AdderSimplePlugin` registers output/log files into the raw
+  destination dataset in Rucio (no `_sub` propagation, no
+  subscriptions, no dataset locations, and a hard-coded `default`
+  output scope, `adder_simple_plugin.py:74`), and `SetupperDummyPlugin`
+  creates no dispatch or destination datasets at all — dataset
+  registration happens JEDI-side in `SimpleTaskSetupper` instead. One
+  sharp edge: file scope is re-derived from the dataset name only for
+  `VO == "atlas"` (`taskbuffer/db_proxy_mods/job_complex_module.py:3080`);
+  epic files keep whatever scope JEDI assigned. Dormant, but a scope
+  mismatch would surface as an adder registration failure.
 - **Closed datasets are a fatal, non-retried job failure** —
   `UnsupportedOperation` is in `_FATAL_REGISTRATION_ERRORS`
   (`dataservice/ddm.py:46-58`) and nothing anywhere in the server reopens
@@ -160,29 +163,46 @@ future epicprod needs.
 Items 2-4 were executed against the live systems on 2026-08-12; their
 outcomes are recorded in place.
 
-1. **Verify the live BNL configs** — narrowed by live evidence; one ask
-   remains. The server is `pandaserver01.sdcc.bnl.gov` (every
-   `jedi_process_lock` holder), database `pandadb01.sdcc.bnl.gov`, and
-   the configs are not readable from the epicprod host. Live evidence
-   from the running system fixes the config's shape: JEDI watchdog
-   processes hold per-VO locks for `epic` and `wlcg` separately
-   (`jedi_process_lock` rows, component `TypicalWatchDogBase.cache_tokens`)
-   — so `panda_jedi.cfg` keys the epic VO explicitly and the generic
-   watchdog family, including the base recovery loop, is live for epic;
-   and the `[ddm]` client implements `freezeDataset` (epic log datasets
-   get closed at finalization), which `GenDDMClient` does not — so the
-   live DDM client is `AtlasDDMClient` or equivalent. The remaining ask
-   for the PanDA team is the exact class per axis: `modConfig` entries
-   covering epic in `panda_jedi.cfg` sections `[ddm]`, `[tasksetup]`,
-   `[postprocessor]`, `[watchdog]`, `[jobthrottle]`, `[taskrefine]`,
-   `[jobbroker]`, and the `adder_plugins`/`setupper_plugins` lines of
-   `panda_server.cfg`.
+1. **Verify the live BNL configs** — **closed 2026-08-12**: the live
+   configs on `pandaserver01.sdcc.bnl.gov` were read directly. The epic
+   VO's registrations, per axis:
+
+   | Axis | Live class (epic) |
+   |---|---|
+   | `[ddm]` | `AtlasDDMClient` — the full Rucio surface, including `openDataset` |
+   | `[tasksetup]` | `SimpleTaskSetupper` — real dataset/container/location registration (the source of the 30-day log lifetime); no reopen, no lifetime clear |
+   | `[taskrefine]` | `GenTaskRefiner` |
+   | `[jobbroker]` | `GenJobBroker` |
+   | `[jobthrottle]` | `GenJobThrottler` |
+   | `[postprocessor]` | `GenPostProcessor` |
+   | `[watchdog]` | `GenWatchDog` |
+   | `[taskbroker]` | `AtlasProdTaskBroker` for `epic:managed\|test` |
+   | `[taskgen]` | `AtlasTaskGenerator` for `epic:managed\|test` |
+   | `adder_plugins` | `AdderSimplePlugin` (the sphenix-lineage generic Rucio adder) |
+   | `setupper_plugins` | `SetupperDummyPlugin` |
+   | `closer_plugins` | atlas-only; no epic entry (closer VO actions are a no-op) |
+
+   Corrections this forces on the axis tables above: epic's JEDI task
+   setup is `SimpleTaskSetupper`, not the no-op `GenTaskSetupper` — it
+   registers datasets, but it equally lacks the reopen-at-job-generation
+   block, so the reopen-before-retry conclusion is unchanged; epic does
+   have a task broker (`AtlasProdTaskBroker`, config-assigned); and the
+   classic-server tier is not the ATLAS fallback but the explicit
+   generic pair — `AdderSimplePlugin` registers files into the raw
+   destination dataset with no `_sub` machinery, and
+   `SetupperDummyPlugin` creates no dispatch or `_sub` datasets at all,
+   which — not the endpoint-coincidence skip — is why BNL Rucio holds
+   zero epic `_sub` datasets (item 2). One configuration oddity
+   observed: the `AsyncRequestWatchDog` entries sit in `[taskrefine]`'s
+   `modConfig` rather than `[watchdog]`'s, and no watchdog process runs
+   the `async_request` subtype, so that watchdog is registered but
+   inert.
 2. **`_sub` dataset leak — checked, none exists.** BNL Rucio holds zero
-   `group.EIC.*_sub*` datasets. The ATLAS setupper skips Rucio
-   registration of `_sub` blocks when source and destination DDM
-   endpoints coincide (`setupper_atlas_plugin.py:590-596`), which is
-   epic's configuration, so the datasetManager name-skip has nothing to
-   leak. No cleanup chore is needed.
+   `group.EIC.*_sub*` datasets. The live-config read (item 1) supplies
+   the mechanism: epic's classic setupper is `SetupperDummyPlugin`,
+   which creates no dispatch or `_sub` datasets at all, so the
+   datasetManager name-skip has nothing to leak. No cleanup chore is
+   needed.
 3. **Job Retry Module — greenfield, rule set drafted.** The live
    `RETRYERRORS` and `RETRYACTIONS` tables are empty (no VO has rules on
    this instance), so the module currently takes no automatic actions.
