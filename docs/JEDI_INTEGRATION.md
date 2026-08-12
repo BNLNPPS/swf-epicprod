@@ -466,7 +466,12 @@ per manifest row.
   without this step every job of a post-final retry fails log registration
   against the closed dataset (DDM error 200). Datasets are located by their
   `task_id` metadata, and the reopen report is carried in the operation
-  result JSON (`dataset_reopen`).
+  result JSON (`dataset_reopen`). Retry-class operations are refused when
+  the task's sandbox tarball is no longer in the server cache (checked
+  against the stored task parameters and a HEAD of the cache URL): every
+  generated job would fail its pre-process download, so the operation is
+  reported refused with a resubmit recommendation instead of being sent;
+  `--force-retry` bypasses the guard.
 - **`scripts/panda-sandbox-keepalive.py`** — the retry-reliability
   counterpart for the job sandbox. The PanDA server purges cached sandbox
   tarballs whose modification time is older than seven days, so a retry of
