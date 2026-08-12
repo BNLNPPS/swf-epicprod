@@ -29,6 +29,7 @@ import logging
 from django.utils import timezone
 
 from .models import Campaign, Dataset, ProdTask
+from .name_tokens import sample_name_reserved_collision
 from .physics_config import group_editions, physics_config_key
 
 _log = logging.getLogger(__name__)
@@ -171,6 +172,14 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
 
             slug = hashlib.sha1(did.encode()).hexdigest()[:12]
             pcs_name = f'past.{stage}.{version}.{slug}'
+            # Class rule (docs/PCS_COMPOSED_NAME_FAMILIES.md): every
+            # past.* row carries its slug as the sample discriminator, so
+            # composed names stay unique when a row joins an edition whose
+            # identity already has a dataset (the composed-name integrity
+            # invariant; save() composes tags + sample).
+            sample = slug
+            if sample_name_reserved_collision(sample):
+                sample = f'src-{sample}'
             probe = Dataset(
                 physics_tag=physics_tag,
                 metadata={'source': {'kind': 'rucio_did', 'location': did}},
@@ -197,7 +206,8 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
             if head is not None:
                 # The configuration already has an edition: this dataset
                 # joins it as a physical sibling; outputs land on the
-                # edition's task. Never a duplicate edition.
+                # edition's task. The sibling carries its slug sample so
+                # its composed name never duplicates the edition's.
                 sibling, was_created = Dataset.objects.get_or_create(
                     dataset_name=pcs_name, block_num=1,
                     defaults=dict(
@@ -205,12 +215,11 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
                         detector_version=head.detector_version,
                         detector_config=head.detector_config,
                         campaign=campaign,
-                        composed_name=head.composed_name,
                         physics_tag=head.physics_tag,
                         evgen_tag=head.evgen_tag, simu_tag=head.simu_tag,
                         reco_tag=head.reco_tag,
                         background_tag=head.background_tag,
-                        sample_name=head.sample_name,
+                        sample_name=sample,
                         file_count=files, data_size=size,
                         metadata=metadata,
                         created_by=created_by or 'rucio_reconcile',
@@ -240,6 +249,7 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
                     campaign=campaign,
                     physics_tag=physics_tag, evgen_tag=anchor_evgen,
                     simu_tag=anchor_simu, reco_tag=anchor_reco,
+                    sample_name=sample,
                     file_count=files, data_size=size,
                     description='', metadata=metadata,
                     created_by=created_by or 'rucio_reconcile',
