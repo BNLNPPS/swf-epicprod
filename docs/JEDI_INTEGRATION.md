@@ -458,6 +458,15 @@ per manifest row.
   PanDA tasks. It sources the local panda-client environment, sets
   `PANDA_AUTH_VO=EIC.production`, calls `increase_attempt_nr` or `retry_task`,
   and returns nonzero when the PanDA client reports a nonzero operation result.
+  Before a retry-class operation it reopens the task's closed BNL Rucio
+  datasets and refreshes their lifetime, using the production x509 proxy
+  (account `panda`). PanDA closes a task's log datasets when the task reaches
+  a final state, and the JEDI plugins configured for the `eic` VO do not
+  reopen them on retry — the ATLAS task setupper does, at job generation — so
+  without this step every job of a post-final retry fails log registration
+  against the closed dataset (DDM error 200). Datasets are located by their
+  `task_id` metadata, and the reopen report is carried in the operation
+  result JSON (`dataset_reopen`).
 
 ### Output authentication
 
