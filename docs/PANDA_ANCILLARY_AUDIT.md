@@ -3,7 +3,7 @@
 An audit of the systems surrounding the PanDA core — the VO-plugin tiers
 inside the PanDA server and JEDI, the classic-server dataservice and
 daemons, and the ecosystem components ATLAS operates around PanDA — read
-against what the epic VO actually receives. ATLAS's implementations are
+against what the epic VO receives. ATLAS's implementations are
 the guide: each gap between the ATLAS tier and the generic tier is a
 candidate for an epicprod-side equivalent, a configuration change, or a
 deliberate non-adoption. The audit was performed 2026-08-12 against the
@@ -11,12 +11,12 @@ nightly-synced source clones (`panda-server` including `pandajedi/`,
 `panda-client`, `panda-docs`, `harvester`, `iDDS`, `pilot2`); file:line
 citations refer to those trees.
 
-Two findings from the same day's work motivated it: JEDI reopens a task's
-output datasets at job generation for ATLAS but not for the generic VOs
-(fixed epicprod-side as reopen-before-retry), and the PanDA server purges
-idle sandbox tarballs with no generic keepalive (fixed epicprod-side as
-the nightly sandbox keepalive). Both are instances of the pattern this
-audit inventories.
+Two production repairs motivated it: JEDI reopens a task's output
+datasets at job generation for ATLAS but not for the generic VOs
+(addressed by the epicprod reopen-before-retry), and the PanDA server
+purges idle sandbox tarballs with no generic keepalive (addressed by the
+epicprod nightly sandbox keepalive). Both are instances of the pattern
+this audit inventories.
 
 ## How plugin selection works
 
@@ -44,34 +44,27 @@ with no VO entry, any VO gets `AdderAtlasPlugin`
 (`panda_config.py:236-238`), so `Closer.perform_vo_actions()` is a no-op
 for every non-ATLAS VO by construction.
 
-**The single highest-value verification item**: the BNL production
-`panda_jedi.cfg` and `panda_server.cfg` are not in any local clone, so
-which classes the epic VO actually receives on each axis is inferred, not
-observed. The inference for the JEDI DDM axis is strong: epic log
-datasets demonstrably get closed in Rucio at task finalization (observed
-`closed_at` metadata), the only JEDI-side close path is
-`GenPostProcessor.doPostProcess` → `ddmIF.freezeDataset`
-(`jedipprocess/GenPostProcessor.py:26`), and `GenDDMClient` does not
-implement `freezeDataset` (it implements exactly one method,
-`jediddm/GenDDMClient.py:16-17`) — so the live epic DDM interface is
-almost certainly `AtlasDDMClient`, which is Rucio-generic despite its
-name. That would mean `openDataset` and the full 44-method DDM surface
-are already available to the epic JEDI; the reopen gap was in the no-op
-`GenTaskSetupper`, not in DDM capability. Reading the live configs (or
-confirming with the PanDA team) pins every severity judgment below.
+**The live registrations**: the BNL production `panda_jedi.cfg` and
+`panda_server.cfg` are not in any local clone; the deployed
+registrations for the epic VO were read on the server itself and are
+tabulated under recommendation 1. The axis tables below reflect them.
+Notably, the epic `[ddm]` entry is `AtlasDDMClient` — Rucio-generic
+despite its name — so `openDataset` and the full DDM surface are
+available to the epic JEDI; the reopen gap was in the task setupper,
+not in DDM capability.
 
 ## Findings by axis — JEDI
 
 | Axis | ATLAS tier | Generic tier (epic) | epicprod exposure |
 |---|---|---|---|
-| DDM client | `AtlasDDMClient`, 44 methods (freeze/open/delete/rules/quota/staging) | `GenDDMClient`: one stub method answering "closed" | Low if live config wires AtlasDDMClient (see above); otherwise every DDM-touching path is broken or lying |
+| DDM client | `AtlasDDMClient`, 44 methods (freeze/open/delete/rules/quota/staging) | `GenDDMClient`: one stub method answering "closed"; epic is configured with `AtlasDDMClient` (recommendation 1) | Low — epic has the full DDM surface |
 | Task setup | `AtlasTaskSetupper`: registers datasets/rules, reopens datasets + clears lifetime at job generation (`:313-315`) | epic runs `SimpleTaskSetupper` (live config): registers datasets/containers/locations with a config lifetime, but has no reopen and no lifetime clear; `GenTaskSetupper` (the template default) does nothing at all | **Closed epicprod-side**: reopen-before-retry in the task-operation doer (JEDI_INTEGRATION.md) covers the retry case, with a lifetime refresh the ATLAS path lacks |
 | Post-processing | Freeze, stray-file reconciliation vs the DB, transient-dataset deletion, duplicate-task pause, exhausted transition, per-class dataset lifetimes (14d/40d/30d), completion e-mail | `GenPostProcessor`: freeze plus base bookkeeping only; no lifetime management, no reconciliation, no exhausted handling, no notification | Medium; see recommendations |
-| Task refinement | ES auto-conversion, dataset-registration flags, input-consistency checks, attempt-number filename suffixes | `GenTaskRefiner`: sane defaults (`cloudAsVO`, `messageDriven`, RAM default), none of the above | Low for the current EVGEN path (`noInput`+`noOutput` bypasses most of it) |
+| Task refinement | ES auto-conversion, dataset-registration flags, input-consistency checks, attempt-number filename suffixes | `GenTaskRefiner`: workable defaults (`cloudAsVO`, `messageDriven`, RAM default), none of the above | Low for the current EVGEN path (`noInput`+`noOutput` bypasses most of it) |
 | Job brokerage | ~45 selection stages (data locality, network, IO intensity, quotas, release matching, failure-rate avoidance) | `GenJobBroker`: 9 stages (status, disk, walltime, cores, memory, nPilot, availability, share weight) | Low while tasks pin `site=`; grows directly with multi-site brokered production |
 | Task brokerage | `AtlasProdTaskBroker` assigns nucleus/cloud | epic runs `AtlasProdTaskBroker` too (live config, `epic:managed\|test`) — no generic implementation exists, so the ATLAS one is config-assigned | Working today; its ATLAS-shaped assumptions (nucleus model, CRIC data) become relevant only with multi-site brokered production |
-| Throttling | Thin ATLAS classes over a 265-line base engine (share-aware queue limits and caps) | `GenJobThrottler`: unthrottled if the workqueue has no share value, otherwise **unconditionally throttled** (`GenJobThrottler.py:22-26`) | Latent trap: assigning a global-share value to an epic workqueue would silently stop job generation for it |
-| Watchdogs | `AtlasProdWatchDog` (failure-rate auto-pause, priority boost near completion, reassign with Rucio rule moves), `AtlasAnalWatchDog` (user quotas, priority massage), plus subtype dogs (QueueFiller, TaskWithholder, DataLocalityUpdater, DataCarousel) | `GenWatchDog`: inherits the base recovery loop (`TypicalWatchDogBase.pre_action:15-110` — pending-task reactivation, stuck-contents restart, exhausted kick, goal-reached auto-finish) but `doAction` is empty | The base recovery loop is real and epic has it. The `doAction` tier maps to epicprod's own agent chores — the alarm-pause is the failure-rate auto-pause already rebuilt |
+| Throttling | Thin ATLAS classes over a 265-line base engine (share-aware queue limits and caps) | `GenJobThrottler`: unthrottled if the workqueue has no share value, otherwise **unconditionally throttled** (`GenJobThrottler.py:22-26`) | Assigning a global-share value to an epic workqueue would silently stop its job generation (recommendation 4) |
+| Watchdogs | `AtlasProdWatchDog` (failure-rate auto-pause, priority boost near completion, reassign with Rucio rule moves), `AtlasAnalWatchDog` (user quotas, priority massage), plus subtype watchdogs (QueueFiller, TaskWithholder, DataLocalityUpdater, DataCarousel) | `GenWatchDog`: inherits the base recovery loop (`TypicalWatchDogBase.pre_action:15-110` — pending-task reactivation, stuck-contents restart, exhausted kick, goal-reached auto-finish) but `doAction` is empty | epic inherits the base recovery loop. The `doAction` tier corresponds to epicprod's own agent chores; the epicprod alarm-pause matches the ATLAS failure-rate auto-pause |
 
 ## Findings by axis — classic server
 
@@ -82,28 +75,30 @@ confirming with the PanDA team) pins every severity judgment below.
   output scope, `adder_simple_plugin.py:74`), and `SetupperDummyPlugin`
   creates no dispatch or destination datasets at all — dataset
   registration happens JEDI-side in `SimpleTaskSetupper` instead. One
-  sharp edge: file scope is re-derived from the dataset name only for
+  caveat: file scope is re-derived from the dataset name only for
   `VO == "atlas"` (`taskbuffer/db_proxy_mods/job_complex_module.py:3080`);
   epic files keep whatever scope JEDI assigned. Dormant, but a scope
   mismatch would surface as an adder registration failure.
 - **Closed datasets are a fatal, non-retried job failure** —
   `UnsupportedOperation` is in `_FATAL_REGISTRATION_ERRORS`
   (`dataservice/ddm.py:46-58`) and nothing anywhere in the server reopens
-  a dataset. This is the enforcement-level confirmation that
-  reopen-before-retry was the only lever for the closed-log-DID failure.
+  a dataset. This confirms at the enforcement level that reopening
+  datasets before retry is the only remedy for the closed-log-DID
+  failure.
 - **datasetManager never closes or erases `group.*` datasets in Rucio**
-  while still flipping their PanDA DB rows to completed/deleted
-  (`daemons/scripts/datasetManager.py:194,348,1018`). PanDA-DB and Rucio
-  state diverge by construction, and epic `_sub` datasets accumulate
-  open in BNL Rucio indefinitely. A live count is a one-query check and
-  a candidate for a periodic epicprod cleanup chore.
+  while still setting their PanDA DB rows to completed/deleted
+  (`daemons/scripts/datasetManager.py:194,348,1018`), so PanDA-DB and
+  Rucio state can diverge for any `group.*` dataset the daemon would
+  otherwise manage. For epic this has no effect in practice: the dummy
+  classic setupper creates no `_sub` or dispatch datasets at all
+  (recommendation 2).
 - **Sandbox cache** — purge at mtime > 7 days
   (`daemons/scripts/copyArchive.py:1284-1301`); job generation is what
   refreshes an active task's tarball; `touch_cache_file`
-  (`api/v1/file_server_api.py:404-434`) is the supported keepalive lever,
+  (`api/v1/file_server_api.py:404-434`) is the supported counter-measure,
   addressed per server host. Closed epicprod-side by the nightly sandbox
   keepalive. The API's `delete_cache_file` is a documented dummy.
-- **Smaller ATLAS hardcodes that quietly exclude epic**: server
+- **ATLAS hardcodes that exclude epic**: server
   core-hours metrics require `vo='atlas'`
   (`daemons/scripts/metric_collector.py:92`); watcher heartbeat-timeout
   config is read with `vo="atlas"` so `vo='epic'` CONFIG rows are
@@ -119,17 +114,15 @@ needing integration work, or not applicable.
 - **In use already**: Harvester (VO-generic plugin host — credential
   managers, preparators/stagers, pull and UPS modes), BigMon
   (multi-instance by design), CRIC-style queue configuration.
-- **Adoptable as data, no code** — **the Job Retry Module**: server-side
+- **Adopted as data, no code — the Job Retry Module**: server-side
   automatic retry actions (`no_retry`, `limit_retry`, memory/CPU
   increase) driven by per-error-code rules in the `RETRYERRORS` /
   `RETRYACTIONS` DB tables (`taskbuffer/retryModule.py`, doc
   `advanced/job_retry_module.rst`). VO-generic framework; the rule
-  content is per-instance data. epicprod's accumulated error taxonomy
-  (payload phases, DDM closures, sandbox failures) maps directly onto
-  rules — the highest-leverage adoption in this list. Also **Global
-  Shares** (VO-keyed data model) — with the caveat that the generic
-  throttler's share handling must be understood first (see the trap
-  above).
+  content is per-instance data, and the first epic rules are loaded
+  (recommendation 3). **Global Shares** (VO-keyed data model) is
+  similarly adoptable as data, subject to the throttler share-handling
+  constraint (see Throttling above).
 - **Needing integration work if ever wanted**: iDDS (message-based task
   chaining, HPO, fine-grained carousel; generic framework, ATLAS-named
   reference plugin), Data Carousel (generic engine, ATLAS-only scheduling
@@ -160,7 +153,7 @@ future epicprod needs.
 
 ## Recommendations and status
 
-Items 2-4 were executed against the live systems on 2026-08-12; their
+Items 1-5 were executed against the live systems on 2026-08-12; their
 outcomes are recorded in place.
 
 1. **Verify the live BNL configs** — **closed 2026-08-12**: the live
@@ -178,7 +171,7 @@ outcomes are recorded in place.
    | `[watchdog]` | `GenWatchDog` |
    | `[taskbroker]` | `AtlasProdTaskBroker` for `epic:managed\|test` |
    | `[taskgen]` | `AtlasTaskGenerator` for `epic:managed\|test` |
-   | `adder_plugins` | `AdderSimplePlugin` (the sphenix-lineage generic Rucio adder) |
+   | `adder_plugins` | `AdderSimplePlugin` |
    | `setupper_plugins` | `SetupperDummyPlugin` |
    | `closer_plugins` | atlas-only; no epic entry (closer VO actions are a no-op) |
 
@@ -214,14 +207,14 @@ outcomes are recorded in place.
      futile; task-level handling is the reopen-before-retry doer.
    - `exeErrorCode` 5303, diagnostic matching the sandbox tarball
      download failure → `limit_retry` with `maxAttempt=2` — one extra
-     attempt covers transient blips; the keepalive prevents the
+     attempt covers transient failures; the keepalive prevents the
      standing cause.
 
    The retry module reloads rules on a one-hour cache; normal
    per-job attempt retries are untouched. The live rule set is
    displayed in the System page's PanDA Configuration section
    (`panda-retry-rules` collector).
-4. **Throttler trap — checked, currently safe.** All six epic and wlcg
+4. **Throttler share handling — checked, currently safe.** All six epic and wlcg
    workqueues carry `queue_share = NULL`, the value for which
    `GenJobThrottler` does not throttle. The caveat stands: assigning a
    share value to an epic workqueue without replacing the generic
@@ -245,5 +238,4 @@ outcomes are recorded in place.
 
 Items 3 and 5 follow the standing policy of implementing epicprod-side
 equivalents with credentials already held, rather than requesting PanDA
-server changes; item 3's rule content necessarily loads into the PanDA
-database and goes through the PanDA operations team.
+server changes.
