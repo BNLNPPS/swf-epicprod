@@ -265,8 +265,9 @@ doc does not duplicate them.
 `fetch_payload_log`, `submit_task`, `submit_evgen_task`,
   `panda_task_operation` (including verified pause/resume),
   `panda_task_operations` (one bulk request — pause, resume, retry_failures,
-  or kill — scalar commands paced one second apart, then per-task
-  verification on a shared deadline),
+  or finish — scalar commands paced one second apart, then per-task
+  verification on a shared deadline; retry of an aborted task routes
+  through PanDA reactivation),
   `rucio_snapshot_update`, `evgen_rucio_update`,
 `catalog_import`, `questionnaire_import`, `questionnaire_automatch`,
 `questionnaire_match_update`, `campaign_progress_refresh`,
