@@ -8,19 +8,20 @@ name. The composed tag name is the task identity in every URL, API
 lookup, and MCP tool ([PCS.md](PCS.md)); this document restores its
 uniqueness and closes the paths that let it degrade.
 
-**Delivered 2026-08-11.** All four steps are live: the
-resolver (ambiguity refusal and base resolution on every surface),
-the intake guard, the backfill (family dispositions in
+All four steps were completed 2026-08-11: the resolver (ambiguity
+refusal and base resolution on every surface), the intake guard, the
+backfill (family dispositions in
 [PCS_COMPOSED_NAME_FAMILIES.md](PCS_COMPOSED_NAME_FAMILIES.md);
 5,803 datasets repaired in two passes, 77 physics rebinds all reusing
 existing tags, two OVERLAY background tags, five EVGEN rebinds, the
-rest samples), and the standing invariant. Composed-name collisions
-catalog-wide: zero. Step 4 was delivered as monitoring only — the
-`composed-name-integrity` System page collector with a daily Capcom
-alarm while broken — and the DB constraint was deliberately dropped:
-it would give a missed case crash semantics inside nightly writers
-that are not collision-aware, where the collector gives detection
-within a cycle and curation semantics (operator decision).
+rest samples), and the standing invariant check. Composed-name
+collisions catalog-wide after completion: zero. Step 4 was
+implemented as monitoring only — the `composed-name-integrity` System
+page collector with a daily Capcom alarm while broken. The DB
+constraint was dropped: it would give a missed case crash semantics
+inside nightly writers that are not collision-aware, where the
+collector gives detection within a cycle and curation semantics
+(operator decision).
 
 ## The incident and its mechanism
 

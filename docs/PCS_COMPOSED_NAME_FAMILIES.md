@@ -28,8 +28,8 @@ operator's. Dispositions: **sample** (a `sample_name`, no tag change),
 
 These decisions are the backfill dry-run specification.
 
-**Executed 2026-08-11** by `scripts/backfill_composed_name_samples.py`
-in two passes (the second extended the slug rule class-wide after
+The dispositions were executed 2026-08-11 by
+`scripts/backfill_composed_name_samples.py` in two passes (the second extended the slug rule class-wide after
 physics rebinds surfaced collisions with unsampled past.RECO rows
 outside the first target set): 77 physics rebinds, all reusing
 existing tags; two OVERLAY background tags bound to 16 datasets; five
