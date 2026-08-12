@@ -271,6 +271,8 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
         subject_type='campaign', subject_key=campaign_name,
         username=created_by,
         sublevel='normal', live_default=True,
+        summary=(f'{updated} updated, {attached} attached, {created} new, '
+                 f'{len(unresolved)} unresolved left to curation'),
         message=(f'{campaign_name} reconciled firsthand from Rucio: '
                  f'{updated} updated, {attached} attached to existing '
                  f'editions, {created} new, {len(unresolved)} unresolved '

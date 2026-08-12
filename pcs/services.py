@@ -4258,6 +4258,9 @@ def sweep_rucio_arrivals(*, roots=('/RECO', '/SIMU'), scope='epic',
             instance, 'rucio_arrivals',
             username=created_by,
             sublevel='normal', live_default=True,
+            summary=(f'{total} files arrived: '
+                     + ', '.join(f'{c} +{i["files"]}'
+                                 for c, i in sorted(per_campaign.items()))),
             message=message, **extra)
     return {'total_files': total,
             'campaigns': {c: i['files'] for c, i in per_campaign.items()},
