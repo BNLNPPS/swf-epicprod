@@ -929,6 +929,12 @@ def validation_sample_completion(request, sample):
     read-only. ``sample`` is the PCS composed name."""
     try:
         task = services.resolve_prodtask(sample)
+    except services.AmbiguousIdentity as exc:
+        return Response(
+            {'detail': f"Ambiguous sample '{sample}': "
+                       f"{len(exc.matches)} tasks match",
+             'candidates': [t.name for t in exc.matches]},
+            status=status.HTTP_300_MULTIPLE_CHOICES)
     except ProdTask.DoesNotExist:
         return Response({'detail': f"No sample '{sample}'"},
                         status=status.HTTP_404_NOT_FOUND)

@@ -1206,6 +1206,21 @@ def _known_prodtask_statuses():
     return known
 
 
+class AmbiguousIdentity(ProdTask.DoesNotExist):
+    """A composed name that matches more than one task.
+
+    Subclasses ``ProdTask.DoesNotExist`` so an unupgraded caller treats
+    ambiguity as not-found (no focus, HTTP 404) rather than acting on an
+    arbitrary sibling; surfaces that can present a choice catch this
+    first and offer ``matches`` (docs/PCS_COMPOSED_NAME_INTEGRITY.md).
+    """
+
+    def __init__(self, name, matches):
+        super().__init__(f"{len(matches)} tasks match {name!r}")
+        self.name = name
+        self.matches = matches
+
+
 def resolve_prodtask(name, queryset=None):
     """Resolve a ProdTask by its identity, the way every task URL and the
     ``?name=`` API endpoints key on it. First match wins:
@@ -1214,20 +1229,32 @@ def resolve_prodtask(name, queryset=None):
          identity, an indexed lookup on the stored column;
       2. the stored ``name`` — a legacy csv_import slash path or a native name
          (also indexed; ``name`` is unique);
-      3. a bare integer pk — tolerated for a stale ``/tasks/<pk>/`` link inbound
+      3. the composed base — a name valid before sample-name backfill
+         resolves to its sample-suffixed descendants, so pre-repair URLs
+         and stored keys keep working;
+      4. a bare integer pk — tolerated for a stale ``/tasks/<pk>/`` link inbound
          only. It is never emitted; a detail view 301s it to the composed name.
 
-    Raises ``ProdTask.DoesNotExist`` if nothing matches, so it is a drop-in for
+    Raises ``AmbiguousIdentity`` (a ``ProdTask.DoesNotExist``) when a
+    composed name or base matches several tasks, carrying the match list;
+    plain ``ProdTask.DoesNotExist`` when nothing matches. Drop-in for
     ``queryset.get(name=...)``.
     """
     qs = ProdTask.objects.all() if queryset is None else queryset
     key = str(name)
-    t = qs.filter(dataset__composed_name=key).first()
-    if t is not None:
-        return t
+    matches = list(qs.filter(dataset__composed_name=key)[:20])
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise AmbiguousIdentity(key, matches)
     t = qs.filter(name=key).first()
     if t is not None:
         return t
+    matches = list(qs.filter(dataset__composed_name__startswith=key + '.')[:20])
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise AmbiguousIdentity(key, matches)
     if key.isdigit():
         t = qs.filter(pk=int(key)).first()
         if t is not None:

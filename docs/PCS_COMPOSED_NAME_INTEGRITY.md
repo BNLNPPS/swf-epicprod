@@ -59,9 +59,12 @@ else.
 
 ## Repair plan
 
-Physics tags are not refined: minQ2 and q2-range discrimination
-belongs in the sample segment, not in tag identity, which the Snapper
-per-PC record and the automatch depend on (decision 2026-08-11).
+The sample segment is the default discriminator: it changes no tag
+identity, which the Snapper per-PC record and the automatch depend on.
+A collision family may instead warrant a new physics tag where the
+combinatorics favor one — a discriminator that recurs structurally
+across many datasets rather than labeling a scan point — decided per
+family in the backfill dry-run review (decision 2026-08-11).
 
 1. **Resolver: refuse ambiguity, resolve staleness** —
    `resolve_prodtask` (and `resolve_dataset`) stop returning an

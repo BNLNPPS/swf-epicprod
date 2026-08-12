@@ -82,6 +82,22 @@
 .fd-apply { font-size: .68rem; padding: .05rem .4rem; margin-left: auto; }
 </style>
 
+{% if ambiguous_matches %}
+<div style="margin:1rem 1.5rem 0; padding:.75rem 1rem; border:2px solid #9a6500; border-radius:.375rem; background:#fff8e6; color:#1f1600; font-size:1rem;">
+  <div style="font-weight:600; margin-bottom:.4rem;">
+    {{ ambiguous_matches|length }} tasks share the composed name {{ ambiguous_selected }} — pick the one you mean:
+  </div>
+  {% for m in ambiguous_matches %}
+  <div style="margin:.15rem 0;">
+    <a href="?tab=tasks&amp;selected={{ m.name|urlencode }}">{{ m.name }}</a>
+    <span style="color:#5c4a00;">— {{ m.status }}{% if m.jedi_task_id %} · PanDA {{ m.jedi_task_id }}{% endif %}</span>
+  </div>
+  {% endfor %}
+  <div style="margin-top:.4rem; color:#5c4a00;">
+    These tasks' datasets lack a discriminating sample name; the backfill in progress will make each identity unique.
+  </div>
+</div>
+{% endif %}
 <div class="compose-wrap">
     <!-- LEFT PANE -->
     <div class="component-browser">

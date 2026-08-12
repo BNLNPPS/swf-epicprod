@@ -3924,11 +3924,22 @@ def prod_task_compose(request):
     # task's campaign.
     selected_name = request.GET.get('selected') or None
     focused_task = None
+    ambiguous_matches = None
     if selected_name:
-        from .services import resolve_prodtask
+        from .services import AmbiguousIdentity, resolve_prodtask
         try:
             focused_task = resolve_prodtask(
                 selected_name, ProdTask.objects.select_related('campaign', 'dataset'))
+        except AmbiguousIdentity as exc:
+            ambiguous_matches = [
+                {
+                    'composed_name': t.composed_name,
+                    'name': t.name,
+                    'status': t.status,
+                    'jedi_task_id': t.panda_task_id,
+                }
+                for t in exc.matches
+            ]
         except ProdTask.DoesNotExist:
             focused_task = None
     # Hand the JS the canonical composed name as the selection key (it resolves
@@ -4106,6 +4117,8 @@ def prod_task_compose(request):
         'ai_executed_names': _executed_proposal_names(),
         'focused_task_id': focused_task.id if focused_task else None,
         'focused_campaign': campaign,
+        'ambiguous_selected': request.GET.get('selected') if ambiguous_matches else '',
+        'ambiguous_matches': ambiguous_matches or [],
         'filters': {},
     }
     return render(request, 'pcs/prod_task_compose.html', context)

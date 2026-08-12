@@ -466,6 +466,13 @@ def _prodtask_get_sync(name):
     qs = ProdTask.objects.select_related('dataset', 'prod_config')
     try:
         t = services.resolve_prodtask(name, queryset=qs)
+    except services.AmbiguousIdentity as exc:
+        return {
+            'error': f'Ambiguous name: {len(exc.matches)} tasks match {name}. '
+                     'Retry with one of the candidate names (each is the '
+                     "task's unique stored name).",
+            'candidates': [t.name for t in exc.matches],
+        }
     except ProdTask.DoesNotExist:
         return {'error': f'Task not found: {name}'}
     return _prodtask_to_dict(t, full=True)
