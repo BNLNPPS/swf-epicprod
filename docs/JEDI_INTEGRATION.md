@@ -478,9 +478,13 @@ per manifest row.
   default 30). Tarball names and their source server come from each task's
   stored parameters. It runs nightly as a `catalog_sync` chain step on the
   prod-ops agent; a tarball found already purged is reported per task as
-  not natively retryable. Together with the dataset reopen above, native
-  retry is dependable within the retention window; a full rerun beyond it
-  is a new `.tryN` submission.
+  not natively retryable. The same pass maintains log-dataset lifetimes:
+  candidate tasks' BNL Rucio datasets whose expiry falls inside the
+  retention window are refreshed to the full window, so logs of active or
+  recently-final tasks do not expire on their registration-time clock.
+  Together with the dataset reopen above, native retry is dependable
+  within the retention window; a full rerun beyond it is a new `.tryN`
+  submission.
 
 ### Output authentication
 

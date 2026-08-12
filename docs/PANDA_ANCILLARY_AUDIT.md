@@ -201,15 +201,17 @@ outcomes are recorded in place.
    share value to an epic workqueue without replacing the generic
    throttler silently stops job generation for that queue.
 5. **Dataset lifetime management at task end** (the `doFinalProcedure`
-   gap) — open, design proposed. Epic log datasets receive a 30-day
-   registration-time lifetime and nothing manages it afterward: logs of
-   a task under post-mortem can expire 30 days after task creation
-   regardless of when the task ended. The natural implementation is a
-   lifetime refresh folded into the nightly sandbox keepalive — the
-   candidate-task set is identical, the dataset lookup by `task_id`
-   metadata is already performed there, and the reopen-before-retry
-   doer already refreshes lifetime on retry. Pending a policy decision
-   on the retention target.
+   gap) — **closed 2026-08-12**. Epic log datasets receive a 30-day
+   registration-time lifetime and nothing managed it afterward: logs of
+   a task under post-mortem could expire 30 days after task creation
+   regardless of when the task ended. The lifetime refresh is folded
+   into the nightly sandbox keepalive (identical candidate set, same
+   `task_id` dataset lookup): datasets whose expiry falls inside the
+   retention window are refreshed to the full window, datasets with no
+   expiry are untouched, and the reopen-before-retry doer refreshes on
+   retry. The first live run refreshed 94 of 114 checked datasets —
+   most of the retryable-window population was inside 30 days of
+   deletion.
 6. **Task-brokerage and multi-site posture** — no action now (sites are
    pinned), but any move toward brokered multi-site production makes the
    `GenJobBroker`-vs-ATLAS gap (data locality, failure-rate avoidance,
