@@ -559,6 +559,49 @@ backstop for submission recording.
 generated artifacts and for manual debugging. It is not the normal production
 submit path.
 
+## Residual rerun — `.tryN` over the undelivered remainder (design)
+
+Designed, not implemented. A full `.tryN` rerun regenerates the whole
+workload, delivered rows included; for tasks beyond native retry — purged
+sandbox, exhausted attempts, post-retention — recovery costs the entire
+task. The residual rerun is an ordinary client-API `.tryN` submission whose
+workload is the undelivered remainder: delivered data is never regenerated,
+and JEDI and PanDA see a normal submission (the residual computation is
+entirely PCS-side). Accounting needs no changes — delivery already unions
+across attempts at the physics configuration.
+
+For external-EVGEN tasks (one manifest row per EVGEN file):
+
+1. **Delivered set** — the task's recorded RECO output datasets are listed
+   in JLab Rucio and each output file is mapped back to its manifest row.
+   Output names derive from the input stem by the payload's convention;
+   the first implementation step is extracting that exact transform from
+   the working payload (`run.sh`, the condor reference basis).
+2. **Residual manifest** — the rows whose output is absent.
+   `build_evgen_task_params` gains a residual mode emitting only those
+   rows; job count follows as today.
+3. **Identity** — the next `.tryN` is allocated as today. The `PandaTasks`
+   association records `residual_of` and the row coverage ("M of N rows")
+   in its metadata, so every surface can state what the attempt covers.
+4. **Refusals, never guesses** — no recorded outputs to diff against,
+   an input resolving differently than at first submission, or a zero
+   residual each refuse with the reason instead of submitting.
+
+For generation-only tasks: residual events = target − delivered, with
+delivered taken from registered outputs and the event-measurement store
+(stated as floors). The `.tryN` submits the residual event count with the
+output template `offset` advanced past the prior try's serial range, so
+`${SN}`, file names, and any sequence-derived seeds never collide. The
+operation refuses when delivered events cannot be established.
+
+Operator surface: a **Rerun Residual** action beside **Rerun Entire
+Task**, showing "M undelivered of N" resolved from the outputs listing,
+disabled at zero residual or when the delivered set cannot be established
+(with the reason shown). The first use of the mechanism runs as a
+one-task canary reviewed before general use. Out of scope: PanDA/JEDI
+changes, cross-try Rucio deduplication (try namespaces are distinct), and
+any automatic residual submission — the action is operator-clicked.
+
 ## Infrastructure: What We Know
 
 - **VO**: `eic`
