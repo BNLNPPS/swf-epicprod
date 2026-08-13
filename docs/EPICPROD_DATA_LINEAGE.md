@@ -268,3 +268,16 @@ pointer. The first attempt uses the PCS composed identity name itself
 (`group.EIC:…`); retries and site races append `.tryN` so every concrete PanDA
 task has a unique Rucio namespace. The sweep stays a backfill tool for pre-PanDA
 campaigns, whose legacy DIDs PCS records and presents as found.
+
+## Provenance surfaces
+
+The recorded lineage answers "what produced this dataset, from what
+inputs" on three surfaces, all serving `pcs.services.data_provenance`:
+the Rucio DID detail page's Provenance panel (producing tasks, EVGEN
+inputs — recorded or convention-derived from the payload's physics-path
+law — with the direct xrootd path when an input is unregistered), the
+`pcs_data_provenance` MCP tool (the chat-answer form of the same
+resolution), and the EVGEN Inputs page's registration-coverage section
+— the worklist of EVGEN paths that produced datasets imply but the
+recorded inventory lacks. Convention answers are labeled as such and a
+resolution failure is a stated refusal, never a guessed path.
