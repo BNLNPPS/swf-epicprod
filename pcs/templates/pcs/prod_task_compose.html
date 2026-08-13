@@ -461,6 +461,8 @@
             ${pandaOperationButtonHtml('increase_attempts', 'Add Another Retry', row, currentMaxAttemptLabel(t, jediTaskId))}
             ${pandaOperationButtonHtml('retry_failures', 'Restart Finished Task And Retry Failures', row)}
             <button type="button" class="btn pcs-reset-submit-btn btn-sm pcs-panda-op" data-panda-op="rerun_entire_task">Rerun Entire Task</button>
+            <button type="button" class="btn pcs-reset-submit-btn btn-sm pcs-panda-op" data-panda-op="rerun_residual"
+                    title="Resubmit only the manifest rows with no registered RECO output, as a new try (a preview of the coverage confirms first)">Rerun Residual</button>
         </div>`;
     }
     // Legacy import rows carry an opaque csv_import.<hash> / past.<…> key and a
@@ -1448,6 +1450,28 @@
         } else if (op === 'rerun_entire_task') {
             suffix = 'rerun-entire-task/';
             confirmText = `Rerun the entire campaign task as a new PanDA task attempt? This creates a new output namespace.`;
+        } else if (op === 'rerun_residual') {
+            // Preview first: the coverage (or the refusal reason) comes
+            // from a live diff of the manifest against registered RECO
+            // outputs — button-gated, never in a page render.
+            suffix = 'rerun-residual/';
+            btn.disabled = true;
+            const held = btn.textContent;
+            btn.textContent = 'Checking residual...';
+            let preview = null;
+            try {
+                const pr = await fetch(taskApiUrl(t, 'residual-preview/'));
+                preview = await pr.json();
+            } catch (e) { preview = {refusal: `preview failed: ${e}`}; }
+            btn.disabled = false;
+            btn.textContent = held;
+            if (!preview || preview.refusal || preview.detail) {
+                alert(`Residual rerun refused: ${preview && (preview.refusal || preview.detail) || 'no preview'}`);
+                return;
+            }
+            confirmText = `Rerun the residual as a new PanDA task attempt? `
+                + `${preview.rows_residual} of ${preview.rows_total} manifest rows have no `
+                + `registered RECO output and will be resubmitted; delivered rows are not regenerated.`;
         } else {
             return;
         }
@@ -1464,7 +1488,7 @@
         if (resp.ok) {
             const updated = await resp.json().catch(() => null);
             updateTaskFromApiData(t.id, updated);
-            if (op === 'rerun_entire_task') {
+            if (op === 'rerun_entire_task' || op === 'rerun_residual') {
                 pendingSubmitName = t.name;
                 subscribeSubmitOutcomes();
                 if (submitPollTimer) clearTimeout(submitPollTimer);
