@@ -544,6 +544,9 @@ shows the `PanDA Tasks` table and these actions:
 - **Restart And Retry Failures** for `retry_task(jediTaskID,
   new_parameters={})` on an existing task.
 - **Rerun Entire Task** for a new `.tryN` physical submission.
+- **Rerun Residual** for a new `.tryN` covering only the manifest rows
+  with no registered RECO output — preview-then-confirm ("M of N
+  rows"); see [Residual rerun](#residual-rerun--tryn-over-the-undelivered-remainder).
 
 The monitor task and job pages provide PanDA state, job counts, final-failure
 rates, payload-log access, and links back to the associated campaign task.
