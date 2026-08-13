@@ -235,7 +235,66 @@ Context expected:
   <strong>Backgd</strong>: background-study dataset
 </div>
 
-<div class="dataTables_wrapper pcs-tlf-list-wrap table-responsive">
+<!-- Task actions above the table (house law: controls never sit below
+     a table): tick rows, then one bulk action applies to all selected. -->
+<div class="card mb-2">
+  <div class="card-body py-2">
+    <div class="mb-1"><strong>Task actions</strong>
+      <span class="text-muted">— tick rows in the table, then apply one action to all selected:</span></div>
+    <div class="pcs-tlf-bulk d-flex align-items-center gap-2">
+      <span class="text-muted small"><span id="pcs-tlf-count">0</span> selected</span>
+      <div class="btn-group btn-group-sm ms-2" role="group" aria-label="Bulk actions">
+        <button type="button" class="btn btn-success" data-bulk="submit" disabled>Submit</button>
+        <button type="button" class="btn btn-secondary" data-bulk="archive" disabled>Archive</button>
+        <button type="button" class="btn btn-secondary" data-bulk="withdraw" disabled>Withdraw</button>
+        <button type="button" class="btn btn-secondary" data-bulk="clone" disabled>Clone</button>
+        <button type="button" class="btn btn-secondary" data-bulk="priority" disabled>Set priority&hellip;</button>
+        <button type="button" class="btn btn-secondary" data-bulk="propagation" disabled>Campaign propagation&hellip;</button>
+        <button type="button" class="btn btn-success" data-bulk="ai_approve" disabled>Approve AI</button>
+        <button type="button" class="btn btn-secondary" data-bulk="ai_deny" disabled>Deny AI</button>
+        <button type="button" class="btn btn-dark-green" data-bulk="ai_undo" disabled
+                title="Undo executed AI proposals on the selected datasets — restores the pre-approval state and returns the proposals to pending; the events remain on the record">Undo AI</button>
+      </div>
+      <select id="pcs-ai-quality" class="form-select form-select-sm ms-1" style="width:auto"
+              title="Optional quality tag recorded with an AI proposal decision (worst to best; 'wrong' marks the proposal miscalibrated and counts against the proposer's track record)">
+        <option value="">quality&hellip;</option>
+        <option value="wrong">wrong</option>
+        <option value="poor">poor</option>
+        <option value="ok">ok</option>
+        <option value="good">good</option>
+      </select>
+      <span class="text-muted small ms-auto">Showing {{ tasks|length }} task{{ tasks|length|pluralize }}</span>
+    </div>
+    <div id="pcs-prop-panel" class="mt-2 p-2 border rounded" style="display:none; max-width:60em">
+      {% csrf_token %}
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <strong>Campaign propagation</strong>
+        <span class="text-muted">(<span id="pcs-prop-count">0</span> selected)</span>
+        <select id="pcs-prop-state" class="form-select" style="width:auto">
+          <option value="continue">continue</option>
+          <option value="hold">hold</option>
+          <option value="final">final</option>
+        </select>
+        <input id="pcs-prop-replaced-by" class="form-control" style="width:26em"
+               placeholder="replaced by (composed name, optional)">
+      </div>
+      <div id="pcs-prop-need-comment" class="pcs-prop-need mt-2" style="display:none">
+        A comment is required — a sentence on why, with its source. Enter completes the change.
+      </div>
+      <div class="d-flex align-items-start gap-2 mt-2">
+        <textarea id="pcs-prop-comment" class="form-control" rows="2"
+                  placeholder="Comment (required) — the why, with its source">{{ propagation_last_comment }}</textarea>
+        <button type="button" id="pcs-prop-apply" class="btn btn-success">Apply</button>
+        <button type="button" id="pcs-prop-cancel" class="btn btn-secondary">Cancel</button>
+      </div>
+      <div id="pcs-prop-result" class="mt-1" style="color:#b02a37"></div>
+    </div>
+  </div>
+</div>
+
+<!-- No overflow wrapper: the house table helper owns overflow, and an
+     outer scroll container breaks its latched-header geometry. -->
+<div class="dataTables_wrapper pcs-tlf-list-wrap">
   <table class="table table-sm pcs-tlf-list{% if catalog_view == 'progress' %} pcs-tlf-progress{% endif %} dataTable mb-1">
     <thead>
       <tr>
@@ -444,56 +503,6 @@ Context expected:
       <tr id="pcs-tlf-empty" style="display:none"><td colspan="{% if catalog_view == 'progress' %}10{% else %}11{% endif %}" class="text-center text-muted py-3">No tasks match the current filter.</td></tr>
     </tbody>
   </table>
-</div>
-
-<div class="pcs-tlf-bulk mt-1 d-flex align-items-center gap-2">
-  <span class="text-muted small"><span id="pcs-tlf-count">0</span> selected</span>
-  <div class="btn-group btn-group-sm ms-2" role="group" aria-label="Bulk actions">
-    <button type="button" class="btn btn-success" data-bulk="submit" disabled>Submit</button>
-    <button type="button" class="btn btn-secondary" data-bulk="archive" disabled>Archive</button>
-    <button type="button" class="btn btn-secondary" data-bulk="withdraw" disabled>Withdraw</button>
-    <button type="button" class="btn btn-secondary" data-bulk="clone" disabled>Clone</button>
-    <button type="button" class="btn btn-secondary" data-bulk="priority" disabled>Set priority…</button>
-    <button type="button" class="btn btn-secondary" data-bulk="propagation" disabled>Campaign propagation…</button>
-    <button type="button" class="btn btn-success" data-bulk="ai_approve" disabled>Approve AI</button>
-    <button type="button" class="btn btn-secondary" data-bulk="ai_deny" disabled>Deny AI</button>
-    <button type="button" class="btn btn-dark-green" data-bulk="ai_undo" disabled
-            title="Undo executed AI proposals on the selected datasets — restores the pre-approval state and returns the proposals to pending; the events remain on the record">Undo AI</button>
-  </div>
-  <select id="pcs-ai-quality" class="form-select form-select-sm ms-1" style="width:auto"
-          title="Optional quality tag recorded with an AI proposal decision (worst to best; 'wrong' marks the proposal miscalibrated and counts against the proposer's track record)">
-    <option value="">quality&hellip;</option>
-    <option value="wrong">wrong</option>
-    <option value="poor">poor</option>
-    <option value="ok">ok</option>
-    <option value="good">good</option>
-  </select>
-  <span class="text-muted small ms-auto">Showing {{ tasks|length }} task{{ tasks|length|pluralize }}</span>
-</div>
-
-<div id="pcs-prop-panel" class="mt-2 p-2 border rounded" style="display:none; max-width:60em">
-  {% csrf_token %}
-  <div class="d-flex align-items-center gap-2 flex-wrap">
-    <strong>Campaign propagation</strong>
-    <span class="text-muted">(<span id="pcs-prop-count">0</span> selected)</span>
-    <select id="pcs-prop-state" class="form-select" style="width:auto">
-      <option value="continue">continue</option>
-      <option value="hold">hold</option>
-      <option value="final">final</option>
-    </select>
-    <input id="pcs-prop-replaced-by" class="form-control" style="width:26em"
-           placeholder="replaced by (composed name, optional)">
-  </div>
-  <div id="pcs-prop-need-comment" class="pcs-prop-need mt-2" style="display:none">
-    A comment is required — a sentence on why, with its source. Enter completes the change.
-  </div>
-  <div class="d-flex align-items-start gap-2 mt-2">
-    <textarea id="pcs-prop-comment" class="form-control" rows="2"
-              placeholder="Comment (required) — the why, with its source">{{ propagation_last_comment }}</textarea>
-    <button type="button" id="pcs-prop-apply" class="btn btn-success">Apply</button>
-    <button type="button" id="pcs-prop-cancel" class="btn btn-secondary">Cancel</button>
-  </div>
-  <div id="pcs-prop-result" class="mt-1" style="color:#b02a37"></div>
 </div>
 
 <script>
