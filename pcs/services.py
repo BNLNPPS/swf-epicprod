@@ -4595,7 +4595,8 @@ def rename_pcs_current_campaign(new_name, *, created_by='operator'):
 
 
 def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
-                               panda_tasks_id=None, task_name=None):
+                               panda_tasks_id=None, task_name=None,
+                               residual=None):
     """
     Record outcome of a JEDI submission.
 
@@ -4665,6 +4666,12 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
                 status=409,
             )
         row.jedi_task_id = incoming
+        if residual:
+            # Residual .tryN coverage (JEDI_INTEGRATION.md § Residual
+            # rerun): what fraction of the manifest this attempt covers.
+            meta = dict(row.metadata or {})
+            meta['residual'] = residual
+            row.metadata = meta
         if not row.out_ds:
             row.out_ds = row.task_name
         if not row.log_ds:
@@ -4683,7 +4690,7 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
     return task
 
 
-def prodtask_submit_request(*, task):
+def prodtask_submit_request(*, task, residual=False, residual_of=None):
     """Publish a submit_task request for a locked (ready) task to the prod-ops
     agent. The web tier holds no PanDA credential — it only asks the agent to
     run the submission, which records the jediTaskID back. Gates mirror
@@ -4703,7 +4710,14 @@ def prodtask_submit_request(*, task):
     # noInput+noOutput, payload-staged EVGEN, self-registered RECO. The prun
     # doer ('submit_task', build_panda_command, submit-prod-task.py) is kept but
     # sidelined — not wired to the button. See docs/JEDI_INTEGRATION.md.
-    panda_tasks = prodtask_allocate_panda_tasks(task=task)
+    panda_tasks = prodtask_allocate_panda_tasks(
+        task=task,
+        source='pcs_rerun_residual' if residual else 'pcs_submit_request')
+    if residual:
+        meta = dict(panda_tasks.metadata or {})
+        meta['residual_of'] = residual_of
+        panda_tasks.metadata = meta
+        panda_tasks.save(update_fields=['metadata', 'updated_at'])
     msg = {
         'msg_type': 'submit_evgen_task',
         'namespace': 'prodops',
@@ -4711,6 +4725,7 @@ def prodtask_submit_request(*, task):
         'panda_tasks_id': panda_tasks.pk,
         'panda_task_name': panda_tasks.task_name,
         'owner': task.created_by,
+        'residual': bool(residual),
     }
     from monitor_app.activemq_connection import ActiveMQConnectionManager
     try:
@@ -4807,6 +4822,31 @@ def prodtask_rerun_entire_task_request(*, task):
     task.save(update_fields=['panda_task_id', 'status', 'updated_at'])
     try:
         prodtask_submit_request(task=task)
+    except Exception:
+        task.panda_task_id = old_panda_task_id
+        task.status = old_status
+        task.save(update_fields=['panda_task_id', 'status', 'updated_at'])
+        raise
+    return task
+
+
+def prodtask_rerun_residual_request(*, task):
+    """Queue a residual .tryN submission covering the undelivered
+    remainder (docs/JEDI_INTEGRATION.md § Residual rerun). The spec
+    builder computes the residual and refuses when it cannot be
+    established; a refusal surfaces through the submission-failure path
+    with its reason."""
+    if task.panda_task_id is None:
+        raise ServiceError(
+            'Task has no recorded PanDA submission; use Submit to PanDA.', status=409)
+    old_panda_task_id = task.panda_task_id
+    old_status = task.status
+    task.panda_task_id = None
+    task.status = 'draft'
+    task.save(update_fields=['panda_task_id', 'status', 'updated_at'])
+    try:
+        prodtask_submit_request(task=task, residual=True,
+                                residual_of=old_panda_task_id)
     except Exception:
         task.panda_task_id = old_panda_task_id
         task.status = old_status

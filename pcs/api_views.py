@@ -455,8 +455,11 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
                             {'detail': f'No PandaTasks association {panda_tasks_id} for this task.'},
                             status=status.HTTP_404_NOT_FOUND,
                         )
-                return JsonResponse(build_evgen_task_params(task, panda_tasks=panda_tasks),
-                                    json_dumps_params={'indent': 2})
+                residual = request.query_params.get('residual') in ('1', 'true')
+                return JsonResponse(
+                    build_evgen_task_params(task, panda_tasks=panda_tasks,
+                                            residual=residual),
+                    json_dumps_params={'indent': 2})
             except ValueError as e:
                 return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
             except ServiceError as e:
@@ -540,6 +543,33 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
         return Response(result, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['get'], url_path='residual-preview')
+    def residual_preview(self, request, name=None):
+        """The residual coverage a Rerun Residual would submit: rows_total,
+        rows_residual, checked_dids — or the refusal reason. Read-only;
+        performs the JLab listing on demand (button-gated, never in a
+        page render)."""
+        task = self.get_object()
+        from .commands import build_evgen_task_params
+        try:
+            spec = build_evgen_task_params(task, residual=True)
+        except ValueError as e:
+            return Response({'refusal': str(e)})
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(spec['residual'])
+
+    @action(detail=True, methods=['post'], url_path='rerun-residual')
+    def rerun_residual(self, request, name=None):
+        """Queue a residual .tryN submission over the undelivered
+        remainder (docs/JEDI_INTEGRATION.md § Residual rerun)."""
+        task = self.get_object()
+        try:
+            services.prodtask_rerun_residual_request(task=task)
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(self.get_serializer(task).data)
 
     @action(detail=True, methods=['post'], url_path='rerun-entire-task')
     def rerun_entire_task(self, request, name=None):
@@ -702,6 +732,7 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
                 new_status=request.data.get('status', 'submitted'),
                 panda_tasks_id=request.data.get('panda_tasks_id'),
                 task_name=request.data.get('panda_task_name') or request.data.get('task_name'),
+                residual=request.data.get('residual'),
             )
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
