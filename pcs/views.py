@@ -1701,9 +1701,11 @@ def evgen_inputs(request):
         logging.getLogger(__name__).error(
             'EVGEN coverage build failed: %s', exc)
 
+    view = 'coverage' if request.GET.get('view') == 'coverage' \
+        else 'inventory'
     return render(request, 'pcs/evgen_inputs.html', {
         'rows': rows, 'totals': totals, 'fetched_at': fetched_at,
-        'error': error,
+        'error': error, 'view': view,
         'coverage_missing': coverage['missing'],
         'coverage_total': coverage['total'],
     })

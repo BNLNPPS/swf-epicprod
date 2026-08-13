@@ -35,6 +35,13 @@
 
   {% if error %}<p><strong>{{ error }}</strong></p>{% endif %}
 
+  {# First-class page views as server-routed tabs; the URL carries the view. #}
+  <nav class="swf-page-tabs">
+    <a href="{% url 'pcs:evgen_inputs' %}" {% if view != 'coverage' %}class="active"{% endif %}>Inventory</a>
+    <a href="{% url 'pcs:evgen_inputs' %}?view=coverage" {% if view == 'coverage' %}class="active"{% endif %}>Registration coverage{% if coverage_missing %} ({{ coverage_missing|length }} missing){% endif %}</a>
+  </nav>
+
+  {% if view != 'coverage' %}
   {% if rows %}
   <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
     <thead>
@@ -63,9 +70,10 @@
     </tbody>
   </table>
 
-  {# Registration coverage of produced data — the worklist of EVGEN
-     inputs that produced datasets imply but the inventory lacks. #}
-  <h2 class="h5 mt-4">Registration coverage of produced data</h2>
+  {% endif %}
+  {% else %}
+  {# The worklist of EVGEN inputs produced datasets imply but the inventory lacks. #}
+  <h2 class="h5 mt-3">Registration coverage of produced data</h2>
   {% if coverage_missing %}
   <p class="mb-2">Of <strong>{{ coverage_total }}</strong> EVGEN paths implied by recorded
     produced datasets, <strong>{{ coverage_missing|length }}</strong> are not registered in
