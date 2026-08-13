@@ -2337,6 +2337,48 @@ def pcs_config_detail(request, label):
     })
 
 
+def _plan_delivery_embed(campaign):
+    """The campaign's arrivals quilt over the last 30 days for the plan
+    page (CAMPAIGN_DELIVERY.md surface 3): the factorized snapper embed
+    as a cached product, built from the delivery component's snaps
+    alone, click-through to the campaign Time history. None when the
+    campaign has no recorded deliveries in the window or the build
+    fails (failure is logged, never fatal to the plan page)."""
+    import logging
+    from datetime import timedelta
+    from urllib.parse import quote
+
+    from django.utils import timezone as dj_timezone
+
+    from monitor_app.cached_product import get_product
+    from snapper_ai.embed import embed_context
+
+    def build():
+        now = dj_timezone.now()
+        ctx = embed_context(
+            'epicprod', now - timedelta(days=30), now,
+            families=(f'Arrivals {campaign.name} files',),
+            snap_components=('delivery',))
+        if ctx.get('error'):
+            raise RuntimeError(ctx['error'])
+        ctx['report_focus_slug'] = 'campaign'
+        ctx['report_query'] += f'&campaign={quote(campaign.name)}'
+        return ctx
+
+    try:
+        product = get_product(
+            f'snapper_embed:v1:pcs_plan:{campaign.name}', build,
+            ttl_seconds=300)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).error(
+            'plan delivery embed failed for %s: %s', campaign.name, exc)
+        return None
+    ctx = product.get('value')
+    if not ctx or not ctx.get('has_points'):
+        return None
+    return ctx
+
+
 def pcs_campaign_plan(request):
     """The campaign plan list (CAMPAIGN_DELIVERY.md surface 1): one
     active or future campaign's physics configurations with the
@@ -2515,6 +2557,8 @@ def pcs_campaign_plan(request):
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
         'plan_campaigns': plan_campaigns,
+        'snapper_embed': (_plan_delivery_embed(campaign)
+                          if campaign is not None else None),
         'rows': rows,
         'total': len(rows_all),
         'shown': len(rows),

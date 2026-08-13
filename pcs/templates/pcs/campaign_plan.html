@@ -20,7 +20,7 @@
             <span class="text-lowercase">· {{ c.lifecycle }}</span></a>
         {% endfor %}
         {% if campaign %}
-        <a style="margin-left: 1cm;" href="{% url 'snapper_ai:snapper_report' scope='epicprod' %}?families=Delivery%20{{ campaign.name|urlencode }}&window=30d">{{ campaign.name }} delivery time history</a>
+        <a style="margin-left: 1cm;" href="{% url 'snapper_ai:snapper_focus' scope='epicprod' focus_slug='campaign' %}?window=30d&campaign={{ campaign.name|urlencode }}">{{ campaign.name }} delivery time history</a>
         {% endif %}
     </div>
 
@@ -35,6 +35,15 @@
         {% if target_total %}· target total
         <strong id="plan-target-total">{{ target_total }}</strong> events{% endif %}
     </p>
+
+    {% if snapper_embed %}
+    <!-- The delivery map above the plan: last-30-day arrivals quilt
+         (snapper embed, cached product); click lands on the campaign
+         Time history. -->
+    <div class="mb-3">
+        {% include 'snapper_ai/_snapper_embed.html' with embed=snapper_embed %}
+    </div>
+    {% endif %}
 
     <div class="mb-3">
         {% for label, f in facet_rows %}
