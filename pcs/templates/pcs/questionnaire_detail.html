@@ -81,8 +81,7 @@
     <div class="card-body">
       <h2 class="h5 card-title">Production Matches</h2>
       {% if matches %}
-      <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
+        <table class="table table-sm align-middle mb-0 swf-sortable">
           <thead>
             <tr>
               <th>Task</th>
@@ -126,7 +125,6 @@
             {% endfor %}
           </tbody>
         </table>
-      </div>
       {% else %}
       <p class="text-muted mb-0">No production matches recorded.</p>
       {% endif %}

@@ -96,8 +96,8 @@
   </div>
   {% endif %}
 
-  <div class="table-responsive">
-    <table class="table table-sm table-striped align-middle pcs-qf-list" style="width:auto; min-width: 96rem;">
+  <!-- House frame owns overflow and latches the header; no outer wrapper. -->
+    <table class="table table-sm table-striped align-middle pcs-qf-list swf-latch-head" style="width:auto; min-width: 96rem;">
 	      <thead>
 	        <tr>
 	          <th>Submitted</th>
@@ -159,7 +159,6 @@
           </tr>
       </tbody>
 	    </table>
-	  </div>
   {% if user.is_authenticated %}
     {% for q in questionnaires %}
     <div class="modal fade" id="questionnaire-raw-{{ q.id }}" tabindex="-1"
