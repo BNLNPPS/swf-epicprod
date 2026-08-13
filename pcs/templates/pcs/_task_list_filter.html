@@ -263,7 +263,7 @@ Context expected:
         <option value="ok">ok</option>
         <option value="good">good</option>
       </select>
-      <span class="text-muted small ms-auto">Showing {{ tasks|length }} task{{ tasks|length|pluralize }}</span>
+      <span class="text-muted small ms-auto">Showing <span id="pcs-tlf-shown">{{ tasks|length }}</span> of {{ tasks|length }} task{{ tasks|length|pluralize }}</span>
     </div>
     <div id="pcs-prop-panel" class="mt-2 p-2 border rounded" style="display:none; max-width:60em">
       {% csrf_token %}
@@ -703,6 +703,8 @@ Context expected:
       if (show) visible++;
     }
     if (emptyRow) emptyRow.style.display = (visible === 0 && dataRows.length > 0) ? '' : 'none';
+    const shownEl = document.getElementById('pcs-tlf-shown');
+    if (shownEl) shownEl.textContent = visible;
     renderBar();
     syncUrl();
   }
