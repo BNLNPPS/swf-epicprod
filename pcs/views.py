@@ -6,6 +6,7 @@ Tag list views use server-side DataTables via monitor_app._datatable_base.html.
 Read operations are public; create/edit/lock require login.
 """
 import json
+import logging
 import time
 import hashlib
 from functools import wraps
@@ -1647,9 +1648,64 @@ def evgen_inputs(request):
         'bytes': sum(r['bytes'] for r in rows),
         'matched': sum(1 for r in rows if r['dataset'] is not None),
     }
+
+    # Registration coverage of produced data: the convention-side EVGEN
+    # path of every recorded RECO/FULL output (the payload's physics-path
+    # law), diffed against this same recorded inventory — a registration
+    # worklist. The task-overrides scan is a long build, so it serves as
+    # a cached product (docs/CACHED_PRODUCTS.md); no Rucio call either
+    # way.
+    from monitor_app.cached_product import get_product
+    from .services import XROOTD_EPIC_BASE
+
+    def _build_coverage():
+        registered_paths = set()
+        for record in records:
+            did = str(_rucio_evgen_entry(record)['did'] or '')
+            registered_paths.add('/' + did.partition(':')[2].lstrip('/')
+                                 if ':' in did else '/' + did.lstrip('/'))
+        convention = {}
+        for t in ProdTask.objects.all():
+            for entry in (t.overrides or {}).get('outputs') or []:
+                did = str(entry.get('did') or '')
+                path = '/' + did.partition(':')[2].lstrip('/') \
+                    if ':' in did else '/' + did.lstrip('/')
+                segs = [s for s in path.split('/') if s]
+                if len(segs) > 3 and segs[0] in ('RECO', 'FULL'):
+                    epath = '/EVGEN/' + '/'.join(segs[3:])
+                    info = convention.setdefault(
+                        epath, {'evgen_path': epath,
+                                'xrootd_path': XROOTD_EPIC_BASE + epath,
+                                'reco_examples': set(), 'tasks': set()})
+                    info['reco_examples'].add(path)
+                    info['tasks'].add(t.composed_name)
+        missing = []
+        for epath in sorted(convention):
+            if epath in registered_paths:
+                continue
+            info = convention[epath]
+            missing.append({
+                'evgen_path': epath,
+                'xrootd_path': info['xrootd_path'],
+                'reco_example': sorted(info['reco_examples'])[0],
+                'tasks': sorted(info['tasks'])[:3],
+            })
+        return {'missing': missing, 'total': len(convention)}
+
+    coverage = {'missing': [], 'total': 0}
+    try:
+        product = get_product(f'evgen_coverage:v1:{fetched_at or "none"}',
+                              _build_coverage, ttl_seconds=3600)
+        coverage = product.get('value') or coverage
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).error(
+            'EVGEN coverage build failed: %s', exc)
+
     return render(request, 'pcs/evgen_inputs.html', {
         'rows': rows, 'totals': totals, 'fetched_at': fetched_at,
         'error': error,
+        'coverage_missing': coverage['missing'],
+        'coverage_total': coverage['total'],
     })
 
 

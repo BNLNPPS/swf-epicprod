@@ -348,6 +348,48 @@ async def pcs_dataset_list(
     )
 
 
+def _data_provenance_sync(*, did_or_path):
+    from pcs import services
+    try:
+        return services.data_provenance(did_or_path)
+    except services.ServiceError as e:
+        return {'error': e.detail}
+
+
+@mcp.tool()
+async def pcs_data_provenance(did_or_path: str) -> dict:
+    """
+    Provenance for one production dataset: what produced it and what its
+    inputs were, or (for an EVGEN input) what consumes it. Use this to
+    answer questions like "where are the hepmc3/EVGEN input files for
+    this RECO dataset?" — the exact question the collaboration asks in
+    chat.
+
+    Args:
+        did_or_path: A JLab Rucio DID or bare path, either side.
+            Examples:
+            'epic:/RECO/26.03.0/epic_craterlake/BACKGROUNDS/BEAMGAS/proton/pythia8.306-1.0/275GeV'
+            '/EVGEN/BACKGROUNDS/BEAMGAS/electron/GETaLM1.0.0-1.1/18GeV'
+            Scope defaults to 'epic' when absent.
+
+    Returns:
+        role: 'reco' | 'full' | 'evgen'.
+        producing_tasks / consuming_tasks: catalog tasks with their
+            composed names (usable with pcs_prodtask_get).
+        evgen_inputs: one entry per input — did, registered (bool),
+            xrootd_path (the direct root:// path; give this to the user
+            when registered is false, since Rucio download will not
+            work then), source 'recorded' (catalog fact) or
+            'convention' (derived from the payload's path law — normally
+            reliable, say which it was).
+        reco_outputs: recorded produced datasets for an EVGEN input.
+        refusal: non-empty when nothing resolves — report it verbatim
+            rather than guessing a path.
+    """
+    return await sync_to_async(_data_provenance_sync)(
+        did_or_path=did_or_path)
+
+
 @mcp.tool()
 async def pcs_dataset_get(name: str = None, did: str = None,
                           dataset_name: str = None) -> dict:
