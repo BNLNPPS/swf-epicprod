@@ -127,6 +127,7 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
         _ensure_csvimport_anchors()
 
     updated, attached, created, unresolved = 0, 0, 0, []
+    name_conflicts = []
     for path_key, block in (snapshot.get('campaigns') or {}).items():
         segs = [s for s in path_key.split('/') if s]
         if len(segs) < 2:
@@ -211,7 +212,53 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
 
             # No edition of this configuration exists: create one,
             # past-ingest style (anchor evgen/simu/reco, refinement is
-            # curation), with its own past_output task.
+            # curation), with its own past_output task. The composed
+            # name must be honestly unique first: a taken name means
+            # either the true discriminator is the generator (derive it
+            # from the path and bind the real EVGEN tag), or the row IS
+            # that identity (attach), or the physics is unresolved and
+            # goes to curation — never a silent same-name create.
+            evgen_tag = anchor_evgen
+            candidate = Dataset(
+                scope='group.EIC',
+                detector_version=version,
+                detector_config=decomposed.get('detector_config', ''),
+                physics_tag=physics_tag, evgen_tag=evgen_tag,
+                simu_tag=anchor_simu, reco_tag=anchor_reco,
+                metadata=metadata)
+            name = candidate.build_dataset_name()
+            if Dataset.objects.filter(composed_name=name).exists():
+                from .physics_config import evgen_identity
+                from .services import find_or_create_evgen_tag
+                ident, _source = evgen_identity(candidate)
+                if ident is not None:
+                    generator, gen_version, radiative = ident
+                    params = {'generator': generator,
+                              'generator_version': gen_version}
+                    if radiative:
+                        params['radiative'] = radiative
+                    evgen_tag, _action = find_or_create_evgen_tag(
+                        params, created_by=created_by or 'rucio_reconcile')
+                    candidate.evgen_tag = evgen_tag
+                    name = candidate.build_dataset_name()
+                if Dataset.objects.filter(composed_name=name).exists():
+                    holder = (Dataset.objects
+                              .filter(composed_name=name)
+                              .order_by('pk').first())
+                    if evgen_tag is not anchor_evgen:
+                        # Same name with the real generator bound: this
+                        # DID is that identity — attach its payload.
+                        _upsert_task_output(
+                            _identity_task(holder.composed_name),
+                            _outputs_entry(did, stage, version, filters,
+                                           rses, files, size, complete))
+                        pc_heads[key] = holder
+                        attached += 1
+                        continue
+                    # Unresolved evgen against a taken name: curation
+                    # territory, never a silent duplicate identity.
+                    name_conflicts.append(did)
+                    continue
             edition, _ = Dataset.objects.get_or_create(
                 dataset_name=pcs_name, block_num=1,
                 defaults=dict(
@@ -219,7 +266,7 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
                     detector_version=version,
                     detector_config=decomposed.get('detector_config', ''),
                     campaign=campaign,
-                    physics_tag=physics_tag, evgen_tag=anchor_evgen,
+                    physics_tag=physics_tag, evgen_tag=evgen_tag,
                     simu_tag=anchor_simu, reco_tag=anchor_reco,
                     file_count=files, data_size=size,
                     description='', metadata=metadata,
@@ -246,6 +293,7 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
     summary = {'campaign': campaign_name, 'updated': updated,
                'attached': attached, 'created': created,
                'unresolved': len(unresolved),
+               'name_conflicts': len(name_conflicts),
                'ownership_moved': ownership.get('moved_to_refs', 0)}
     log_epicprod_action(
         'catalog-sync', 'rucio_reconcile',
@@ -253,14 +301,24 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
         username=created_by,
         sublevel='normal', live_default=True,
         summary=(f'{updated} updated, {attached} attached, {created} new, '
-                 f'{len(unresolved)} unresolved left to curation'),
+                 f'{len(unresolved)} unresolved left to curation'
+                 + (f', {len(name_conflicts)} name-conflict DIDs held'
+                    if name_conflicts else '')),
         message=(f'{campaign_name} reconciled firsthand from Rucio: '
                  f'{updated} updated, {attached} attached to existing '
                  f'editions, {created} new, {len(unresolved)} unresolved '
-                 f'left to curation'),
+                 f'left to curation'
+                 + (f'; {len(name_conflicts)} DIDs held: unresolved '
+                    f'generator on a taken composed name'
+                    if name_conflicts else '')),
         **summary,
     )
     if unresolved:
         _log.warning('rucio_reconcile %s unresolved DIDs: %s',
                      campaign_name, unresolved[:10])
-    return {**summary, 'unresolved_dids': unresolved}
+    if name_conflicts:
+        _log.warning('rucio_reconcile %s name-conflict DIDs held for '
+                     'curation (unresolved evgen on a taken composed '
+                     'name): %s', campaign_name, name_conflicts[:10])
+    return {**summary, 'unresolved_dids': unresolved,
+            'name_conflict_dids': name_conflicts}
