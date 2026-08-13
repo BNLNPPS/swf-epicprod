@@ -1615,6 +1615,148 @@ def _csvimport_slug(dataset_path, gen_version):
 # compose title strips it the same way).
 EPIC_VOLATILE_PREFIX = '/volatile/eic/EPIC/'
 
+# The collaboration xrootd door in front of the volatile area — the same
+# endpoint the production payload streams EVGEN from
+# (simulation_campaign_hepmc3 run.sh: XRDRURL root://dtn-eic.jlab.org/).
+XROOTD_EPIC_BASE = 'root://dtn-eic.jlab.org//volatile/eic/EPIC'
+
+
+def _jlab_did_exists(scope, name):
+    """True when the DID is registered in JLab Rucio (public eicread
+    check); False on not-found; a Rucio outage raises ServiceError so an
+    unreachable catalog never reads as 'unregistered'."""
+    try:
+        fetch_jlab_rucio_did(scope, name)
+        return True
+    except ServiceError as e:
+        if getattr(e, 'status', None) == 404:
+            return False
+        raise
+
+
+def _provenance_task_scan(path):
+    """(producing, consuming) ProdTask lists for one normalized path:
+    tasks recording it among their outputs entries/refs, and tasks whose
+    matched EVGEN inputs name it. One bounded pass over the catalog."""
+    producing, consuming = [], []
+    for task in ProdTask.objects.select_related('dataset').all():
+        overrides = task.overrides or {}
+        out_paths = set()
+        for entry in (overrides.get('outputs') or []):
+            did = str(entry.get('did') or '')
+            out_paths.add('/' + did.partition(':')[2].lstrip('/')
+                          if ':' in did else '/' + did.lstrip('/'))
+        for ref in (overrides.get('output_refs') or []):
+            did = str(ref.get('did') or '')
+            out_paths.add('/' + did.partition(':')[2].lstrip('/')
+                          if ':' in did else '/' + did.lstrip('/'))
+        if path in out_paths:
+            producing.append(task)
+        for inp in (task.inputs or []):
+            did = str(inp.get('did') or '')
+            in_path = '/' + did.partition(':')[2].lstrip('/') \
+                if ':' in did else '/' + did.lstrip('/')
+            if path == in_path:
+                consuming.append(task)
+                break
+    return producing, consuming
+
+
+def data_provenance(did_or_path):
+    """Provenance for one Rucio DID or bare path, either side.
+
+    For a produced dataset (``/RECO/...`` or ``/FULL/...``): the catalog
+    tasks recording it as output, their matched EVGEN input DIDs where
+    recorded, and the convention-derived EVGEN path (the payload writes
+    outputs under the input's physics path), each checked live against
+    JLab Rucio and carried with its direct xrootd path when unregistered.
+    For an EVGEN dataset: the tasks consuming it and their recorded
+    outputs. ``resolution`` states how each answer was reached
+    ('recorded', 'convention', or both); ``refusal`` carries the reason
+    when nothing resolves. Read-only; one JLab Rucio existence check per
+    convention answer.
+    """
+    raw = (did_or_path or '').strip()
+    scope, sep, path = raw.partition(':')
+    if not sep or '/' in scope:
+        scope, path = 'epic', raw
+    path = '/' + path.lstrip('/')
+    segs = [s for s in path.split('/') if s]
+    result = {'did': f'{scope}:{path}', 'role': '',
+              'resolution': [], 'producing_tasks': [],
+              'consuming_tasks': [], 'evgen_inputs': [],
+              'reco_outputs': [], 'refusal': ''}
+    if not segs or segs[0] not in ('RECO', 'FULL', 'EVGEN'):
+        result['refusal'] = (
+            'path is not under /RECO/, /FULL/, or /EVGEN/ — provenance '
+            'is defined for produced datasets and EVGEN inputs')
+        return result
+
+    def task_ref(task):
+        return {'name': task.name,
+                'composed_name': task.composed_name,
+                'status': task.status}
+
+    producing, consuming = _provenance_task_scan(path)
+    if segs[0] in ('RECO', 'FULL'):
+        result['role'] = segs[0].lower()
+        result['producing_tasks'] = [task_ref(t) for t in producing]
+        seen_paths = set()
+        for task in producing:
+            for inp in (task.inputs or []):
+                did = str(inp.get('did') or '')
+                if not did:
+                    continue
+                in_scope, _, in_path = did.partition(':')
+                in_path = '/' + in_path.lstrip('/')
+                if in_path in seen_paths:
+                    continue
+                seen_paths.add(in_path)
+                result['evgen_inputs'].append({
+                    'did': did, 'registered': True,
+                    'xrootd_path': XROOTD_EPIC_BASE + in_path,
+                    'source': 'recorded'})
+        if result['evgen_inputs']:
+            result['resolution'].append('recorded')
+        # Convention: outputs live under the input's physics path
+        # (payload run.sh TAG law) — /RECO/<ver>/<config>/<physics...>
+        if len(segs) > 3:
+            evgen_path = '/EVGEN/' + '/'.join(segs[3:])
+            if evgen_path not in seen_paths:
+                registered = _jlab_did_exists(scope, evgen_path)
+                result['evgen_inputs'].append({
+                    'did': f'{scope}:{evgen_path}',
+                    'registered': registered,
+                    'xrootd_path': XROOTD_EPIC_BASE + evgen_path,
+                    'source': 'convention'})
+                result['resolution'].append('convention')
+    else:
+        result['role'] = 'evgen'
+        result['consuming_tasks'] = [task_ref(t) for t in consuming]
+        seen = set()
+        for task in consuming:
+            overrides = task.overrides or {}
+            for entry in (overrides.get('outputs') or []):
+                did = str(entry.get('did') or '')
+                if did and did not in seen:
+                    seen.add(did)
+                    result['reco_outputs'].append(
+                        {'did': did, 'source': 'recorded'})
+        if result['reco_outputs']:
+            result['resolution'].append('recorded')
+        # Convention: the produced side mirrors the physics path under
+        # /RECO/<ver>/<config>/ per campaign; state the pattern.
+        result['reco_convention_pattern'] = (
+            '/RECO/<detector_version>/<detector_config>/'
+            + '/'.join(segs[1:]))
+    if not (result['producing_tasks'] or result['consuming_tasks']
+            or result['evgen_inputs'] or result['reco_outputs']):
+        result['refusal'] = (
+            'no catalog task records this path and no convention '
+            'answer resolves — the dataset may predate the catalog or '
+            'the path may be misspelled')
+    return result
+
 
 def _task_name_from_path(path):
     """Human-readable ProdTask.name from a catalog source path: the path with
