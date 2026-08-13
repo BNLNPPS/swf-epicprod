@@ -2363,6 +2363,9 @@ def _plan_delivery_embed(campaign):
             raise RuntimeError(ctx['error'])
         ctx['report_focus_slug'] = 'campaign'
         ctx['report_query'] += f'&campaign={quote(campaign.name)}'
+        # The quilt is the page's map: double the embed's default
+        # panel height.
+        ctx['panel_px'] = 300
         return ctx
 
     try:
