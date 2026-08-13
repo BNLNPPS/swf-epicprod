@@ -1713,7 +1713,7 @@ def data_provenance(did_or_path):
                     continue
                 seen_paths.add(in_path)
                 result['evgen_inputs'].append({
-                    'did': did, 'registered': True,
+                    'did': did, 'path': in_path, 'registered': True,
                     'xrootd_path': XROOTD_EPIC_BASE + in_path,
                     'source': 'recorded'})
         if result['evgen_inputs']:
@@ -1726,6 +1726,7 @@ def data_provenance(did_or_path):
                 registered = _jlab_did_exists(scope, evgen_path)
                 result['evgen_inputs'].append({
                     'did': f'{scope}:{evgen_path}',
+                    'path': evgen_path,
                     'registered': registered,
                     'xrootd_path': XROOTD_EPIC_BASE + evgen_path,
                     'source': 'convention'})
@@ -1740,8 +1741,11 @@ def data_provenance(did_or_path):
                 did = str(entry.get('did') or '')
                 if did and did not in seen:
                     seen.add(did)
+                    out_path = '/' + did.partition(':')[2].lstrip('/') \
+                        if ':' in did else '/' + did.lstrip('/')
                     result['reco_outputs'].append(
-                        {'did': did, 'source': 'recorded'})
+                        {'did': did, 'path': out_path,
+                         'source': 'recorded'})
         if result['reco_outputs']:
             result['resolution'].append('recorded')
         # Convention: the produced side mirrors the physics path under

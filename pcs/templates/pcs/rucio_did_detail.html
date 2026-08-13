@@ -43,6 +43,63 @@
     </div>
   </div>
 
+  {# ---- Provenance ---- #}
+  {% if prov_error %}
+  <p class="text-muted mb-3">Provenance unavailable: {{ prov_error }}</p>
+  {% elif prov %}
+  <div class="card mb-3">
+    <div class="card-body py-2">
+      <div class="mb-1"><strong>Provenance</strong>
+        <span class="text-muted">— the catalog's record of what produced or consumes this dataset</span></div>
+      {% if prov.refusal %}
+      <p class="text-muted mb-0">{{ prov.refusal }}</p>
+      {% else %}
+      {% if prov.producing_tasks %}
+      <div class="mb-1"><span class="text-secondary">Produced by:</span>
+        {% for t in prov.producing_tasks %}
+        <a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ t.composed_name|urlencode }}">{{ t.composed_name }}</a>{% if not forloop.last %} · {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if prov.evgen_inputs %}
+      <div class="mb-1"><span class="text-secondary">EVGEN input{{ prov.evgen_inputs|length|pluralize }}:</span></div>
+      <ul class="mb-1">
+        {% for inp in prov.evgen_inputs %}
+        <li>
+          {% if inp.registered %}
+          <a href="{% url 'pcs:rucio_did_detail' scope='epic' name=inp.path %}">{{ inp.did }}</a>
+          <span class="text-muted small">({{ inp.source }})</span>
+          {% else %}
+          {{ inp.did }} <span class="text-muted">— not registered in Rucio; direct path:</span>
+          {% endif %}
+          <div class="small">{{ inp.xrootd_path }} {% copy_btn inp.xrootd_path %}</div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if prov.consuming_tasks %}
+      <div class="mb-1"><span class="text-secondary">Consumed by:</span>
+        {% for t in prov.consuming_tasks %}
+        <a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ t.composed_name|urlencode }}">{{ t.composed_name }}</a>{% if not forloop.last %} · {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if prov.reco_outputs %}
+      <div class="mb-1"><span class="text-secondary">Recorded outputs:</span></div>
+      <ul class="mb-1">
+        {% for out in prov.reco_outputs %}
+        <li><a href="{% url 'pcs:rucio_did_detail' scope='epic' name=out.path %}">{{ out.did }}</a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if prov.reco_convention_pattern %}
+      <div class="text-muted small">Produced datasets follow {{ prov.reco_convention_pattern }} per campaign.</div>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {# ---- Replicas (RSE) ---- #}
   <h4>Replicas</h4>
   {% if r.replicas %}

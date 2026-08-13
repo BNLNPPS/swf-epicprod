@@ -2288,6 +2288,16 @@ def rucio_did_detail(request, scope, name):
     except ServiceError as e:
         ctx['error'] = e.detail
         return render(request, 'pcs/rucio_did_detail.html', ctx, status=e.status)
+    # Provenance panel (docs/EPICPROD_DATA_LINEAGE.md): recorded and
+    # convention-resolved links between produced data and EVGEN inputs.
+    # This page is the live Rucio browser, so its one extra existence
+    # check rides the same read; a failure shows in the panel, never
+    # kills the page.
+    from .services import data_provenance
+    try:
+        ctx['prov'] = data_provenance(f'{scope}:{norm}')
+    except ServiceError as e:
+        ctx['prov_error'] = e.detail
     return render(request, 'pcs/rucio_did_detail.html', ctx)
 
 
