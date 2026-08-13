@@ -22,7 +22,7 @@ tasks. Initial request fields are based on the current
 The following diagram shows the automated production workflow and the
 catalog's place in it.
 
-![ePIC Automated Production Workflow](epicprod_task_catalog.svg)
+![ePIC Automated Production Workflow](https://raw.githubusercontent.com/eic/epic-wfms-docs/main/docs/diagrams/epicprod_task_catalog.svg)
 
 ## Relationship to Other Documents
 
