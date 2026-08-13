@@ -559,12 +559,15 @@ backstop for submission recording.
 generated artifacts and for manual debugging. It is not the normal production
 submit path.
 
-## Residual rerun — `.tryN` over the undelivered remainder (design)
+## Residual rerun — `.tryN` over the undelivered remainder
 
-Designed, not implemented. A full `.tryN` rerun regenerates the whole
-workload, delivered rows included; for tasks beyond native retry — purged
-sandbox, exhausted attempts, post-retention — recovery costs the entire
-task. The residual rerun is an ordinary client-API `.tryN` submission whose
+Implemented 2026-08-13 (`build_evgen_task_params(residual=True)`, the
+`rerun-residual` and `residual-preview` API actions, the doer's
+`--residual` flag, and the compose page's Rerun Residual action); the
+first production use runs as a one-task canary. A full `.tryN` rerun
+regenerates the whole workload, delivered rows included; for tasks
+beyond native retry — purged sandbox, exhausted attempts,
+post-retention — recovery costs the entire task. The residual rerun is an ordinary client-API `.tryN` submission whose
 workload is the undelivered remainder: delivered data is never regenerated,
 and JEDI and PanDA see a normal submission (the residual computation is
 entirely PCS-side). Accounting needs no changes — delivery already unions
