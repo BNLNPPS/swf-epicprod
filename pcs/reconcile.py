@@ -320,5 +320,26 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
         _log.warning('rucio_reconcile %s name-conflict DIDs held for '
                      'curation (unresolved evgen on a taken composed '
                      'name): %s', campaign_name, name_conflicts[:10])
+    if unresolved or name_conflicts:
+        # Curation the reconcile could not do is a notice-worthy
+        # incident of its own: the record carries the full DID lists,
+        # and the notice reaches feed subscribers through notice
+        # routing (swf-monitor docs/NOTICE_ROUTING.md).
+        parts = []
+        if name_conflicts:
+            parts.append(f'{len(name_conflicts)} DIDs held: unresolved '
+                         f'generator on a taken composed name')
+        if unresolved:
+            parts.append(f'{len(unresolved)} DIDs with unresolved '
+                         f'physics')
+        log_epicprod_action(
+            'catalog-sync', 'catalog_curation_needed',
+            subject_type='campaign', subject_key=campaign_name,
+            username=created_by,
+            sublevel='high', live_default=True,
+            severity='warning',
+            summary=f'{campaign_name}: ' + '; '.join(parts),
+            name_conflict_dids=name_conflicts[:50],
+            unresolved_dids=unresolved[:50])
     return {**summary, 'unresolved_dids': unresolved,
             'name_conflict_dids': name_conflicts}
