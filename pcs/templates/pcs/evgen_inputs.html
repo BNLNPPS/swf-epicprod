@@ -36,10 +36,10 @@
   {% if error %}<p><strong>{{ error }}</strong></p>{% endif %}
 
   {# First-class page views as server-routed tabs; the URL carries the view. #}
-  <nav class="swf-page-tabs">
+  <div class="swf-page-tabs">
     <a href="{% url 'pcs:evgen_inputs' %}" {% if view != 'coverage' %}class="active"{% endif %}>Inventory</a>
     <a href="{% url 'pcs:evgen_inputs' %}?view=coverage" {% if view == 'coverage' %}class="active"{% endif %}>Registration coverage{% if coverage_missing %} ({{ coverage_missing|length }} missing){% endif %}</a>
-  </nav>
+  </div>
 
   {% if view != 'coverage' %}
   {% if rows %}
