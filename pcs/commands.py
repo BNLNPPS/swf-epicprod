@@ -551,7 +551,90 @@ def _evgen_env(task):
     return {k: v for k, v in env.items() if v != ''}
 
 
-def build_evgen_task_params(task, panda_tasks=None):
+RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4})\.eicrecon\.edm4eic\.root$')
+
+
+def _delivered_row_keys(task):
+    """The (relative-dir, stem, chunk) keys of every RECO file already
+    registered for this task across its attempts, with the DIDs checked.
+
+    Sources the task's recorded RECO outputs (``overrides['outputs']``
+    entries and ``output_refs``, written by the lineage sweeps) and lists
+    each against JLab Rucio. The payload's naming convention
+    (simulation_campaign_hepmc3 run.sh) writes each input row's RECO file
+    to ``RECO/<ver>/<config>/<input dir below EVGEN>/<stem>.<chunk>``
+    ``.eicrecon.edm4eic.root``, so the key maps one-to-one onto manifest
+    rows. Returns (None, []) when the task records no RECO outputs —
+    there is nothing to diff against, and the caller refuses.
+    """
+    from .services import fetch_jlab_rucio_did_files
+    overrides = task.overrides or {}
+    dids = []
+    for entry in (overrides.get('outputs') or []):
+        if str(entry.get('stage', '')).upper() == 'RECO' and entry.get('did'):
+            dids.append(entry['did'])
+    for ref in (overrides.get('output_refs') or []):
+        if str(ref.get('stage', '')).upper() == 'RECO' and ref.get('did'):
+            dids.append(ref['did'])
+    dids = sorted(set(dids))
+    if not dids:
+        return None, []
+    keys = set()
+    for did in dids:
+        scope, sep, name = did.partition(':')
+        if not sep:
+            scope, name = 'epic', did
+        for f in fetch_jlab_rucio_did_files(scope, name):
+            fname = str(f.get('name') or '')
+            m = RECO_LFN_TAIL_RE.search(fname)
+            if not m:
+                continue
+            chunk = m.group(1)
+            base = fname[:m.start()]
+            parts = [p for p in base.split('/') if p]
+            # /RECO/<ver>/<config>/<subpath...>/<stem>
+            if len(parts) < 4 or parts[0] != 'RECO':
+                continue
+            head = '/'.join(parts[3:-1])
+            stem = parts[-1]
+            keys.add((head, stem, chunk))
+    return keys, dids
+
+
+def _residual_rows(task, csv_rows):
+    """The manifest rows whose RECO output is not registered, with the
+    coverage record. Raises ValueError with the refusal reason when the
+    residual cannot be established honestly (design:
+    JEDI_INTEGRATION.md § Residual rerun)."""
+    env = _evgen_env(task)
+    if env.get('TAG_PREFIX'):
+        raise ValueError(
+            'residual rerun is not supported for background-mixed tasks '
+            '(TAG_PREFIX changes the output path shape); rerun the '
+            'entire task instead')
+    keys, dids = _delivered_row_keys(task)
+    if keys is None:
+        raise ValueError(
+            'no recorded RECO outputs to diff against — run the Rucio '
+            'update first, or rerun the entire task')
+    residual = []
+    for row in csv_rows:
+        file_col, _ext, _nev, chunk = row.rsplit(',', 3)
+        head, _, stem = file_col.rpartition('/')
+        if (head, stem, chunk) not in keys:
+            residual.append(row)
+    if not residual:
+        raise ValueError(
+            f'zero residual: all {len(csv_rows)} manifest rows have '
+            f'registered RECO outputs — nothing to rerun')
+    return residual, {
+        'rows_total': len(csv_rows),
+        'rows_residual': len(residual),
+        'checked_dids': dids,
+    }
+
+
+def build_evgen_task_params(task, panda_tasks=None, residual=False):
     """Build the client-API EVGEN production submission spec from a ProdTask.
 
     This is the production reproduction of the proven condor-side recipe
@@ -580,6 +663,12 @@ def build_evgen_task_params(task, panda_tasks=None):
             'set events_per_job on the config (per-job event count; Rucio '
             'carries no per-file event count)')
     csv_rows = _evgen_manifest_from_inputs(task, n_events)
+    residual_coverage = None
+    if residual:
+        # Residual rerun: the workload is the undelivered remainder
+        # (JEDI_INTEGRATION.md § Residual rerun); refusal reasons
+        # propagate as ValueError.
+        csv_rows, residual_coverage = _residual_rows(task, csv_rows)
 
     # The composed PCS identity is the logical campaign task. The physical
     # PanDA task/outDS name is attempt-specific when this is a retry or site race
@@ -630,4 +719,5 @@ def build_evgen_task_params(task, panda_tasks=None):
         'csvBase': csv_base,
         'csvRows': csv_rows,
         'env': env,
+        'residual': residual_coverage,
     }
