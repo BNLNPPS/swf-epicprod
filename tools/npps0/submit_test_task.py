@@ -82,7 +82,9 @@ def main():
         'log': {
             'type': 'template',
             'param_type': 'log',
-            'value': '${LOG0}',
+            # Explicit LFN template: ${LOG0} is a prun client-side device
+            # and never resolves on direct submission (JEDI KeyError).
+            'value': f'{task_name}.$PANDAID._${{SN}}.log.tgz',
             'dataset': f'{task_name}_log/',
             'hidden': True,
         },
