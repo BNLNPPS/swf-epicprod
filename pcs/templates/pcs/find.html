@@ -14,12 +14,11 @@
        so the hover dim and ring land together in one step. */
     transition: none;
   }
-  /* Bootstrap's .btn:hover goes transparent — pin bg and border.
-     The shadow ring thickens the border on hover without moving layout. */
+  /* Bootstrap's .btn:hover goes transparent — pin bg and border. */
   .btn-brains:hover {
     filter: brightness(0.95); color: var(--ai-fg);
     background-color: var(--ai-bg); border-color: var(--ai-border);
-    box-shadow: 0 0 0 1px var(--ai-border);
+    border-width: 2px;
   }
   .pcs-find-results { max-width: 80rem; margin: 2rem auto; }
   /* Simple page: long DIDs wrap in place — never a horizontal scroll frame. */
