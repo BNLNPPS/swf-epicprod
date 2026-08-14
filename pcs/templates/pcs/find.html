@@ -43,6 +43,10 @@
   }
   .pcs-brains-turn.search .pcs-search-author { color: var(--bs-secondary-color, #666); font-family: inherit; margin-right: .5em; }
   #pcs-brains-status { padding: 0 .8rem .5rem .8rem; color: var(--bs-secondary-color, #666); }
+  .pcs-md-table { border-collapse: collapse; margin: .4rem 0; }
+  .pcs-md-table td { border: 1px solid var(--bs-border-color, #dee2e6); padding: .25rem .6rem; white-space: normal; }
+  .pcs-md-h { font-weight: 700; margin: .3rem 0; }
+  .pcs-md-code { font-family: var(--bs-font-monospace, monospace); font-size: .95em; }
   #pcs-find-bar .filter-link { margin-right: 0.6em; color: #007bff; text-decoration: none; }
   #pcs-find-bar .filter-link:hover { text-decoration: underline; }
   #pcs-find-bar .filter-link.filter-active { font-weight: bold; text-decoration: underline; color: #0056b3; }
@@ -125,9 +129,49 @@
     });
   }
   function splitSearchDirective(content) {
-    const m = String(content).match(/^([\s\S]*?)\n?\s*SEARCH:\s*(.+?)\s*$/);
-    if (m && m[2]) return {narrative: m[1].trim(), search: m[2]};
-    return {narrative: String(content), search: null};
+    // The directive can sit anywhere — the engine appends footers
+    // (warnings) after it. Take the last SEARCH: line, remove it from
+    // the narrative.
+    const text = String(content);
+    const matches = text.match(/^\s*SEARCH:\s*(.+?)\s*$/gm);
+    if (!matches) return {narrative: text, search: null};
+    const last = matches[matches.length - 1];
+    const q = last.replace(/^\s*SEARCH:\s*/, '').trim();
+    return {narrative: text.replace(last, '').replace(/\n{3,}/g, '\n\n').trim(),
+            search: q || null};
+  }
+  function mdInline(s) {
+    return linkify(s)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<span class="pcs-md-code">$1</span>');
+  }
+  function mdRender(text) {
+    // Minimal markdown for engine replies: pipe tables, headers, bold,
+    // inline code. Everything else stays plain pre-wrap text.
+    const out = [];
+    let tableRows = [];
+    const flushTable = () => {
+      if (!tableRows.length) return;
+      out.push('<table class="pcs-md-table">'
+        + tableRows.map(r => '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('')
+        + '</table>');
+      tableRows = [];
+    };
+    for (const line of String(text).split('\n')) {
+      if (/^\s*\|.*\|\s*$/.test(line)) {
+        const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+          .split('|').map(c => c.trim());
+        if (cells.every(c => /^[-: ]*$/.test(c))) continue;
+        tableRows.push(cells.map(mdInline));
+        continue;
+      }
+      flushTable();
+      const h = line.match(/^#{2,}\s+(.*)$/);
+      if (h) { out.push('<div class="pcs-md-h">' + mdInline(h[1]) + '</div>'); continue; }
+      out.push(mdInline(line) + '\n');
+    }
+    flushTable();
+    return out.join('');
   }
   function entryHtml(t) {
     if (t.role === 'search') {
@@ -137,7 +181,7 @@
     }
     if (t.role === 'assistant') {
       const parts = splitSearchDirective(t.content);
-      let html = '<div class="pcs-brains-turn assistant">' + linkify(parts.narrative) + '</div>';
+      let html = '<div class="pcs-brains-turn assistant">' + mdRender(parts.narrative) + '</div>';
       if (parts.search) {
         html += '<div class="pcs-brains-turn search" data-q="' + esc(parts.search).replace(/"/g, '&quot;') + '" title="Click to put this search back in the bar">'
           + '<span class="pcs-search-author">' + esc(modelName) + ' searched</span>'
