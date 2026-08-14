@@ -47,4 +47,5 @@ exec bash "$WRAPPER" \
     --pythonversion 3 --localpy \
     --pilot-user epic \
     --url https://pandaserver01.sdcc.bnl.gov -p 25443 \
-    --rucio-host https://nprucio01.sdcc.bnl.gov:443
+    --rucio-host https://nprucio01.sdcc.bnl.gov:443 \
+    --getjobrequests 30

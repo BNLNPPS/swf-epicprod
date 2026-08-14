@@ -14,7 +14,7 @@ User=wenaus
 ExecStart=/home/wenaus/bin/epicprod-gpu-pilot.sh
 Environment=CUDA_VISIBLE_DEVICES=0
 Restart=always
-RestartSec=300
+RestartSec=60
 # A stuck pilot is reaped after the queue's maxtime plus margin.
 RuntimeMaxSec=90000
 NoNewPrivileges=true
