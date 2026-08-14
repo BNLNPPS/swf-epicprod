@@ -9,9 +9,13 @@
   .pcs-find-input { font-size: 1.4rem; padding: .6em .8em; }
   .btn-brains {
     color: var(--ai-fg); background-color: var(--ai-bg);
-    border: 1px solid var(--ai-border); font-weight: 600;
+    border: 2px solid var(--ai-border); font-weight: 600;
   }
-  .btn-brains:hover { filter: brightness(0.95); color: var(--ai-fg); }
+  /* Bootstrap's .btn:hover goes transparent — pin bg and border. */
+  .btn-brains:hover {
+    filter: brightness(0.95); color: var(--ai-fg);
+    background-color: var(--ai-bg); border-color: var(--ai-border);
+  }
   .pcs-find-results { max-width: 80rem; margin: 2rem auto; }
   /* Simple page: long DIDs wrap in place — never a horizontal scroll frame. */
   #pcs-find-table { max-width: 100%; }
