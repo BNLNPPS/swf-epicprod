@@ -1885,10 +1885,14 @@ def find_data(request):
         if len(hits) == 1 and hits[0]['did'] and engine != 'brains':
             return redirect(reverse('pcs:rucio_did_detail',
                                     args=[hits[0]['scope'], hits[0]['name']]))
+    from monitor_app.panda.constants import AI_MODEL
+    family = next((f for f in ('sonnet', 'opus', 'haiku', 'fable')
+                   if f in AI_MODEL.lower()), '')
     return render(request, 'pcs/find.html', {
         'q': q, 'hits': hits, 'engine': engine,
         'has_unregistered': bool(hits) and any(
             e['kind'] == 'EVGEN (unregistered)' for e in hits),
+        'brains_model': family.capitalize() or AI_MODEL,
     })
 
 
