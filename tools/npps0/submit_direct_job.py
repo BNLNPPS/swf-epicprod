@@ -75,8 +75,13 @@ def main():
     job.cloud = 'EIC'
     job.VO = 'epic'
     job.workingGroup = 'EIC'
-    job.prodSourceLabel = 'test'
-    job.processingType = 'gputest'
+    # ptest + prun: the Setupper keeps the original dataset name for
+    # this combination (no _sub dataset), and with destinationSE
+    # 'local' it skips registration and resolves the pre-created
+    # dataset by lookup. ptest is a neutral source: dispatched as
+    # production job type on production queues.
+    job.prodSourceLabel = 'ptest'
+    job.processingType = 'prun'
     job.currentPriority = 1000
     job.coreCount = 8
     job.minRamCount = 3686
