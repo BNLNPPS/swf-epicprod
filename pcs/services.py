@@ -5047,6 +5047,28 @@ def rucio_snapshot_update_request(*, created_by='rucio_snapshot'):
             status=503)
 
 
+def brains_query_request(*, conversation_id, username, message):
+    """Publish one turn of a Find Data Brains dialog to the DISpatcher
+    bot's web inlet queue. The bot runs its engine on the turn, writes the
+    conversation file under SWF_TMP_DIR/brains/, and announces completion
+    with a brains_answer event on the relay topic. The web tier only drops
+    the message. Raises ServiceError if the queue is unreachable. See
+    docs/PANDA_BOT.md (swf-monitor) and EPICPROD_LLM_OPERATIONS.md."""
+    import json as _json
+    msg = {'msg_type': 'brains_query', 'conversation_id': conversation_id,
+           'username': username, 'message': message}
+    from monitor_app.activemq_connection import ActiveMQConnectionManager
+    try:
+        triggered = ActiveMQConnectionManager().send_message(
+            '/queue/dispatcher.brains', _json.dumps(msg))
+    except Exception as e:
+        raise ServiceError(
+            f'Could not reach the Brains queue: {e}', status=503)
+    if not triggered:
+        raise ServiceError(
+            'Brains is unreachable (queue send failed).', status=503)
+
+
 def evgen_rucio_update_request(*, created_by='evgen_rucio'):
     """Publish an evgen_rucio_update request to the prod-ops agent, which
     assimilates the JLab Rucio EVGEN inventory (epic:/EVGEN/*) and resolves each

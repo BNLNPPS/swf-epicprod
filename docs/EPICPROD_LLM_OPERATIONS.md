@@ -16,17 +16,48 @@ corun-ai REST APIs and swf-monitor callback endpoints.
 | Component | Responsibility |
 |---|---|
 | swf-monitor | Production pages, production state, PanDA/PCS context, MCP tools for production objects, and browser rendering. |
+| DISpatcher | Interactive LLM dialog engine with the full MCP toolset, serving the Mattermost channel and the Find Data page's Brains dialog. Runs on `pandaserver02` and holds its own LLM execution credential. |
 | corun-ai | LLM-backed operations, prompts and configuration for those operations, durable artifacts, comments, provenance, and curation surfaces. |
 | wrangle-ai | corun-ai's rapid asynchronous worker substrate for bounded LLM operations such as replying on a comment thread or running an assessment probe. |
 | `epicprod_ops_agent` | Privileged production actions on `pandaserver02`: PanDA submission, Rucio/xrootd log retrieval, and related credentialed production work. |
 | SSE relay | Browser notification for completed asynchronous work through `/api/messages/stream/`. |
 | swf-remote | External proxying of swf-monitor pages, REST endpoints, static assets, and SSE streams. It does not contain production or LLM operation logic. |
 
+Operations divide by turnaround class, and the class selects the venue.
+Rapid-turnaround operations — a human is waiting on the answer — run on
+DISpatcher (interactive dialog with production tools) or a wrangle
+worker (bounded single operations such as a comment reply). Batch-like
+operations — research, reports, assessments, durable artifacts — run
+through corun-ai's job system. An interactive dialog is never routed
+through a job queue, and a durable research artifact is never produced
+inside a chat exchange.
+
 The division is by function. Production credentials stay with the production
 ops agent. LLM execution credentials and LLM artifact state stay with corun-ai.
 Browser pages and production object context stay with swf-monitor.
 
 ## Operation Classes
+
+### Find Data Brains Dialog
+
+The Find Data page's Brains dialog is an interactive conversation with
+DISpatcher's engine — the same LLM, tool selection, and collective
+memory that serve the Mattermost channel, with the conversation's own
+turns as thread context and no Mattermost involvement. The flow:
+
+1. The page posts a dialog turn to swf-monitor
+   (`/pcs/find/brains/`), which drops a `brains_query` message on the
+   bot's `/queue/dispatcher.brains` inlet and returns immediately.
+2. The bot runs the turn through its engine, appends the exchange to
+   the conversation file under `SWF_TMP_DIR/brains/` (bot writes, web
+   reads), records it to the unified AI memory (session `find-data`),
+   and publishes a `brains_answer` event to the relay topic.
+3. The page holds a short-lived `EventSource` for `brains_answer` with
+   a bounded poll of the conversation endpoint as backstop, and
+   re-renders the dialog when the turn lands.
+
+Turns are serialized with the bot's Mattermost responses by the same
+response lock. DISpatcher-side detail: swf-monitor `docs/PANDA_BOT.md`.
 
 ### AI Assessments
 

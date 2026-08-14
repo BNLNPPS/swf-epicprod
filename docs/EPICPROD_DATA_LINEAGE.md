@@ -290,6 +290,7 @@ and all must match. A query with exactly one match redirects to that
 dataset's detail page; an unregistered EVGEN match is listed with its
 direct xrootd path and a produced dataset page that states it. The
 search corpus is a cached product built from local state; the render
-path makes no Rucio call. The page carries a second, LLM-assisted
-search action, presented with its status stated until its execution
-path is wired.
+path makes no Rucio call. The page's second action opens the Brains
+dialog — an interactive conversation with the DISpatcher engine over
+the production toolset (`EPICPROD_LLM_OPERATIONS.md` § Find Data
+Brains Dialog).

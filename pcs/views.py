@@ -1892,6 +1892,67 @@ def find_data(request):
     })
 
 
+_BRAINS_ID_RE = re.compile(r'^brains-[a-f0-9]{12}$')
+
+
+def find_brains_post(request):
+    """Queue one turn of a Brains dialog from the find page. POST JSON
+    {conversation_id?, message}; returns {conversation_id}. The answer
+    arrives via the brains_answer SSE event and the conversation GET."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body or b'{}')
+    except ValueError as e:
+        return JsonResponse({'error': f'unparseable body: {e}'}, status=400)
+    message = str(body.get('message') or '').strip()
+    if not message:
+        return JsonResponse({'error': 'empty message'}, status=400)
+    conversation_id = str(body.get('conversation_id') or '').strip()
+    if conversation_id and not _BRAINS_ID_RE.match(conversation_id):
+        return JsonResponse({'error': 'bad conversation id'}, status=400)
+    if not conversation_id:
+        import uuid
+        conversation_id = f'brains-{uuid.uuid4().hex[:12]}'
+    # Crawler-bill insurance: modest per-session ceiling on engine turns.
+    rl_key = 'brains-rl:' + (request.session.session_key
+                             or request.META.get('REMOTE_ADDR', 'unknown'))
+    turns = cache.get(rl_key, 0)
+    if turns >= 30:
+        return JsonResponse(
+            {'error': 'Brains turn limit reached — try again later.'},
+            status=429)
+    cache.set(rl_key, turns + 1, 600)
+    username = (getattr(request.user, 'username', '') or 'web user')
+    from .services import brains_query_request, ServiceError
+    try:
+        brains_query_request(conversation_id=conversation_id,
+                             username=username, message=message)
+    except ServiceError as e:
+        return JsonResponse({'error': e.detail}, status=e.status)
+    return JsonResponse({'conversation_id': conversation_id})
+
+
+def find_brains_conversation(request, conversation_id):
+    """Serve a Brains conversation record (bot-written, web-read)."""
+    if not _BRAINS_ID_RE.match(conversation_id):
+        return JsonResponse({'error': 'bad conversation id'}, status=400)
+    from django.conf import settings as dj_settings
+    import os as _os
+    path = _os.path.join(
+        getattr(dj_settings, 'SWF_TMP_DIR', '/data/swf-tmp'), 'brains',
+        f'{conversation_id}.json')
+    try:
+        with open(path) as f:
+            return JsonResponse(json.load(f))
+    except FileNotFoundError:
+        return JsonResponse({'conversation_id': conversation_id, 'turns': []})
+    except (OSError, ValueError) as e:
+        logging.getLogger(__name__).error(
+            'brains conversation read failed (%s): %s', path, e)
+        return JsonResponse({'error': 'conversation unreadable'}, status=500)
+
+
 def datasets_list(request):
     columns = [
         {'name': 'dataset_name', 'title': 'Dataset Name', 'orderable': True},
