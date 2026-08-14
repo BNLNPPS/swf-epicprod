@@ -37,4 +37,5 @@ exec bash "$WRAPPER" \
     -q "$QUEUE" -r "$QUEUE" -s "$QUEUE" \
     -e eic \
     -i PR -j managed \
-    --pythonversion 3 --localpy
+    --pythonversion 3 --localpy \
+    --pilot-user epic
