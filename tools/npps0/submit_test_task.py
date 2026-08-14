@@ -88,6 +88,10 @@ def main():
             # and never resolves on direct submission (JEDI KeyError).
             'value': f'{task_name}.$PANDAID._${{SN}}.log.tgz',
             'dataset': f'{task_name}_log/',
+            # 'local' flows to fileSpec.destinationSE and makes the Adder
+            # skip Rucio registration — right for object-store logs, which
+            # live in S3 and not in the Rucio catalog.
+            'destination': 'local',
             'hidden': True,
         },
         'jobParameters': [
