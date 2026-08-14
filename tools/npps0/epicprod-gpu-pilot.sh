@@ -6,7 +6,7 @@
 # The launcher loop (epicprod-gpu-pilot-launcher.sh, run by the systemd
 # service) invokes this script fresh each cycle under a per-GPU flock,
 # which is the whole provisioning layer for a single always-on host —
-# no Harvester, no CE (docs/JEDI_INTEGRATION.md, npps0 section).
+# no Harvester, no CE (README.md here; docs/VOLUNTEER_GPU_PLAN.md).
 #
 # Credentials: the PanDA OIDC token under $PANDA_CONFIG_ROOT and the
 # Rucio x509 proxy, copies of the pandaserver02 production credentials

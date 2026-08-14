@@ -66,21 +66,33 @@ export PANDA_PILOT_AWS_PROFILE=epic-stageout
 For volunteer deployment the profile ships in the client bundle with
 keys scoped to write-only access.
 
-## 3. Queue and storage configuration
+## 3. Queue and storage configuration (implemented, no CRIC changes)
 
-Two queuedata fields for `BNL_NPPS_GPU` (CRIC):
+Both pieces are git-sourced from `tools/npps0/config/` and applied by
+the pilot pass script; CRIC is not involved beyond the queue's
+existence.
 
-- `acopytools`: activity `pl` (log stage-out) uses `s3` instead of
-  `rucio`.
-- `astorages`: activity `pl` points at `DEV_CLOUD_S3`.
+- `config/queuedata.json`: the queue's pilot-side behavior, with
+  `acopytools.pl = ["s3"]`, `astorages.pl = ["DEV_CLOUD_S3"]`, and
+  `s3` registered in `copytools`. The pass script places it in the
+  run directory, where the BNL pilot wrapper prefers a local
+  `queuedata.json` (`file://$PWD/queuedata.json`) over the
+  CRIC-derived cache URL.
+- `config/agis_ddmendpoints.json`: the storage catalog — a snapshot
+  of the CRIC ddmendpoints set (so all lab endpoints still resolve)
+  plus the `DEV_CLOUD_S3` entry: type `OS_LOGS`, non-deterministic,
+  protocols pointing at
+  `s3://s3.us-east-1.amazonaws.com:443//epic-devcloud-stageout/logs`,
+  modeled on the established object-store entries in the same
+  catalog. The pass script seeds it into the run directory under the
+  pilot info system's LOCAL and USER-cache filenames
+  (`agis_ddmendpoints.json`, `agis_ddmendpoints.agis.*.json`), with
+  `PILOT_HOME` set to the run directory so the pilot's catalog reads
+  land on the seeded files.
 
-`DEV_CLOUD_S3` is defined in the storage-data JSON the pilot loads at
-startup. The pilot takes that catalog from a URL
-(`--storagedata-url`), so the definition is a JSON file at any
-reachable address — the git-sourced configuration pattern. The entry
-supplies the s3 endpoint and bucket path from which the copytool
-composes the object URL; the exact schema follows the ddmendpoints
-format and is settled during integration.
+The s3 copytool composes the object key as
+`logs/<queue>/<log dataset>/<lfn>`, so log tarballs arrive under
+`logs/BNL_NPPS_GPU/` in the bucket.
 
 ## Verification
 
