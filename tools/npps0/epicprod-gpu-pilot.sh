@@ -64,7 +64,21 @@ if [[ -f "$CONFDIR/agis_ddmendpoints.json" ]]; then
     done
 fi
 
-exec bash "$WRAPPER" \
+# The wrapper force-appends its own --storagedata-url after all
+# passthrough arguments, so the storage catalog cannot be overridden
+# by flags (v08, pilot error 1133: DEV_CLOUD_S3 unresolvable from the
+# datalake catalog). Run a per-pass copy of the wrapper with that one
+# URL rewritten to the git-sourced catalog; the copy always tracks
+# the current CVMFS wrapper.
+cp "$WRAPPER" "$RUNDIR/wrapper.sh"
+if [[ -f "$CONFDIR/agis_ddmendpoints.json" ]]; then
+    sed -i "s|https://datalake-cric.cern.ch/cache/ddmendpoints.json|file://$CONFDIR/agis_ddmendpoints.json|" "$RUNDIR/wrapper.sh"
+    if ! grep -q "file://$CONFDIR/agis_ddmendpoints.json" "$RUNDIR/wrapper.sh"; then
+        echo "WARNING: storagedata rewrite found nothing to replace — wrapper changed upstream?" >&2
+    fi
+fi
+
+exec bash "$RUNDIR/wrapper.sh" \
     -q "$QUEUE" -r "$QUEUE" -s "$QUEUE" \
     -e eic \
     -i PR -j managed \
