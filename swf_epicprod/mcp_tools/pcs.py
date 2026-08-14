@@ -382,7 +382,13 @@ async def pcs_data_provenance(did_or_path: str) -> dict:
             work then), source 'recorded' (catalog fact) or
             'convention' (derived from the payload's path law — normally
             reliable, say which it was).
-        reco_outputs: recorded produced datasets for an EVGEN input.
+        reco_outputs: produced datasets for an EVGEN input — recorded
+            task outputs plus convention matches (any produced dataset
+            whose physics tail equals the EVGEN path).
+        registered (evgen role only): whether THIS EVGEN DID is
+            registered in JLab Rucio, checked live — state it; never
+            infer registration from other fields being empty.
+        xrootd_path (evgen role only): the DID's direct root:// path.
         refusal: non-empty when nothing resolves — report it verbatim
             rather than guessing a path.
     """

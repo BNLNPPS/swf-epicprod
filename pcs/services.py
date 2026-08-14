@@ -1733,6 +1733,12 @@ def data_provenance(did_or_path):
                 result['resolution'].append('convention')
     else:
         result['role'] = 'evgen'
+        # The DID's own registration status — checked live, exactly as
+        # the reco branch checks its convention-derived input. Without
+        # this the answer is silent on registration and readers infer
+        # "unregistered" from the silence.
+        result['registered'] = _jlab_did_exists(scope, path)
+        result['xrootd_path'] = XROOTD_EPIC_BASE + path
         result['consuming_tasks'] = [task_ref(t) for t in consuming]
         seen = set()
         for task in consuming:
@@ -1748,7 +1754,30 @@ def data_provenance(did_or_path):
                          'source': 'recorded'})
         if result['reco_outputs']:
             result['resolution'].append('recorded')
-        # Convention: the produced side mirrors the physics path under
+        # Convention: any recorded produced dataset whose physics tail
+        # equals this EVGEN path was reconstructed from it (the payload
+        # writes outputs under the input's physics path), whether or not
+        # the producing task recorded the input link.
+        tail = '/'.join(segs[1:])
+        convention_found = False
+        for t in ProdTask.objects.only('overrides'):
+            for entry in (t.overrides or {}).get('outputs') or []:
+                did = str(entry.get('did') or '')
+                if not did:
+                    continue
+                out_path = '/' + did.partition(':')[2].lstrip('/') \
+                    if ':' in did else '/' + did.lstrip('/')
+                osegs = [s for s in out_path.split('/') if s]
+                if (len(osegs) > 3 and osegs[0] in ('RECO', 'FULL')
+                        and '/'.join(osegs[3:]) == tail and did not in seen):
+                    seen.add(did)
+                    convention_found = True
+                    result['reco_outputs'].append(
+                        {'did': did, 'path': out_path,
+                         'source': 'convention'})
+        if convention_found:
+            result['resolution'].append('convention')
+        # The produced side mirrors the physics path under
         # /RECO/<ver>/<config>/ per campaign; state the pattern.
         result['reco_convention_pattern'] = (
             '/RECO/<detector_version>/<detector_config>/'
