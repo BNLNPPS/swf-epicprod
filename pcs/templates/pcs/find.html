@@ -37,11 +37,20 @@
   .pcs-brains-turn.user { font-weight: 600; }
   .pcs-brains-turn.assistant { border-left: 3px solid var(--ai-border); padding: .2rem 0 .2rem .8rem; }
   .pcs-brains-turn.search {
+    display: flex; align-items: center; gap: .6em;
     font-family: var(--bs-font-monospace, monospace); font-size: .95rem;
     background: var(--bs-tertiary-bg, #f3f4f6);
     border-radius: .4rem; padding: .3rem .6rem; cursor: pointer;
   }
-  .pcs-brains-turn.search .pcs-search-author { color: var(--bs-secondary-color, #666); font-family: inherit; margin-right: .5em; }
+  .pcs-brains-turn.search .pcs-search-author { color: var(--bs-secondary-color, #666); font-family: inherit; }
+  .pcs-brains-turn.search .pcs-search-q { flex: 1; }
+  .pcs-copy-btn {
+    font-size: .75rem; padding: .1rem .5rem; white-space: nowrap;
+    color: var(--bs-secondary-color, #666);
+    background: none; border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: .3rem;
+  }
+  .pcs-brains-head .pcs-brains-x { font-size: 1.4rem; line-height: 1; text-decoration: none; color: inherit; }
   #pcs-brains-status { padding: 0 .8rem .5rem .8rem; color: var(--bs-secondary-color, #666); }
   .pcs-md-table { border-collapse: collapse; margin: .4rem 0; }
   .pcs-md-table td { border: 1px solid var(--bs-border-color, #dee2e6); padding: .25rem .6rem; white-space: normal; }
@@ -57,7 +66,7 @@
 <div id="pcs-brains-panel" aria-label="Brains dialog">
   <div class="pcs-brains-head">
     <span><span class="ai-attr-text">Brains</span> <span id="pcs-brains-who">{% if brains_model %}{{ brains_model }} at work{% endif %}</span></span>
-    <a href="{% url 'pcs:find_data' %}" title="Leave this dialog and start fresh">New dialog</a>
+    <a href="{% url 'pcs:find_data' %}" class="pcs-brains-x" title="Clear the dialog and restore the page">&times;</a>
   </div>
   <div id="pcs-brains-turns"></div>
   <div id="pcs-brains-status"></div>
@@ -175,21 +184,24 @@
   }
   function entryHtml(t) {
     if (t.role === 'search') {
-      return '<div class="pcs-brains-turn search" data-q="' + esc(t.content).replace(/"/g, '&quot;') + '" title="Click to put this search back in the bar">'
-        + '<span class="pcs-search-author">' + esc(t.username || 'search') + ' searched</span>'
-        + esc(t.content) + '</div>';
+      return searchEntryHtml(t.username || 'search', t.content);
     }
     if (t.role === 'assistant') {
       const parts = splitSearchDirective(t.content);
       let html = '<div class="pcs-brains-turn assistant">' + mdRender(parts.narrative) + '</div>';
       if (parts.search) {
-        html += '<div class="pcs-brains-turn search" data-q="' + esc(parts.search).replace(/"/g, '&quot;') + '" title="Click to put this search back in the bar">'
-          + '<span class="pcs-search-author">' + esc(modelName) + ' searched</span>'
-          + esc(parts.search) + '</div>';
+        html += searchEntryHtml(modelName, parts.search);
       }
       return html;
     }
     return '<div class="pcs-brains-turn user">' + linkify(t.content) + '</div>';
+  }
+  function searchEntryHtml(author, q) {
+    const qa = esc(q).replace(/"/g, '&quot;');
+    return '<div class="pcs-brains-turn search" data-q="' + qa + '" title="Copy this search into the bar">'
+      + '<span class="pcs-search-author">' + esc(author) + ' searched</span>'
+      + '<span class="pcs-search-q">' + esc(q) + '</span>'
+      + '<button type="button" class="pcs-copy-btn">copy to bar</button></div>';
   }
   function render(turns) {
     turnsEl.innerHTML = turns.map(entryHtml).join('');
