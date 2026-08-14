@@ -2014,6 +2014,8 @@ def import_default_datasets_csv(csv_path=None, *, created_by='csv_import'):
     """
     path = csv_path or DEFAULT_DATASETS_CSV_PATH
     physics, evgen, simu, reco, cfg, campaign = _ensure_csvimport_anchors()
+    s0 = _ensure_s0_stage_tag(created_by=created_by)
+    r0 = _ensure_r0_stage_tag(created_by=created_by)
 
     with open(path, newline='') as f:
         rows = list(_csv.DictReader(f))
@@ -2112,6 +2114,12 @@ def import_default_datasets_csv(csv_path=None, *, created_by='csv_import'):
                 ds.evgen_tag = row_evgen_tag
                 ds.background_tag = row_background_tag
                 ds.sample_name = ds_sample_name
+                # Stage sentinels (operator ruling 2026-08-14): EVGEN-stage
+                # rows carry s0.r0; fill only rows still on the anchors.
+                if ds.simu_tag_id == simu.pk:
+                    ds.simu_tag = s0
+                if ds.reco_tag_id == reco.pk:
+                    ds.reco_tag = r0
                 ds.save()
                 ds_created = False
             else:
@@ -2122,7 +2130,7 @@ def import_default_datasets_csv(csv_path=None, *, created_by='csv_import'):
                     detector_config='epic_craterlake',
                     campaign=campaign,
                     physics_tag=row_physics_tag, evgen_tag=row_evgen_tag,
-                    simu_tag=simu, reco_tag=reco,
+                    simu_tag=s0, reco_tag=r0,
                     background_tag=row_background_tag,
                     sample_name=ds_sample_name,
                     description=(row.get('Description') or '').strip(),
@@ -2648,6 +2656,23 @@ def _ensure_r0_stage_tag(created_by='past_import'):
         defaults={'status': 'locked',
                   'description': 'Not reconstructed; FULL simulation output.',
                   'parameters': {'stage': 'FULL'},
+                  'created_by': created_by})
+    return tag
+
+
+def _ensure_s0_stage_tag(created_by='csv_import'):
+    """The s0 simulation tag: not simulated — generator-stage material.
+
+    Operator ruling 2026-08-14 (extending the r0 ruling): EVGEN-stage
+    catalog rows carry s0.r0, separating request material from produced
+    data in the composed identity.
+    """
+    from .models import SimuTag
+    tag, _ = SimuTag.objects.get_or_create(
+        tag_number=0,
+        defaults={'status': 'locked',
+                  'description': 'Not simulated; generator-stage material.',
+                  'parameters': {'stage': 'EVGEN'},
                   'created_by': created_by})
     return tag
 

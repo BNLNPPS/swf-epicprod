@@ -41,6 +41,7 @@ from pcs.physics_match import derive_physics  # noqa: E402
 from pcs.services import (  # noqa: E402
     _ensure_csvimport_anchors,
     _ensure_r0_stage_tag,
+    _ensure_s0_stage_tag,
     _past_arrival_discrimination,
     find_or_create_background_tag,
     find_or_create_evgen_tag,
@@ -69,15 +70,27 @@ def main():
     # outputs carry r0 (not reconstructed); the r axis separates a
     # production's FULL and RECO datasets. Applied class-wide to every
     # archive FULL row still on the reconstruction anchor.
-    _, _, _, reco_anchor, _, _ = _ensure_csvimport_anchors()
+    _, _, simu_anchor, reco_anchor, _, _ = _ensure_csvimport_anchors()
     r0 = _ensure_r0_stage_tag(created_by='stage_ruling')
+    s0 = _ensure_s0_stage_tag(created_by='stage_ruling')
     stage_rows = list(Dataset.objects.filter(
         dataset_name__startswith='past.FULL.', reco_tag=reco_anchor))
     print(f'phase 1 (stage r0): {len(stage_rows)} FULL rows on the reco anchor')
+    evgen_rows = list(Dataset.objects.filter(metadata__stage='evgen')
+                      .filter(simu_tag=simu_anchor) |
+                      Dataset.objects.filter(metadata__stage='evgen')
+                      .filter(reco_tag=reco_anchor))
+    print(f'phase 1b (stage s0.r0): {len(evgen_rows)} EVGEN rows on anchors')
     if args.apply:
         with transaction.atomic():
             for ds in stage_rows:
                 ds.reco_tag = r0
+                ds.save()
+            for ds in evgen_rows:
+                if ds.simu_tag_id == simu_anchor.pk:
+                    ds.simu_tag = s0
+                if ds.reco_tag_id == reco_anchor.pk:
+                    ds.reco_tag = r0
                 ds.save()
 
     # Phase 2 — decision-table discrimination for members of duplicated
