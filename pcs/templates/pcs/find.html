@@ -224,13 +224,13 @@
 
 {% if hits is not None %}
 <div class="pcs-find-results">
-  {% if has_unregistered %}
-  <p class="text-muted mb-2">Matches marked EVGEN (unregistered) are generator inputs implied by produced data but not registered in Rucio: the files exist at the direct path shown, and there is no Rucio record to link. The full worklist is the <a href="{% url 'pcs:evgen_inputs' %}?view=coverage">registration coverage</a> tab of EVGEN Inputs.</p>
-  {% endif %}
   {% if hits %}
   <p class="mb-2"><strong>{{ hits|length }}</strong> match{{ hits|length|pluralize:"es" }} for &ldquo;{{ q }}&rdquo;<span id="pcs-find-shown" class="text-muted"></span></p>
   {% if hits|length > 1 %}
   <div id="pcs-find-bar" class="mb-3"></div>
+  {% endif %}
+  {% if has_unregistered %}
+  <p class="text-muted mb-2"><strong>EVGEN (unregistered):</strong> generator inputs implied by produced data but not registered in Rucio: the files exist at the direct path shown, and there is no Rucio record to link. The full worklist is the <a href="{% url 'pcs:evgen_inputs' %}?view=coverage">registration coverage</a> tab of EVGEN Inputs.</p>
   {% endif %}
   <table id="pcs-find-table" class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
     <thead>
