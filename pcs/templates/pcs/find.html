@@ -17,25 +17,26 @@
   /* Simple page: long DIDs wrap in place — never a horizontal scroll frame. */
   #pcs-find-table { max-width: 100%; }
   #pcs-find-table td:nth-child(2) { word-break: break-all; font-size: .875rem; }
+  /* Embedded full-width dialog — in document flow, never occluding the
+     page; the reader scrolls between Brains and the results. Lavender
+     lives only in the title chip. */
   #pcs-brains-panel {
-    position: fixed; right: 1.5rem; bottom: 1.5rem; width: 34rem;
-    max-width: calc(100vw - 3rem); max-height: 75vh; z-index: 1050;
-    display: none; flex-direction: column;
+    display: none; max-width: 80rem; margin: 1.5rem auto;
+    text-align: left;
+    border: 1px solid var(--ai-border); border-radius: .5rem;
     background: var(--bs-body-bg, #fff);
-    border: 2px solid var(--ai-border); border-radius: .6rem;
-    box-shadow: 0 .5rem 1.5rem rgba(0,0,0,.25);
   }
-  #pcs-brains-panel.open { display: flex; }
+  #pcs-brains-panel.open { display: block; }
   .pcs-brains-head {
     display: flex; align-items: center; justify-content: space-between;
-    padding: .5rem .8rem; background: var(--ai-bg); color: var(--ai-fg);
-    border-radius: .45rem .45rem 0 0; font-weight: 600;
+    padding: .5rem .8rem; border-bottom: 1px solid var(--ai-border);
+    font-weight: 600;
   }
-  .pcs-brains-head button { border: none; background: none; color: var(--ai-fg); font-size: 1.3rem; line-height: 1; }
-  #pcs-brains-turns { overflow-y: auto; padding: .8rem; flex: 1; }
-  .pcs-brains-turn { margin-bottom: .7rem; white-space: pre-wrap; word-break: break-word; }
+  .pcs-brains-head button { border: none; background: none; font-size: 1.3rem; line-height: 1; }
+  #pcs-brains-turns { padding: .8rem; }
+  .pcs-brains-turn { margin-bottom: .8rem; white-space: pre-wrap; word-break: break-word; }
   .pcs-brains-turn.user { font-weight: 600; }
-  .pcs-brains-turn.assistant { background: var(--ai-bg); color: var(--ai-fg); border: 1px solid var(--ai-border); border-radius: .5rem; padding: .5rem .7rem; }
+  .pcs-brains-turn.assistant { border-left: 3px solid var(--ai-border); padding: .2rem 0 .2rem .8rem; }
   #pcs-brains-status { padding: 0 .8rem .5rem .8rem; color: var(--bs-secondary-color, #666); }
   .pcs-brains-inputrow { display: flex; gap: .5rem; padding: .6rem .8rem; border-top: 1px solid var(--ai-border); }
   #pcs-find-bar .filter-link { margin-right: 0.6em; color: #007bff; text-decoration: none; }
@@ -64,7 +65,7 @@
 
 <div id="pcs-brains-panel" aria-label="Brains dialog">
   <div class="pcs-brains-head">
-    <span><span class="ai-attr-text">Brains</span> DISpatcher on the case</span>
+    <span><span class="ai-attr-text">Brains</span> <span id="pcs-brains-who">on the case</span></span>
     <button type="button" id="pcs-brains-close" title="Close">&times;</button>
   </div>
   <div id="pcs-brains-turns"></div>
@@ -129,6 +130,12 @@
       const r = await fetch(convUrl(conversationId));
       if (!r.ok) return false;
       const d = await r.json();
+      if (d.model) {
+        const fam = ['sonnet', 'opus', 'haiku', 'fable']
+          .find(f => d.model.toLowerCase().includes(f));
+        document.getElementById('pcs-brains-who').textContent =
+          (fam ? fam[0].toUpperCase() + fam.slice(1) : d.model) + ' on the case';
+      }
       if ((d.turns || []).length > renderedTurns) {
         render(d.turns);
         stopWaiting('');
@@ -185,9 +192,14 @@
   }
   btn.addEventListener('click', () => {
     panel.classList.add('open');
+    if (!waiting) statusEl.textContent = '';
     const seed = (qInput && qInput.value.trim()) || '';
     if (seed && !conversationId && !waiting) sendTurn(seed);
-    else inputEl.focus();
+    else {
+      if (conversationId && !waiting) refresh();
+      inputEl.focus();
+    }
+    panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
   });
   sendBtn.addEventListener('click', () => { sendTurn(inputEl.value); inputEl.value = ''; });
   inputEl.addEventListener('keydown', ev => {
