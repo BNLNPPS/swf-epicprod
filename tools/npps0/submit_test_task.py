@@ -23,7 +23,9 @@ import urllib.parse
 
 TASK_BASE = 'group.EIC.npps0.raindrop.test'
 QUEUE = 'BNL_NPPS_GPU'
-CONTAINER = '/home/wenaus/images/eic_dev_cuda_nightly.sif'
+# Pilot containerization accepts unpacked image directories (the form all
+# working epicproduction tasks use), not local SIF files.
+CONTAINER = '/cvmfs/singularity.opensciencegrid.org/eicweb/eic_dev_cuda:nightly'
 SOURCE_URL = 'https://pandaserver01.sdcc.bnl.gov:25443'
 PAYLOAD = ('nvidia-smi -L && '
            'git clone --depth 1 https://github.com/BNLNPPS/simphony.git && '
