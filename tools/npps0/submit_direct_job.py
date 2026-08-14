@@ -75,13 +75,14 @@ def main():
     job.cloud = 'EIC'
     job.VO = 'epic'
     job.workingGroup = 'EIC'
-    # ptest + prun: the Setupper keeps the original dataset name for
-    # this combination (no _sub dataset), and with destinationSE
-    # 'local' it skips registration and resolves the pre-created
-    # dataset by lookup. ptest is a neutral source: dispatched as
-    # production job type on production queues.
-    job.prodSourceLabel = 'ptest'
-    job.processingType = 'prun'
+    # Two verified gates crossed: dispatch to managed pilots serves
+    # labels managed/test/prod_test only (ptest is not served), and
+    # the Setupper keeps the original dataset name (no _sub) when
+    # processingType starts with 'gangarobot', independent of label.
+    # With destinationSE 'local' it then skips registration and
+    # resolves the pre-created dataset by lookup.
+    job.prodSourceLabel = 'test'
+    job.processingType = 'gangarobot-gpu'
     job.currentPriority = 1000
     job.coreCount = 8
     job.minRamCount = 3686
