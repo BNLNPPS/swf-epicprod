@@ -22,6 +22,13 @@ export PANDA_CONFIG_ROOT="$HOME/.pathena"
 export X509_USER_PROXY="$HOME/creds/longproxy-for-rucio"
 export EVGEN_X509_PROXY="$HOME/creds/eicprod-proxy-for-jlab"
 
+# BNL EIC Rucio for stage-out: same environ the production queues carry
+# in queuedata. RUCIO_CONFIG supplies auth_host/vo/x509 settings; the
+# explicit --rucio-host below overrides the pilot's ATLAS default host
+# (pilot.py falls back to config.Rucio.host when the flag is absent).
+export RUCIO_CONFIG=/cvmfs/eic.opensciencegrid.org/rucio-clients/rucio.cfg
+export RUCIO_ACCOUNT=panda
+
 # One GPU per pilot slot; instance 2 gets device 1 when we scale.
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
@@ -39,4 +46,5 @@ exec bash "$WRAPPER" \
     -i PR -j managed \
     --pythonversion 3 --localpy \
     --pilot-user epic \
-    --url https://pandaserver01.sdcc.bnl.gov -p 25443
+    --url https://pandaserver01.sdcc.bnl.gov -p 25443 \
+    --rucio-host https://nprucio01.sdcc.bnl.gov:443
