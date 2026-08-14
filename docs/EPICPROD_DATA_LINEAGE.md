@@ -281,3 +281,15 @@ resolution), and the EVGEN Inputs page's registration-coverage section
 — the worklist of EVGEN paths that produced datasets imply but the
 recorded inventory lacks. Convention answers are labeled as such and a
 resolution failure is a stated refusal, never a guessed path.
+
+The **find page** (`/pcs/find/`) serves direct dataset lookup: a single
+query field over the recorded corpus — produced Rucio DIDs across all
+campaigns, the registered EVGEN inventory, and the convention-implied
+EVGEN paths the inventory lacks. Query words are matched as substrings
+and all must match. A query with exactly one match redirects to that
+dataset's detail page; an unregistered EVGEN match is listed with its
+direct xrootd path and a produced dataset page that states it. The
+search corpus is a cached product built from local state; the render
+path makes no Rucio call. The page carries a second, LLM-assisted
+search action, presented with its status stated until its execution
+path is wired.

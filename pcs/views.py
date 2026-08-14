@@ -7,6 +7,7 @@ Read operations are public; create/edit/lock require login.
 """
 import json
 import logging
+import re
 import time
 import hashlib
 from functools import wraps
@@ -1728,6 +1729,167 @@ def evgen_inputs_update(request):
     messages.success(request,
                      'EVGEN update queued — refreshing in the background.')
     return redirect(reverse('pcs:evgen_inputs'))
+
+
+def _build_find_corpus():
+    """Search corpus for the find-data page: every produced Rucio DID on
+    the task records, every registered EVGEN dataset in the recorded
+    inventory, and every convention-implied EVGEN path the inventory
+    lacks. Entries carry scope/name for render-time URL building (never
+    a baked path) and a lowercase match blob. Local state only — no
+    Rucio call.
+    """
+    import json as _json
+    import os as _os
+    from .services import (RUCIO_SNAPSHOT_DIR, EVGEN_RUCIO_SNAPSHOT_NAME,
+                           _rucio_evgen_entry, XROOTD_EPIC_BASE,
+                           _extract_past_filters, _extract_evgen_did_filters)
+
+    def _did_parts(did):
+        scope, _, name = str(did).partition(':')
+        return scope, name.lstrip('/')
+
+    generator_re = re.compile(r'^[A-Za-z].*\d.*[.-]\d')
+
+    def _augment_facets(facets, segs):
+        # Fields the shared axes leave empty on these name shapes: the
+        # species segment after BEAMGAS, and the generator-version
+        # segment (pythia8.306-1.0, GETaLM1.0.0-1.1).
+        if not facets.get('species') and 'BEAMGAS' in segs:
+            i = segs.index('BEAMGAS')
+            if len(segs) > i + 1:
+                facets['species'] = segs[i + 1]
+        facets['generator'] = next(
+            (s for s in segs if generator_re.match(s)), '')
+        return facets
+
+    entries = []
+    seen_dids = set()
+    produced_paths = {}
+    for t in (ProdTask.objects.select_related('campaign', 'dataset')
+              .only('overrides', 'name', 'description', 'campaign__name',
+                    'dataset__composed_name')):
+        camp = t.campaign.name if t.campaign else ''
+        for out in (t.overrides or {}).get('outputs') or []:
+            did = str(out.get('did') or '')
+            if not did or ':' not in did:
+                continue
+            scope, name = _did_parts(did)
+            path = '/' + name
+            produced_paths.setdefault(path, did)
+            blob = ' '.join([did, camp, t.composed_name or '',
+                             t.description or '',
+                             str(out.get('stage') or '')]).lower()
+            if did in seen_dids:
+                continue
+            seen_dids.add(did)
+            segs = [s for s in name.split('/') if s]
+            facets = _augment_facets(_extract_past_filters(did), segs)
+            facets['version'] = (str(out.get('version') or '')
+                                 or (segs[1] if len(segs) > 1 else ''))
+            entries.append({
+                'kind': str(out.get('stage') or 'output'),
+                'did': did, 'scope': scope, 'name': name,
+                'campaign': camp,
+                'files': out.get('file_count'), 'bytes': out.get('bytes'),
+                'facets': facets,
+                'blob': blob,
+            })
+
+    registered_paths = set()
+    try:
+        with open(_os.path.join(RUCIO_SNAPSHOT_DIR,
+                                EVGEN_RUCIO_SNAPSHOT_NAME)) as f:
+            snap = _json.load(f)
+    except (OSError, ValueError) as e:
+        logging.getLogger(__name__).error(
+            'find corpus: EVGEN snapshot unreadable: %s', e)
+        snap = {}
+    for record in snap.get('datasets') or []:
+        entry = _rucio_evgen_entry(record)
+        did = str(entry['did'] or '')
+        if not did or ':' not in did:
+            continue
+        scope, name = _did_parts(did)
+        registered_paths.add('/' + name)
+        facets = _augment_facets(_extract_evgen_did_filters(did),
+                                 [s for s in name.split('/') if s])
+        facets['version'] = ''
+        entries.append({
+            'kind': 'EVGEN',
+            'did': did, 'scope': scope, 'name': name,
+            'campaign': '',
+            'files': entry['file_count'], 'bytes': entry['bytes'],
+            'facets': facets,
+            'blob': did.lower(),
+        })
+
+    # Convention-implied EVGEN paths absent from the registered inventory
+    # (the registration-coverage population): the answer for these is the
+    # direct xrootd path, plus a produced dataset whose page states it.
+    implied = {}
+    for path, did in produced_paths.items():
+        segs = [s for s in path.split('/') if s]
+        if len(segs) > 3 and segs[0] in ('RECO', 'FULL'):
+            epath = '/EVGEN/' + '/'.join(segs[3:])
+            implied.setdefault(epath, did)
+    for epath in sorted(set(implied) - registered_paths):
+        reco_did = implied[epath]
+        scope, name = _did_parts(reco_did)
+        facets = _augment_facets(
+            _extract_evgen_did_filters('epic:' + epath),
+            [s for s in epath.split('/') if s])
+        facets['version'] = ''
+        entries.append({
+            'kind': 'EVGEN (unregistered)',
+            'did': '', 'scope': scope, 'name': name,
+            'campaign': '',
+            'evgen_path': epath,
+            'xrootd_path': XROOTD_EPIC_BASE + epath,
+            'files': None, 'bytes': None,
+            'facets': facets,
+            'blob': (epath + ' ' + reco_did).lower(),
+        })
+    return entries
+
+
+def find_data(request):
+    """Find data: one search field over everything recorded — produced
+    Rucio DIDs across all campaigns, the registered EVGEN inventory, and
+    unregistered convention-implied EVGEN paths. Tokens are ANDed as
+    substrings; a single hit redirects straight to its dataset page.
+    The corpus is a cached product; the render path makes no Rucio call.
+    The brains engine (LLM-assisted search) is design-reserved: v1
+    states its status honestly and shows the direct result.
+    """
+    from monitor_app.cached_product import get_product
+
+    q = (request.GET.get('q') or '').strip()
+    engine = (request.GET.get('engine') or '').strip()
+    hits = None
+    if q:
+        corpus = []
+        try:
+            product = get_product('pcs_find_corpus:v3', _build_find_corpus,
+                                  ttl_seconds=900)
+            corpus = product.get('value') or []
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).error(
+                'find corpus build failed: %s', exc)
+            messages.error(request, f'Search index unavailable: {exc}')
+        tokens = q.lower().split()
+        hits = [e for e in corpus if all(t in e['blob'] for t in tokens)]
+        kind_rank = {'EVGEN (unregistered)': 2}
+        hits.sort(key=lambda e: (kind_rank.get(e['kind'], 1),
+                                 e.get('did') or e.get('evgen_path') or ''))
+        if len(hits) == 1 and hits[0]['did'] and engine != 'brains':
+            return redirect(reverse('pcs:rucio_did_detail',
+                                    args=[hits[0]['scope'], hits[0]['name']]))
+    return render(request, 'pcs/find.html', {
+        'q': q, 'hits': hits, 'engine': engine,
+        'has_unregistered': bool(hits) and any(
+            e['kind'] == 'EVGEN (unregistered)' for e in hits),
+    })
 
 
 def datasets_list(request):

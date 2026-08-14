@@ -1,5 +1,11 @@
 {# Shared PCS sections — included by both PCS hub and Production hub #}
 
+<form method="get" action="{% url 'pcs:find_data' %}" class="d-flex align-items-center mb-4" style="max-width:44rem;">
+    <input type="search" name="q" class="form-control me-2"
+           placeholder="Find data: beamgas proton 275, DIS NC 10x100&hellip;">
+    <button type="submit" class="btn btn-primary text-nowrap">Hey Rucio, I feel lucky</button>
+</form>
+
 <h3 class="mb-3">Tags</h3>
 <div class="row mb-4" style="display:flex; flex-wrap:wrap;">
     <div style="flex:1; min-width:160px; padding:0 .5rem; margin-bottom:1rem;">
