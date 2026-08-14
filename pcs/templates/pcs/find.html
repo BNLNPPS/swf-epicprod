@@ -10,6 +10,9 @@
   .btn-brains {
     color: var(--ai-fg); background-color: var(--ai-bg);
     border: 1px solid var(--ai-border); font-weight: 600;
+    /* Bootstrap eases box-shadow but not filter — kill the transition
+       so the hover dim and ring land together in one step. */
+    transition: none;
   }
   /* Bootstrap's .btn:hover goes transparent — pin bg and border.
      The shadow ring thickens the border on hover without moving layout. */
