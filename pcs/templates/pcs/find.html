@@ -14,11 +14,11 @@
        so the hover dim and ring land together in one step. */
     transition: none;
   }
-  /* Bootstrap's .btn:hover goes transparent — pin bg and border. */
+  /* Bootstrap's .btn:hover goes transparent — pin the border, darken
+     only the interior. */
   .btn-brains:hover {
-    filter: brightness(0.95); color: var(--ai-fg);
-    background-color: var(--ai-bg); border-color: var(--ai-border);
-    border-width: 2px;
+    color: var(--ai-fg); border-color: var(--ai-border);
+    background-color: color-mix(in srgb, var(--ai-bg) 93%, black);
   }
   .pcs-find-results { max-width: 80rem; margin: 2rem auto; }
   /* Simple page: long DIDs wrap in place — never a horizontal scroll frame. */
