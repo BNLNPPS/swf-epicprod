@@ -1,0 +1,23 @@
+# PanDA pilot loop for the BNL_NPPS_GPU queue on npps0.
+# Install: sudo cp epicprod-gpu-pilot.service /etc/systemd/system/ &&
+#          sudo systemctl daemon-reload && sudo systemctl enable --now epicprod-gpu-pilot
+# The service runs one pilot pass (tools/npps0/epicprod-gpu-pilot.sh) and
+# restarts on a fixed cadence: an idle queue costs one getJob poll per cycle.
+[Unit]
+Description=PanDA pilot (pull mode) for BNL_NPPS_GPU
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wenaus
+ExecStart=/home/wenaus/bin/epicprod-gpu-pilot.sh
+Environment=CUDA_VISIBLE_DEVICES=0
+Restart=always
+RestartSec=300
+# A stuck pilot is reaped after the queue's maxtime plus margin.
+RuntimeMaxSec=90000
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
