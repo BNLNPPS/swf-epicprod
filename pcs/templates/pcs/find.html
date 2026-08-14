@@ -9,12 +9,14 @@
   .pcs-find-input { font-size: 1.4rem; padding: .6em .8em; }
   .btn-brains {
     color: var(--ai-fg); background-color: var(--ai-bg);
-    border: 2px solid var(--ai-border); font-weight: 600;
+    border: 1px solid var(--ai-border); font-weight: 600;
   }
-  /* Bootstrap's .btn:hover goes transparent — pin bg and border. */
+  /* Bootstrap's .btn:hover goes transparent — pin bg and border.
+     The shadow ring thickens the border on hover without moving layout. */
   .btn-brains:hover {
     filter: brightness(0.95); color: var(--ai-fg);
     background-color: var(--ai-bg); border-color: var(--ai-border);
+    box-shadow: 0 0 0 1px var(--ai-border);
   }
   .pcs-find-results { max-width: 80rem; margin: 2rem auto; }
   /* Simple page: long DIDs wrap in place — never a horizontal scroll frame. */
