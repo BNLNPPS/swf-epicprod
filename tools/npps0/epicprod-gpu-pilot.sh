@@ -38,4 +38,5 @@ exec bash "$WRAPPER" \
     -e eic \
     -i PR -j managed \
     --pythonversion 3 --localpy \
-    --pilot-user epic
+    --pilot-user epic \
+    --url https://pandaserver01.sdcc.bnl.gov -p 25443
