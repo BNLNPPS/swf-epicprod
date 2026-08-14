@@ -26,7 +26,8 @@
     border: 1px solid var(--ai-border); border-radius: .5rem;
     background: var(--bs-body-bg, #fff);
   }
-  #pcs-brains-panel.open { display: block; }
+  #pcs-brains-panel.open { display: flex; flex-direction: column; max-height: 80vh; }
+  #pcs-brains-turns { overflow-y: auto; flex: 1; }
   .pcs-brains-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: .5rem .8rem; border-bottom: 1px solid var(--ai-border);
