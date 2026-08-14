@@ -39,7 +39,7 @@ def main():
         'vo': 'eic',
         'workingGroup': 'EIC',
         'campaign': '',
-        'prodSourceLabel': 'test',
+        'prodSourceLabel': 'managed',
         'taskType': 'production',
         'processingType': 'gputest',
         'taskPriority': 1000,
