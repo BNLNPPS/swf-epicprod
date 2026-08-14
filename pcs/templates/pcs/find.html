@@ -48,11 +48,14 @@
 <div class="pcs-find-box{% if hits is not None %} pcs-find-with-results{% endif %}">
   <h1 class="mb-4">Find data</h1>
   <form method="get" action="{% url 'pcs:find_data' %}">
-    <input type="search" name="q" value="{{ q }}" autofocus
-           class="form-control form-control-lg pcs-find-input mb-4"
-           placeholder="beamgas proton 275, DIS NC 10x100 minQ2=1, a dataset path or name fragment&hellip;">
+    <div class="d-flex align-items-center mb-4">
+      <input type="search" name="q" value="{{ q }}" autofocus
+             class="form-control form-control-lg pcs-find-input me-3"
+             placeholder="beamgas proton 275, DIS NC 10x100 minQ2=1, a dataset path or name fragment&hellip;">
+      {% if q %}<a href="{% url 'pcs:find_data' %}" class="btn btn-secondary btn-lg" title="Clear the search and all filters">Clear</a>{% else %}<button type="button" class="btn btn-outline-secondary btn-lg" disabled>Clear</button>{% endif %}
+    </div>
     <div><button type="submit" name="engine" value="lucky" class="btn btn-primary btn-lg">Hey Rucio, I feel lucky</button></div>
-    <div class="mt-3"><button type="button" id="pcs-brains-btn" class="btn btn-brains">Brains, give me some help</button></div>
+    <div class="mt-3"><button type="button" id="pcs-brains-btn" class="btn btn-lg btn-brains">Brains, give me some help</button></div>
     {% csrf_token %}
   </form>
   <p class="text-muted mt-3">Searches everything recorded: produced datasets across all campaigns and the full EVGEN inventory, registered or not. All words must match. A single match goes straight to its dataset page.</p>
@@ -99,8 +102,12 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   }
   function linkify(s) {
-    return esc(s).replace(/https?:\/\/[^\s<)"']+/g,
-      m => '<a href="' + m + '" target="_blank" rel="noopener">' + m + '</a>');
+    return esc(s).replace(/https?:\/\/[^\s<)"']+/g, m => {
+      const trimmed = m.replace(/[.,;:!?]+$/, '');
+      const tail = m.slice(trimmed.length);
+      return '<a href="' + trimmed + '" target="_blank" rel="noopener">'
+        + trimmed + '</a>' + tail;
+    });
   }
   function render(turns) {
     turnsEl.innerHTML = turns.map(t =>
@@ -200,7 +207,7 @@
   <p class="text-muted mb-2">Matches marked EVGEN (unregistered) are generator inputs implied by produced data but not registered in Rucio: the files exist at the direct path shown, and there is no Rucio record to link. The full worklist is the <a href="{% url 'pcs:evgen_inputs' %}?view=coverage">registration coverage</a> tab of EVGEN Inputs.</p>
   {% endif %}
   {% if hits %}
-  <p class="mb-2"><strong>{{ hits|length }}</strong> match{{ hits|length|pluralize:"es" }} for &ldquo;{{ q }}&rdquo;</p>
+  <p class="mb-2"><strong>{{ hits|length }}</strong> match{{ hits|length|pluralize:"es" }} for &ldquo;{{ q }}&rdquo;<span id="pcs-find-shown" class="text-muted"></span></p>
   {% if hits|length > 1 %}
   <div id="pcs-find-bar" class="mb-3"></div>
   {% endif %}
@@ -233,6 +240,7 @@
       {% endfor %}
     </tbody>
   </table>
+  <p id="pcs-find-empty" class="text-muted" style="display:none;">No matches under this filter combination &mdash; Clear filters restores the full result.</p>
   {% else %}
   <p>No recorded dataset matches &ldquo;{{ q }}&rdquo;. Fewer or shorter words widen the search.</p>
   {% endif %}
@@ -290,7 +298,19 @@
     history.replaceState(null, '', u);
   }
   function render() {
-    rows.forEach(tr => { tr.style.display = rowMatches(tr, null) ? '' : 'none'; });
+    let shown = 0;
+    rows.forEach(tr => {
+      const on = rowMatches(tr, null);
+      tr.style.display = on ? '' : 'none';
+      if (on) shown += 1;
+    });
+    const anyFilter = FIELDS.some(f => state[f.key]);
+    const shownEl = document.getElementById('pcs-find-shown');
+    if (shownEl) {
+      shownEl.textContent = anyFilter ? ' — showing ' + shown + ' under the filters' : '';
+    }
+    const emptyEl = document.getElementById('pcs-find-empty');
+    if (emptyEl) emptyEl.style.display = (shown === 0 && anyFilter) ? '' : 'none';
     const parts = [];
     for (const f of FIELDS) {
       // A field earns its row from values across the whole result set,
@@ -316,10 +336,10 @@
       parts.push('<div class="pcs-find-bar-row"><span class="pcs-find-label">'
                  + f.label + ':</span>' + links.join('') + '</div>');
     }
-    if (FIELDS.some(f => state[f.key])) {
-      parts.push('<button type="button" id="pcs-find-clear" '
-                 + 'class="btn btn-secondary btn-sm mt-1">Clear filters</button>');
-    }
+    parts.push('<button type="button" id="pcs-find-clear" class="btn btn-sm mt-1 '
+               + (anyFilter ? 'btn-secondary' : 'btn-outline-secondary')
+               + '"' + (anyFilter ? '' : ' disabled')
+               + '>Clear filters</button>');
     bar.innerHTML = parts.join('');
     const clear = document.getElementById('pcs-find-clear');
     if (clear) clear.addEventListener('click', () => {
