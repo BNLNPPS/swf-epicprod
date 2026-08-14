@@ -3,9 +3,10 @@
 #
 # Runs the standard BNL pilot wrapper from CVMFS in pull mode: the pilot
 # asks the PanDA server for a job, runs it if one is assigned, and exits.
-# systemd (epicprod-gpu-pilot.service) restarts this script on a fixed
-# cadence, which is the whole provisioning layer for a single always-on
-# host — no Harvester, no CE (docs/JEDI_INTEGRATION.md, npps0 section).
+# The launcher loop (epicprod-gpu-pilot-launcher.sh, run by the systemd
+# service) invokes this script fresh each cycle under a per-GPU flock,
+# which is the whole provisioning layer for a single always-on host —
+# no Harvester, no CE (docs/JEDI_INTEGRATION.md, npps0 section).
 #
 # Credentials: the PanDA OIDC token under $PANDA_CONFIG_ROOT and the
 # Rucio x509 proxy, copies of the pandaserver02 production credentials

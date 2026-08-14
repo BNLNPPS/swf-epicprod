@@ -1,22 +1,26 @@
-# PanDA pilot loop for the BNL_NPPS_GPU queue on npps0.
+# PanDA pilot launcher for the BNL_NPPS_GPU queue on npps0.
 # Install: sudo cp epicprod-gpu-pilot.service /etc/systemd/system/ &&
 #          sudo systemctl daemon-reload && sudo systemctl enable --now epicprod-gpu-pilot
-# The service runs one pilot pass (tools/npps0/epicprod-gpu-pilot.sh) and
-# restarts on a fixed cadence: an idle queue costs one getJob poll per cycle.
+#
+# The service runs the launcher loop (epicprod-gpu-pilot-launcher.sh);
+# each pilot pass is a child serialized by a per-GPU flock. KillMode=process
+# means stop/restart kills only the loop: an in-flight pass survives and
+# completes, and the next launcher instance waits on the lock. Pass-script
+# deploys take effect at the next pass boundary without any restart.
+# Stuck passes are reaped by timeout(1) inside the launcher.
 [Unit]
-Description=PanDA pilot (pull mode) for BNL_NPPS_GPU
+Description=PanDA pilot launcher (pull mode) for BNL_NPPS_GPU
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=wenaus
-ExecStart=/home/wenaus/bin/epicprod-gpu-pilot.sh
+ExecStart=/home/wenaus/bin/epicprod-gpu-pilot-launcher.sh
 Environment=CUDA_VISIBLE_DEVICES=0
 Restart=always
-RestartSec=60
-# A stuck pilot is reaped after the queue's maxtime plus margin.
-RuntimeMaxSec=90000
+RestartSec=10
+KillMode=process
 NoNewPrivileges=true
 
 [Install]
