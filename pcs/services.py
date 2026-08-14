@@ -5235,7 +5235,8 @@ def rucio_snapshot_update_request(*, created_by='rucio_snapshot'):
             status=503)
 
 
-def brains_query_request(*, conversation_id, username, message):
+def brains_query_request(*, conversation_id, username, message,
+                         page_state=''):
     """Publish one turn of a Find Data Brains dialog to the DISpatcher
     bot's web inlet queue. The bot runs its engine on the turn, writes the
     conversation file under SWF_TMP_DIR/brains/, and announces completion
@@ -5244,7 +5245,8 @@ def brains_query_request(*, conversation_id, username, message):
     docs/PANDA_BOT.md (swf-monitor) and EPICPROD_LLM_OPERATIONS.md."""
     import json as _json
     msg = {'msg_type': 'brains_query', 'conversation_id': conversation_id,
-           'username': username, 'message': message}
+           'username': username, 'message': message,
+           'page_state': page_state or ''}
     from monitor_app.activemq_connection import ActiveMQConnectionManager
     try:
         triggered = ActiveMQConnectionManager().send_message(

@@ -1777,9 +1777,9 @@ def _build_find_corpus():
             scope, name = _did_parts(did)
             path = '/' + name
             produced_paths.setdefault(path, did)
+            kind = str(out.get('stage') or 'output')
             blob = ' '.join([did, camp, t.composed_name or '',
-                             t.description or '',
-                             str(out.get('stage') or '')]).lower()
+                             t.description or '', kind]).lower()
             if did in seen_dids:
                 continue
             seen_dids.add(did)
@@ -1788,7 +1788,7 @@ def _build_find_corpus():
             facets['version'] = (str(out.get('version') or '')
                                  or (segs[1] if len(segs) > 1 else ''))
             entries.append({
-                'kind': str(out.get('stage') or 'output'),
+                'kind': kind,
                 'did': did, 'scope': scope, 'name': name,
                 'campaign': camp,
                 'files': out.get('file_count'), 'bytes': out.get('bytes'),
@@ -1821,7 +1821,7 @@ def _build_find_corpus():
             'campaign': '',
             'files': entry['file_count'], 'bytes': entry['bytes'],
             'facets': facets,
-            'blob': did.lower(),
+            'blob': (did + ' evgen registered').lower(),
         })
 
     # Convention-implied EVGEN paths absent from the registered inventory
@@ -1848,37 +1848,51 @@ def _build_find_corpus():
             'xrootd_path': XROOTD_EPIC_BASE + epath,
             'files': None, 'bytes': None,
             'facets': facets,
-            'blob': (epath + ' ' + reco_did).lower(),
+            'blob': (epath + ' ' + reco_did + ' evgen unregistered').lower(),
         })
     return entries
+
+
+def _find_corpus():
+    """The cached find corpus (empty list on build failure, error logged)."""
+    from monitor_app.cached_product import get_product
+    product = get_product('pcs_find_corpus:v4', _build_find_corpus,
+                          ttl_seconds=900)
+    return product.get('value') or []
+
+
+def _find_hits(corpus, q):
+    """Match a find query against the corpus: words are ANDed as
+    substrings; a word prefixed with '-' excludes entries containing it."""
+    tokens = q.lower().split()
+    include = [t for t in tokens if not t.startswith('-')]
+    exclude = [t[1:] for t in tokens if t.startswith('-') and len(t) > 1]
+    return [e for e in corpus
+            if all(t in e['blob'] for t in include)
+            and not any(t in e['blob'] for t in exclude)]
 
 
 def find_data(request):
     """Find data: one search field over everything recorded — produced
     Rucio DIDs across all campaigns, the registered EVGEN inventory, and
-    unregistered convention-implied EVGEN paths. Tokens are ANDed as
-    substrings; a single hit redirects straight to its dataset page.
-    The corpus is a cached product; the render path makes no Rucio call.
-    The brains engine (LLM-assisted search) is design-reserved: v1
-    states its status honestly and shows the direct result.
+    unregistered convention-implied EVGEN paths. Words are ANDed as
+    substrings and '-word' excludes; a single hit redirects straight to
+    its dataset page. The corpus is a cached product; the render path
+    makes no Rucio call. The Brains dialog runs on the DISpatcher
+    engine over the same bar.
     """
-    from monitor_app.cached_product import get_product
-
     q = (request.GET.get('q') or '').strip()
     engine = (request.GET.get('engine') or '').strip()
     hits = None
     if q:
         corpus = []
         try:
-            product = get_product('pcs_find_corpus:v3', _build_find_corpus,
-                                  ttl_seconds=900)
-            corpus = product.get('value') or []
+            corpus = _find_corpus()
         except Exception as exc:  # noqa: BLE001
             logging.getLogger(__name__).error(
                 'find corpus build failed: %s', exc)
             messages.error(request, f'Search index unavailable: {exc}')
-        tokens = q.lower().split()
-        hits = [e for e in corpus if all(t in e['blob'] for t in tokens)]
+        hits = _find_hits(corpus, q)
         kind_rank = {'EVGEN (unregistered)': 2}
         hits.sort(key=lambda e: (kind_rank.get(e['kind'], 1),
                                  e.get('did') or e.get('evgen_path') or ''))
@@ -1932,10 +1946,27 @@ def find_brains_post(request):
             status=429)
     cache.set(rl_key, turns + 1, 600)
     username = (getattr(request.user, 'username', '') or 'web user')
+    # Ground the engine in what the page currently shows: the applied
+    # search and its kind breakdown ride into the turn's context.
+    page_state = ''
+    page_q = str(body.get('page_q') or '').strip()
+    if page_q:
+        try:
+            hits = _find_hits(_find_corpus(), page_q)
+            kinds = {}
+            for e in hits:
+                kinds[e['kind']] = kinds.get(e['kind'], 0) + 1
+            breakdown = ', '.join(f'{k} {n}' for k, n in sorted(kinds.items()))
+            page_state = (f"applied search '{page_q}': {len(hits)} matches"
+                          + (f' ({breakdown})' if breakdown else ''))
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).error(
+                'brains page-state build failed: %s', exc)
     from .services import brains_query_request, ServiceError
     try:
         brains_query_request(conversation_id=conversation_id,
-                             username=username, message=message)
+                             username=username, message=message,
+                             page_state=page_state)
     except ServiceError as e:
         return JsonResponse({'error': e.detail}, status=e.status)
     return JsonResponse({'conversation_id': conversation_id})

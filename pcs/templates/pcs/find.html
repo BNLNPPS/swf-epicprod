@@ -85,7 +85,7 @@
     <div class="row mt-2">
       <div class="col-md-6">
         <button type="submit" name="engine" value="lucky" class="btn btn-primary btn-lg">Hey Rucio, I feel lucky</button>
-        <p class="text-muted mt-3">Searches everything recorded: produced datasets across all campaigns and the full EVGEN inventory, registered or not. All words must match. A single match goes straight to its dataset page.</p>
+        <p class="text-muted mt-3">Searches everything recorded: produced datasets across all campaigns and the full EVGEN inventory, registered or not. All words must match; a word prefixed with &minus; excludes (e.g. &minus;unregistered). A single match goes straight to its dataset page.</p>
       </div>
       <div class="col-md-6">
         <button type="button" id="pcs-brains-btn" class="btn btn-lg btn-brains">Brains, give me some help</button>
@@ -278,10 +278,12 @@
     turnsEl.appendChild(optimistic);
     turnsEl.scrollTop = turnsEl.scrollHeight;
     try {
+      const pageQ = new URL(window.location.href).searchParams.get('q') || '';
       const r = await fetch(postUrl, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-        body: JSON.stringify({conversation_id: conversationId, message: text}),
+        body: JSON.stringify({conversation_id: conversationId, message: text,
+                              page_q: pageQ}),
       });
       const d = await r.json();
       if (!r.ok) {
