@@ -1784,7 +1784,10 @@ def _ensure_csvimport_anchors():
     per-task when they bind a real Dataset/Config to a CSV-imported task.
     """
     def first_locked(model, label):
-        t = model.objects.order_by('tag_number').first()
+        # Anchors are the lowest REGULAR tag (number >= 1). Tag number 0 is
+        # reserved for semantic sentinels (r0 = not reconstructed) and must
+        # never become an implicit anchor.
+        t = model.objects.filter(tag_number__gte=1).order_by('tag_number').first()
         if not t:
             raise ServiceError(f'No {label} tag available for CSV import')
         return t
@@ -2632,6 +2635,23 @@ def _version_tuple(v):
     return tuple(int(p) if p.isdigit() else -1 for p in str(v or '').split('.'))
 
 
+def _ensure_r0_stage_tag(created_by='past_import'):
+    """The r0 reconstruction tag: not reconstructed — FULL simulation output.
+
+    Operator ruling 2026-08-14: archive stage enters the composed identity
+    through the r axis. RECO rows carry the reconstruction anchor; FULL rows
+    carry r0, separating a production's FULL and RECO datasets by name.
+    """
+    from .models import RecoTag
+    tag, _ = RecoTag.objects.get_or_create(
+        tag_number=0,
+        defaults={'status': 'locked',
+                  'description': 'Not reconstructed; FULL simulation output.',
+                  'parameters': {'stage': 'FULL'},
+                  'created_by': created_by})
+    return tag
+
+
 _ARRIVAL_POL_RE = _re.compile(r'^e[mp]h[LT][mp]$')
 _ARRIVAL_DVCS_VARIANTS = ('BH_ONLY', 'DVCS_BH', 'DVCS_ONLY')
 _ARRIVAL_EPIC_VERSION_RE = _re.compile(r'^EpIC(?:_v)?([\d.\-]+)$')
@@ -2742,6 +2762,7 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
     import os as _os
     import yaml as _yaml
     physics, evgen, simu, reco, cfg, _ = _ensure_csvimport_anchors()
+    r0 = _ensure_r0_stage_tag(created_by=created_by)
     current_camp = Campaign.objects.filter(lifecycle='current').first()
     current_v = _version_tuple(current_camp.name) if current_camp else None
 
@@ -2855,23 +2876,43 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                         dataset_name=pcs_name, block_num=1).first()
                     ds_created = False
                     if ds is None:
-                        # A new row without a discriminating axis may not take
-                        # a composed name an existing dataset already holds:
-                        # skip and surface rather than mint ambiguity.
-                        if (row_background_tag is None and not row_sample
-                                and row_evgen_tag.pk == evgen.pk):
-                            bare_name = (
-                                f"group.EIC.{version}."
-                                f"{decomposed.get('detector_config', '')}."
-                                f"{row_physics_tag.tag_label}.{evgen.tag_label}."
-                                f"{simu.tag_label}.{reco.tag_label}")
-                            if Dataset.objects.filter(
-                                    composed_name=bare_name).exists():
-                                summary['errors'].append(
-                                    f'{stage}/{version}: DID {epic_did!r} would '
-                                    f'duplicate composed name {bare_name} and no '
-                                    f'discriminating axis derives — skipped')
-                                continue
+                        # Identity guard: if another dataset already holds the
+                        # composed name this row would take, the listing is a
+                        # republication of that dataset at a reorganized
+                        # archive path. Attach it to the holder — current
+                        # location, refreshed counts, prior path retained —
+                        # and create nothing.
+                        row_reco_tag = r0 if stage == 'FULL' else reco
+                        prospective = (
+                            f"group.EIC.{version}."
+                            f"{decomposed.get('detector_config', '')}."
+                            f"{row_physics_tag.tag_label}.{row_evgen_tag.tag_label}."
+                            f"{simu.tag_label}.{row_reco_tag.tag_label}")
+                        if row_background_tag is not None:
+                            prospective += f'.{row_background_tag.tag_label}'
+                        if row_sample:
+                            prospective += f'.{row_sample}'
+                        holder = Dataset.objects.filter(
+                            composed_name=prospective).exclude(
+                            dataset_name=pcs_name).first()
+                        if holder is not None:
+                            h_meta = dict(holder.metadata or {})
+                            h_past = dict(h_meta.get('past_output') or {})
+                            alts = list(h_past.get('alternate_paths') or [])
+                            old_loc = (h_meta.get('source') or {}).get('location', '')
+                            if old_loc and old_loc != epic_did and old_loc not in alts:
+                                alts.append(old_loc)
+                            h_meta['source'] = metadata['source']
+                            h_past.update(metadata['past_output'])
+                            h_past['alternate_paths'] = alts
+                            h_meta['past_output'] = h_past
+                            holder.metadata = h_meta
+                            holder.file_count = block['file_count']
+                            holder.data_size = block['data_size_bytes']
+                            holder.save()
+                            summary.setdefault('republications', 0)
+                            summary['republications'] += 1
+                            continue
                         ds = Dataset(
                             dataset_name=pcs_name, block_num=1,
                             scope='group.EIC', did=pcs_did,
@@ -2879,7 +2920,8 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                             detector_config=decomposed.get('detector_config', ''),
                             campaign=campaign,
                             physics_tag=row_physics_tag, evgen_tag=row_evgen_tag,
-                            simu_tag=simu, reco_tag=reco,
+                            simu_tag=simu,
+                            reco_tag=(r0 if stage == 'FULL' else reco),
                             background_tag=row_background_tag,
                             sample_name=row_sample,
                             file_count=block['file_count'],
@@ -2904,6 +2946,8 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                             ds.background_tag = row_background_tag
                         if row_sample and not ds.sample_name:
                             ds.sample_name = row_sample
+                        if stage == 'FULL' and ds.reco_tag_id == reco.pk:
+                            ds.reco_tag = r0
                         ds.save()
 
                     # Unified produced-output entry (ProdTask.outputs schema);

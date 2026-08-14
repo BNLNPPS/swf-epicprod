@@ -36,9 +36,11 @@ django.setup()
 from django.db import transaction  # noqa: E402
 from django.db.models import Count  # noqa: E402
 
-from pcs.models import Dataset  # noqa: E402
+from pcs.models import Dataset, ProdTask  # noqa: E402
 from pcs.physics_match import derive_physics  # noqa: E402
 from pcs.services import (  # noqa: E402
+    _ensure_csvimport_anchors,
+    _ensure_r0_stage_tag,
     _past_arrival_discrimination,
     find_or_create_background_tag,
     find_or_create_evgen_tag,
@@ -63,6 +65,23 @@ def main():
                         help='write changes (default: dry run)')
     args = parser.parse_args()
 
+    # Phase 1 — stage ruling (operator, 2026-08-14): FULL simulation
+    # outputs carry r0 (not reconstructed); the r axis separates a
+    # production's FULL and RECO datasets. Applied class-wide to every
+    # archive FULL row still on the reconstruction anchor.
+    _, _, _, reco_anchor, _, _ = _ensure_csvimport_anchors()
+    r0 = _ensure_r0_stage_tag(created_by='stage_ruling')
+    stage_rows = list(Dataset.objects.filter(
+        dataset_name__startswith='past.FULL.', reco_tag=reco_anchor))
+    print(f'phase 1 (stage r0): {len(stage_rows)} FULL rows on the reco anchor')
+    if args.apply:
+        with transaction.atomic():
+            for ds in stage_rows:
+                ds.reco_tag = r0
+                ds.save()
+
+    # Phase 2 — decision-table discrimination for members of duplicated
+    # composed names.
     dup_names = list(
         Dataset.objects.values('composed_name')
         .annotate(n=Count('id')).filter(n__gt=1)
@@ -150,6 +169,83 @@ def main():
         print(f'applied: {applied}; duplicated composed names now: {remaining}')
         audit['applied'] = applied
         audit['duplicated_names_after'] = remaining
+
+    # Phase 3 — republication fold. Groups still sharing a composed name
+    # after stage and discrimination are the same output listed at a
+    # reorganized archive path (added directory levels, retry directories):
+    # the oldest row is the dataset; newer nightly re-mints fold into it.
+    # The keeper takes the newest listing's path and counts, retains prior
+    # paths in metadata, and the re-mint rows and their past_output tasks
+    # are deleted. A group with no nightly_cron re-mint is listed for
+    # manual review, never touched.
+    folds, manual = [], []
+    post_dups = (Dataset.objects.values('composed_name')
+                 .annotate(n=Count('id')).filter(n__gt=1)
+                 .values_list('composed_name', flat=True))
+    for name in post_dups:
+        rows = sorted(Dataset.objects.filter(composed_name=name),
+                      key=lambda r: (r.created_at, r.pk))
+        keeper, extras = rows[0], rows[1:]
+        # HARD INTERLOCK: a FULL row and a RECO row are different data
+        # products and are NEVER fold partners; a stage-mixed group means
+        # stage discrimination has not landed and folding would delete
+        # real data (the 2026-08-14 incident). Manual review only.
+        stages = {r.dataset_name.split('.')[1] for r in rows
+                  if r.dataset_name.startswith('past.')}
+        if len(stages) > 1:
+            manual.append(name)
+        elif all(r.created_by == 'nightly_cron' for r in extras):
+            folds.append((keeper, extras))
+        else:
+            manual.append(name)
+    print(f'phase 3 (republication fold): {len(folds)} groups fold; '
+          f'{len(manual)} need manual review')
+    for keeper, extras in folds:
+        for r in extras:
+            print(f'  fold dataset {r.pk} ({r.dataset_name}) '
+                  f'-> {keeper.pk} ({keeper.dataset_name})  [{keeper.composed_name}]')
+    for name in manual:
+        print(f'  manual: {name}')
+    audit['folds'] = [
+        {'keeper': k.pk, 'keeper_name': k.dataset_name,
+         'composed_name': k.composed_name,
+         'folded': [{'pk': r.pk, 'dataset_name': r.dataset_name,
+                     'src': ((r.metadata or {}).get('source') or {}).get('location', '')}
+                    for r in extras]}
+        for k, extras in folds]
+    audit['manual_review'] = manual
+
+    if args.apply:
+        folded = 0
+        with transaction.atomic():
+            for keeper, extras in folds:
+                meta = dict(keeper.metadata or {})
+                past = dict(meta.get('past_output') or {})
+                alts = list(past.get('alternate_paths') or [])
+                keeper_src = (meta.get('source') or {}).get('location', '')
+                newest = max(extras, key=lambda r: (r.created_at, r.pk))
+                n_meta = newest.metadata or {}
+                n_src = (n_meta.get('source') or {}).get('location', '')
+                if keeper_src and n_src and keeper_src != n_src:
+                    alts.append(keeper_src)
+                    meta['source'] = dict(n_meta.get('source') or {})
+                    past.update(dict(n_meta.get('past_output') or {}))
+                past['alternate_paths'] = alts
+                meta['past_output'] = past
+                keeper.metadata = meta
+                keeper.file_count = newest.file_count
+                keeper.data_size = newest.data_size
+                keeper.save()
+                for r in extras:
+                    ProdTask.objects.filter(
+                        name=r.dataset_name, status='past_output').delete()
+                    r.delete()
+                    folded += 1
+        remaining = (Dataset.objects.values('composed_name')
+                     .annotate(n=Count('id')).filter(n__gt=1).count())
+        print(f'folded: {folded}; duplicated composed names now: {remaining}')
+        audit['folded'] = folded
+        audit['duplicated_names_final'] = remaining
     else:
         print('dry run — nothing written; rerun with --apply to execute')
 
