@@ -5257,6 +5257,26 @@ def brains_query_request(*, conversation_id, username, message):
             'Brains is unreachable (queue send failed).', status=503)
 
 
+def brains_event_request(*, conversation_id, username, query):
+    """Publish an applied-search event into a Brains dialog's durable
+    narrative. Record-only on the bot side — no LLM run. Raises
+    ServiceError if the queue is unreachable."""
+    import json as _json
+    msg = {'msg_type': 'brains_event', 'conversation_id': conversation_id,
+           'username': username, 'message': query}
+    from monitor_app.activemq_connection import ActiveMQConnectionManager
+    try:
+        triggered = ActiveMQConnectionManager().send_message(
+            '/queue/dispatcher.brains', _json.dumps(msg))
+    except Exception as e:
+        raise ServiceError(
+            f'Could not reach the Brains queue: {e}', status=503)
+    if not triggered:
+        raise ServiceError(
+            'Search event could not be recorded (queue send failed).',
+            status=503)
+
+
 def evgen_rucio_update_request(*, created_by='evgen_rucio'):
     """Publish an evgen_rucio_update request to the prod-ops agent, which
     assimilates the JLab Rucio EVGEN inventory (epic:/EVGEN/*) and resolves each

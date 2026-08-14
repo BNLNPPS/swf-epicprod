@@ -1888,11 +1888,15 @@ def find_data(request):
     from monitor_app.panda.constants import AI_MODEL
     family = next((f for f in ('sonnet', 'opus', 'haiku', 'fable')
                    if f in AI_MODEL.lower()), '')
+    brains_id = (request.GET.get('brains') or '').strip()
+    if brains_id and not _BRAINS_ID_RE.match(brains_id):
+        brains_id = ''
     return render(request, 'pcs/find.html', {
         'q': q, 'hits': hits, 'engine': engine,
         'has_unregistered': bool(hits) and any(
             e['kind'] == 'EVGEN (unregistered)' for e in hits),
         'brains_model': family.capitalize() or AI_MODEL,
+        'brains_id': brains_id,
     })
 
 
@@ -1935,6 +1939,31 @@ def find_brains_post(request):
     except ServiceError as e:
         return JsonResponse({'error': e.detail}, status=e.status)
     return JsonResponse({'conversation_id': conversation_id})
+
+
+def find_brains_event(request):
+    """Record an applied search into a Brains dialog's durable narrative.
+    POST JSON {conversation_id, q}; record-only, no LLM run."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body or b'{}')
+    except ValueError as e:
+        return JsonResponse({'error': f'unparseable body: {e}'}, status=400)
+    conversation_id = str(body.get('conversation_id') or '').strip()
+    query = str(body.get('q') or '').strip()
+    if not _BRAINS_ID_RE.match(conversation_id):
+        return JsonResponse({'error': 'bad conversation id'}, status=400)
+    if not query:
+        return JsonResponse({'error': 'empty query'}, status=400)
+    username = (getattr(request.user, 'username', '') or 'web user')
+    from .services import brains_event_request, ServiceError
+    try:
+        brains_event_request(conversation_id=conversation_id,
+                             username=username, query=query)
+    except ServiceError as e:
+        return JsonResponse({'error': e.detail}, status=e.status)
+    return JsonResponse({'ok': True})
 
 
 def find_brains_conversation(request, conversation_id):

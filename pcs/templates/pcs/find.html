@@ -5,8 +5,7 @@
 
 {% block content %}
 <style>
-  .pcs-find-box { max-width: 60rem; margin: 4rem auto 0 auto; text-align: center; }
-  .pcs-find-box.pcs-find-with-results { margin-top: 1.5rem; }
+  .pcs-find-box { max-width: 60rem; margin: 2rem auto 0 auto; text-align: center; }
   .pcs-find-input { font-size: 1.4rem; padding: .6em .8em; }
   .btn-brains {
     color: var(--ai-fg); background-color: var(--ai-bg);
@@ -17,29 +16,33 @@
   /* Simple page: long DIDs wrap in place — never a horizontal scroll frame. */
   #pcs-find-table { max-width: 100%; }
   #pcs-find-table td:nth-child(2) { word-break: break-all; font-size: .875rem; }
-  /* Embedded full-width dialog — in document flow, never occluding the
-     page; the reader scrolls between Brains and the results. Lavender
-     lives only in the title chip. */
+  /* The dialog: a chat narrative above the composer, in document flow.
+     Grows to 80% of the window then scrolls internally. Lavender lives
+     only in the title chip. */
   #pcs-brains-panel {
-    display: none; max-width: 80rem; margin: 1.5rem auto;
+    display: none; max-width: 80rem; margin: 1.5rem auto 0 auto;
     text-align: left;
     border: 1px solid var(--ai-border); border-radius: .5rem;
     background: var(--bs-body-bg, #fff);
   }
   #pcs-brains-panel.open { display: flex; flex-direction: column; max-height: 80vh; }
-  #pcs-brains-turns { overflow-y: auto; flex: 1; }
   .pcs-brains-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: .5rem .8rem; border-bottom: 1px solid var(--ai-border);
     font-weight: 600;
   }
-  .pcs-brains-head button { border: none; background: none; font-size: 1.3rem; line-height: 1; }
-  #pcs-brains-turns { padding: .8rem; }
+  .pcs-brains-head a { font-weight: 400; }
+  #pcs-brains-turns { overflow-y: auto; flex: 1; padding: .8rem; }
   .pcs-brains-turn { margin-bottom: .8rem; white-space: pre-wrap; word-break: break-word; }
   .pcs-brains-turn.user { font-weight: 600; }
   .pcs-brains-turn.assistant { border-left: 3px solid var(--ai-border); padding: .2rem 0 .2rem .8rem; }
+  .pcs-brains-turn.search {
+    font-family: var(--bs-font-monospace, monospace); font-size: .95rem;
+    background: var(--bs-tertiary-bg, #f3f4f6);
+    border-radius: .4rem; padding: .3rem .6rem; cursor: pointer;
+  }
+  .pcs-brains-turn.search .pcs-search-author { color: var(--bs-secondary-color, #666); font-family: inherit; margin-right: .5em; }
   #pcs-brains-status { padding: 0 .8rem .5rem .8rem; color: var(--bs-secondary-color, #666); }
-  .pcs-brains-inputrow { display: flex; gap: .5rem; padding: .6rem .8rem; border-top: 1px solid var(--ai-border); }
   #pcs-find-bar .filter-link { margin-right: 0.6em; color: #007bff; text-decoration: none; }
   #pcs-find-bar .filter-link:hover { text-decoration: underline; }
   #pcs-find-bar .filter-link.filter-active { font-weight: bold; text-decoration: underline; color: #0056b3; }
@@ -47,15 +50,25 @@
   .pcs-find-label { font-weight: 600; margin-right: 0.5em; }
 </style>
 
-<div class="pcs-find-box{% if hits is not None %} pcs-find-with-results{% endif %}">
+<div id="pcs-brains-panel" aria-label="Brains dialog">
+  <div class="pcs-brains-head">
+    <span><span class="ai-attr-text">Brains</span> <span id="pcs-brains-who">{% if brains_model %}{{ brains_model }} at work{% endif %}</span></span>
+    <a href="{% url 'pcs:find_data' %}" title="Leave this dialog and start fresh">New dialog</a>
+  </div>
+  <div id="pcs-brains-turns"></div>
+  <div id="pcs-brains-status"></div>
+</div>
+
+<div class="pcs-find-box">
   <h1 class="mb-4">Find data</h1>
-  <form method="get" action="{% url 'pcs:find_data' %}">
+  <form method="get" action="{% url 'pcs:find_data' %}" id="pcs-find-form">
     <div class="d-flex align-items-center mb-4">
-      <input type="search" name="q" value="{{ q }}" autofocus
+      <input type="search" name="q" value="{% if not brains_id %}{{ q }}{% endif %}" autofocus
              class="form-control form-control-lg pcs-find-input me-3"
-             placeholder="beamgas proton 275, DIS NC 10x100 minQ2=1, a dataset path or name fragment&hellip;">
-      {% if q %}<a href="{% url 'pcs:find_data' %}" class="btn btn-secondary btn-lg" title="Clear the search and all filters">Clear</a>{% else %}<button type="button" class="btn btn-outline-secondary btn-lg" disabled>Clear</button>{% endif %}
+             placeholder="beamgas proton 275, DIS NC 10x100 minQ2=1, a path fragment, or a question for Brains&hellip;">
+      {% if q %}<a href="{% url 'pcs:find_data' %}" class="btn btn-secondary btn-lg" title="Clear the search, filters, and dialog">Clear</a>{% else %}<button type="button" class="btn btn-outline-secondary btn-lg" disabled>Clear</button>{% endif %}
     </div>
+    <input type="hidden" name="brains" id="pcs-brains-hidden" value="{{ brains_id }}">
     <div class="row mt-2">
       <div class="col-md-6">
         <button type="submit" name="engine" value="lucky" class="btn btn-primary btn-lg">Hey Rucio, I feel lucky</button>
@@ -70,40 +83,34 @@
   </form>
 </div>
 
-<div id="pcs-brains-panel" aria-label="Brains dialog">
-  <div class="pcs-brains-head">
-    <span><span class="ai-attr-text">Brains</span> <span id="pcs-brains-who">{% if brains_model %}{{ brains_model }} at work{% endif %}</span></span>
-    <button type="button" id="pcs-brains-close" title="Close">&times;</button>
-  </div>
-  <div id="pcs-brains-turns"></div>
-  <div id="pcs-brains-status"></div>
-  <div class="pcs-brains-inputrow">
-    <input type="text" id="pcs-brains-input" class="form-control"
-           placeholder="Ask Brains&hellip;">
-    <button type="button" id="pcs-brains-send" class="btn btn-brains text-nowrap">Send</button>
-  </div>
-</div>
-
 <script>
 (function() {
-  /* Brains dialog — the find page's conversation with the DISpatcher
-     engine. Each turn: POST the message, then listen for its
-     brains_answer on a short-lived EventSource with a bounded poll
-     backstop (SSE_PUSH.md rules); the conversation record is the file
-     the bot writes, fetched whole and re-rendered each turn. */
+  /* Brains dialog — a chat narrative over the page's search. The search
+     bar is the single composer for both engines: Lucky runs it as a
+     literal search (recorded into the dialog when one is open), Brains
+     sends it as a chat turn. The bot's conversation file is the durable
+     interleaved record — chat turns and applied searches — and an
+     assistant turn ending in "SEARCH: <words>" is applied to the page
+     via navigation, carrying the dialog in the URL. Per turn: POST,
+     then a short-lived brains_answer EventSource with a bounded poll
+     backstop (SSE_PUSH.md rules). */
   const btn = document.getElementById('pcs-brains-btn');
   const panel = document.getElementById('pcs-brains-panel');
   if (!btn || !panel) return;
+  const form = document.getElementById('pcs-find-form');
   const turnsEl = document.getElementById('pcs-brains-turns');
   const statusEl = document.getElementById('pcs-brains-status');
-  const inputEl = document.getElementById('pcs-brains-input');
-  const sendBtn = document.getElementById('pcs-brains-send');
+  const hiddenEl = document.getElementById('pcs-brains-hidden');
   const qInput = document.querySelector('.pcs-find-box input[name="q"]');
   const csrf = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
   const postUrl = "{% url 'pcs:find_brains_post' %}";
+  const eventUrl = "{% url 'pcs:find_brains_event' %}";
+  const findUrl = "{% url 'pcs:find_data' %}";
   const convUrl = id => "{% url 'pcs:find_brains_conversation' 'brains-000000000000' %}".replace('brains-000000000000', id);
   const streamUrl = "{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=brains_answer";
-  let conversationId = null, es = null, pollTimer = null, deadline = null,
+  const modelName = "{{ brains_model|default:'Brains' }}";
+  let conversationId = "{{ brains_id }}" || null;
+  let es = null, pollTimer = null, deadline = null,
       renderedTurns = 0, waiting = false;
 
   function esc(s) {
@@ -117,21 +124,48 @@
         + trimmed + '</a>' + tail;
     });
   }
+  function splitSearchDirective(content) {
+    const m = String(content).match(/^([\s\S]*?)\n?\s*SEARCH:\s*(.+?)\s*$/);
+    if (m && m[2]) return {narrative: m[1].trim(), search: m[2]};
+    return {narrative: String(content), search: null};
+  }
+  function entryHtml(t) {
+    if (t.role === 'search') {
+      return '<div class="pcs-brains-turn search" data-q="' + esc(t.content).replace(/"/g, '&quot;') + '" title="Click to put this search back in the bar">'
+        + '<span class="pcs-search-author">' + esc(t.username || 'search') + ' searched</span>'
+        + esc(t.content) + '</div>';
+    }
+    if (t.role === 'assistant') {
+      const parts = splitSearchDirective(t.content);
+      let html = '<div class="pcs-brains-turn assistant">' + linkify(parts.narrative) + '</div>';
+      if (parts.search) {
+        html += '<div class="pcs-brains-turn search" data-q="' + esc(parts.search).replace(/"/g, '&quot;') + '" title="Click to put this search back in the bar">'
+          + '<span class="pcs-search-author">' + esc(modelName) + ' searched</span>'
+          + esc(parts.search) + '</div>';
+      }
+      return html;
+    }
+    return '<div class="pcs-brains-turn user">' + linkify(t.content) + '</div>';
+  }
   function render(turns) {
-    turnsEl.innerHTML = turns.map(t =>
-      '<div class="pcs-brains-turn ' + (t.role === 'assistant' ? 'assistant' : 'user') + '">'
-      + linkify(t.content) + '</div>').join('');
+    turnsEl.innerHTML = turns.map(entryHtml).join('');
     renderedTurns = turns.length;
     turnsEl.scrollTop = turnsEl.scrollHeight;
+  }
+  function openPanel() {
+    panel.classList.add('open');
   }
   function stopWaiting(message) {
     waiting = false;
     if (es) { es.close(); es = null; }
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     statusEl.textContent = message || '';
-    sendBtn.disabled = false;
   }
-  async function refresh() {
+  function applySearch(q) {
+    window.location = findUrl + '?q=' + encodeURIComponent(q)
+      + '&brains=' + encodeURIComponent(conversationId);
+  }
+  async function refresh(fresh) {
     if (!conversationId) return false;
     try {
       const r = await fetch(convUrl(conversationId));
@@ -143,9 +177,16 @@
         document.getElementById('pcs-brains-who').textContent =
           (fam ? fam[0].toUpperCase() + fam.slice(1) : d.model) + ' at work';
       }
-      if ((d.turns || []).length > renderedTurns) {
-        render(d.turns);
+      const turns = d.turns || [];
+      if (turns.length > renderedTurns) {
+        render(turns);
         stopWaiting('');
+        const last = turns[turns.length - 1];
+        if (fresh && last && last.role === 'assistant') {
+          const parts = splitSearchDirective(last.content);
+          const current = new URL(window.location.href).searchParams.get('q') || '';
+          if (parts.search && parts.search !== current) applySearch(parts.search);
+        }
         return true;
       }
     } catch (e) { /* transient fetch failure — the poll retries */ }
@@ -153,28 +194,28 @@
   }
   function awaitAnswer() {
     waiting = true;
-    sendBtn.disabled = true;
-    statusEl.textContent = 'Brains is thinking…';
+    statusEl.textContent = modelName + ' is thinking…';
     deadline = Date.now() + 300000;
     es = new EventSource(streamUrl);
     es.onmessage = ev => {
       try {
         const d = JSON.parse(ev.data);
-        if (d.conversation_id === conversationId) refresh();
+        if (d.conversation_id === conversationId) refresh(true);
       } catch (e) { /* heartbeat or non-JSON frame */ }
     };
-    refresh();
+    refresh(true);
     pollTimer = setInterval(() => {
       if (Date.now() > deadline) {
         stopWaiting('No answer after 5 minutes — Brains may be stuck; the exchange was logged. Try again.');
         return;
       }
-      refresh();
+      refresh(true);
     }, 5000);
   }
   async function sendTurn(text) {
     text = (text || '').trim();
     if (!text || waiting) return;
+    openPanel();
     const optimistic = document.createElement('div');
     optimistic.className = 'pcs-brains-turn user';
     optimistic.textContent = text;
@@ -192,33 +233,45 @@
         return;
       }
       conversationId = d.conversation_id;
+      hiddenEl.value = conversationId;
       awaitAnswer();
     } catch (e) {
       statusEl.textContent = 'Brains request failed: ' + e;
     }
   }
   btn.addEventListener('click', () => {
-    panel.classList.add('open');
-    btn.style.display = 'none';
-    if (!waiting) statusEl.textContent = '';
-    const seed = (qInput && qInput.value.trim()) || '';
-    if (seed && !conversationId && !waiting) sendTurn(seed);
-    else {
-      if (conversationId && !waiting) refresh();
-      inputEl.focus();
+    const text = (qInput && qInput.value.trim()) || '';
+    if (!text) {
+      openPanel();
+      statusEl.textContent = 'Type your question in the search bar, then press Brains.';
+      qInput.focus();
+      return;
     }
-    panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    qInput.value = '';
+    sendTurn(text);
   });
-  sendBtn.addEventListener('click', () => { sendTurn(inputEl.value); inputEl.value = ''; });
-  inputEl.addEventListener('keydown', ev => {
-    if (ev.key === 'Enter') { ev.preventDefault(); sendTurn(inputEl.value); inputEl.value = ''; }
+  turnsEl.addEventListener('click', ev => {
+    const s = ev.target.closest('.pcs-brains-turn.search');
+    if (!s) return;
+    qInput.value = s.dataset.q || '';
+    qInput.focus();
   });
-  document.getElementById('pcs-brains-close').addEventListener('click', () => {
-    panel.classList.remove('open');
-    btn.style.display = '';
-    stopWaiting('');
+  form.addEventListener('submit', () => {
+    if (!hiddenEl.value) hiddenEl.removeAttribute('name');
+    const qv = (qInput.value || '').trim();
+    if (conversationId && qv) {
+      fetch(eventUrl, {
+        method: 'POST', keepalive: true,
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({conversation_id: conversationId, q: qv}),
+      });
+    }
   });
   window.addEventListener('beforeunload', () => { if (es) es.close(); });
+  if (conversationId) {
+    openPanel();
+    refresh(false);
+  }
 })();
 </script>
 
@@ -263,7 +316,7 @@
   </table>
   <p id="pcs-find-empty" class="text-muted" style="display:none;">No matches under this filter combination &mdash; Clear filters restores the full result.</p>
   {% else %}
-  <p>No recorded dataset matches &ldquo;{{ q }}&rdquo;. Fewer or shorter words widen the search.</p>
+  <p>No recorded dataset matches &ldquo;{{ q }}&rdquo;. Fewer or shorter words widen the search &mdash; or press Brains: a question in plain words is exactly what it&rsquo;s for.</p>
   {% endif %}
 </div>
 

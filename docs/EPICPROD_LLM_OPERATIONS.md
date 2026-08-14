@@ -43,7 +43,9 @@ Browser pages and production object context stay with swf-monitor.
 The Find Data page's Brains dialog is an interactive conversation with
 DISpatcher's engine — the same LLM, tool selection, and collective
 memory that serve the Mattermost channel, with the conversation's own
-turns as thread context and no Mattermost involvement. The flow:
+turns as thread context and no Mattermost involvement. The page's
+search bar is the single composer for both of its engines: the literal
+index search and the dialog. The flow:
 
 1. The page posts a dialog turn to swf-monitor
    (`/pcs/find/brains/`), which drops a `brains_query` message on the
@@ -56,8 +58,15 @@ turns as thread context and no Mattermost involvement. The flow:
    a bounded poll of the conversation endpoint as backstop, and
    re-renders the dialog when the turn lands.
 
-Turns are serialized with the bot's Mattermost responses by the same
-response lock. DISpatcher-side detail: swf-monitor `docs/PANDA_BOT.md`.
+The conversation file is the durable record of the full interleaved
+narrative: chat turns and applied searches. A search the user runs
+while a dialog is open is recorded through a `brains_event` message
+(record-only, no engine run), and an engine reply may end with a
+`SEARCH: <words>` line that the page applies to its own dataset index,
+carrying the dialog identity in the URL so the resulting page — list
+and dialog together — is bookmarkable. Turns are serialized with the
+bot's Mattermost responses by the same response lock. DISpatcher-side
+detail: swf-monitor `docs/PANDA_BOT.md`.
 
 ### AI Assessments
 

@@ -59,6 +59,8 @@ urlpatterns = [
     # Datasets
     path('find/', views.find_data, name='find_data'),
     path('find/brains/', views.find_brains_post, name='find_brains_post'),
+    path('find/brains/event/', views.find_brains_event,
+         name='find_brains_event'),
     path('find/brains/<str:conversation_id>/', views.find_brains_conversation,
          name='find_brains_conversation'),
     path('evgen/', views.evgen_inputs, name='evgen_inputs'),
