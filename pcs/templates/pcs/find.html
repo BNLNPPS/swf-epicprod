@@ -56,11 +56,18 @@
              placeholder="beamgas proton 275, DIS NC 10x100 minQ2=1, a dataset path or name fragment&hellip;">
       {% if q %}<a href="{% url 'pcs:find_data' %}" class="btn btn-secondary btn-lg" title="Clear the search and all filters">Clear</a>{% else %}<button type="button" class="btn btn-outline-secondary btn-lg" disabled>Clear</button>{% endif %}
     </div>
-    <div><button type="submit" name="engine" value="lucky" class="btn btn-primary btn-lg">Hey Rucio, I feel lucky</button></div>
+    <div class="row mt-2">
+      <div class="col-md-6">
+        <button type="submit" name="engine" value="lucky" class="btn btn-primary btn-lg">Hey Rucio, I feel lucky</button>
+        <p class="text-muted mt-3">Searches everything recorded: produced datasets across all campaigns and the full EVGEN inventory, registered or not. All words must match. A single match goes straight to its dataset page.</p>
+      </div>
+      <div class="col-md-6">
+        <button type="button" id="pcs-brains-btn" class="btn btn-lg btn-brains">Brains, give me some help</button>
+        <p class="text-muted mt-3">The natural language text you write in the search bar will start a dialog with the LLM.</p>
+      </div>
+    </div>
     {% csrf_token %}
   </form>
-  <p class="text-muted mt-3">Searches everything recorded: produced datasets across all campaigns and the full EVGEN inventory, registered or not. All words must match. A single match goes straight to its dataset page.</p>
-  <div class="mt-2"><button type="button" id="pcs-brains-btn" class="btn btn-lg btn-brains">Brains, give me some help</button></div>
 </div>
 
 <div id="pcs-brains-panel" aria-label="Brains dialog">
