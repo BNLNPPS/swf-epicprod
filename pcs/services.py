@@ -2632,6 +2632,84 @@ def _version_tuple(v):
     return tuple(int(p) if p.isdigit() else -1 for p in str(v or '').split('.'))
 
 
+_ARRIVAL_POL_RE = _re.compile(r'^e[mp]h[LT][mp]$')
+_ARRIVAL_DVCS_VARIANTS = ('BH_ONLY', 'DVCS_BH', 'DVCS_ONLY')
+_ARRIVAL_EPIC_VERSION_RE = _re.compile(r'^EpIC(?:_v)?([\d.\-]+)$')
+_ARRIVAL_ANGLE_RE = _re.compile(r'^\d+to\d+deg$')
+
+
+def _past_arrival_discrimination(remainder, derived):
+    """Discriminating identity for past-import arrivals, per the recorded
+    family decisions (docs/PCS_COMPOSED_NAME_FAMILIES.md), executed at
+    ingest rather than by later backfill:
+
+    - group 2: a ``Bkg_``-prefixed remainder carries the background-mix
+      axis and takes an OVERLAY background (k) tag;
+    - group 3: DVCS process/polarization variant tokens become the sample;
+    - group 4: single-particle angle ranges become the sample;
+    - group 6: the EpIC generator version binds a distinct EVGEN tag;
+    - group 7: a standalone BACKGROUNDS row takes the machine-setting
+      token string as its sample.
+
+    Physics-tag discrimination (groups 1 and 5) is carried by
+    ``derive_physics`` itself. Returns a dict with any of
+    ``background_params``, ``evgen_params``, ``sample``; empty when the
+    row carries no recognized discriminating axis.
+    """
+    derived = derived or {}
+    tokens = [t for t in (remainder or '').split('/') if t]
+    plan = {}
+    sample_parts = []
+    if (remainder or '').startswith('Bkg_'):
+        # The k tag classifies (the overlay frame class and beams); the
+        # variant chain behind it discriminates, and discrimination is the
+        # sample axis's job (tags classify, samples discriminate).
+        cut = next((i for i, t in enumerate(tokens) if t in _PAST_PHYS_TOP),
+                   len(tokens))
+        bg_tokens = tokens[:cut]
+        plan['background_params'] = {
+            'background_type': 'OVERLAY',
+            'bg_generator': bg_tokens[0] if bg_tokens else '',
+            'bg_source': '', 'bg_mechanism': '',
+            'beam_energy_electron': derived.get('beam_energy_electron', ''),
+            'beam_energy_hadron': derived.get('beam_energy_hadron', ''),
+        }
+        if len(bg_tokens) > 1:
+            sample_parts.append('.'.join(bg_tokens[1:]))
+    if 'DVCS' in str(derived.get('process', '')):
+        picked = [t for t in tokens
+                  if t in _ARRIVAL_DVCS_VARIANTS or _ARRIVAL_POL_RE.match(t)]
+        if picked:
+            sample_parts.append('.'.join(picked))
+    elif derived.get('process') == 'SINGLE':
+        angles = [t for t in tokens if _ARRIVAL_ANGLE_RE.match(t)]
+        if angles:
+            sample_parts.append(angles[0])
+    else:
+        epic_versions = [m.group(1) for t in tokens
+                         if (m := _ARRIVAL_EPIC_VERSION_RE.match(t))]
+        if epic_versions and 'DVMP' in str(derived.get('process', '')):
+            plan['evgen_params'] = {
+                'generator': 'EpIC', 'generator_version': epic_versions[0]}
+        elif not (remainder or '').startswith('Bkg_') and (
+                derived.get('process') in ('BEAMGAS', 'SYNRAD') or (
+                    tokens and tokens[0] == 'BACKGROUNDS')):
+            # The full machine-setting tail after the family root: species,
+            # mechanism, release, beam, current, runtime all discriminate
+            # standalone backgrounds (one signal-free physics tag serves
+            # them all, so no other axis separates these rows).
+            candidate = ''
+            if tokens and tokens[0] == 'BACKGROUNDS' and len(tokens) > 2:
+                candidate = '.'.join(tokens[2:])
+            if not candidate and derived:
+                candidate = _intake_sample_candidate(remainder, derived)
+            if candidate:
+                sample_parts.append(candidate)
+    if sample_parts:
+        plan['sample'] = '.'.join(sample_parts)
+    return plan
+
+
 def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                                     created_by='past_import'):
     """Import 2026 past-campaign output datasets from a cloned epic-prod.
@@ -2744,8 +2822,6 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                     # the matching tag, replacing the placeholder anchor (the p1006
                     # dump). Standalone backgrounds take the signal-free p6001 tag;
                     # an unparseable remainder keeps the anchor and is surfaced.
-                    # Evgen and background k tags for past rows stay a separate
-                    # (manual) association.
                     remainder = decomposed.get('path_remainder', '')
                     derived = derive_physics(
                         remainder, beam=metadata['past_output']['filters'].get('beam', ''))
@@ -2760,23 +2836,60 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                         row_physics_tag, _ = find_or_create_physics_tag(
                             derived, created_by=created_by)
 
+                    # Discriminating identity per the recorded family decisions
+                    # (k tag, sample, or EVGEN version). Without this, archive
+                    # variants of one physics collapse onto one composed name.
+                    disc = _past_arrival_discrimination(remainder, derived)
+                    row_background_tag = None
+                    row_sample = disc.get('sample', '')
+                    row_evgen_tag = evgen
+                    if disc.get('background_params'):
+                        row_background_tag, _ = find_or_create_background_tag(
+                            disc['background_params'], created_by=created_by)
+                    if disc.get('evgen_params'):
+                        row_evgen_tag, _ = find_or_create_evgen_tag(
+                            disc['evgen_params'], created_by=created_by)
+
                     pcs_did = f'group.EIC:{pcs_name}.b1'
-                    ds, ds_created = Dataset.objects.get_or_create(
-                        dataset_name=pcs_name, block_num=1,
-                        defaults=dict(
+                    ds = Dataset.objects.filter(
+                        dataset_name=pcs_name, block_num=1).first()
+                    ds_created = False
+                    if ds is None:
+                        # A new row without a discriminating axis may not take
+                        # a composed name an existing dataset already holds:
+                        # skip and surface rather than mint ambiguity.
+                        if (row_background_tag is None and not row_sample
+                                and row_evgen_tag.pk == evgen.pk):
+                            bare_name = (
+                                f"group.EIC.{version}."
+                                f"{decomposed.get('detector_config', '')}."
+                                f"{row_physics_tag.tag_label}.{evgen.tag_label}."
+                                f"{simu.tag_label}.{reco.tag_label}")
+                            if Dataset.objects.filter(
+                                    composed_name=bare_name).exists():
+                                summary['errors'].append(
+                                    f'{stage}/{version}: DID {epic_did!r} would '
+                                    f'duplicate composed name {bare_name} and no '
+                                    f'discriminating axis derives — skipped')
+                                continue
+                        ds = Dataset(
+                            dataset_name=pcs_name, block_num=1,
                             scope='group.EIC', did=pcs_did,
                             detector_version=version,
                             detector_config=decomposed.get('detector_config', ''),
                             campaign=campaign,
-                            physics_tag=row_physics_tag, evgen_tag=evgen,
+                            physics_tag=row_physics_tag, evgen_tag=row_evgen_tag,
                             simu_tag=simu, reco_tag=reco,
+                            background_tag=row_background_tag,
+                            sample_name=row_sample,
                             file_count=block['file_count'],
                             data_size=block['data_size_bytes'],
                             description='',
                             metadata=metadata,
                             created_by=created_by,
-                        ),
-                    )
+                        )
+                        ds.save()
+                        ds_created = True
                     if not ds_created:
                         ds.file_count = block['file_count']
                         ds.data_size = block['data_size_bytes']
@@ -2785,6 +2898,12 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                         ds.detector_version = version
                         ds.detector_config = decomposed.get('detector_config', '')
                         ds.physics_tag = row_physics_tag
+                        # Discrimination fills only an empty axis; an
+                        # operator-set sample or bound k tag is never clobbered.
+                        if row_background_tag is not None and ds.background_tag_id is None:
+                            ds.background_tag = row_background_tag
+                        if row_sample and not ds.sample_name:
+                            ds.sample_name = row_sample
                         ds.save()
 
                     # Unified produced-output entry (ProdTask.outputs schema);
