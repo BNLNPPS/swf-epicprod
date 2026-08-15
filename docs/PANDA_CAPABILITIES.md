@@ -38,6 +38,47 @@ honours as its registration skip, plus `prodSourceLabel='test'` and a
 `gangarobot`-prefixed `processingType` to reach the Setupper branch
 that keeps the original dataset name.
 
+## How the first GPU worker was brought up
+
+The `BNL_NPPS_GPU` queue went from a CRIC definition to finished GPU
+jobs with outputs in the object store on 2026-08-13 and 2026-08-14.
+The table records what carries each function today and, where the
+survey above identifies one, the better route.
+
+| Function | In place | Better route |
+|---|---|---|
+| Queue existence | CRIC entry cloned from `BNL_PanDA_1` with compute elements dropped; `--nv` in `container_options`, GPU resource type, 86400 s maxtime | — |
+| Queue behavior | `tools/npps0/config/queuedata.json` in git, copied into each pass directory, where the BNL pilot wrapper prefers it over the CRIC cache | — |
+| Storage catalog | `tools/npps0/config/agis_ddmendpoints.json` seeded under the pilot info system's LOCAL and USER cache filenames with `PILOT_HOME` set to the pass directory; the wrapper's own `--storagedata-url` rewritten in a per-pass copy of the wrapper | a wrapper that respects a pre-set storage-data URL would remove the rewrite |
+| Worker provisioning | CVMFS pilot wrapper in pull mode under a launcher loop: `-e eic`, `--pilot-user epic`, `--url` and `-p` for the dispatch endpoint, `--rucio-host`, `--getjobrequests 30`; per-GPU flock, `KillMode=process`, `timeout` reaping | — |
+| Container | CVMFS unpacked image directory (a local SIF is not accepted); `container_name` on the job specification — `multiStepExec` container options alone do not trigger containerization | `--alrb`, `--wrapExecInContainer`, `--oldContMode` unexplored |
+| Task shape | cloned from a live task's stored parameters; explicit log LFN template, since `${LOG0}` is resolved client-side and never reaches JEDI | `Client.getTaskParamsMap`, `--dumpTaskParams` for exemplars |
+| Payload delivery | `runGen` with a URL-encoded command string; payload source cloned from GitHub at run time | `encJobParams` with `noExecStrCnv`; sandbox tarball; `epicrun` |
+| Log and output stage-out | `s3` copytool selected through `acopytools` and `astorages` in the git queuedata, against a `DEV_CLOUD_S3` object-store entry using an `https` endpoint (boto3 rejects the `s3://` scheme used by older catalog entries); `PANDA_PILOT_AWS_PROFILE` names the worker profile | `putLogToOS`, `registerDatasets` |
+| Object-store credentials | AWS profile file on the worker | `useSecrets` with `Client.set_user_secret` |
+| Completion without Rucio, tasks | the `log` entry omitted from the task parameter map | — this is the clean route |
+| Completion without Rucio, jobs | `destinationSE='local'`, log dataset pre-created in Rucio, `prodSourceLabel='test'` with a `gangarobot`-prefixed `processingType` | superseded by the task route above |
+
+Four behaviours were established by experiment and are not stated in
+the documentation:
+
+- Job dispatch to a pilot started with `-j managed` serves the
+  `managed`, `test` and `prod_test` source labels. A `ptest` job is
+  accepted by the server, reaches `activated`, and is never offered to
+  the pilot.
+- The Setupper keeps the original output dataset name for the `panda`
+  source label, for a `gangarobot`-prefixed processing type, and for
+  ptest-family labels with `pathena` or `prun` processing types.
+  Otherwise it mints a `_sub` dataset, whose registration is skipped
+  when the destination is `local`, after which the lookup of that
+  dataset's identifier fails and the job fails in setup.
+- Pilot configuration is read once, at pass start. A configuration
+  deployed during a pass reaches jobs only from the following pass;
+  jobs dispatched to a pass that began earlier run under the earlier
+  configuration.
+- Virtual organization strings are case-sensitive at the
+  authentication endpoint: `EIC.production`, not lowercase.
+
 ## Available and unexploited
 
 Grouped by what each mechanism would buy. Names are exact; task
