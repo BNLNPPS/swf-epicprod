@@ -4,7 +4,7 @@ The NPPS GPU server (2× NVIDIA RTX 4090) runs PanDA jobs for the
 Simphony GPU work through the `BNL_NPPS_GPU` queue, in the minimal
 single-host arrangement: the standard BNL pilot wrapper from CVMFS,
 run in pull mode under a launcher loop. No Harvester and no compute
-element. The host sits outside the SDCC network perimeter, which
+element. The host sits outside the SCDF network perimeter, which
 makes it the working model for volunteer-class workers
 (`docs/VOLUNTEER_GPU_PLAN.md`).
 
@@ -67,7 +67,7 @@ Scripts install at `~wenaus/bin/`, configuration at
 
 ## Network position
 
-npps0 cannot reach SDCC-internal hosts: the dCache doors
+npps0 cannot reach SCDF-internal hosts: the dCache doors
 (`dcintdoor.sdcc.bnl.gov`, root:1094 and davs:443) and other
 perimeter-internal services are blocked from its subnet. Stage-out
 therefore goes to the devcloud S3 bucket; lab RSEs are unreachable

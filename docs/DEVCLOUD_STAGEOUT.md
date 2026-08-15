@@ -1,9 +1,9 @@
 # Devcloud stage-out endpoint
 
 An S3 bucket on the devcloud account, serving as the stage-out
-destination for PanDA workers that run outside the SDCC network
+destination for PanDA workers that run outside the SCDF network
 perimeter. Perimeter-external workers (the NPPS GPU server today,
-volunteer-class hosts later) cannot reach the SDCC dCache doors; the
+volunteer-class hosts later) cannot reach the SCDF dCache doors; the
 bucket gives them a reachable destination for job logs and other
 small outputs. It is not a bulk-data store: an account-level quota
 and a lifecycle expiry policy keep it small, and large outputs remain
@@ -20,7 +20,7 @@ First consumer: the `BNL_NPPS_GPU` queue, whose jobs complete their
 payloads but fail log stage-out because every RSE in the BNL EIC
 Rucio catalog fronts `dcintdoor.sdcc.bnl.gov`, unreachable from the
 worker's subnet (verified 2026-08-14: root:1094 and davs:443 both
-blocked, as is every other SDCC-internal host).
+blocked, as is every other SCDF-internal host).
 
 Three parts: the bucket (devcloud account holder), the worker
 credentials (worker host operator), and the queue configuration

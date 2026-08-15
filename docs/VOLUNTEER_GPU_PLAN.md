@@ -15,7 +15,7 @@ are small (logs, hit summaries); bulk data stays on lab storage.
 ## Implemented (as of 2026-08-14)
 
 The first worker is the NPPS GPU server npps0 (2× RTX 4090), a host
-outside the SDCC perimeter — deliberately treated as a strange
+outside the SCDF perimeter — deliberately treated as a strange
 machine in the wild, so what works there transfers to any
 collaborator's box.
 
@@ -68,6 +68,15 @@ and a collaborator's machine are configured identically.
    community-internal transport so workers reach the gateway over
    authenticated, non-public paths; per-device revocation as the
    whole security lifecycle.
+
+High on the engineering list: retiring the `runGen` transform. It is
+analysis-era scaffolding — URL-encoded payload strings, client-side
+substitution devices, output plumbing built around grid datasets —
+and every one of its assumptions has cost integration effort here. A
+purpose-built worker executor (fetch payload spec, run in container,
+place outputs for object-store stage-out) is small, and it is the
+natural sibling of the gateway work: both replace grid-era
+scaffolding with pieces sized to this system.
 
 Interruption robustness follows the event-service model: work is
 streamed in small units so a closed laptop or powered-off PC loses
