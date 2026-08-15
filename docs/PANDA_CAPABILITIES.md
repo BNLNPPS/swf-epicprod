@@ -8,13 +8,19 @@ perimeter, no grid storage, outputs in an object store, and a payload
 whose result is a physics measurement rather than a file count.
 
 Sources surveyed: the PanDA documentation at
-<https://panda-wms.readthedocs.io> (in particular
-`advanced/task_params.html`), the `splitRule` token table in
-`pandaserver/taskbuffer/task_split_rules.py`, the client API in
-`pandaclient/Client.py`, and the `prun` option set in
-`pandaclient/PrunScript.py`. The documentation covers the task
-parameter vocabulary in full; several mechanisms below were reached by
-code reading first and confirmed against the documentation afterwards.
+<https://panda-wms.readthedocs.io>, in particular
+`advanced/task_params.html`, which documents the task parameter
+vocabulary in full; the `splitRule` token table in
+`pandaserver/taskbuffer/task_split_rules.py` (108 toggles); the client
+API in `pandaclient/Client.py` (67 functions); and the `prun` option
+set in `pandaclient/PrunScript.py` (109 options). The client scripts
+expose a subset of what the API and the task parameter map accept, and
+raw task submission reaches mechanisms `prun` does not surface.
+
+A process note worth recording: several problems solved by code
+reading during the first GPU integration had documented answers in the
+PanDA documentation. Doc-first applies to external projects, not only
+to this one.
 
 ## In use today
 
@@ -34,110 +40,239 @@ that keeps the original dataset name.
 
 ## Available and unexploited
 
-Grouped by what each would buy. Names are exact.
+Grouped by what each mechanism would buy. Names are exact; task
+parameters and `splitRule` toggles are given as bare names, client
+functions as `Client.<name>`, and client script options with their
+leading dashes.
 
 ### Credentials on the worker
 
-- `useSecrets` (task) with `Client.set_user_secret` /
+- `useSecrets` with `Client.set_user_secret` and
   `Client.get_user_secrets` — secrets stored server-side and delivered
   to the job through PanDA. This is the mechanism that removes
   object-store keys from worker hosts, which is the stated function of
   gateway v0 in the plan. It exists and is unused.
+- `Client.get_cert_attributes`, `Client.get_user_name_from_token`,
+  `Client.get_new_token` — identity and token handling from the
+  client.
 
-### Object-store and registration handling
+### Object-store handling and registration
 
-- `putLogToOS` — jobs upload log files to the object store. A
-  task-level expression of the S3 log path currently arranged through
+- `putLogToOS` — jobs upload log files to the object store; a
+  task-level expression of the log path currently arranged through
   queue configuration.
 - `registerDatasets` — controls whether the task registers output
   datasets in DDM at all.
 - `registerEsFiles`, `mergeEsOnOS` — event-service output registration
   and merging on object storage.
-- `altStageOut`, `stayOutputOnSite`, `onSiteMerging` — alternative
-  stage-out behaviour and output locality.
+- `altStageOut` — enables or forces the alternative stage-out
+  mechanism at a queue.
+- `stayOutputOnSite`, `onSiteMerging`, `instantiateTmplSite` — output
+  locality and per-queue dataset instantiation.
+- `ddmBackEnd` — names the DDM backend.
+- `--destSE`, `--spaceToken` — destination storage element and space
+  token from the client.
 
-### Payload and parameter handling
+### Input without Rucio
+
+The output and log legs of a Rucio-free workflow are demonstrated; the
+input leg is the remaining one, and the mechanisms exist:
+
+- `pfnList` (`--pfnList`) — input specified as a list of physical file
+  names, explicitly supporting files unregistered in DDM. This is the
+  direct route to feeding workers from an object store or plain URLs.
+- `writeInputToFile` (`--writeInputToTxt`) — the job receives its input
+  list as a file rather than on the command line.
+- `useLocalIO` — input always copied to scratch rather than read
+  remotely; the correct mode for a worker with no storage nearby.
+- `allowInputLAN`, `allowInputWAN` — permit direct reads over LAN or
+  WAN.
+- `usePrefetcher`, `useZipToPin`, `inputPreStaging` — prefetching, zip
+  pinning, and data-carousel pre-staging.
+- `--inputFileList`, `--match`, `--antiMatch`, `--nSkipFiles`,
+  `--useLogAsInput` — input selection.
+
+### Payload delivery and parameter handling
 
 - `encJobParams` — job parameters base64-encoded rather than passed as
   a quoted string.
 - `noExecStrCnv` — the pilot skips execution-string conversion.
 
-Together these address the parameter-quoting handling that motivates
-part of the `epicrun` executor (`tools/worker/epicrun.py`); worth
-evaluating before that executor's interface is settled.
+  Together these address the parameter-quoting handling that motivates
+  part of the `epicrun` executor (`tools/worker/epicrun.py`), and
+  should be evaluated before that executor's interface is settled.
+
+- `useBuild` (`--noBuild`, `--noCompile`), `--inTarBall`,
+  `--outTarBall`, `--tarBallViaDDM`, `--extFile`, `--workDir`,
+  `--useHomeDir` — sandbox construction and delivery. Relevant because
+  the present GPU payload clones its source from GitHub at run time,
+  which makes every job depend on external network reachability from
+  the worker; a delivered tarball removes that dependency.
+- `usePrePro`, `multiStepExec` — pre-processing and multi-step
+  execution.
+- `--alrb`, `--alrbArgs`, `--wrapExecInContainer`, `--oldContMode`,
+  `--containerImage`, `--architecture` — container execution modes.
+  The pilot containerizes on the job's image field; these options are
+  the vocabulary for the alternatives.
+- `--execWithRealFileNames`, `useFileAsSourceLFN`,
+  `addNthFieldToLFN`, `--descriptionInLFN` — naming behaviour.
 
 ### Fine-grained and streaming dispatch
 
-The streaming model in the plan (bounded work quanta, re-queue on
-worker loss) maps onto existing machinery rather than new
+The streaming model in the plan — bounded work quanta, re-queue on
+worker loss — maps onto existing machinery rather than new
 construction:
 
 - `fineGrainedProc` — jobs track processing through the event service
   mechanism.
 - `segmentedWork`, `dynamicNumEvents`, `nEventsPerWorker`,
-  `maxEventsPerJob`, `tgtNumEventsPerJob` — work segmentation and
-  quantum sizing.
+  `maxEventsPerJob`, `tgtNumEventsPerJob`, `nEventsPerInput` — work
+  segmentation and quantum sizing.
 - `nEsConsumers`, `nSitesPerJob`, `useJobCloning`,
   `resurrectConsumers`, `switchEStoNormal` — consumer topology and
   recovery.
 - `maxAttemptES`, `maxAttemptEsJob`, `decAttOnFailedES`,
   `notDiscardEvents` — retry policy at event-range granularity, which
   is the loss policy for a worker that disappears.
+- `nJumboJobs`, `maxJumboPerSite` — jumbo jobs across event ranges.
 - `runUntilClosed` — a task that continues until its input is closed:
   the steady-state consumer shape.
-- `Client.get_events_status` / `Client.update_events` — the quantum
+- `Client.get_events_status`, `Client.update_events` — the quantum
   ledger, readable and writable from the client.
+- `randomSeed`, `firstEvent`, `useRealNumEvents`, `inFilePosEvtNum` —
+  seeding and event numbering, required for simulation workloads split
+  across many workers.
 
-### Heterogeneous fleet brokerage
+### Brokerage for a heterogeneous fleet
 
 Relevant to driver and CUDA inhomogeneity across contributed hardware,
 the sharpest open technical question for the volunteer track:
 
-- `--architecture` (task) — base OS platform, CPU and GPU
-  requirements, applied at brokerage.
-- `osMatching`, `ipConnectivity`, `ipStack`, `avoidVP`, `limitedSites`
-  — matching by operating system and network class.
+- `--architecture` — base OS platform, CPU and GPU requirements,
+  applied at brokerage.
+- `osMatching`, `ipConnectivity`, `ipStack`, `avoidVP`, `limitedSites`,
+  `--site`, `--excludedSite` — matching by operating system, network
+  class, and queue.
+- `t1Weight`, `fullChain`, `intermediateTask`, `onlyTagsForFC` —
+  nucleus and chain assignment.
 
-### Operations
+### Tolerating unreliable workers
+
+Volunteer machines are slow, shared, and interrupted. The relevant
+controls exist:
+
+- `minCpuEfficiency`, `useExhausted` — efficiency threshold and
+  transition to exhausted rather than failure.
+- `maxWalltime`, `--cpuTimePerEvent`, `--fixedCpuTime`,
+  `--memory`, `--fixedRamCount`, `maxCoreCount`, `--maxCore` —
+  resource declarations and ceilings.
+- `noLoopingCheck` — disables looping-job detection, which
+  misclassifies long GPU work with little I/O.
+- `retryRamOffset`, `retryRamStep`, `retryRamMax`, `retryModuleRules`
+  — retry policy and its parameter adjustments.
+- `disableAutoRetry`, `disableReassign`, `disableAutoFinish`,
+  `noAutoPause`, `allowPartialFinish`, `allowEmptyInput`,
+  `failGoalUnreached`, `--allowNoOutput` — completion and retry
+  policy, including outputs that are legitimately absent.
+- `useScout`, `scoutSuccessRate`, `respectSplitRule` — scout job
+  behaviour; the present GPU tasks set `skipScout`.
+
+### Scale and throughput
+
+- `--bulkSubmission` with `--inOutDsJson` — bulk task submission,
+  the shape for many small tasks across a fleet.
+- `totNumJobs`, `maxNumJobs`, `nMaxFilesPerJob`, `nFilesPerJob`,
+  `nGBPerJob`, `noInputPooling`, `nChunksToWait` — job counts and
+  splitting.
+- `pushJob` — jobs pushed to the pilot through the message broker
+  rather than pulled on the pilot's polling cycle. Directly relevant
+  to dispatch latency, which is the dominant term in the current
+  end-to-end time for a single job.
+- `--express` — express quota for higher priority.
+- `mergeOutput`, `--mergeLog`, `--mergeScript`, `nGBPerMergeJob`,
+  `nEventsPerMergeJob`, `nFilesPerMergeJob`, `nMaxFilesPerMergeJob` —
+  output merging.
+
+### Operations and diagnostics
 
 - `Client.setDebugMode` — turns debug mode on for a **running** job,
   streaming its stdout to the monitor. Suited to diagnosing a remote
   worker without waiting for a log round trip.
-- `disableAutoRetry`, `noLoopingCheck`, `useExhausted`,
-  `allowPartialFinish`, `allowEmptyInput`, `disableAutoFinish`.
-- `Client.getTaskParamsMap`, `prun --dumpTaskParams` — retrieve the
-  full parameter map of any task, which supplies working exemplars
-  without database queries.
+- `debugMode` (`--debugMode`) — the same at task level.
+- `Client.killJobs`, `Client.killTask`, `Client.finishTask`,
+  `Client.retryTask`, `Client.reactivateTask`, `Client.resumeTask`,
+  `Client.pauseTask`, `Client.increase_attempt_nr`,
+  `Client.reload_input` — task and job operations, exercised for the
+  production task-operations work.
+- `Client.send_file_recovery_request` — file recovery.
+- `--allowTaskDuplication`, `--skipFilesUsedBy`, `--useNewCode` —
+  resubmission semantics against the same output dataset.
 
-### Data services
+### Query and monitoring API
 
-- `Client.requestEventPicking` — builds a dataset from specified
-  runs and events. A candidate backend for loading a small number of
-  events from a running task into an event display.
-- `Client.get_files_in_datasets` — server-side file listing for a
-  task, a candidate backend for file-list download on the task and
-  data-finder pages.
+Backing material for the monitoring worklist below:
+
 - `Client.getUserJobMetadata` — metadata reported by the payload,
-  retrievable per task (see "Reporting from the payload" below).
+  retrievable per task.
+- `Client.get_files_in_datasets` — server-side file listing for a
+  task; a candidate backend for file-list download on the task and
+  data-finder pages.
+- `Client.requestEventPicking` — builds a dataset from specified runs
+  and events; a candidate backend for loading a small number of events
+  from a running task into an event display.
+- `Client.getJediTaskDetails`, `Client.get_task_details_json`,
+  `Client.get_job_descriptions`, `Client.getFullJobStatus`,
+  `Client.getPandaIDsWithTaskID`, `Client.get_parent_detailed_info`,
+  `Client.getJobIDsJediTasksInTimeRange`,
+  `Client.get_tasks_detailed_info_since` — task and job detail
+  retrieval.
+- `Client.getTaskParamsMap`, `--dumpTaskParams`, `--dumpJson`,
+  `--loadJson`, `--loadXML` — retrieve or supply a full parameter map.
+  This supplies working exemplars for any workflow shape without
+  database queries.
+- `--noSubmit` — build a submission without sending it; useful when
+  developing a submitter.
 
 ### Workflows
 
-- `--parentTaskID`, `fullChain`, `intermediateTask` — task chaining.
-- `Client.call_idds_command`, `Client.submit_workflow` — iDDS and
+- `--parentTaskID` — run a task concurrently with its parent.
+- `Client.call_idds_command`, `Client.call_idds_user_workflow_command`,
+  `Client.submit_workflow`, `Client.send_workflow_request` — iDDS and
   PanDA native workflow submission.
+- `hpoWorkflow`, `loadXML`, `workflowHoldup` — hyperparameter
+  optimization and workflow control.
 
 ## Documentation map
 
 The PanDA documentation carries subsystem chapters beyond the task
-parameter reference, several of which bear on planned work: Working
-with iDDS; Working with PanDA Native Workflows; the Messaging
-Mechanism (behind `pushJob` and `messageDriven`); the Job Retry
-Module (`retryModuleRules`); Brokerage; Job Sizing; Dynamic
-Optimization of Task Parameters; Data Carousel.
+parameter reference. Those bearing on planned work: Working with iDDS;
+Working with PanDA Native Workflows; the Messaging Mechanism (behind
+`pushJob` and `messageDriven`); the Job Retry Module
+(`retryModuleRules`); Brokerage; Job Sizing; Dynamic Optimization of
+Task Parameters; Computing Resource Allocations; Site and Task
+Classification; JEDI Watchdogs; Data Carousel; System Configuration
+Parameters in Database; Integration with CRIC; Deployment of Custom
+IAM; PanDA Daemon; System Architecture; Database; Installation.
 
-PanDA also ships an MCP server ("Enabling PandaMCP"; `pandamcp/`
-is present in the deployed server tree). Its tool set should be
-reviewed before building overlapping tooling.
+PanDA also ships an MCP server ("Enabling PandaMCP"; `pandamcp/` is
+present in the deployed server tree). Its tool set should be reviewed
+before building overlapping tooling.
+
+## Suggested probe order
+
+1. `useSecrets` with `Client.set_user_secret` — removes object-store
+   credentials from the worker using machinery that already exists,
+   and is the largest single de-privileging step available without new
+   infrastructure.
+2. `putLogToOS` and `registerDatasets` — establish whether the
+   object-store log path has a native task-level form, which would
+   simplify the queue configuration currently carrying it.
+3. `encJobParams` with `noExecStrCnv` — determine how much of the
+   parameter-quoting handling they remove before settling the
+   `epicrun` interface.
+4. `pfnList` — the input leg of a Rucio-free workflow.
+5. `pushJob` — dispatch latency, measured against the current polling
+   cycle.
 
 ## Monitoring worklist
 
@@ -183,10 +318,10 @@ priority order; job 2239921 and task 38938 are the reference cases.
 
 6. **A summary panel stating what the job did**, readable at a glance:
    the payload command; the container and host; the GPU model, count
-   and driver version; and the payload result — for the optical
-   photon test, photons propagated, hits stored, GPU time per event,
-   and the pass or fail verdict. Every one of these facts is present
-   in the payload log and none is in the PanDA schema.
+   and driver version; and the payload result — for the optical photon
+   test, photons propagated, hits stored, GPU time per event, and the
+   pass or fail verdict. Every one of these facts is present in the
+   payload log and none is in the PanDA schema.
 7. **A GPU section in the resource card**: model, count, device
    identifiers, driver, CUDA and OptiX versions, and GPU time against
    wall time. Note that the conventional resource fields are nearly
@@ -207,6 +342,12 @@ priority order; job 2239921 and task 38938 are the reference cases.
     rollup. With one host this is a label; with a contributed fleet it
     is the contribution view, and the field costs nothing to design in
     now.
+
+Two further page features have backends in the client API rather than
+in new services: file-list download from the task and data-finder
+pages (`Client.get_files_in_datasets`), and loading selected events
+from a running task into an event display
+(`Client.requestEventPicking`).
 
 ## Reporting from the payload
 
