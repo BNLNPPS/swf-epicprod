@@ -87,6 +87,10 @@ def main():
     job.coreCount = 8
     job.minRamCount = 3686
     job.maxDiskCount = 4396
+    # The pilot containerizes only when the job spec names the image;
+    # the containerOptions in MULTI_STEP_EXEC alone do not (d04 ran on
+    # the bare host: DDG4 import failed outside the container).
+    job.container_name = CONTAINER
     job.jobParameters = f'{base_args}{msexec}'
 
     log = FileSpec()
