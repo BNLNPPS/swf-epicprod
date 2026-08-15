@@ -69,6 +69,11 @@ and a collaborator's machine are configured identically.
    authenticated, non-public paths; per-device revocation as the
    whole security lifecycle.
 
+Mechanisms available in PanDA for this track — secrets delivery,
+object-store handling, fine-grained dispatch, brokerage by hardware
+class — together with the monitoring work needed to make GPU worker
+jobs legible, are inventoried in `docs/PANDA_CAPABILITIES.md`.
+
 High on the engineering list: retiring the `runGen` transform. It is
 analysis-era scaffolding — URL-encoded payload strings, client-side
 substitution devices, output plumbing built around grid datasets —
