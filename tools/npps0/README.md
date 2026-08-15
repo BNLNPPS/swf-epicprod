@@ -43,7 +43,8 @@ Scripts install at `~wenaus/bin/`, configuration at
 
 ## Host prerequisites (in place 2026-08-14)
 
-- CVMFS with the BNL squid (`cvmfs-cache.sdcc.bnl.gov:3128`);
+- CVMFS with the BNL squid (`cvmfs-cache.sdcc.bnl.gov:3128`), cache
+  sized to 15 GB because the root volume is 27 GB;
   `eic.opensciencegrid.org` probes OK.
 - apptainer; queue `container_options` carries `--nv` for GPU
   visibility. Container images must be CVMFS unpacked directories

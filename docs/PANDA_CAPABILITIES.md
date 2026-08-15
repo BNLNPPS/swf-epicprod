@@ -47,10 +47,10 @@ survey above identifies one, the better route.
 
 | Function | In place | Better route |
 |---|---|---|
-| Queue existence | CRIC entry cloned from `BNL_PanDA_1` with compute elements dropped; `--nv` in `container_options`, GPU resource type, 86400 s maxtime | — |
+| Queue existence | CRIC entry cloned from `BNL_PanDA_1` with compute elements dropped; `--nv` in `container_options`, GPU resource type, 86400 s maxtime, and `workflow: pull` with `pilot_manager: local` in place of the clone's push/Harvester setting. A CRIC change reaches the server cache in roughly 20 minutes | — |
 | Queue behavior | `tools/npps0/config/queuedata.json` in git, copied into each pass directory, where the BNL pilot wrapper prefers it over the CRIC cache | — |
 | Storage catalog | `tools/npps0/config/agis_ddmendpoints.json` seeded under the pilot info system's LOCAL and USER cache filenames with `PILOT_HOME` set to the pass directory; the wrapper's own `--storagedata-url` rewritten in a per-pass copy of the wrapper | a wrapper that respects a pre-set storage-data URL would remove the rewrite |
-| Worker provisioning | CVMFS pilot wrapper in pull mode under a launcher loop: `-e eic`, `--pilot-user epic`, `--url` and `-p` for the dispatch endpoint, `--rucio-host`, `--getjobrequests 30`; per-GPU flock, `KillMode=process`, `timeout` reaping | — |
+| Worker provisioning | `bnlpanda.runpilot2-wrapper.sh` from CVMFS in pull mode under a launcher loop, with `-e eic` (the wrapper's experiment defaults to ATLAS and would otherwise read CERN's CRIC), `--pilot-user epic` (pilot3 ships an `epic` user module), `--url` and `-p` (the dispatch endpoint must ride in the passthrough arguments; the `pandaurl` in queuedata serves only the wrapper's own status calls), `--rucio-host`, `--getjobrequests 30`; per-GPU flock, `KillMode=process`, `timeout` reaping | — |
 | Container | CVMFS unpacked image directory (a local SIF is not accepted); `container_name` on the job specification — `multiStepExec` container options alone do not trigger containerization | `--alrb`, `--wrapExecInContainer`, `--oldContMode` unexplored |
 | Task shape | cloned from a live task's stored parameters; explicit log LFN template, since `${LOG0}` is resolved client-side and never reaches JEDI | `Client.getTaskParamsMap`, `--dumpTaskParams` for exemplars |
 | Payload delivery | `runGen` with a URL-encoded command string; payload source cloned from GitHub at run time | `encJobParams` with `noExecStrCnv`; sandbox tarball; `epicrun` |
@@ -78,6 +78,33 @@ the documentation:
   configuration.
 - Virtual organization strings are case-sensitive at the
   authentication endpoint: `EIC.production`, not lowercase.
+
+Failure modes encountered during bring-up, with the cause in each
+case established from source or logs rather than inferred:
+
+| Symptom | Cause | Resolution |
+|---|---|---|
+| Wrapper reads the wrong queue configuration | experiment defaults to ATLAS; additionally the wrapper's option extraction greps the queuedata text and filters lines containing `null`, so single-line JSON is discarded wholesale | `-e eic` |
+| Pilot initializes for the wrong experiment | no `--pilot-user` given | `--pilot-user epic` |
+| Pilot never reaches the dispatcher | dispatch URL absent from passthrough arguments | `--url` and `-p` |
+| Task generation fails, `'NoneType' is not iterable` in `JobGenerator` at dataset registration | `getOutputFiles_JEDI` returns nothing because the log template uses `${LOG0}`, which the client resolves and JEDI never sees | explicit LFN template using `$PANDAID` and `${SN}` |
+| Pilot error 1305, "unable to guess what apptainer container to use" | a local SIF path was given as the image | CVMFS unpacked image directory |
+| Pilot error 1152 at stage-out, reported as a timeout | the underlying exception is `CannotAuthenticate`: the pilot's Rucio client defaults to the ATLAS server while the robot proxy authenticates to the BNL EIC server | `--rucio-host`, plus `RUCIO_CONFIG` and `RUCIO_ACCOUNT` from the queue environment |
+| Pilot error 1133, storage element unresolvable | the storage catalog came from the CRIC copy, which does not contain the object-store entry | per-pass rewrite of the wrapper's storage-data URL |
+| Pilot error 1137, "not a valid URI" from the S3 client | the object-store entry used the `s3://` scheme copied from older catalog entries; boto3 requires `https` | `https` endpoint in the catalog entry |
+
+Operational notes for anyone reproducing this. Host prerequisites —
+CVMFS with the site squid, credentials and their refresh, apptainer
+cache placement, disk budget — are recorded in
+`tools/npps0/README.md`. A task receives three pilot attempts and no
+more (`maxAttempt`). Pilot run directories are removed between
+cycles, so payload output survives only in the staged log; the two
+files to read when a job dies before its payload starts are
+`__run_main_exec.sh` and `container_script.sh`. The bring-up order
+that avoided compound failures was: GPU visible inside the container,
+then the payload passing by hand in the same cold-start shape a job
+would see, then the pilot service polling cleanly, and only then the
+first submission.
 
 ## Available and unexploited
 
