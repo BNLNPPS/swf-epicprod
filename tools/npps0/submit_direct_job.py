@@ -31,10 +31,15 @@ QUEUE = 'BNL_NPPS_GPU'
 SOURCE_URL = 'https://pandaserver01.sdcc.bnl.gov:25443'
 TRF = 'https://pandaserver-doma.cern.ch/trf/user/runGen-00-00-02'
 CONTAINER = '/cvmfs/singularity.opensciencegrid.org/eicweb/eic_dev_cuda:nightly'
-PAYLOAD = ('nvidia-smi -L && '
-           'git clone --depth 1 https://github.com/BNLNPPS/simphony.git && '
-           'cd simphony/dd4hepplugins/examples && '
-           'python3 test_raindrop_dd4hep_gpu.py')
+# {out} is replaced with the output LFN; the raindrop test writes its
+# hits file to /tmp inside the container; the pilot stages out
+# <job dir>/<lfn>, four levels above the payload cwd
+# (workDir/simphony/dd4hepplugins/examples).
+PAYLOAD_T = ('nvidia-smi -L && '
+             'git clone --depth 1 https://github.com/BNLNPPS/simphony.git && '
+             'cd simphony/dd4hepplugins/examples && '
+             'python3 test_raindrop_dd4hep_gpu.py && '
+             'cp /tmp/raindrop_hits.root ../../../../{out}')
 
 
 def main():
@@ -49,6 +54,10 @@ def main():
     stamp = time.strftime('%Y%m%d%H%M%S')
     job_name = f'{TASK_BASE}.{args.version}.{stamp}'
     log_ds = f'{TASK_BASE}.{args.version}_log'
+    out_ds = f'{TASK_BASE}.{args.version}_out'
+    out_lfn = f'{job_name}.hits.root'
+    global PAYLOAD
+    PAYLOAD = PAYLOAD_T.format(out=out_lfn)
 
     quoted = urllib.parse.quote(PAYLOAD, safe='')
     base_args = f'-j "" --sourceURL {SOURCE_URL} -r . -p "{quoted} "'
@@ -92,6 +101,15 @@ def main():
     # the bare host: DDG4 import failed outside the container).
     job.container_name = CONTAINER
     job.jobParameters = f'{base_args}{msexec}'
+
+    out = FileSpec()
+    out.lfn = out_lfn
+    out.type = 'output'
+    out.scope = 'group.EIC'
+    out.dataset = out_ds
+    out.destinationDBlock = out_ds
+    out.destinationSE = 'local'
+    job.addFile(out)
 
     log = FileSpec()
     log.lfn = f'{job_name}.log.tgz'

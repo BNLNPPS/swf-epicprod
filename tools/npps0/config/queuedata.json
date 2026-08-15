@@ -7,7 +7,7 @@
    "rucio"
   ],
   "pw": [
-   "rucio"
+   "s3"
   ],
   "read_lan": [
    "rucio"
@@ -15,11 +15,14 @@
   "read_lan_analysis": [
    "rucio"
   ],
+  "w": [
+   "s3"
+  ],
   "write_lan": [
-   "rucio"
+   "s3"
   ],
   "write_lan_analysis": [
-   "rucio"
+   "s3"
   ]
  },
  "allow_lan": true,
@@ -33,7 +36,7 @@
    "BNL_PROD_DISK_1"
   ],
   "pw": [
-   "BNL_PROD_DISK_1"
+   "DEV_CLOUD_S3"
   ],
   "read_lan": [
    "BNL_PROD_DISK_1"
@@ -41,11 +44,14 @@
   "read_lan_analysis": [
    "BNL_PROD_DISK_1"
   ],
+  "w": [
+   "DEV_CLOUD_S3"
+  ],
   "write_lan": [
-   "BNL_PROD_DISK_1"
+   "DEV_CLOUD_S3"
   ],
   "write_lan_analysis": [
-   "BNL_PROD_DISK_1"
+   "DEV_CLOUD_S3"
   ]
  },
  "atlas_site": "BNL-OSG",
