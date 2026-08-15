@@ -96,7 +96,7 @@ case established from source or logs rather than inferred:
 Operational notes for anyone reproducing this. Host prerequisites —
 CVMFS with the site squid, credentials and their refresh, apptainer
 cache placement, disk budget — are recorded in
-`tools/npps0/README.md`. A task receives three pilot attempts and no
+`NPPS0_WORKER.md`. A task receives three pilot attempts and no
 more (`maxAttempt`). Pilot run directories are removed between
 cycles, so payload output survives only in the staged log; the two
 files to read when a job dies before its payload starts are

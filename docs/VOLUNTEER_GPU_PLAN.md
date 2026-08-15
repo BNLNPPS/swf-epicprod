@@ -23,7 +23,7 @@ collaborator's box.
   server path and run in the `eic_dev_cuda` CVMFS container with GPU
   passthrough (`--nv`). The Simphony raindrop test passes on both
   GPUs under PanDA dispatch.
-- Pull-mode pilot under a launcher loop (`tools/npps0/`): no
+- Pull-mode pilot under a launcher loop (`NPPS0_WORKER.md`): no
   Harvester, no compute element. Service restarts never kill a
   running pass; configuration deploys take effect at pass boundaries
   with no service action.
