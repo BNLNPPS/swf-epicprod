@@ -36,6 +36,11 @@ PAYLOAD = ('nvidia-smi -L && '
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--version', default='v03')
+    # Tadashi 2026-08-14: tasks for jobs that produce no log files omit
+    # the 'log' entry entirely (prun --noSeparateLog); with no log
+    # dataset there is nothing for the refiner to validate against
+    # Rucio and nothing for the Adder to register.
+    ap.add_argument('--no-log', action='store_true')
     args = ap.parse_args()
 
     task_name = f'{TASK_BASE}.{args.version}'
@@ -107,6 +112,9 @@ def main():
             {'type': 'constant', 'value': '"'},
         ],
     }
+
+    if args.no_log:
+        del params['log']
 
     from pandaclient import Client
     status, result = Client.insertTaskParams(params)
