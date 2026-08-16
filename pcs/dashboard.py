@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 PANEL_LIMIT = 8
 
+# The epicprod Time history families carried above the panels, in the
+# order the report page shows them.
+OPS_EMBED_FAMILIES = ('In-flight jobs', 'Job outcomes', 'Tasks',
+                      'In-flight job types', 'Type × state')
+
 # Default panel order: the production flow (EPICPROD_DASHBOARD.md).
 PANEL_ORDER = (
     'requests', 'configs', 'campaigns', 'panda',
@@ -358,10 +363,46 @@ def _get_panel(panel_id, revalidate=False):
     return panel
 
 
+def _ops_snapper_embed():
+    """The last week of epicprod curve panels for the top of the Ops
+    tab (snapper-ai INTEGRATION.md section 4), served as a cached
+    product. None when the window holds no points or the build fails;
+    a failure is logged and never fatal to the dashboard."""
+    from datetime import timedelta
+
+    from monitor_app.cached_product import get_product
+    from snapper_ai.embed import embed_context
+
+    def build():
+        now = timezone.now()
+        ctx = embed_context(
+            'epicprod', now - timedelta(days=7), now,
+            families=OPS_EMBED_FAMILIES,
+            # Every listed family's curves live in the panda component,
+            # and the embed carries no lanes, so the series walk is
+            # restricted to that component's snaps.
+            snap_components=('panda',))
+        if ctx.get('error'):
+            raise RuntimeError(ctx['error'])
+        return ctx
+
+    try:
+        product = get_product('snapper_embed:v1:ops_dash', build,
+                              ttl_seconds=300)
+    except Exception as exc:  # noqa: BLE001
+        logger.error('ops dashboard snapper embed failed: %s', exc)
+        return None
+    ctx = product.get('value')
+    if not ctx or not ctx.get('has_points'):
+        return None
+    return ctx
+
+
 def build_dashboard(panel_order=None):
     """Panels in the given (or default) order; provider errors surface in place."""
     return {'panels': [_get_panel(panel_id)
-                       for panel_id in ordered_panel_ids(panel_order)]}
+                       for panel_id in ordered_panel_ids(panel_order)],
+            'snapper_embed': _ops_snapper_embed()}
 
 
 def dashboard_panel(request, panel_id):
