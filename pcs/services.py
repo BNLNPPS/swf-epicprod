@@ -364,6 +364,19 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
     if not _re.fullmatch(r'\d+\.\d+\.\d+', det_version) or not remainder:
         return None, f'unparseable taskname: {task_name!r}'
 
+    # Idempotency precedes identity construction. A repeated JEDI submission
+    # may reuse an already-intaken taskName/DID; that is another physical
+    # attempt of the same sample, not a new dataset requiring a discriminator.
+    did = f'group.EIC:{task_name}'
+    existing_task = (ProdTask.objects.select_related('dataset')
+                     .filter(name=task_name).first())
+    if existing_task is not None:
+        if existing_task.dataset.did != did:
+            return None, (f'existing task {task_name!r} points at DID '
+                          f'{existing_task.dataset.did!r}, expected {did!r}')
+        return existing_task, 'existing direct intake'
+    existing_dataset = Dataset.objects.filter(did=did).first()
+
     physics, evgen, simu, reco, cfg, _ = _ensure_csvimport_anchors()
     # The campaign is the family; the patch edition stays on the dataset
     # (detector_version, names) — docs/CAMPAIGN_FAMILY.md.
@@ -402,52 +415,54 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
         # a guard that cannot discriminate is flagged, never silent.
         from monitor_app.epicprod_logging import log_epicprod_action
         sample_name = ''
-        probe = Dataset(
-            scope='group.EIC', detector_version=det_version,
-            detector_config=det_config, physics_tag=row_physics_tag,
-            evgen_tag=evgen, simu_tag=simu, reco_tag=reco)
-        if Dataset.objects.filter(
-                composed_name=probe.build_dataset_name()).exists():
-            candidate = _intake_sample_candidate(remainder, derived)
-            if candidate and not sample_name_reserved_collision(candidate):
-                sample_name = candidate
-                log_epicprod_action(
-                    'pcs', 'direct_intake_sample', outcome='ok',
-                    subject_type='dataset', subject_key=task_name,
-                    reason=f'composed-name collision; sample {candidate!r}')
-            else:
-                log_epicprod_action(
-                    'pcs', 'direct_intake_sample', outcome='error',
-                    sublevel='high', live_default=True,
-                    subject_type='dataset', subject_key=task_name,
-                    reason='composed-name collision with no usable '
-                           f'discriminator (candidate {candidate!r})')
+        dataset = existing_dataset
+        if dataset is None:
+            probe = Dataset(
+                scope='group.EIC', detector_version=det_version,
+                detector_config=det_config, physics_tag=row_physics_tag,
+                evgen_tag=evgen, simu_tag=simu, reco_tag=reco)
+            if Dataset.objects.filter(
+                    composed_name=probe.build_dataset_name()).exists():
+                candidate = _intake_sample_candidate(remainder, derived)
+                if candidate and not sample_name_reserved_collision(candidate):
+                    sample_name = candidate
+                    log_epicprod_action(
+                        'pcs', 'direct_intake_sample', outcome='ok',
+                        subject_type='dataset', subject_key=task_name,
+                        reason=f'composed-name collision; sample {candidate!r}')
+                else:
+                    log_epicprod_action(
+                        'pcs', 'direct_intake_sample', outcome='error',
+                        sublevel='high', live_default=True,
+                        subject_type='dataset', subject_key=task_name,
+                        reason='composed-name collision with no usable '
+                               f'discriminator (candidate {candidate!r})')
 
-        did = f'group.EIC:{task_name}'
-        dataset, _ds_created = Dataset.objects.get_or_create(
-            did=did,
-            defaults={
-                'dataset_name': task_name,
-                'scope': 'group.EIC',
-                'detector_version': det_version,
-                'detector_config': det_config,
-                'campaign': campaign,
-                'physics_tag': row_physics_tag,
-                'evgen_tag': evgen,
-                'simu_tag': simu,
-                'reco_tag': reco,
-                'sample_name': sample_name,
-                'description': 'Auto-intake of direct PanDA submission',
-                'metadata': {
-                    'source': {'kind': 'panda_taskname', 'location': task_name},
-                    'direct_intake': {
-                        'jeditaskid': panda_task.get('jeditaskid'),
-                        'username': panda_task.get('username') or '',
+            dataset, _ds_created = Dataset.objects.get_or_create(
+                did=did,
+                defaults={
+                    'dataset_name': task_name,
+                    'scope': 'group.EIC',
+                    'detector_version': det_version,
+                    'detector_config': det_config,
+                    'campaign': campaign,
+                    'physics_tag': row_physics_tag,
+                    'evgen_tag': evgen,
+                    'simu_tag': simu,
+                    'reco_tag': reco,
+                    'sample_name': sample_name,
+                    'description': 'Auto-intake of direct PanDA submission',
+                    'metadata': {
+                        'source': {'kind': 'panda_taskname',
+                                   'location': task_name},
+                        'direct_intake': {
+                            'jeditaskid': panda_task.get('jeditaskid'),
+                            'username': panda_task.get('username') or '',
+                        },
                     },
+                    'created_by': created_by,
                 },
-                'created_by': created_by,
-            },
-        )
+            )
 
         task, _t_created = ProdTask.objects.get_or_create(
             name=task_name,
@@ -548,14 +563,40 @@ def reconcile_panda_task_association(panda_task):
     if executed:
         metadata['executed'] = executed
     with transaction.atomic():
-        row = PandaTasks.objects.select_for_update().filter(task_name=task_name).first()
-        if row and row.prod_task_id != task.pk:
-            return None, None, f'PanDA taskname {task_name!r} already associated elsewhere'
+        # Serialize attempt allocation on the logical PCS task. PanDA may
+        # submit a new jediTaskID under an unchanged taskName; taskName is a
+        # lookup value, not the physical-attempt identity.
+        locked_task = ProdTask.objects.select_for_update().get(pk=task.pk)
+        existing_jedi = (PandaTasks.objects.select_for_update()
+                         .filter(jedi_task_id=jedi_task_id).first())
+        if existing_jedi is not None:
+            if existing_jedi.prod_task_id != locked_task.pk:
+                return None, None, (
+                    f'jediTaskID {jedi_task_id} is already associated '
+                    'with another PCS task')
+            return (locked_task, existing_jedi,
+                    'existing jediTaskID association')
+
+        same_name = list(
+            PandaTasks.objects.select_for_update()
+            .filter(task_name=task_name).order_by('try_number'))
+        if any(row.prod_task_id != locked_task.pk for row in same_name):
+            return None, None, (
+                f'PanDA taskname {task_name!r} already associated elsewhere')
+
+        # Preserve the preallocated-submission path: an unassigned row with
+        # this physical name is waiting for its JEDI id. Otherwise this is a
+        # repeated-name physical attempt and receives the next PCS try number.
+        row = next((entry for entry in same_name
+                    if entry.jedi_task_id is None), None)
         if row is None:
-            if PandaTasks.objects.filter(prod_task=task, try_number=try_number).exists():
-                try_number = _next_try_number(task)
+            occupied = set(
+                PandaTasks.objects.filter(prod_task=locked_task)
+                .values_list('try_number', flat=True))
+            while try_number in occupied:
+                try_number += 1
             row = PandaTasks.objects.create(
-                prod_task=task,
+                prod_task=locked_task,
                 try_number=try_number,
                 task_name=task_name,
                 out_ds=task_name,
@@ -567,17 +608,13 @@ def reconcile_panda_task_association(panda_task):
                 match_reason=f'exact PanDA taskname match: {task_name}',
                 metadata=metadata,
             )
-        elif row.jedi_task_id in (None, jedi_task_id):
+        else:
             row.jedi_task_id = jedi_task_id
             row.status_snapshot = panda_task.get('status') or row.status_snapshot
             row.metadata = {**(row.metadata or {}), **metadata}
-            row.save(update_fields=['jedi_task_id', 'status_snapshot', 'metadata', 'updated_at'])
-        else:
-            return None, None, (
-                f'PanDA taskname {task_name!r} already records jediTaskID '
-                f'{row.jedi_task_id}'
-            )
-    return task, row, 'created dynamic exact taskname association'
+            row.save(update_fields=['jedi_task_id', 'status_snapshot',
+                                    'metadata', 'updated_at'])
+    return locked_task, row, 'created dynamic exact taskname association'
 
 
 def _panda_progress_summaries(task_ids, tasknames):
@@ -5001,8 +5038,14 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
                     status=409,
                 )
         if row is None and task_name:
-            row = PandaTasks.objects.select_for_update().filter(
-                prod_task=locked, task_name=task_name).first()
+            # Reuse only an unassigned preallocation (or the row already
+            # carrying this JEDI id). A previous same-name submission is a
+            # different physical attempt and must remain in history.
+            row = (PandaTasks.objects.select_for_update()
+                   .filter(prod_task=locked, task_name=task_name)
+                   .filter(Q(jedi_task_id__isnull=True)
+                           | Q(jedi_task_id=incoming))
+                   .order_by('-try_number').first())
         if row is None:
             last_try = (
                 PandaTasks.objects

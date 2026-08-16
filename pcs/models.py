@@ -975,7 +975,10 @@ class PandaTasks(models.Model):
     )
     try_number = models.PositiveIntegerField(default=1)
     jedi_task_id = models.BigIntegerField(null=True, blank=True, db_index=True)
-    task_name = models.CharField(max_length=300, unique=True)
+    # PanDA permits a resubmission to reuse the same taskName under a new
+    # jediTaskID. The JEDI id and the PCS attempt number identify the physical
+    # attempt; task_name is therefore indexed, not unique.
+    task_name = models.CharField(max_length=300, db_index=True)
     out_ds = models.CharField(max_length=300, blank=True, default='')
     log_ds = models.CharField(max_length=300, blank=True, default='')
     site = models.CharField(max_length=100, blank=True, default='')

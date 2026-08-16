@@ -7,8 +7,26 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
+from django.test import TestCase as DjangoTestCase
+
 from pcs.commands import build_evgen_task_params, build_task_params
-from pcs.models import Dataset
+from pcs.models import (
+    Campaign,
+    Dataset,
+    EvgenTag,
+    PandaTasks,
+    PhysicsCategory,
+    PhysicsTag,
+    ProdConfig,
+    ProdTask,
+    RecoTag,
+    SimuTag,
+)
+from pcs.services import (
+    intake_direct_panda_task,
+    prodtask_record_submission,
+    reconcile_panda_task_association,
+)
 
 
 def _make_task():
@@ -437,3 +455,104 @@ class DatasetMetadataTest(TestCase):
         self.assertFalse(dataset.is_external)
         self.assertEqual(dataset.source_kind, '')
         self.assertEqual(dataset.source_location, '')
+
+
+class RepeatedPandaTaskNameTest(DjangoTestCase):
+    """A new JEDI id may legitimately reuse an earlier PanDA taskName."""
+
+    def setUp(self):
+        self.raw_name = (
+            'group.EIC.26.07.1.epic_craterlake.'
+            'DIS.NC.5x41.minQ2-100')
+        category = PhysicsCategory.objects.create(
+            digit=4, name='DIS', created_by='test')
+        physics = PhysicsTag.objects.create(
+            tag_number=4001, tag_label='', category=category,
+            parameters={'process': 'DIS'}, created_by='test')
+        evgen = EvgenTag.objects.create(
+            tag_number=1, tag_label='', created_by='test')
+        simu = SimuTag.objects.create(
+            tag_number=1, tag_label='', created_by='test')
+        reco = RecoTag.objects.create(
+            tag_number=1, tag_label='', created_by='test')
+        campaign = Campaign.objects.create(
+            name='26.07', lifecycle='past', created_by='test')
+        dataset = Dataset.objects.create(
+            dataset_name=self.raw_name,
+            did=f'group.EIC:{self.raw_name}',
+            detector_version='26.07.1',
+            detector_config='epic_craterlake',
+            campaign=campaign,
+            physics_tag=physics,
+            evgen_tag=evgen,
+            simu_tag=simu,
+            reco_tag=reco,
+            created_by='test',
+        )
+        config = ProdConfig.objects.create(
+            name='association test', created_by='test')
+        self.task = ProdTask.objects.create(
+            name=self.raw_name,
+            status='submitted',
+            dataset=dataset,
+            prod_config=config,
+            campaign=campaign,
+            created_by='test',
+        )
+        self.first = PandaTasks.objects.create(
+            prod_task=self.task,
+            try_number=1,
+            jedi_task_id=1001,
+            task_name=self.raw_name,
+            out_ds=self.raw_name,
+            log_ds=f'{self.raw_name}.log',
+        )
+
+    @patch('pcs.services._panda_executed_identity', return_value={})
+    def test_reconcile_records_reused_name_as_next_attempt(self, _executed):
+        matched, row, reason = reconcile_panda_task_association({
+            'jeditaskid': 1002,
+            'taskname': self.raw_name,
+            'status': 'running',
+            'workinggroup': 'EIC',
+        })
+
+        self.assertEqual(matched, self.task)
+        self.assertEqual(reason, 'created dynamic exact taskname association')
+        self.assertEqual(row.try_number, 2)
+        self.assertEqual(row.task_name, self.raw_name)
+        self.assertEqual(row.jedi_task_id, 1002)
+        self.assertEqual(
+            list(PandaTasks.objects.filter(prod_task=self.task)
+                 .values_list('jedi_task_id', flat=True)),
+            [1001, 1002],
+        )
+
+    @patch('monitor_app.epicprod_logging.log_epicprod_action')
+    def test_existing_direct_intake_returns_before_collision_guard(self, log):
+        task, reason = intake_direct_panda_task({
+            'jeditaskid': 1002,
+            'taskname': self.raw_name,
+            'status': 'running',
+        })
+
+        self.assertEqual(task, self.task)
+        self.assertEqual(reason, 'existing direct intake')
+        self.assertEqual(Dataset.objects.filter(
+            did=f'group.EIC:{self.raw_name}').count(), 1)
+        log.assert_not_called()
+
+    def test_record_submission_preserves_previous_same_name_attempt(self):
+        prodtask_record_submission(
+            task=self.task,
+            jedi_task_id=1002,
+            task_name=self.raw_name,
+        )
+
+        rows = list(PandaTasks.objects.filter(prod_task=self.task)
+                    .order_by('try_number'))
+        self.assertEqual(
+            [(row.try_number, row.task_name, row.jedi_task_id)
+             for row in rows],
+            [(1, self.raw_name, 1001), (2, self.raw_name, 1002)],
+        )
