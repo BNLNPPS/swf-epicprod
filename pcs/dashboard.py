@@ -19,7 +19,7 @@ PANEL_LIMIT = 8
 # The epicprod Time history families carried above the panels, in the
 # order the report page shows them.
 OPS_EMBED_FAMILIES = ('Running cores by queue', 'Job outcomes',
-                      'In-flight jobs', 'In-flight job types',
+                      'In-flight job types', 'In-flight jobs',
                       'Type × state', 'Tasks')
 
 # Default panel order: the production flow (EPICPROD_DASHBOARD.md).
@@ -391,7 +391,7 @@ def _ops_snapper_embed():
         return ctx
 
     try:
-        product = get_product('snapper_embed:v4:ops_dash', build,
+        product = get_product('snapper_embed:v5:ops_dash', build,
                               ttl_seconds=300)
     except Exception as exc:  # noqa: BLE001
         logger.error('ops dashboard snapper embed failed: %s', exc)
