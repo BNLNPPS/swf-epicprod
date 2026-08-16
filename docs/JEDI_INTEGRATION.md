@@ -203,8 +203,12 @@ build time. File names are resolved through Rucio by dataset, so the LFN form
 does not affect dataset-level discoverability.
 
 `$JEDITASKID`, the task-level identifier, is also available but is substituted
-only for non-`managed` jobs (`job_complex_module.py`, line 3058); `$PANDAID`
-applies to managed production as well.
+only for non-`managed` jobs (`job_complex_module.py`, line 3058, whose guard
+covers `$JOBSETID` as well); `$PANDAID` applies to managed production as well.
+This is a prerequisite for any move to `prodSourceLabel='managed'`: the live
+EVGEN log template is `{outDS}.$JEDITASKID.${SN}.log.tgz`
+(`scripts/evgen_panda_submit.py`), and under `managed` the literal string would
+survive into log file names, so the template has to change first.
 
 ## Example: taskParamMap Built from PCS
 
@@ -672,7 +676,12 @@ any automatic residual submission — the action is operator-clicked.
 
 ## PanDA follow-up items
 
-1. **GenTaskRefiner registration** for `eic:managed` in `panda_jedi.cfg`.
+1. **Plugin registration for `managed`** — satisfied. The deployed
+   `panda_jedi.cfg` registers the VO under the key `epic`, not `eic`:
+   `GenTaskRefiner`, `GenJobBroker`, `GenJobThrottler`, `GenPostProcessor`,
+   `GenWatchDog` and `SimpleTaskSetupper` under label `any`, and
+   `AtlasProdTaskBroker` and `AtlasTaskGenerator` under `managed|test`. Both
+   `test` and `managed` therefore reach every plugin in the chain.
 2. **Non-interactive production credential** for unattended operation. Current
    production submissions run through the operator's cached PanDA client token on
    the production host; a service credential remains an operations improvement,
