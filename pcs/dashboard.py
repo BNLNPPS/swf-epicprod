@@ -381,13 +381,16 @@ def _ops_snapper_embed():
             # Every listed family's curves live in the panda component,
             # and the embed carries no lanes, so the series walk is
             # restricted to that component's snaps.
-            snap_components=('panda',))
+            snap_components=('panda',),
+            # The hover floaters name the curves; the static key would
+            # fill the top of the dashboard.
+            hide_key=True)
         if ctx.get('error'):
             raise RuntimeError(ctx['error'])
         return ctx
 
     try:
-        product = get_product('snapper_embed:v1:ops_dash', build,
+        product = get_product('snapper_embed:v2:ops_dash', build,
                               ttl_seconds=300)
     except Exception as exc:  # noqa: BLE001
         logger.error('ops dashboard snapper embed failed: %s', exc)

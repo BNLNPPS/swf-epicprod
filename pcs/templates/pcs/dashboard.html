@@ -11,6 +11,7 @@
 {% if dashboard.snapper_embed %}
 {# The week's Time history above the panels; a click opens the epicprod report page at the same window. #}
 <div class="mb-3">
+  <p class="mb-1"><strong>Snapper epicprod view.</strong> Click plot to go to page.</p>
   {% include 'snapper_ai/_snapper_embed.html' with embed=dashboard.snapper_embed %}
 </div>
 {% endif %}
