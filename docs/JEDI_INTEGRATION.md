@@ -401,6 +401,59 @@ When JEDI processes this task, `GenTaskRefiner` (61 lines, `panda-server/pandaje
 
 The `GenJobBroker` then handles site selection using the simplified non-ATLAS brokerage logic: filter by queue status, disk space, walltime constraints, then select.
 
+## Production role and server-side task defaults
+
+A submitted parameter map is not accepted verbatim. `insertTaskParamsPanda`
+(`panda-server/pandaserver/taskbuffer/db_proxy_mods/task_event_module.py`)
+overwrites three fields when the submitter is not recognized with a production
+role, and overwrites two of them whenever the map omits `taskType`:
+
+```python
+if not prodRole or "userName" not in taskParamsJson:
+    taskParamsJson["userName"] = compact_dn
+if not prodRole or "taskType" not in taskParamsJson:
+    taskParamsJson["taskType"] = "anal"
+    taskParamsJson["taskPriority"] = 1000
+```
+
+A producer therefore supplies `userName`, `taskType` and `taskPriority` itself
+and must hold the production role for them to survive.
+`scripts/evgen_panda_submit.py` supplies all three, which is why the live path
+produces `prod` tasks at the configured priority.
+
+The role is decided by `has_production_role`
+(`panda-server/pandaserver/api/v1/common.py`) through either of two tests. The
+first is a substring match of the caller's distinguished name against
+`panda_config.production_dns`; on the ePIC server that setting is `iddssv`, so
+this door serves iDDS alone. The second is an FQAN matching one of
+`/atlas/usatlas/Role=production`, `/atlas/Role=production`, or
+`^/[^/]+/Role=production`. The third pattern is generic across virtual
+organizations, so an ePIC production FQAN satisfies it; the check is not
+ATLAS-specific.
+
+Under OIDC there is no VOMS attribute to read, so the FQAN is synthesized in
+`decode_token` (`panda-server/pandaserver/srvcore/panda_request.py`) from the
+`Origin` header, which panda-client sends from `PANDA_AUTH_VO`. The value is
+split on its last dot into virtual organization and role, the role must appear
+in the token's `groups` claim as `<vo>/<role>`, and only then is
+`VOMS /<vo>/Role=<role>` written into the request environment. A value carrying
+no role segment produces no FQAN at all.
+
+Measured against the ePIC server with the operator token: `Origin: EIC` returns
+no `GRST_CRED_AUTH_TOKEN` entry, and `Origin: EIC.production` returns
+`VOMS /EIC/Role=production`. The credentialed doers accordingly set
+`PANDA_AUTH_VO=EIC.production`; the panda-client setup file exports
+`PANDA_AUTH_VO=EIC`, which does not carry the role, so anything sourcing that
+file alone submits without it.
+
+One consequence applies regardless of role: panda-client never places
+`taskType` in the parameter map, so a `prun` submission always takes the second
+clause and is stored as an `anal` task at priority 1000. The two PCS
+submissions on record show both outcomes — jediTaskID 37271 is `prod` at
+priority 900, and jediTaskID 36565 is `anal` at 1000 with processing type
+`panda-client-1.7.0-jedi-run`, the client-version string a prun submission
+carries.
+
 ## Client-API EVGEN submission
 
 The live Submit path is the client-API EVGEN submission, which reproduces the
@@ -612,7 +665,9 @@ any automatic residual submission — the action is operator-clicked.
 
 - **VO**: `eic`
 - **Queues**: 13 EIC queues online (BNL_EPIC_PROD_1, BNL_OSG_EPIC_PROD_1, NERSC_Perlmutter_epic, E1_BNL, E1_JLAB, etc.). All support Apptainer containers.
-- **Auth**: OIDC with `PANDA_AUTH=oidc`, `PANDA_AUTH_VO=eic`
+- **Auth**: OIDC with `PANDA_AUTH=oidc`. The credentialed doers set
+  `PANDA_AUTH_VO=EIC.production`, which is what carries the production role;
+  see [Production role and server-side task defaults](#production-role-and-server-side-task-defaults)
 - **Output**: Rucio integration available; `token='local'` / `destination='local'` for local staging
 
 ## PanDA follow-up items

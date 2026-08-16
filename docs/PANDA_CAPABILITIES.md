@@ -2,7 +2,9 @@
 
 An inventory of PanDA mechanisms relevant to the GPU worker track
 (`docs/VOLUNTEER_GPU_PLAN.md`), and the monitoring work needed to make
-that job class legible on the job and task pages. The GPU jobs on
+that job class legible on the job and task pages. The section on the
+MCP service is wider than that track, covering the control surface it
+offers over production tasks, jobs, sites and workers. The GPU jobs on
 `BNL_NPPS_GPU` are a new category: a worker outside the facility
 perimeter, no grid storage, outputs in an object store, and a payload
 whose result is a physics measurement rather than a file count.
@@ -12,8 +14,10 @@ Sources surveyed: the PanDA documentation at
 `advanced/task_params.html`, which documents the task parameter
 vocabulary in full; the `splitRule` token table in
 `pandaserver/taskbuffer/task_split_rules.py` (108 toggles); the client
-API in `pandaclient/Client.py` (67 functions); and the `prun` option
-set in `pandaclient/PrunScript.py` (109 options). The client scripts
+API in `pandaclient/Client.py` (67 functions); the `prun` option
+set in `pandaclient/PrunScript.py` (109 options); and the MCP service
+in `pandaserver/pandamcp/` together with the REST API modules in
+`pandaserver/api/v1/` that it exposes. The client scripts
 expose a subset of what the API and the task parameter map accept, and
 raw task submission reaches mechanisms `prun` does not surface.
 
@@ -326,9 +330,302 @@ Classification; JEDI Watchdogs; Data Carousel; System Configuration
 Parameters in Database; Integration with CRIC; Deployment of Custom
 IAM; PanDA Daemon; System Architecture; Database; Installation.
 
-PanDA also ships an MCP server ("Enabling PandaMCP"; `pandamcp/` is
-present in the deployed server tree). Its tool set should be reviewed
-before building overlapping tooling.
+## The PanDA MCP service
+
+PanDA ships an MCP (Model Context Protocol) service,
+`pandaserver/pandamcp/`, which presents PanDA REST API endpoints as MCP
+tools. It runs on the ePIC PanDA server today with two tools exposed.
+
+### Mechanism
+
+`mcp_main.py` reads a JSON file naming API modules and functions,
+imports each function from `pandaserver.api.v1.<module>_api`, and
+registers it under the name `<module>_<function>`.
+`mcp_utils.create_tool` derives the whole tool from the function: the
+signature minus the request object becomes the input schema, the
+docstring becomes the description, and the HTTP method is read from the
+`HTTP Method:` line inside that docstring. An invocation is forwarded
+as an HTTPS request to the server's own `/api/v1` path.
+
+Two properties follow. The exposed tool set is deployment
+configuration rather than a property of the code: any endpoint in the
+API becomes a tool by being named in the file, and no endpoint gains
+behaviour by being exposed. And the tool descriptions are the API
+reference itself, so a tool cannot drift from the endpoint it calls.
+
+### Authorization
+
+The service holds no credential. At startup it removes
+`PANDA_AUTH_ID_TOKEN`, `PANDA_AUTH_VO` and `X509_USER_PROXY` from its
+environment and sets the proxy path to `/dev/null`. Each call carries
+the caller's bearer token, read from the `Authorization` or
+`X-Auth-Token` header, and the caller's virtual organization, read from
+`Origin`, into the forwarded request.
+
+Authorization is consequently unchanged from the REST API. The
+`request_validation` decorator in `pandaserver/api/v1/common.py`
+enforces three levels: an authenticated identity (`secure`), a
+production role (`production`), and task ownership or that role
+(`task_owner`). The token decoder in
+`pandaserver/srvcore/panda_request.py` synthesizes both fields those
+checks read — a distinguished name from the token's `name` or `sub`
+claim, and an FQAN of the form `/<vo>/Role=<role>` from the VO and role
+parsed out of `Origin` and the token's `vo` claim. An `Origin` of
+`EIC.production` therefore reaches the production-role endpoints, with
+the identity that `scripts/panda-task-operation.py` in swf-monitor
+already obtains through `PANDA_AUTH_VO`.
+
+Tools are not filtered per caller. Every client is offered the full
+list, and an unauthorized call fails at invocation with `SSL secure
+connection is required` or `production or pilot role required`.
+
+How that role is decided on the ePIC server, and what the server
+rewrites in a submitted parameter map without it, is documented in
+[JEDI_INTEGRATION.md](JEDI_INTEGRATION.md#production-role-and-server-side-task-defaults).
+
+### State on the ePIC server
+
+`panda_mcp.service` is active on pandaserver01, serving streamable HTTP
+on port 25888 under the host certificate, with fastmcp 2.13.1. Its
+endpoint list holds two entries, `system_is_alive` and
+`system_get_user_attributes`. A tool listing taken from the server host
+on 2026-08-16 returned exactly those two, and `system_is_alive`
+answered successfully.
+
+The reference list in the server repository,
+`pandaserver/pandamcp/panda_mcp_endpoints.json`, names 59 endpoints in
+eight modules. It is not the file the ePIC server serves; the deployed
+list predates it.
+
+The service is not published beyond the server host. The httpd proxy
+directives that would expose it at `/mcp/` on port 25443 are absent
+from the ePIC server configuration, and a connection to port 25888 from
+pandaserver02 is refused. Both the endpoint list and the reachable path
+are configuration on pandaserver01, so both are the PanDA team's to
+change.
+
+### Task control in the reference list
+
+Twenty of the thirty task endpoints act on a task. `task_pause`,
+`task_resume`, `task_retry` and `task_finish` are the four verbs the
+epicprod ops pipeline already carries; the rest are additions. Kill is
+deliberately absent from the epicprod menus and exposure would not
+change that.
+
+| Tool | Effect | Gate |
+|---|---|---|
+| `task_change_split_rule` | changes one `splitRule` token on a live task, from the set in `task_split_rules.changeable_split_rule_names` | production |
+| `task_change_attribute` | changes `ramCount`, `wallTime`, `cpuTime` or `coreCount` | production |
+| `task_change_priority` | changes task priority | production |
+| `task_reassign` | moves a task to a site, cloud or nucleus, with `kill`, `soft` or `nokill` handling of existing jobs | secure |
+| `task_reassign_global_share` | moves a list of tasks to another share, optionally reassigning running jobs | production |
+| `task_avalanche` | triggers the avalanche from scouting, or reconfigures the task to skip scouting | production |
+| `task_release` | releases a task by skipping iDDS staging | production |
+| `task_reload_input` | reloads task input | secure |
+| `task_reactivate` | recycles a finished task so it generates new jobs | production |
+| `task_increase_attempts` | raises the attempt ceiling | production |
+| `task_kill_unfinished_jobs` | kills a task's unfinished jobs with a specific kill code, leaving the task | secure |
+| `task_enable_job_cloning`, `task_disable_job_cloning` | job cloning with mode, multiplicity and site count | production |
+| `task_enable_jumbo_jobs` | jumbo jobs with totals per task and per site | production |
+| `task_submit` | registers a task from a parameter map | secure |
+
+The eighteen changeable split-rule tokens are `allowIncompleteInDS`,
+`t1Weight`, `nEsConsumers`, `nMaxFilesPerJob`, `nGBPerJob`,
+`noInputPooling`, `nFilesPerJob`, `nEventsPerWorker`, `nJumboJobs`,
+`avoidVP`, `allowInputLAN`, `useLocalIO`, `noLoopingCheck`,
+`maxCoreCount`, `onlyTagsForFC`, `useZipToPin`, `ignoreMissingInDS` and
+`noAutoPause`. Sixteen of the eighteen appear in the sections above as
+submission parameters; that they are also changeable on a running task
+is the useful part, since it makes work-quantum size, input locality,
+looping detection and core count adjustable against a task that is
+already misbehaving rather than only at submission.
+
+The ten task read endpoints — `get_status`, `get_details`,
+`get_detailed_info`, `get_parent_detailed_info`, `get_task_parameters`,
+`get_datasets_and_files`, `get_job_ids`, `get_job_descriptions`,
+`get_tasks_modified_since`, `get_jumbo_job_datasets` — duplicate what
+the epicprod monitor already reads from the PanDA database, with one
+exception: `task_get_task_parameters` returns the stored parameter map,
+which is the source of working exemplars named in the bring-up table
+above.
+
+### Job control
+
+| Tool | Effect | Gate |
+|---|---|---|
+| `job_set_debug_mode` | turns debug mode on for a running job, streaming its stdout | production |
+| `job_set_command` | sends a command to the pilot holding a job, for example `tobekilled` | production |
+| `job_kill` | kills jobs under one of fourteen documented kill codes, with `keepUnmerged` and job-substatus options | secure |
+| `job_reassign` | reassigns jobs | secure |
+| `job_get_status` | returns status and any pending pilot command per job | secure |
+| `job_get_description_incl_archive` | job attributes, parameters and file attributes, including the archive schema | secure |
+| `job_get_metadata_for_analysis_jobs` | payload-reported metadata for finished analysis jobs in a task | secure |
+| `job_generate_offline_execution_script` | generates a shell script that reproduces a job outside PanDA | none |
+| `job_submit` | submits job specifications directly | secure |
+
+Two are worth attention. `job_set_debug_mode` is the remote-diagnosis
+path named in the operations section above, reachable without a client
+installation. `job_generate_offline_execution_script` carries no
+authentication gate and returns a job's full execution recipe, and it
+answers the question a volunteer or external contributor asks first,
+which is how to run one unit of work by hand. Its generator,
+`pandaserver/taskbuffer/offline_run_script.py`, requires `setupATLAS`
+and builds an ALRB container invocation, so for ePIC it is a template
+to imitate rather than a script to run.
+
+`job_get_metadata_for_analysis_jobs` reads the metadata table that the
+payload-reporting proposal at the end of this document would populate,
+but its query (`job_standalone_module.getUserJobMetadata`) selects
+finished jobs whose `prodSourceLabel` is `user`. ePIC production
+submits `test`, which is the label on 3,633 of the 3,655 tasks in the
+`epic` virtual organization and on every job of the tasks checked, so
+this endpoint returns nothing for ePIC production as it is submitted
+today. Retrieval of payload-reported metadata for these tasks needs
+either a different label or a query without that filter.
+
+### Sites and job statistics
+
+| Tool | Effect | Gate |
+|---|---|---|
+| `metaconfig_get_site_specs` | site specifications by CRIC type (`unified`, `production`, `analysis`, `all`) | none |
+| `metaconfig_get_resource_types` | resource types such as `SCORE` and `MCORE` with their definitions | secure |
+| `metaconfig_get_banned_users` | users disabled in the server | secure |
+| `statistics_active_job_stats_by_site` | active job counts by site | none |
+| `statistics_active_job_detailed_stats_by_site` | active job counts by site, resource type and source label | none |
+| `statistics_job_stats_by_site_and_resource_type` | active plus recently finalized jobs by site and resource type, over a settable window | none |
+| `statistics_job_stats_by_site_share_and_resource_type` | the same split further by global share | none |
+| `statistics_job_stats_by_cloud` | job counts by cloud for analysis or production | none |
+| `statistics_production_job_stats_by_cloud_and_processing_type` | production job counts by cloud and processing type | none |
+
+These are the queue and site views a site-level page needs, served by
+the server rather than assembled from the database, and the six
+statistics endpoints and `get_site_specs` answer without
+authentication.
+
+### Pilots and worker flow
+
+| Tool | Effect | Gate |
+|---|---|---|
+| `harvester_get_worker_statistics` | worker counts and states across managed queues | secure |
+| `harvester_add_sweep_command` | instructs Harvester to kill workers at a queue, filtered by worker status, computing element or submission host | production |
+| `harvester_add_target_slots` | sets a target slot count for a queue to build job pressure, optionally per global share and resource type, with an expiry | production |
+
+These act through Harvester and reach only the workers it submitted.
+The GPU worker described above runs a standalone pull-mode pilot under a
+local launcher (`workflow: pull`, `pilot_manager: local`), so it is not
+addressable by a sweep command; stopping it is a host-side operation.
+`add_target_slots` is the pressure control for a contributed fleet
+whose queues are Harvester-managed, and the expiry field makes a
+time-boxed allocation expressible without a follow-up action.
+
+### Data staging
+
+`data_carousel_change_staging_destination`,
+`data_carousel_change_staging_source`, `data_carousel_force_to_staging`
+and `data_carousel_retire_unused` control tape staging requests, all
+under a production role. ePIC production has no tape stage-in path
+today; these become relevant when one exists.
+
+### File recovery
+
+`file_server_upload_file_recovery_request` submits a lost-file recovery
+request against a task or dataset, with parent reproduction up to a
+stated number of generations, under task ownership or a production
+role. The equivalent client call is already listed in the operations
+section above.
+
+### Present in the API and not in the reference list
+
+Because exposure is a list entry, the following are one configuration
+change from being MCP tools. They are named here because several
+answer questions raised elsewhere in this document.
+
+- `credential_management.set_user_secrets`, `get_user_secrets` — the
+  `useSecrets` mechanism that removes object-store keys from worker
+  hosts, first in the probe order below.
+- `event.acquire_event_ranges`, `update_event_ranges`,
+  `update_single_event_range`, `get_event_range_statuses`,
+  `get_available_event_range_count` — the event-range ledger behind the
+  fine-grained dispatch section, which is the loss-and-recovery
+  accounting for workers that disappear.
+- `pilot.update_worker_node_gpu`, `update_worker_node` — worker node
+  and GPU reporting, the server-side record that the GPU section of the
+  monitoring worklist wants to display.
+- `pilot.acquire_jobs`, `update_job`, `update_jobs_bulk` — the dispatch
+  and heartbeat path itself.
+- `file_server.upload_event_picking_request` — the event-picking
+  request behind loading selected events into an event display.
+- `file_server.upload_workflow_request`, `workflow.submit_workflow` and
+  `idds.relay_idds_command`, `execute_idds_workflow_command` — workflow
+  submission and iDDS control.
+- `file_server.touch_cache_file` — the sandbox keepalive already used
+  by the epicprod sandbox script through the server API.
+- `async_process.submit_grep_request`, `get_result` — server-side grep
+  over logs, returned asynchronously.
+- `harvester.acquire_commands`, `acknowledge_commands`,
+  `update_workers`, `report_worker_statistics` — the Harvester command
+  channel.
+
+### Relation to the epicprod tooling
+
+The swf-testbed MCP server's ten `panda_*` tools are read-only SQL
+against the PanDA database through
+`swf-monitor/src/monitor_app/panda/queries.py`, and they return
+epicprod-shaped answers: campaign and task context, error summaries,
+job diagnosis with payload-log retrieval. The PanDA MCP tools are
+server API calls under the caller's identity, and they include the
+write path. The two do not overlap in function even where they overlap
+in subject, and the read tools should not be rebuilt against the
+service.
+
+The control surface is where the service would add capability. Today
+the epicprod ops pipeline reaches PanDA through
+`scripts/panda-task-operation.py`, which sources a panda-client setup,
+sets `PANDA_AUTH_VO`, and calls `Client` functions inside that
+environment. The MCP path would carry the same identity over HTTPS
+without the client installation, which matters for callers that are not
+on a host with panda-client configured.
+
+Against that, the ops pipeline holds behaviour the raw endpoints do
+not: durable operation records, queue-time eligibility, paced command
+dispatch, PanDA state verification, capcom notices, dataset reopening
+before retry, and the purged-sandbox guard, none of which a direct
+endpoint call carries. Any adoption belongs behind that pipeline.
+
+### Observed defects
+
+- The shipped `mcp_test_client.py` fails against the fastmcp version
+  installed on the ePIC server: it passes `verify` to
+  `StreamableHttpTransport`, which fastmcp 2.13.1 does not accept.
+  Setting `SSL_CERT_FILE` and omitting `--ca-bundle` works.
+- Tool names carry the module prefix (`system_is_alive`, not
+  `is_alive`), which the client's `--tool` default does not.
+- The `panda_mcp_wrapper.sh` client passes a static token as a header
+  at startup, so sessions fail after the token expires;
+  `panda_mcp_proxy.py` exists for that reason and refreshes on every
+  outbound request.
+- A failed call raises `RuntimeError` carrying the server output rather
+  than returning the API's `{"success": false, "message": ...}`
+  structure, so callers see an exception where the API returns a
+  message.
+- Several docstrings state an authorization requirement the decorator
+  does not enforce: `task_reload_input` and
+  `metaconfig_get_resource_types` claim a production role and carry
+  none, and the statistics endpoints claim a secure connection and
+  carry `secure=False`. This matters more here than in the REST API,
+  because the docstring is the tool description an LLM caller reads,
+  so the stated gate and the real gate differ in the material the
+  caller reasons from.
+
+### What use by epicprod requires
+
+Three things, in order. An endpoint list on pandaserver01 naming the
+tools ePIC wants, which is a request to the PanDA team and can be
+narrower than the 59-endpoint reference list. A reachable path, either
+the httpd proxy directives that publish `/mcp/` on port 25443 or a
+firewall opening for port 25888. And a decision on which caller holds
+the token: the ops agent already holds the production identity, so the
+service is reached from there rather than from the web tier.
 
 ## Suggested probe order
 
