@@ -391,7 +391,7 @@ def _ops_snapper_embed():
         return ctx
 
     try:
-        product = get_product('snapper_embed:v3:ops_dash', build,
+        product = get_product('snapper_embed:v4:ops_dash', build,
                               ttl_seconds=300)
     except Exception as exc:  # noqa: BLE001
         logger.error('ops dashboard snapper embed failed: %s', exc)
