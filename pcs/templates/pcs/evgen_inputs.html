@@ -55,8 +55,8 @@
     {% for opt in obs_bar.options %}
     <a href="{{ opt.url }}" class="filter-link {% if obs_bar.selected == opt.value %}filter-active{% endif %}">{{ opt.value }}</a>
     {% endfor %}
-    {% if any_filter %}<a href="{{ clear_url }}" class="btn btn-sm btn-secondary ms-3">Clear filters</a>{% endif %}
   </div>
+  <a href="{{ clear_url }}" class="btn btn-sm btn-secondary mb-2">Clear filters</a>
 
   {% if user.is_authenticated %}
   <div class="card mb-2">

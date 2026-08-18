@@ -1737,13 +1737,13 @@ def evgen_inputs(request):
 
     # Natural filters over the active view: physics class, PCS match and
     # completeness (inventory only), and the obsolete triage state
-    # (hidden by default — the point of marking is shrinking the list).
+    # (shown by default, rendered muted with attribution).
     from collections import Counter
     from urllib.parse import urlencode
 
-    obs = (request.GET.get('obs') or 'hidden').strip()
+    obs = (request.GET.get('obs') or 'shown').strip()
     if obs not in ('hidden', 'shown', 'only'):
-        obs = 'hidden'
+        obs = 'shown'
     selected = {
         'cls': (request.GET.get('cls') or '').strip(),
         'matched': (request.GET.get('matched') or '').strip(),
@@ -1759,7 +1759,7 @@ def evgen_inputs(request):
             if value:
                 params[key] = value
         obs_value = over.get('obs', obs)
-        if obs_value != 'hidden':
+        if obs_value != 'shown':
             params['obs'] = obs_value
         return '?' + urlencode(params) if params else request.path
 
@@ -1828,7 +1828,7 @@ def evgen_inputs(request):
         'clear_url': ('?view=coverage' if view == 'coverage'
                       else request.path),
         'any_filter': bool(selected['cls'] or selected['matched']
-                           or selected['complete'] or obs != 'hidden'),
+                           or selected['complete'] or obs != 'shown'),
     })
 
 
