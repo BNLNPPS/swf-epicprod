@@ -33,7 +33,7 @@ from monitor_app.models import UserPreference
 
 from .models import (
     PhysicsCategory, PhysicsTag, EvgenTag, SimuTag, RecoTag, BackgroundTag,
-    Dataset, ProdConfig, ProdTask, PandaTasks, Questionnaire,
+    Dataset, EvgenMark, ProdConfig, ProdTask, PandaTasks, Questionnaire,
 )
 from .serializers import (
     PhysicsCategorySerializer, PhysicsTagSerializer,
@@ -1022,3 +1022,50 @@ def validation_results_receive(request):
     except ServiceError as e:
         return Response({'detail': e.detail}, status=e.status)
     return Response(result, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def evgen_mark(request):
+    """Set or clear the obsolete mark on EVGEN paths — the EVGEN inputs
+    page's tick-box action, for PWG triage of the inventory and the
+    registration worklist. Body: {"paths": ["/EVGEN/..."],
+    "obsolete": true|false, "comment": "why"}. One call per save, one
+    action-stream event; works identically on the internal face and
+    through the swf-remote proxy (EXTERNAL_ACCESS.md write contract:
+    JSON in, JSON out, no redirect)."""
+    from django.utils import timezone as dj_timezone
+
+    data = request.data if isinstance(request.data, dict) else {}
+    paths = data.get('paths')
+    obsolete = data.get('obsolete')
+    comment = str(data.get('comment') or '').strip()
+    if (not isinstance(paths, list) or not paths
+            or not all(isinstance(p, str) and p.startswith('/EVGEN/')
+                       for p in paths)
+            or not isinstance(obsolete, bool)):
+        return Response(
+            {'detail': 'body must be {"paths": ["/EVGEN/..."], '
+                       '"obsolete": true|false, "comment": "..."}'},
+            status=status.HTTP_400_BAD_REQUEST)
+    if not comment:
+        return Response({'detail': 'a comment is required'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    username = getattr(request.user, 'username', '') or ''
+    now = dj_timezone.now()
+    for p in paths:
+        EvgenMark.objects.update_or_create(
+            path=p, defaults={'obsolete': obsolete, 'set_by': username,
+                              'set_at': now, 'comment': comment})
+    log_epicprod_action(
+        'web', 'evgen_mark_obsolete',
+        subject_type='evgen_path',
+        subject_key=paths[0] if len(paths) == 1 else f'{len(paths)} paths',
+        username=username,
+        sublevel='high', live_default=True,
+        obsolete=obsolete, count=len(paths), comment=comment,
+        paths=paths[:20])
+    return Response({'ok': True, 'updated': len(paths),
+                     'obsolete': obsolete})

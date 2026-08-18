@@ -1050,6 +1050,28 @@ class ValidationResult(models.Model):
         return f"{self.sample} rev{self.revision} {self.status}"
 
 
+class EvgenMark(models.Model):
+    """PWG triage mark on an EVGEN entry, keyed by the /EVGEN/... path —
+    the vocabulary shared by the recorded Rucio inventory and the
+    convention-implied registration worklist. The row holds the current
+    state with who set it, when, and why; every change is logged to the
+    action stream."""
+
+    path = models.CharField(max_length=500, unique=True)
+    obsolete = models.BooleanField(default=False)
+    set_by = models.CharField(max_length=150, blank=True, default='')
+    set_at = models.DateTimeField(null=True, blank=True)
+    comment = models.TextField(blank=True, default='')
+
+    class Meta:
+        db_table = 'pcs_evgen_mark'
+        ordering = ['path']
+
+    def __str__(self):
+        state = 'obsolete' if self.obsolete else 'not obsolete'
+        return f'{self.path}: {state}'
+
+
 def _allocate_simple_tag(state_key):
     """Atomically allocate the next tag number using PersistentState."""
     from monitor_app.models import PersistentState

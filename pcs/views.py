@@ -1650,6 +1650,25 @@ def evgen_inputs(request):
         'matched': sum(1 for r in rows if r['dataset'] is not None),
     }
 
+    # PWG triage marks, keyed by the /EVGEN/... path — the vocabulary
+    # shared by the inventory DIDs and the coverage worklist paths.
+    from .models import EvgenMark
+    marks = {m.path: m for m in EvgenMark.objects.all()}
+
+    def _evgen_path(did):
+        did = str(did or '')
+        tail = did.partition(':')[2] if ':' in did else did
+        return '/' + tail.lstrip('/')
+
+    for row in rows:
+        path = _evgen_path(row['did'])
+        segs = [s for s in path.split('/') if s]
+        row['path'] = path
+        row['cls'] = segs[1] if len(segs) > 1 else ''
+        mark = marks.get(path)
+        row['obsolete'] = bool(mark and mark.obsolete)
+        row['mark'] = mark if row['obsolete'] else None
+
     # Registration coverage of produced data: the convention-side EVGEN
     # path of every recorded RECO/FULL output (the payload's physics-path
     # law), diffed against this same recorded inventory — a registration
@@ -1704,11 +1723,112 @@ def evgen_inputs(request):
 
     view = 'coverage' if request.GET.get('view') == 'coverage' \
         else 'inventory'
+
+    # Marks attach after the cached-product read: the worklist build is
+    # cacheable, the triage state is live.
+    for entry in coverage['missing']:
+        path = entry['evgen_path']
+        segs = [s for s in path.split('/') if s]
+        entry['cls'] = segs[1] if len(segs) > 1 else ''
+        mark = marks.get(path)
+        entry['obsolete'] = bool(mark and mark.obsolete)
+        entry['mark'] = mark if entry['obsolete'] else None
+    coverage_missing_total = len(coverage['missing'])
+
+    # Natural filters over the active view: physics class, PCS match and
+    # completeness (inventory only), and the obsolete triage state
+    # (hidden by default — the point of marking is shrinking the list).
+    from collections import Counter
+    from urllib.parse import urlencode
+
+    obs = (request.GET.get('obs') or 'hidden').strip()
+    if obs not in ('hidden', 'shown', 'only'):
+        obs = 'hidden'
+    selected = {
+        'cls': (request.GET.get('cls') or '').strip(),
+        'matched': (request.GET.get('matched') or '').strip(),
+        'complete': (request.GET.get('complete') or '').strip(),
+    }
+
+    def _qs(**over):
+        params = {}
+        if view == 'coverage':
+            params['view'] = 'coverage'
+        for key in ('cls', 'matched', 'complete'):
+            value = over.get(key, selected[key])
+            if value:
+                params[key] = value
+        obs_value = over.get('obs', obs)
+        if obs_value != 'hidden':
+            params['obs'] = obs_value
+        return '?' + urlencode(params) if params else request.path
+
+    population = rows if view != 'coverage' else coverage['missing']
+    filters = []
+    cls_counts = Counter(x['cls'] for x in population if x.get('cls'))
+    filters.append({
+        'key': 'cls', 'label': 'Class', 'selected': selected['cls'],
+        'all_url': _qs(cls=''),
+        'options': [{'value': v, 'count': cls_counts[v], 'url': _qs(cls=v)}
+                    for v in sorted(cls_counts)]})
+    if view != 'coverage':
+        matched_counts = Counter(
+            'matched' if r['dataset'] else 'unmatched' for r in rows)
+        filters.append({
+            'key': 'matched', 'label': 'PCS match',
+            'selected': selected['matched'], 'all_url': _qs(matched=''),
+            'options': [{'value': v, 'count': matched_counts[v],
+                         'url': _qs(matched=v)}
+                        for v in sorted(matched_counts)]})
+        complete_counts = Counter(
+            'complete' if r['complete'] else 'partial' for r in rows)
+        filters.append({
+            'key': 'complete', 'label': 'Complete',
+            'selected': selected['complete'], 'all_url': _qs(complete=''),
+            'options': [{'value': v, 'count': complete_counts[v],
+                         'url': _qs(complete=v)}
+                        for v in sorted(complete_counts)]})
+    obsolete_count = sum(1 for x in population if x['obsolete'])
+    obs_bar = {
+        'selected': obs, 'count': obsolete_count,
+        'options': [{'value': v, 'url': _qs(obs=v)}
+                    for v in ('hidden', 'shown', 'only')]}
+
+    def _keep(x, is_row):
+        if selected['cls'] and x['cls'] != selected['cls']:
+            return False
+        if is_row:
+            if selected['matched'] == 'matched' and not x['dataset']:
+                return False
+            if selected['matched'] == 'unmatched' and x['dataset']:
+                return False
+            if selected['complete'] == 'complete' and not x['complete']:
+                return False
+            if selected['complete'] == 'partial' and x['complete']:
+                return False
+        if obs == 'hidden' and x['obsolete']:
+            return False
+        if obs == 'only' and not x['obsolete']:
+            return False
+        return True
+
+    if view != 'coverage':
+        rows = [r for r in rows if _keep(r, True)]
+    else:
+        coverage['missing'] = [e for e in coverage['missing']
+                               if _keep(e, False)]
+
     return render(request, 'pcs/evgen_inputs.html', {
         'rows': rows, 'totals': totals, 'fetched_at': fetched_at,
         'error': error, 'view': view,
         'coverage_missing': coverage['missing'],
+        'coverage_missing_total': coverage_missing_total,
         'coverage_total': coverage['total'],
+        'filters': filters, 'obs_bar': obs_bar,
+        'clear_url': ('?view=coverage' if view == 'coverage'
+                      else request.path),
+        'any_filter': bool(selected['cls'] or selected['matched']
+                           or selected['complete'] or obs != 'hidden'),
     })
 
 
