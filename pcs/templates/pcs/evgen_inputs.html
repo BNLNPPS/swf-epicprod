@@ -56,7 +56,7 @@
   <div class="card mb-2">
     <div class="card-body py-2">
       <div class="mb-1"><strong>Mark obsolete data</strong>
-        <span class="text-muted">&mdash; tick rows and give the reason; the mark records who set it and when, and every change is logged.</span></div>
+        <span class="text-muted">&mdash; tick rows and give the reason; the mark records who set it and when, and changes are logged.</span></div>
       <div class="d-flex align-items-center flex-wrap gap-2">
         <button type="button" id="evgen-select-all" class="btn btn-sm btn-secondary">Select all</button>
         <button type="button" id="evgen-select-none" class="btn btn-sm btn-secondary">None</button>
@@ -99,7 +99,7 @@
         <td>{{ r.rses }}</td>
         <td>{% if r.complete %}yes{% else %}<span class="text-muted">partial</span>{% endif %}</td>
         <td>{% if r.dataset %}<a href="{% url 'pcs:datasets_compose' %}?selected={{ r.dataset.dataset_name|urlencode }}">{{ r.dataset.composed_name }}</a>{% else %}<span class="text-muted">unmatched</span>{% endif %}</td>
-        <td{% if r.obsolete %} class="warning_fill"{% endif %}>{% if r.obsolete %}<span title="{{ r.mark.comment }}">{{ r.mark.set_by }}<br>{{ r.mark.set_at|date:'Y-m-d' }}</span>{% endif %}</td>
+        <td{% if r.obsolete %} class="warning_fill" data-comment="{{ r.mark.comment }}"{% endif %}>{% if r.obsolete %}{{ r.mark.set_by }}<br>{{ r.mark.set_at|date:'Y-m-d' }}{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -125,7 +125,7 @@
         <td>{{ m.evgen_path }}</td>
         <td class="small">{{ m.xrootd_path }} {% copy_btn m.xrootd_path %}</td>
         <td class="small"><a href="{% url 'pcs:rucio_did_detail' scope='epic' name=m.reco_example %}">{{ m.reco_example }}</a></td>
-        <td{% if m.obsolete %} class="warning_fill"{% endif %}>{% if m.obsolete %}<span title="{{ m.mark.comment }}">{{ m.mark.set_by }}<br>{{ m.mark.set_at|date:'Y-m-d' }}</span>{% endif %}</td>
+        <td{% if m.obsolete %} class="warning_fill" data-comment="{{ m.mark.comment }}"{% endif %}>{% if m.obsolete %}{{ m.mark.set_by }}<br>{{ m.mark.set_at|date:'Y-m-d' }}{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -240,6 +240,27 @@
   }
   btnObs.addEventListener('click', function () { save(true); });
   btnAct.addEventListener('click', function () { save(false); });
+})();
+
+// The obsolete cell's reason comment shows in a hover floater.
+(function () {
+  const floater = document.createElement('div');
+  floater.style.cssText = 'display:none; position:fixed; z-index:2000;'
+      + ' max-width:36em; background:#37474f; color:#fff;'
+      + ' padding:.4em .7em; border-radius:.4em; pointer-events:none;';
+  document.body.appendChild(floater);
+  document.addEventListener('mousemove', function (e) {
+    const cell = e.target.closest
+        ? e.target.closest('td[data-comment]') : null;
+    const comment = cell && cell.getAttribute('data-comment');
+    if (!comment) { floater.style.display = 'none'; return; }
+    floater.textContent = comment;
+    floater.style.display = 'block';
+    const x = Math.min(e.clientX + 14,
+                       window.innerWidth - floater.offsetWidth - 8);
+    floater.style.left = Math.max(x, 4) + 'px';
+    floater.style.top = (e.clientY + 16) + 'px';
+  });
 })();
 </script>
 {% endblock %}
