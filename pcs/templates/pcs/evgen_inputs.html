@@ -207,8 +207,8 @@
     const comment = commentEl.value.trim();
     statusEl.textContent = '';
     statusEl.style.color = '';
-    if (!comment) {
-      statusEl.textContent = 'A comment is required.';
+    if (obsolete && !comment) {
+      statusEl.textContent = 'A comment is required to mark obsolete.';
       statusEl.style.color = '#c62828';
       commentEl.focus();
       return;

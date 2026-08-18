@@ -1050,9 +1050,10 @@ def evgen_mark(request):
             {'detail': 'body must be {"paths": ["/EVGEN/..."], '
                        '"obsolete": true|false, "comment": "..."}'},
             status=status.HTTP_400_BAD_REQUEST)
-    if not comment:
-        return Response({'detail': 'a comment is required'},
-                        status=status.HTTP_400_BAD_REQUEST)
+    if obsolete and not comment:
+        return Response(
+            {'detail': 'a comment is required to mark data obsolete'},
+            status=status.HTTP_400_BAD_REQUEST)
     username = getattr(request.user, 'username', '') or ''
     # The mark's whole point is attribution: the tunnel fallback
     # identity (an anonymous external or bare-localhost request) may
