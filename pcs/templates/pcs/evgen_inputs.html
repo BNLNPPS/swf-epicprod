@@ -113,7 +113,8 @@
   <p class="mb-2">Of <strong>{{ coverage_total }}</strong> EVGEN paths implied by recorded
     produced datasets, <strong>{{ coverage_missing_total }}</strong> are not registered in
     the Rucio inventory above{% if any_filter %} ({{ coverage_missing|length }} shown
-    under the current filters){% endif %}. Analyses can reach these only by direct
+    under the current filters){% endif %}; obsolete-marked paths are excluded
+    from the worklist and its count. Analyses can reach these only by direct
     xrootd path — registering them makes the data findable.</p>
   <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
     <thead><tr>{% if user.is_authenticated %}<th></th>{% endif %}<th>Unregistered EVGEN path</th><th>Direct path</th><th>Example produced dataset</th><th>Obsolete</th></tr></thead>

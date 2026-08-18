@@ -1733,7 +1733,11 @@ def evgen_inputs(request):
         mark = marks.get(path)
         entry['obsolete'] = bool(mark and mark.obsolete)
         entry['mark'] = mark if entry['obsolete'] else None
-    coverage_missing_total = len(coverage['missing'])
+    # Obsolete-marked paths leave the registration worklist and its
+    # count — the point of the triage; the Validity filter still
+    # reaches them for review.
+    coverage_missing_total = sum(
+        1 for e in coverage['missing'] if not e['obsolete'])
 
     # Natural filters over the active view: physics class, PCS match and
     # completeness (inventory only), and validity — everything shows by
@@ -1807,12 +1811,15 @@ def evgen_inputs(request):
                 return False
             if selected['complete'] == 'partial' and x['complete']:
                 return False
-        if selected['validity'] == 'current' and x['obsolete']:
+        if effective_validity == 'current' and x['obsolete']:
             return False
-        if selected['validity'] == 'obsolete' and not x['obsolete']:
+        if effective_validity == 'obsolete' and not x['obsolete']:
             return False
         return True
 
+    effective_validity = selected['validity']
+    if view == 'coverage' and not effective_validity:
+        effective_validity = 'current'
     if view != 'coverage':
         rows = [r for r in rows if _keep(r, True)]
     else:
