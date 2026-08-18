@@ -50,12 +50,6 @@
     {% endfor %}
   </div>
   {% endfor %}
-  <div class="filter-bar mb-2">
-    <strong>Obsolete ({{ obs_bar.count }}):</strong>
-    {% for opt in obs_bar.options %}
-    <a href="{{ opt.url }}" class="filter-link {% if obs_bar.selected == opt.value %}filter-active{% endif %}">{{ opt.value }}</a>
-    {% endfor %}
-  </div>
   {% include "monitor_app/_active_filters.html" with active_filters=active_filters clear_all_url=clear_all_url %}
 
   {% if user.is_authenticated %}
@@ -105,7 +99,7 @@
         <td>{{ r.rses }}</td>
         <td>{% if r.complete %}yes{% else %}<span class="text-muted">partial</span>{% endif %}</td>
         <td>{% if r.dataset %}<a href="{% url 'pcs:datasets_compose' %}?selected={{ r.dataset.dataset_name|urlencode }}">{{ r.dataset.composed_name }}</a>{% else %}<span class="text-muted">unmatched</span>{% endif %}</td>
-        <td class="text-nowrap">{% if r.obsolete %}<span title="{{ r.mark.comment }}">{{ r.mark.set_by }} &middot; {{ r.mark.set_at|date:'Y-m-d' }}</span>{% endif %}</td>
+        <td{% if r.obsolete %} class="alarm_fill"{% endif %}>{% if r.obsolete %}<span title="{{ r.mark.comment }}">{{ r.mark.set_by }} {{ r.mark.set_at|date:'Y-m-d' }}</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -130,7 +124,7 @@
         <td>{{ m.evgen_path }}</td>
         <td class="small">{{ m.xrootd_path }} {% copy_btn m.xrootd_path %}</td>
         <td class="small"><a href="{% url 'pcs:rucio_did_detail' scope='epic' name=m.reco_example %}">{{ m.reco_example }}</a></td>
-        <td class="text-nowrap">{% if m.obsolete %}<span title="{{ m.mark.comment }}">{{ m.mark.set_by }} &middot; {{ m.mark.set_at|date:'Y-m-d' }}</span>{% endif %}</td>
+        <td{% if m.obsolete %} class="alarm_fill"{% endif %}>{% if m.obsolete %}<span title="{{ m.mark.comment }}">{{ m.mark.set_by }} {{ m.mark.set_at|date:'Y-m-d' }}</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

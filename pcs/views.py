@@ -1736,38 +1736,35 @@ def evgen_inputs(request):
     coverage_missing_total = len(coverage['missing'])
 
     # Natural filters over the active view: physics class, PCS match and
-    # completeness (inventory only), and the obsolete triage state
-    # (shown by default, rendered muted with attribution).
+    # completeness (inventory only), and validity — everything shows by
+    # default, obsolete entries muted with attribution.
     from collections import Counter
     from urllib.parse import urlencode
 
-    obs = (request.GET.get('obs') or 'shown').strip()
-    if obs not in ('hidden', 'shown', 'only'):
-        obs = 'shown'
     selected = {
         'cls': (request.GET.get('cls') or '').strip(),
         'matched': (request.GET.get('matched') or '').strip(),
         'complete': (request.GET.get('complete') or '').strip(),
+        'validity': (request.GET.get('validity') or '').strip(),
     }
+    if selected['validity'] not in ('', 'current', 'obsolete'):
+        selected['validity'] = ''
 
     def _qs(**over):
         params = {}
         if view == 'coverage':
             params['view'] = 'coverage'
-        for key in ('cls', 'matched', 'complete'):
+        for key in ('cls', 'matched', 'complete', 'validity'):
             value = over.get(key, selected[key])
             if value:
                 params[key] = value
-        obs_value = over.get('obs', obs)
-        if obs_value != 'shown':
-            params['obs'] = obs_value
         return '?' + urlencode(params) if params else request.path
 
     population = rows if view != 'coverage' else coverage['missing']
     filters = []
     cls_counts = Counter(x['cls'] for x in population if x.get('cls'))
     filters.append({
-        'key': 'cls', 'label': 'Class', 'selected': selected['cls'],
+        'key': 'cls', 'label': 'Physics class', 'selected': selected['cls'],
         'all_url': _qs(cls=''),
         'options': [{'value': v, 'count': cls_counts[v], 'url': _qs(cls=v)}
                     for v in sorted(cls_counts)]})
@@ -1783,16 +1780,20 @@ def evgen_inputs(request):
         complete_counts = Counter(
             'complete' if r['complete'] else 'partial' for r in rows)
         filters.append({
-            'key': 'complete', 'label': 'Complete',
+            'key': 'complete', 'label': 'Complete datasets',
             'selected': selected['complete'], 'all_url': _qs(complete=''),
             'options': [{'value': v, 'count': complete_counts[v],
                          'url': _qs(complete=v)}
                         for v in sorted(complete_counts)]})
-    obsolete_count = sum(1 for x in population if x['obsolete'])
-    obs_bar = {
-        'selected': obs, 'count': obsolete_count,
-        'options': [{'value': v, 'url': _qs(obs=v)}
-                    for v in ('hidden', 'shown', 'only')]}
+    validity_counts = Counter(
+        'obsolete' if x['obsolete'] else 'current' for x in population)
+    filters.append({
+        'key': 'validity', 'label': 'Validity',
+        'selected': selected['validity'], 'all_url': _qs(validity=''),
+        'options': [{'value': v, 'count': validity_counts[v],
+                     'url': _qs(validity=v)}
+                    for v in ('current', 'obsolete')
+                    if validity_counts.get(v)]})
 
     def _keep(x, is_row):
         if selected['cls'] and x['cls'] != selected['cls']:
@@ -1806,9 +1807,9 @@ def evgen_inputs(request):
                 return False
             if selected['complete'] == 'partial' and x['complete']:
                 return False
-        if obs == 'hidden' and x['obsolete']:
+        if selected['validity'] == 'current' and x['obsolete']:
             return False
-        if obs == 'only' and not x['obsolete']:
+        if selected['validity'] == 'obsolete' and not x['obsolete']:
             return False
         return True
 
@@ -1821,8 +1822,6 @@ def evgen_inputs(request):
     active_filters = [
         {'label': f['label'], 'value': f['selected']}
         for f in filters if f['selected']]
-    if obs != 'shown':
-        active_filters.append({'label': 'Obsolete', 'value': obs})
 
     return render(request, 'pcs/evgen_inputs.html', {
         'rows': rows, 'totals': totals, 'fetched_at': fetched_at,
@@ -1830,7 +1829,7 @@ def evgen_inputs(request):
         'coverage_missing': coverage['missing'],
         'coverage_missing_total': coverage_missing_total,
         'coverage_total': coverage['total'],
-        'filters': filters, 'obs_bar': obs_bar,
+        'filters': filters,
         'active_filters': active_filters,
         'clear_all_url': ('?view=coverage' if view == 'coverage'
                           else request.path),
