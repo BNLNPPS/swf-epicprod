@@ -56,7 +56,7 @@
     <a href="{{ opt.url }}" class="filter-link {% if obs_bar.selected == opt.value %}filter-active{% endif %}">{{ opt.value }}</a>
     {% endfor %}
   </div>
-  <a href="{{ clear_url }}" class="btn btn-sm btn-secondary mb-2">Clear filters</a>
+  {% include "monitor_app/_active_filters.html" with active_filters=active_filters clear_all_url=clear_all_url %}
 
   {% if user.is_authenticated %}
   <div class="card mb-2">

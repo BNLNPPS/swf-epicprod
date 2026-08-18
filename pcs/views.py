@@ -1818,6 +1818,12 @@ def evgen_inputs(request):
         coverage['missing'] = [e for e in coverage['missing']
                                if _keep(e, False)]
 
+    active_filters = [
+        {'label': f['label'], 'value': f['selected']}
+        for f in filters if f['selected']]
+    if obs != 'shown':
+        active_filters.append({'label': 'Obsolete', 'value': obs})
+
     return render(request, 'pcs/evgen_inputs.html', {
         'rows': rows, 'totals': totals, 'fetched_at': fetched_at,
         'error': error, 'view': view,
@@ -1825,10 +1831,10 @@ def evgen_inputs(request):
         'coverage_missing_total': coverage_missing_total,
         'coverage_total': coverage['total'],
         'filters': filters, 'obs_bar': obs_bar,
-        'clear_url': ('?view=coverage' if view == 'coverage'
-                      else request.path),
-        'any_filter': bool(selected['cls'] or selected['matched']
-                           or selected['complete'] or obs != 'shown'),
+        'active_filters': active_filters,
+        'clear_all_url': ('?view=coverage' if view == 'coverage'
+                          else request.path),
+        'any_filter': bool(active_filters),
     })
 
 
