@@ -1054,6 +1054,12 @@ def evgen_mark(request):
         return Response({'detail': 'a comment is required'},
                         status=status.HTTP_400_BAD_REQUEST)
     username = getattr(request.user, 'username', '') or ''
+    # The mark's whole point is attribution: the tunnel fallback
+    # identity (an anonymous external or bare-localhost request) may
+    # read, never mark.
+    if not username or username == 'swf-remote-proxy':
+        return Response({'detail': 'sign in to mark EVGEN data'},
+                        status=status.HTTP_403_FORBIDDEN)
     now = dj_timezone.now()
     for p in paths:
         EvgenMark.objects.update_or_create(
