@@ -110,21 +110,18 @@ units: read a genstep array, propagate on the GPU, write the hit
 array. Runtime dependencies on the worker are the NVIDIA driver
 (which carries the OptiX runtime) and the CUDA runtime library.
 
-Two attribution gaps in the present event integration
-(`dd4hepplugins/OpticsEvent.cc`) are the open payload-contract work,
-and they are platform-independent:
-
-- Batched propagation — gensteps accumulated across events and
-  propagated in one GPU pass, the efficient shape for remote
-  dispatch — cannot yet attribute returned hits to their
-  originating events; hit injection runs only in per-event mode.
-- With more than one sensitive detector registered, hits are
-  injected into the first; routing by sensor identity is not yet
-  implemented.
-
-Per-event dispatch against a single sensitive detector is complete
-today. The two gaps gate the batched shape and multi-detector
-geometries on any platform, Linux fleet included.
+Event attribution for batched propagation — gensteps accumulated
+across events and propagated in one GPU pass, the efficient shape
+for remote dispatch — is solved by Simphony's EventBatcher
+(`event-batching` branch): hits map back to their originating events
+through the seed buffer, hit index to photon to genstep to event ID.
+The mainline DD4hep integration (`dd4hepplugins/OpticsEvent.cc`)
+does not yet adopt it and injects hits only in per-event mode, and
+with more than one sensitive detector registered it injects into the
+first — routing by sensor identity is not yet implemented there.
+Both are integration adoption on the Linux side, not platform work;
+the coprocessor contract carries the same seed and genstep
+bookkeeping in its arrays.
 
 ### The Linux containment trial and the Windows reference set
 
