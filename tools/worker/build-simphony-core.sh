@@ -14,7 +14,8 @@
 # - The full default build includes a test unit that does not compile on
 #   current main; building the CSGOptiXServiceTest target avoids it and
 #   pulls in the whole core chain (SysRap, CSG, QUDARap, CSGOptiX).
-# - /data is not bound by default; bind it when trees live there.
+# - Paths outside the container's default binds (e.g. /data on
+#   pandaserver02) are bound from the source and build locations.
 
 set -euo pipefail
 
@@ -22,7 +23,15 @@ SRC=${1:?simphony source dir}
 BUILD=${2:?build dir}
 CONTAINER=/cvmfs/singularity.opensciencegrid.org/eicweb/eic_dev_cuda:nightly
 
-apptainer exec --bind /data "$CONTAINER" bash -c "
+BINDS=()
+for d in "$(dirname "$SRC")" "$(dirname "$BUILD")"; do
+    case "$d" in
+        "$HOME"*|/tmp*) ;;                    # default binds
+        *) BINDS+=(--bind "$d") ;;
+    esac
+done
+
+apptainer exec "${BINDS[@]}" "$CONTAINER" bash -c "
 set -euo pipefail
 export CC=/usr/bin/gcc CXX=/usr/bin/g++
 OPTIX_INC=\$(ls -d /opt/software/linux-x86_64_v2/optix-dev-*/include | head -1)
