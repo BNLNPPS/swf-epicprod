@@ -110,6 +110,21 @@ units: read a genstep array, propagate on the GPU, write the hit
 array. Runtime dependencies on the worker are the NVIDIA driver
 (which carries the OptiX runtime) and the CUDA runtime library.
 
+No container infrastructure is required on the worker. The
+container on Linux carries the full ePIC stack; the coprocessor
+runs none of that stack, and Docker on Windows would in any case
+route through WSL2 or a Linux virtual machine, where OptiX is
+unsupported. Each function the container serves elsewhere is
+covered without one: the environment is pinned by shipping the
+executable and its libraries as a versioned bundle; software
+distribution is gateway-served versioned downloads over HTTPS in
+place of CVMFS; isolation is a single unprivileged user-space
+process exchanging arrays over HTTPS under a revocable device
+token, removed by deleting its folder; and correctness is judged
+against the Linux reference set statistically, with sampled
+duplication across the fleet in operation. The volunteer install
+is the participation package plus a current GeForce driver.
+
 Batching is essential to the coprocessor scheme, not an
 optimization: a work package must carry enough events that GPU
 processing amortizes the overheads at either end — transfer,
@@ -157,6 +172,25 @@ top-level build currently always includes the Geant4-dependent
 packages), Windows export declarations in place of the gcc
 visibility attributes, and replacement of POSIX usages (unistd,
 /proc, popen) in the utility layer.
+
+## Worker electricity cost
+
+A high-end card (RTX 4090 class) draws roughly 550 W at the wall
+under full load, system overhead and supply losses included;
+midrange RTX cards draw roughly 300 W. Ray-tracing workloads
+typically draw below gaming maximum, so these are ceilings. At a
+US-average residential rate near $0.17/kWh, a 4090-class machine
+run flat out costs about $2 per day, scaling linearly with hours
+run and local rate; a midrange card contributing evenings and
+overnight costs tens of cents per day.
+
+Per unit of work the cost is negligible: warm-event throughput
+near 4M photons/s at 550 W is roughly 0.1 mJ per propagated
+photon, so participation hours, not the workload, set the
+volunteer's bill. The participation package will carry two cost
+controls: a power cap (RTX cards power-limited to about 70% lose
+about 10% of ray-tracing throughput) and hour and idle-time
+scheduling.
 
 ## Components and ownership
 
