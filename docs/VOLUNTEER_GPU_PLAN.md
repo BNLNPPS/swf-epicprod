@@ -113,10 +113,12 @@ array. Runtime dependencies on the worker are the NVIDIA driver
 Event attribution for batched propagation — gensteps accumulated
 across events and propagated in one GPU pass, the efficient shape
 for remote dispatch — is solved by Simphony's EventBatcher
-(`event-batching` branch): hits map back to their originating events
-through the seed buffer, hit index to photon to genstep to event ID.
-The mainline DD4hep integration (`dd4hepplugins/OpticsEvent.cc`)
-does not yet adopt it and injects hits only in per-event mode, and
+(`event-batching` branch, built against the original simg4ox
+integration and predating the DD4hep layer): hits map back to their
+originating events through the seed buffer, hit index to photon to
+genstep to event ID. The later DD4hep integration
+(`dd4hepplugins/OpticsEvent.cc`) has not yet absorbed the mechanism
+and injects hits only in per-event mode, and
 with more than one sensitive detector registered it injects into the
 first — routing by sensor identity is not yet implemented there.
 Both are integration adoption on the Linux side, not platform work;
