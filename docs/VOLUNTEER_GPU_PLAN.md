@@ -110,9 +110,15 @@ units: read a genstep array, propagate on the GPU, write the hit
 array. Runtime dependencies on the worker are the NVIDIA driver
 (which carries the OptiX runtime) and the CUDA runtime library.
 
-Event attribution for batched propagation — gensteps accumulated
-across events and propagated in one GPU pass, the efficient shape
-for remote dispatch — is solved by Simphony's EventBatcher
+Batching is essential to the coprocessor scheme, not an
+optimization: a work package must carry enough events that GPU
+processing amortizes the overheads at either end — transfer,
+dispatch, and stage-out round trips that are far larger for a remote
+worker than for a local one. Package size is the central tuning
+knob, bounded below by amortization and above by the loss a single
+interruption may cause. Event attribution for batched propagation —
+gensteps accumulated across events and propagated in one GPU pass —
+is solved by Simphony's EventBatcher
 (`event-batching` branch, built against the original simg4ox
 integration and predating the DD4hep layer): hits map back to their
 originating events through the seed buffer, hit index to photon to
