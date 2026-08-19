@@ -82,13 +82,16 @@ existence.
   of the CRIC ddmendpoints set (so all lab endpoints still resolve)
   plus the `DEV_CLOUD_S3` entry: type `OS_LOGS`, non-deterministic,
   protocols pointing at
-  `s3://s3.us-east-1.amazonaws.com:443//epic-devcloud-stageout/logs`,
-  modeled on the established object-store entries in the same
-  catalog. The pass script seeds it into the run directory under the
-  pilot info system's LOCAL and USER-cache filenames
-  (`agis_ddmendpoints.json`, `agis_ddmendpoints.agis.*.json`), with
-  `PILOT_HOME` set to the run directory so the pilot's catalog reads
-  land on the seeded files.
+  `https://s3.us-east-1.amazonaws.com:443//epic-devcloud-stageout/logs`
+  (the pilot's s3 copytool uses boto3, which rejects the `s3://`
+  scheme carried by older catalog entries). The pass script applies
+  the catalog by rewriting the `--storagedata-url` in a per-pass copy
+  of the pilot wrapper to a `file://` reference to this file; the
+  wrapper appends its own storage-data URL after all passthrough
+  arguments, so seeding files alone does not take effect. The file is
+  also seeded into the run directory under the pilot info system's
+  cache filenames (`agis_ddmendpoints.json`,
+  `agis_ddmendpoints.agis.*.json`).
 
 The s3 copytool composes the object key as
 `logs/<queue>/<log dataset>/<lfn>`, so log tarballs arrive under

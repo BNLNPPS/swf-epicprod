@@ -33,10 +33,13 @@ makes it the working model for volunteer-class workers
 - `tools/npps0/config/agis_ddmendpoints.json` — the storage catalog: a snapshot
   of the CRIC ddmendpoints set plus `DEV_CLOUD_S3` (an `OS_LOGS`
   object store on the devcloud S3 bucket; see
-  `DEVCLOUD_STAGEOUT.md`). The pass script seeds it into the run
-  directory under the pilot info system's LOCAL and USER-cache
-  filenames, with `PILOT_HOME` anchoring the pilot's cache directory
-  there.
+  `DEVCLOUD_STAGEOUT.md`). The pass script applies it by rewriting
+  the `--storagedata-url` in a per-pass copy of the CVMFS wrapper to
+  a `file://` reference to this catalog. The wrapper appends its own
+  storage-data URL after all passthrough arguments, so the rewrite is
+  what makes the git-sourced catalog effective; the pass script also
+  seeds the file into the run directory under the pilot info system's
+  cache filenames, with `PILOT_HOME` anchored there.
 
 Scripts install at `~wenaus/bin/`, configuration at
 `~wenaus/npps0-config/` on npps0.

@@ -60,10 +60,12 @@ and a collaborator's machine are configured identically.
 3. **Worker bundle.** Launcher, pass script, git configuration, and
    the enrollment step packaged as an installable kit for any NVIDIA
    RTX Linux host. The bundle is the volunteer landing.
-4. **Windows port.** The same bundle on Windows via WSL2. RTX-class
-   Windows PCs are where the volunteer resource largely lives; the
-   container-on-Windows step is the one open R&D item in the plan,
-   and nothing earlier depends on it.
+4. **Windows port.** RTX-class Windows PCs are where the volunteer
+   resource largely lives. OptiX is unsupported under WSL2, so the
+   route is a native Windows build of the worker executable under
+   the coprocessor model below; the container-on-Windows path is not
+   pursued. This is the one open R&D item in the plan, and nothing
+   earlier depends on it.
 5. **Fleet operation.** O(10) machines; a tailnet as the
    community-internal transport so workers reach the gateway over
    authenticated, non-public paths; per-device revocation as the
@@ -89,6 +91,68 @@ at most the unit in flight. The current single-job smoke tests do
 not exercise this; it enters with the first production-shaped
 streaming workload.
 
+## The Windows coprocessor model
+
+The ePIC software stack is Linux-only and remains so. The Windows
+worker therefore runs none of it — no Geant4, DD4hep, ROOT, CVMFS,
+container runtime, or pilot. It runs a single native executable
+built from Simphony's four core packages (SysRap, CSG, QUDArap,
+CSGOptiX) and acts as a remote GPU coprocessor: a Linux application
+produces its inputs and consumes its outputs.
+
+The isolation boundary exists in Simphony today. `CSGOptiXService`
+loads a persisted CSGFoundry geometry — a directory of typed arrays
+carrying solids, materials, and optical surface properties — and
+exposes one operation: gensteps in, hits out, both as .npy arrays.
+The worker executable loads the geometry bundle once per detector
+edition, holds the OptiX context resident, and loops over work
+units: read a genstep array, propagate on the GPU, write the hit
+array. Runtime dependencies on the worker are the NVIDIA driver
+(which carries the OptiX runtime) and the CUDA runtime library.
+
+Two attribution gaps in the present event integration
+(`dd4hepplugins/OpticsEvent.cc`) are the open payload-contract work,
+and they are platform-independent:
+
+- Batched propagation — gensteps accumulated across events and
+  propagated in one GPU pass, the efficient shape for remote
+  dispatch — cannot yet attribute returned hits to their
+  originating events; hit injection runs only in per-event mode.
+- With more than one sensitive detector registered, hits are
+  injected into the first; routing by sensor identity is not yet
+  implemented.
+
+Per-event dispatch against a single sensitive detector is complete
+today. The two gaps gate the batched shape and multi-detector
+geometries on any platform, Linux fleet included.
+
+### The Linux containment trial and the Windows reference set
+
+The first step toward the Windows build runs entirely on Linux:
+build the four core packages alone, with no Geant4 or DD4hep in the
+build, and drive `CSGOptiXService` from persisted files — a real
+detector geometry bundle and genstep arrays captured from a standard
+ePIC simulation — producing hit arrays with no Geant4 in the
+process. This proves the containment boundary on the supported
+platform, and its artifacts are the **Windows reference set**: the
+geometry bundle and genstep inputs together with the hit outputs
+they produce on Linux, archived as the comparison baseline.
+
+The Windows port is then judged against that baseline: the same
+executable shape built with MSVC/NVCC, fed the same geometry and
+gensteps, compared on the hits. The comparison is statistical, not
+bitwise — compiler floating-point differences and OptiX's
+nondeterministic traversal order preclude bit-identical output, so
+agreement is judged on hit counts, distributions, and stated
+tolerances. The same comparison machinery later serves sampled
+duplication across the fleet.
+
+The port work itself is mechanical: a core-only build option (the
+top-level build currently always includes the Geant4-dependent
+packages), Windows export declarations in place of the gcc
+visibility attributes, and replacement of POSIX usages (unistd,
+/proc, popen) in the utility layer.
+
 ## Components and ownership
 
 | Piece | Where | Status |
@@ -100,3 +164,4 @@ streaming workload.
 | Worker runtime | `tools/npps0/` launcher + pass | live |
 | Gateway | devcloud | planned (v0 next) |
 | Worker bundle | packaging of the above | planned |
+| Windows worker executable | native build of the Simphony core packages | planned |
