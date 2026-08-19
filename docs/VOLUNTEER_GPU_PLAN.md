@@ -178,11 +178,10 @@ visibility attributes, and replacement of POSIX usages (unistd,
 A high-end card (RTX 4090 class) draws roughly 550 W at the wall
 under full load, system overhead and supply losses included;
 midrange RTX cards draw roughly 300 W. Ray-tracing workloads
-typically draw below gaming maximum, so these are ceilings. At a
-US-average residential rate near $0.17/kWh, a 4090-class machine
-run flat out costs about $2 per day, scaling linearly with hours
-run and local rate; a midrange card contributing evenings and
-overnight costs tens of cents per day.
+typically draw below gaming maximum, so these are ceilings. At
+US residential rates a machine run flat out costs $1–2 per day
+depending on card and local rate; likely part-time,
+non-aggressive participation costs tens of cents per day.
 
 Per unit of work the cost is negligible: warm-event throughput
 near 4M photons/s at 550 W is roughly 0.1 mJ per propagated
