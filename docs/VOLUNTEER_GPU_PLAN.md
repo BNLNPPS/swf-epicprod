@@ -86,10 +86,10 @@ natural sibling of the gateway work: both replace grid-era
 scaffolding with pieces sized to this system.
 
 Interruption robustness follows the event-service model: work is
-streamed in small units so a closed laptop or powered-off PC loses
-at most the unit in flight. The current single-job smoke tests do
-not exercise this; it enters with the first production-shaped
-streaming workload.
+streamed in small units so an interrupted worker loses at most
+the unit in flight (see Preemption and checkpointing below). The
+current single-job smoke tests do not exercise this; it enters
+with the first production-shaped streaming workload.
 
 ## The Windows coprocessor model
 
@@ -172,6 +172,42 @@ top-level build currently always includes the Geant4-dependent
 packages), Windows export declarations in place of the gcc
 visibility attributes, and replacement of POSIX usages (unistd,
 /proc, popen) in the utility layer.
+
+## Preemption and checkpointing
+
+A volunteer machine is returned to its owner the moment they want
+it; among friends this is a hard requirement. The coprocessor
+model meets it without checkpoint machinery, because the
+checkpoint is the executable and the geometry bundle — immutable
+files already on the worker's disk. No dynamic state is ever
+saved. Acquiring the GPU costs a few seconds to load the geometry
+and build the acceleration structures; the workflow then consumes
+a succession of modestly sized work packets.
+
+Preemption is instant because the packet in flight is abandoned.
+GPU cycles return within one kernel launch: launches are
+millisecond-scale (and bounded on Windows regardless by WDDM
+timeout detection), so compute yields at the speed of a context
+switch. GPU memory returns by terminating the worker process,
+well under a second, freeing the geometry and photon buffers for
+the owner's use. The abandoned packet re-queues through the
+event-range accounting on the server, and packet granularity
+keeps the loss trivial. The seconds of reload and rebuild are
+paid when the owner leaves the machine, not when they return.
+
+A local cache of fetched packets keeps the GPU fed independently
+of network latency and variability, and draws on the network in a
+smooth, modest stream rather than bursts. Cached packets lost to
+a preemption re-queue when their leases lapse, exactly as the
+in-flight one does. Packet size is therefore bounded three ways:
+large enough to amortize transfer and dispatch overheads, small
+enough to bound the loss from an interruption, and small enough
+that abandoning one is trivial. All three point to the same
+seconds-scale packet.
+
+Preemption triggers are owner input, a fullscreen application,
+and a manual pause control, with conservative defaults: any sign
+of the owner takes the worker off the GPU.
 
 ## Worker electricity cost
 
