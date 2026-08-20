@@ -15,6 +15,10 @@
 //   synrad_service [-n N] [-s SEED] [-r SIGMA_NM] [-T T_UM] [-U ZLO,ZHI]
 //                  [-I x,y,z,dx,dy,dz,emin_keV,emax_keV] [-f FAN_MRAD]
 //                  [-i input_photons.npy] [-o OUTDIR]
+//
+// Work-unit mode (docs/WORK_UNIT_CONTRACT.md): -w WORKDIR -g GEOMETRY_EDITION
+// [-N MAX_UNITS] replaces the single-shot input arguments; the service holds
+// geometry and the OptiX context resident and consumes WORKDIR/inbox specs.
 
 #include <chrono>
 #include <cstdlib>
@@ -32,6 +36,8 @@
 #include "qudarap/QGXS.hh"
 #include "qudarap/QSim.hh"
 
+#include "work_unit_loop.h"
+
 static void usage(const char* prog)
 {
     std::cerr << "Usage: " << prog
@@ -44,6 +50,9 @@ int main(int argc, char** argv)
 {
     std::string input ;
     std::string outdir = "." ;
+    std::string workdir ;
+    std::string geometry_edition ;
+    long     max_units = 0 ;
     int      n = 500000 ;
     unsigned seed = 42 ;
     double   sigma_nm = 50. ;
@@ -57,6 +66,9 @@ int main(int argc, char** argv)
         std::string arg = argv[i] ;
         if(      arg == "-i" && i+1 < argc ) input = argv[++i] ;
         else if( arg == "-o" && i+1 < argc ) outdir = argv[++i] ;
+        else if( arg == "-w" && i+1 < argc ) workdir = argv[++i] ;
+        else if( arg == "-g" && i+1 < argc ) geometry_edition = argv[++i] ;
+        else if( arg == "-N" && i+1 < argc ) max_units = atol(argv[++i]) ;
         else if( arg == "-n" && i+1 < argc ) n = atoi(argv[++i]) ;
         else if( arg == "-s" && i+1 < argc ) seed = unsigned(atoi(argv[++i])) ;
         else if( arg == "-r" && i+1 < argc ) sigma_nm = atof(argv[++i]) ;
@@ -68,9 +80,20 @@ int main(int argc, char** argv)
         else { std::cerr << "Unknown argument: " << arg << "\n" ; usage(argv[0]) ; return 1 ; }
     }
 
+    bool unit_mode = !workdir.empty() ;
+    if( unit_mode && geometry_edition.empty() )
+    {
+        std::cerr << "FATAL: work-unit mode (-w) requires the resident geometry edition (-g)\n" ;
+        return 1 ;
+    }
+
     NP* ip = nullptr ;
     bool generated = input.empty() ;
-    if( !generated )
+    if( unit_mode )
+    {
+        // photons come per unit; buffers are sized to the launch slice below
+    }
+    else if( !generated )
     {
         ip = NP::Load(input.c_str());
         if( ip == nullptr || ip->shape.size() != 3 ){ std::cerr << "FATAL: failed to load " << input << "\n" ; return 3 ; }
@@ -85,7 +108,7 @@ int main(int argc, char** argv)
     // std::mt19937 stream is portable but the distribution implementations
     // are not (libstdc++ vs MSVC), so cross-platform comparison must be fed
     // the photon array, not the gun parameters
-    if( generated )
+    if( !unit_mode && generated )
     {
         std::string ipath = outdir + "/synrad_service_inphoton.npy" ;
         ip->save(ipath.c_str());
@@ -99,11 +122,15 @@ int main(int argc, char** argv)
     // tens of bounces, the slot heuristic would otherwise size buffers to
     // ~87% of VRAM, and the 1 um propagate epsilon keeps dihedral-edge
     // neighbour facets visible
+    // work-unit mode sizes the GPU buffers once to the launch-slice cap;
+    // per-unit launches are clamped to it
+    long slice_cap = unit_mode ? WorkUnitLoop::DEFAULT_SLICE : long(n) ;
+
     SEventConfig::SetEventMode("Hit");
     SEventConfig::SetHitMask("AB");
-    SEventConfig::SetMaxPhoton(n);
+    SEventConfig::SetMaxPhoton(int(slice_cap));
     if( getenv("OPTICKS_MAX_BOUNCE") == nullptr ) SEventConfig::SetMaxBounce(100);
-    if( getenv("OPTICKS_MAX_SLOT")   == nullptr ) SEventConfig::SetMaxSlot(n);
+    if( getenv("OPTICKS_MAX_SLOT")   == nullptr ) SEventConfig::SetMaxSlot(int(slice_cap));
     if( getenv("OPTICKS_PROPAGATE_EPSILON") == nullptr ) SEventConfig::SetPropagateEpsilon(0.001f);
 
     // SEvt(EGPU) + CSGFoundry::Load() + CSGOptiX::Create — no Geant4 anywhere
@@ -115,6 +142,12 @@ int main(int argc, char** argv)
     QSim* qs = QSim::Get();
     if( qs == nullptr ){ std::cerr << "FATAL: no QSim -- GPU setup was skipped (no CUDA device?)\n" ; return 2 ; }
     qs->setGXS(qgxs_.d_gxs);
+
+    if( unit_mode )
+    {
+        WorkUnitLoop loop{ cxs, workdir, geometry_edition, max_units, { U[0], U[1] }, slice_cap };
+        return loop.run();
+    }
 
     SEvt* sev = SEvt::Get_EGPU();
     sev->setIndex(0);
