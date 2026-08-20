@@ -163,6 +163,18 @@ def make_handler(store, results_dir, lease_ttl):
                     self._json(200, spec)
             elif path == "/status":
                 self._json(200, store.status())
+            elif path.startswith("/result/") and path.endswith("/hits.npy"):
+                uid = path[len("/result/"):-len("/hits.npy")]
+                hits = results_dir / uid / "hits.npy"
+                if not hits.is_file():
+                    self._json(404, {"error": "no hits stored"})
+                    return
+                data = hits.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
             elif path.startswith("/unit/"):
                 rec = store.get(path[len("/unit/"):])
                 self._json(200, rec) if rec else self._json(404, {"error": "unknown unit"})

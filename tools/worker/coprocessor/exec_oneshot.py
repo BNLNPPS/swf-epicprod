@@ -85,6 +85,10 @@ class Exec:
 
     def __init__(self, args):
         self.args = args
+        # absolute: the inner script cds into the unit dir, so any relative
+        # path here silently redirects the service outputs
+        args.work = args.work.resolve()
+        args.geom_cfbase = str(Path(args.geom_cfbase).resolve())
         self.inbox = args.work / "inbox"
         self.outbox = args.work / "outbox"
         for d in (self.inbox, self.outbox):
@@ -138,16 +142,24 @@ class Exec:
             inner = (
                 f"export LD_LIBRARY_PATH='{a.prefix}/lib:{a.prefix}/lib64'"
                 f"${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}\n"
-                f"export CUDA_VISIBLE_DEVICES={a.device}\n"
+                # an inherited assignment (e.g. the PanDA job's GPU) wins
+                f"export CUDA_VISIBLE_DEVICES=${{CUDA_VISIBLE_DEVICES:-{a.device}}}\n"
                 f"export GEOM={a.geom}\n"
                 f"export {a.geom}_CFBaseFromGEOM='{a.geom_cfbase}'\n"
                 f"export OPTICKS_MAX_SLOT={count + 100000}\n"
                 f"cd '{tmpdir}'\n"
                 f"'{a.prefix}/bin/synrad_service' " +
                 " ".join(f"'{t}'" for t in tail) + "\n")
-            cmd = ["apptainer", "exec", "--nv", a.container, "bash", "-c", inner]
+            if a.exec_mode == "container":
+                cmd = ["apptainer", "exec", "--nv", a.container, "bash", "-c", inner]
+            else:               # direct: already inside the container
+                cmd = ["bash", "-c", inner]
+            (tmpdir / "service.sh").write_text(inner)
             proc = subprocess.run(cmd, capture_output=True, text=True,
                                   timeout=a.unit_timeout)
+            (tmpdir / "service.log").write_text(
+                proc.stdout + ("\n==== stderr ====\n" + proc.stderr
+                               if proc.stderr else ""))
             if proc.returncode != 0:
                 raise RuntimeError(
                     f"synrad_service exit {proc.returncode}: "
@@ -206,6 +218,8 @@ def main():
     ap.add_argument("--geom-edition", required=True,
                     help="edition string checked against unit specs")
     ap.add_argument("--container", default=CONTAINER)
+    ap.add_argument("--exec-mode", choices=("container", "direct"), default="container",
+                    help="direct: run the binary without apptainer (already in-container)")
     ap.add_argument("--device", type=int, default=0)
     ap.add_argument("--unit-timeout", type=float, default=600.0)
     ap.add_argument("--once", action="store_true",
