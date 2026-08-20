@@ -6,6 +6,19 @@ perimeter, under PanDA. The target scale is community-internal:
 O(10) GPU machines contributed by collaborators would constitute a
 meaningful resource. No public volunteer phase is planned.
 
+Simphony's applications and measured performance — Cherenkov
+detectors (pfRICH, dRICH, hpDIRC) and synchrotron-radiation X-ray
+transport — are presented in [Optical photon and X-ray simulation
+on GPU for EIC (Galgoczi, BNL EIC group meeting, August
+2026)](https://docs.google.com/presentation/d/1C__dMS2L-lwcW_p3WcNr3CaZf5mK8XwIK8z6_nzoqkc/).
+Synchrotron-radiation background transport is the priority workload
+for this track: X-ray propagation on one RTX 4090 runs about 3000
+times faster than a production CPU thread, freeing millions of CPU
+core-hours per year, and its vacuum-and-wall transport driven by
+file-fed photon arrays matches the coprocessor contract below
+([simphony `synrad`
+branch](https://github.com/BNLNPPS/simphony/tree/synrad)).
+
 The guiding constraint is that a worker host is untrusted. Every
 design choice follows from it: a credential on a worker must be
 worth no more than that worker's participation — scoped to its own
