@@ -16,6 +16,10 @@
 #   the containment work) are built separately with a reconfigure.
 # - The container carries a spack-installed simphony; our install prefix goes
 #   FIRST in CMAKE_PREFIX_PATH so find_package resolves the branch build.
+# - CMAKE_BUILD_TYPE=Release matches the upstream release image (Dockerfile)
+#   and the examples/synrad speedup.sh methodology, so performance numbers
+#   are comparable with the published ones. An unoptimized build passes the
+#   same physics validation but distorts timing on both sides.
 # - The example CMake pulls glm before simphony (link-interface ordering);
 #   both resolve from the container's spack environment. The synrad_g4
 #   target links no simphony libraries (header-only use) so it never
@@ -48,6 +52,7 @@ cmake -S '$SRC' -B '$BUILD' \
     -DOptiX_INCLUDE_DIR=\$OPTIX_INC \
     -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++ \
     -DBUILD_TESTING=OFF \
+    -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX='$PREFIX'
 cmake --build '$BUILD' -j12
 cmake --install '$BUILD'
@@ -56,6 +61,7 @@ PLOG_INC=\$(ls -d /opt/software/linux-x86_64_v2/plog-*/include | head -1)
 cmake -S '$SRC/examples/synrad' -B '$BUILD-example' \
     -DCMAKE_PREFIX_PATH='$PREFIX' \
     -DCMAKE_INSTALL_PREFIX='$PREFIX' \
+    -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CXX_FLAGS=\"-I\$GLM_INC -I\$PLOG_INC -DGLM_ENABLE_EXPERIMENTAL\"
 cmake --build '$BUILD-example' -j4
 cmake --install '$BUILD-example'

@@ -1,0 +1,72 @@
+﻿2026-08-20 09:28:55.330 INFO  [1256275] [SEventConfig::SetDevice@1791] SEventConfig::DescDevice
+name                             : NVIDIA GeForce RTX 4090
+totalGlobalMem_bytes             : 25247481856
+totalGlobalMem_GB                : 23
+HeuristicMaxSlot(VRAM)           : 192196464
+HeuristicMaxSlot(VRAM)/M         : 192
+HeuristicMaxSlot_Rounded(VRAM)   : 192000000
+MaxSlot/M                        : 0
+ModeLite                         : 0
+ModeMerge                        : 0
+
+2026-08-20 09:28:55.330 INFO  [1256275] [SEventConfig::SetDevice@1806]  Configured_MaxSlot/M 0 Final_MaxSlot/M 0 HeuristicMaxSlot_Rounded/M 192 changed NO  DeviceName NVIDIA GeForce RTX 4090 HasDevice YES
+(export OPTICKS_MAX_SLOT=0 # to use VRAM based HeuristicMaxPhoton) 
+2026-08-20 09:28:55.370 INFO  [1256275] [U4Tree::Create@228] [new U4Tree
+2026-08-20 09:28:55.389 INFO  [1256275] [U4Tree::init@282] -initSid
+2026-08-20 09:28:55.389 INFO  [1256275] [U4Tree::init@284] -initRayleigh
+2026-08-20 09:28:55.389 INFO  [1256275] [U4Tree::init@286] -initMaterials
+2026-08-20 09:28:55.389 INFO  [1256275] [U4Tree::init@288] -initMaterials_NoRINDEX
+2026-08-20 09:28:55.389 INFO  [1256275] [U4Tree::init@291] -initScint
+2026-08-20 09:28:55.389 INFO  [1256275] [U4Tree::init@294] -initWLS
+2026-08-20 09:28:55.389 INFO  [1256275] [U4Tree::init@297] -initSurfaces
+2026-08-20 09:28:55.389 INFO  [1256275] [U4Tree::init@300] -initSolids
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::init@302] -initNodes
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::init@304] -initSurfaces_Serialize
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::init@307] -initStandard
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::init@310] -initRecorder
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::Create@230] ]new U4Tree
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::Create@232] [stree::factorize
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::Create@234] ]stree::factorize
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::Create@236] [U4Tree::identifySensitive
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::Create@238] ]U4Tree::identifySensitive
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::Create@241] [stree::add_inst
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::Create@243] ]stree::add_inst
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::Create@248] [stree::postcreate
+2026-08-20 09:28:55.390 INFO  [1256275] [U4Tree::Create@250] ]stree::postcreate
+2026-08-20 09:29:02.422 INFO  [1256275] [G4CXOpticks::setGeometry@348] CSGOptiX::Desc Version 9
+2026-08-20 09:29:02.813 INFO  [1266576] [SEventConfig::SetDevice@1791] SEventConfig::DescDevice
+name                             : NVIDIA GeForce RTX 4090
+totalGlobalMem_bytes             : 25247481856
+totalGlobalMem_GB                : 23
+HeuristicMaxSlot(VRAM)           : 192196464
+HeuristicMaxSlot(VRAM)/M         : 192
+HeuristicMaxSlot_Rounded(VRAM)   : 192000000
+MaxSlot/M                        : 0
+ModeLite                         : 0
+ModeMerge                        : 0
+
+2026-08-20 09:29:02.813 INFO  [1266576] [SEventConfig::SetDevice@1806]  Configured_MaxSlot/M 0 Final_MaxSlot/M 0 HeuristicMaxSlot_Rounded/M 192 changed NO  DeviceName NVIDIA GeForce RTX 4090 HasDevice YES
+(export OPTICKS_MAX_SLOT=0 # to use VRAM based HeuristicMaxPhoton) 
+2026-08-20 09:29:03.776 INFO  [1266576] [U4Tree::Create@228] [new U4Tree
+2026-08-20 09:29:03.794 INFO  [1266576] [U4Tree::init@282] -initSid
+2026-08-20 09:29:03.794 INFO  [1266576] [U4Tree::init@284] -initRayleigh
+2026-08-20 09:29:03.794 INFO  [1266576] [U4Tree::init@286] -initMaterials
+2026-08-20 09:29:03.795 INFO  [1266576] [U4Tree::init@288] -initMaterials_NoRINDEX
+2026-08-20 09:29:03.795 INFO  [1266576] [U4Tree::init@291] -initScint
+2026-08-20 09:29:03.795 INFO  [1266576] [U4Tree::init@294] -initWLS
+2026-08-20 09:29:03.795 INFO  [1266576] [U4Tree::init@297] -initSurfaces
+2026-08-20 09:29:03.795 INFO  [1266576] [U4Tree::init@300] -initSolids
+2026-08-20 09:29:03.802 INFO  [1266576] [U4Tree::init@302] -initNodes
+2026-08-20 09:29:03.802 INFO  [1266576] [U4Tree::init@304] -initSurfaces_Serialize
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::init@307] -initStandard
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::init@310] -initRecorder
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::Create@230] ]new U4Tree
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::Create@232] [stree::factorize
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::Create@234] ]stree::factorize
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::Create@236] [U4Tree::identifySensitive
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::Create@238] ]U4Tree::identifySensitive
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::Create@241] [stree::add_inst
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::Create@243] ]stree::add_inst
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::Create@248] [stree::postcreate
+2026-08-20 09:29:03.803 INFO  [1266576] [U4Tree::Create@250] ]stree::postcreate
+2026-08-20 09:29:04.014 INFO  [1266576] [G4CXOpticks::setGeometry@348] CSGOptiX::Desc Version 9
