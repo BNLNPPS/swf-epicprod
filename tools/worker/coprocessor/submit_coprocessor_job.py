@@ -55,6 +55,9 @@ def main():
     ap.add_argument('--version', default='d01')
     ap.add_argument('--units', type=int, default=3)
     ap.add_argument('--count', type=int, default=100000)
+    ap.add_argument('--log-ds', default='',
+                    help='existing log dataset to reuse (the Setupper resolves a '
+                         'pre-created dataset by lookup and fails on an unknown one)')
     args = ap.parse_args()
 
     from pandaserver.taskbuffer.JobSpec import JobSpec
@@ -63,7 +66,7 @@ def main():
 
     stamp = time.strftime('%Y%m%d%H%M%S')
     job_name = f'{TASK_BASE}.{args.version}.{stamp}'
-    log_ds = f'{TASK_BASE}.{args.version}_log'
+    log_ds = args.log_ds or f'{TASK_BASE}.{args.version}_log'
 
     quoted = urllib.parse.quote(payload(args, job_name), safe='')
     base_args = f'-j "" --sourceURL {SOURCE_URL} -r . -p "{quoted} "'

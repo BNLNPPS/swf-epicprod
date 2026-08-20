@@ -35,15 +35,19 @@ REFSET = '/home/wenaus/work/synrad-refset-20260820-release'
 
 
 def payload(args, task_name):
+    # --outdir on the host: this queue serves one host, and with --no-log
+    # there is no staged log, so the summary and unit records land in a
+    # host directory as the run's evidence; the books carry the verdict.
     return ('nvidia-smi -L && '
             'git clone --depth 1 https://github.com/BNLNPPS/swf-epicprod.git && '
             'python3 swf-epicprod/tools/worker/coprocessor/driver.py'
             f' --units {args.units} --count {args.count}'
-            f' --task-name {task_name} --exec-mode direct'
+            f' --task-name {task_name} --executable oneshot --exec-mode direct'
             f' --prefix {PREFIX}'
             f' --geom synrad --geom-cfbase {REFSET}/geometry'
             f' --geom-edition synrad_bench-v1'
-            f' --refset-input {REFSET}/inphoton/synrad_service_inphoton.npy')
+            f' --refset-input {REFSET}/inphoton/synrad_service_inphoton.npy'
+            f' --outdir /home/wenaus/work/coproc/panda-runs/{task_name}')
 
 
 def main():
@@ -51,6 +55,11 @@ def main():
     ap.add_argument('--version', default='v01')
     ap.add_argument('--units', type=int, default=3)
     ap.add_argument('--count', type=int, default=100000)
+    # Tadashi 2026-08-14: tasks whose jobs produce no log files omit the
+    # 'log' entry entirely; with no log dataset there is nothing for the
+    # refiner to validate ('unknown endpoint: local', task 39012) and
+    # nothing for the Adder to register.
+    ap.add_argument('--no-log', action='store_true')
     args = ap.parse_args()
 
     task_name = f'{TASK_BASE}.{args.version}'
@@ -117,6 +126,9 @@ def main():
             {'type': 'constant', 'value': '"'},
         ],
     }
+
+    if args.no_log:
+        del params['log']
 
     from pandaclient import Client
     status, result = Client.insertTaskParams(params)
