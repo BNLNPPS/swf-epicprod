@@ -73,13 +73,15 @@ class Chain:
             sys.executable, str(HERE / "dispatcher.py"), "--port", str(port),
             "--state", str(workdir / "dispatcher.db"),
             "--results", str(workdir / "results")], workdir)
-        self._spawn("exec", [
-            sys.executable, str(HERE / "exec_oneshot.py"),
+        exec_cmd = [
+            sys.executable, str(HERE / f"exec_{args.executable}.py"),
             "--work", str(workdir / "work"), "--prefix", args.prefix,
             "--geom", args.geom, "--geom-cfbase", args.geom_cfbase,
             "--geom-edition", args.geom_edition,
-            "--exec-mode", args.exec_mode, "--container", args.container,
-            "--unit-timeout", str(args.unit_timeout)], workdir)
+            "--exec-mode", args.exec_mode, "--container", args.container]
+        if args.executable == "oneshot":
+            exec_cmd += ["--unit-timeout", str(args.unit_timeout)]
+        self._spawn("exec", exec_cmd, workdir)
         self._spawn("agent", [
             sys.executable, str(HERE / "worker_agent.py"),
             "--dispatcher", self.base, "--work", str(workdir / "work"),
@@ -140,6 +142,9 @@ def main():
     ap.add_argument("--geom", required=True)
     ap.add_argument("--geom-cfbase", required=True)
     ap.add_argument("--geom-edition", required=True)
+    ap.add_argument("--executable", choices=("service", "oneshot"), default="oneshot",
+                    help="service: the resident work-unit loop (needs a loop-capable "
+                         "install); oneshot: process per unit, works with any install")
     ap.add_argument("--exec-mode", choices=("container", "direct"), default="container")
     ap.add_argument("--container",
                     default="/cvmfs/singularity.opensciencegrid.org/eicweb/eic_dev_cuda:nightly")
