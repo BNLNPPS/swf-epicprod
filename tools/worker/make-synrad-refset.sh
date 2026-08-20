@@ -42,6 +42,7 @@ export LD_LIBRARY_PATH='$PREFIX/lib:$PREFIX/lib64'\${LD_LIBRARY_PATH:+:\$LD_LIBR
 export CUDA_VISIBLE_DEVICES=0
 export GEOM=synrad
 export synrad_CFBaseFromGEOM='$TRIAL/geom'
+cd '$TRIAL'    # the apps write OPTICKS_LOG and run-metadata files to the CWD
 
 echo '== file-driven replay: photons from the .npy artifact =='
 '$PREFIX/bin/synrad_service' -i '$TRIAL/synrad_service_inphoton.npy' \

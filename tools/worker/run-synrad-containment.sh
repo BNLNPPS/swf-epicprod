@@ -52,6 +52,7 @@ apptainer exec --nv "${BINDS[@]}" "$CONTAINER" bash -c "
 set -euo pipefail
 export LD_LIBRARY_PATH='$PREFIX/lib:$PREFIX/lib64'\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}
 export CUDA_VISIBLE_DEVICES=0
+cd '$TRIAL'    # the apps write OPTICKS_LOG and run-metadata files to the CWD
 
 if [ ! -d '$TRIAL/geom/CSGFoundry' ]; then
     echo '== capture: persist CSGFoundry from a short synrad run =='

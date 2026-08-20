@@ -52,5 +52,6 @@ export SIMPHONY_LIB_DIR='$PREFIX/lib:$PREFIX/lib64'
 export SIMPHONY_SYNRAD_BUILD_DIR='$RUNBASE/build'
 export SIMPHONY_SYNRAD_RUN_DIR='$RUNBASE/run'
 export CUDA_VISIBLE_DEVICES=0
+cd '$RUNBASE'    # the apps write OPTICKS_LOG and run-metadata files to the CWD
 '$SRC/examples/synrad/speedup.sh' $NPHOTON $SEED
 "

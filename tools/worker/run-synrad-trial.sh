@@ -38,6 +38,7 @@ set -euo pipefail
 export LD_LIBRARY_PATH='$PREFIX/lib:$PREFIX/lib64'\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}
 export OPTICKS_MAX_SLOT=\$(( $NPHOTON + 100000 ))
 export CUDA_VISIBLE_DEVICES=0
+cd '$TRIAL'    # the apps write OPTICKS_LOG and run-metadata files to the CWD
 
 echo '== GPU: synrad (coarse fused envelope) =='
 '$PREFIX/bin/synrad' -g '$SRC/examples/synrad/synrad_bench.gdml' \
