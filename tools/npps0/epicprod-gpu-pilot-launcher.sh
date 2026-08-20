@@ -20,7 +20,11 @@ GPU="${CUDA_VISIBLE_DEVICES:-0}"
 LOCK="$HOME/pilot-work/gpu${GPU}.lock"
 PASS="$HOME/bin/epicprod-gpu-pilot.sh"
 PASS_MAX=90000     # queue maxtime plus margin, was RuntimeMaxSec
-PAUSE=60           # between passes; within a pass the pilot knocks 1/min
+# Between passes. Within a pass the pilot knocks every ~19s (30 requests
+# over ~9.5 min observed), so the pause is the launcher's only added
+# latency: keep it token. 60s here cost up to a minute of pickup latency
+# for no benefit on a dedicated host.
+PAUSE=5
 
 mkdir -p "$HOME/pilot-work"
 
