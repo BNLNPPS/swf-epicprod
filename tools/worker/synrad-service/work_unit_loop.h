@@ -51,7 +51,6 @@ struct WorkUnitLoop
     long        slice_cap ;          // buffer size set at init; spec slices clamp to it
 
     long units_since_init = 0 ;
-    int  eventID = 0 ;
 
     std::filesystem::path inbox()  const { return std::filesystem::path(workdir) / "inbox" ; }
     std::filesystem::path outbox() const { return std::filesystem::path(workdir) / "outbox" ; }
@@ -201,6 +200,22 @@ inline void WorkUnitLoop::process(const std::filesystem::path& spec_path, double
         double generate_s = std::chrono::duration<double>(clock::now() - tg0).count();
 
         stage = "transport" ;
+
+        // Idempotency (contract): per-photon randomness is a pure function of
+        // (curand seed, photon slot, event index) via the skipahead mechanism
+        // (qudarap/qrng.h), so the event index must derive from the unit, not
+        // from the unit's position in the stream. File-fed certification units
+        // use launch index alone — index 0 first, reproducing the reference
+        // set exactly at any stream position. Gun units spread by the unit
+        // seed (Knuth multiplicative hash, platform-stable) so distinct seeds
+        // get well-separated skipahead offsets.
+        int event_base = 0 ;
+        if( !spec.contains("input") )
+        {
+            unsigned seed = spec["generator"].value("seed", 0u);
+            event_base = int( (seed * 2654435761u) & 0x3fffffffu );
+        }
+
         long slice = DEFAULT_SLICE ;
         if( spec.contains("limits") )
         {
@@ -215,6 +230,7 @@ inline void WorkUnitLoop::process(const std::filesystem::path& spec_path, double
         sphoton* pp = reinterpret_cast<sphoton*>(ip->values<float>());
         for(long off = 0 ; off < n_generated ; off += slice)
         {
+            int eventID = event_base + launches ;
             long m = std::min(slice, n_generated - off);
             NP* sub = nullptr ;
             if( off == 0 && m == n_generated )
@@ -237,7 +253,6 @@ inline void WorkUnitLoop::process(const std::filesystem::path& spec_path, double
             NP* ht = cxs.simulate(gs, eventID);
             transport_s += std::chrono::duration<double>(clock::now() - t0).count();
             launches += 1 ;
-            eventID += 1 ;
 
             long nh = ht ? ht->shape[0] : 0 ;
             if( nh > 0 )
