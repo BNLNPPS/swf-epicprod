@@ -162,18 +162,28 @@ bookkeeping in its arrays.
 ### The Linux containment trial and the Windows reference set
 
 The first step toward the Windows build runs entirely on Linux:
-build the four core packages alone, with no Geant4 or DD4hep in the
-build, and drive `CSGOptiXService` from persisted files — a real
-detector geometry bundle and genstep arrays captured from a standard
-ePIC simulation — producing hit arrays with no Geant4 in the
-process. This proves the containment boundary on the supported
-platform, and its artifacts are the **Windows reference set**: the
-geometry bundle and genstep inputs together with the hit outputs
-they produce on Linux, archived as the comparison baseline.
+drive the GPU propagation from persisted files — a geometry bundle
+and input arrays — with no Geant4 in the process. The containment
+boundary is proven on the supported platform in two workloads. The
+optical trial runs `CSGOptiXServiceTest` against a raindrop geometry
+bundle and captured Cerenkov gensteps
+(`tools/worker/capture-simphony-trial-inputs.sh`,
+`run-simphony-containment.sh`). The synchrotron-radiation
+containment runs the `synrad_service` executable
+(`tools/worker/synrad-service/`, `run-synrad-containment.sh`)
+against the persisted tessellated SynradBenchmark chamber and an
+input photon array; it reproduces the integrated run's counts and
+passes the statistical comparison against the Geant4 reference.
+
+The **Windows reference set** is the synchrotron-radiation one,
+assembled by `tools/worker/make-synrad-refset.sh` after a
+file-driven replay gate: the chamber geometry bundle and the input
+photon array together with the hit records they produce on Linux,
+archived with SHA-256 checksums as the comparison baseline.
 
 The Windows port is then judged against that baseline: the same
 executable shape built with MSVC/NVCC, fed the same geometry and
-gensteps, compared on the hits. The comparison is statistical, not
+input arrays, compared on the hits. The comparison is statistical, not
 bitwise — compiler floating-point differences and OptiX's
 nondeterministic traversal order preclude bit-identical output, so
 agreement is judged on hit counts, distributions, and stated
