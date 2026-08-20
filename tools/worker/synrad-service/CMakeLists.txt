@@ -32,17 +32,20 @@ add_executable(synrad_service synrad_service.cc)
 target_include_directories(synrad_service PRIVATE
     ${SYNRAD_GUN_DIR}
 )
+# CUDA::cudart_static first on Windows: the static core embeds cudart_static
+# while the exported simphony targets reference shared cudart; satisfying the
+# runtime imports from the static library first keeps one runtime in the
+# process. A shared-cudart link produced an executable whose SEventConfig
+# device logging repeated without terminating.
+if(WIN32)
+    find_package(CUDAToolkit REQUIRED)
+    target_link_libraries(synrad_service CUDA::cudart_static)
+endif()
 target_link_libraries(synrad_service
     simphony::CSGOptiX
     simphony::QUDARap
     simphony::CSG
     simphony::SysRap
 )
-
-# Linux threads default to 8 MB of stack, Windows to 1 MB; the CSGFoundry
-# load overflows the Windows default (0xC00000FD). Match the Linux reserve.
-if(MSVC)
-    target_link_options(synrad_service PRIVATE /STACK:67108864)
-endif()
 
 install(TARGETS synrad_service)
