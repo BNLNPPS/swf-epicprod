@@ -61,7 +61,7 @@
  "catchall": "allow_no_pilot,logging=logstash;http://pandalogstash.sdcc.bnl.gov:8443",
  "cloud": "US",
  "comment": "no active blacklisting rules defined",
- "container_options": "--nv",
+ "container_options": "--nv --bind /home/wenaus/work",
  "container_type": "apptainer:pilot",
  "copytools": {
   "rucio": {
