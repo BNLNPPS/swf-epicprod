@@ -58,3 +58,6 @@ statistical tolerances of simphony `optiphy/ana/synrad_test.py`: absorbed
 count, reflected-at-least-once fraction, absorption-point marginals, and
 the reflected-energy spectrum. Bitwise agreement is not expected across
 compilers or OptiX traversal orders and is not the criterion.
+
+Validation results for both platforms are recorded in
+[SYNRAD_VALIDATION.md](SYNRAD_VALIDATION.md).
