@@ -53,32 +53,63 @@ Credential posture on npps0 is the trusted-machine tier: production
 token, proxies, and an AWS profile held on the host under our
 administration. The roadmap below removes them one class at a time.
 
+## Implemented (as of 2026-08-20)
+
+The coprocessor work-unit layer is running. The contract between the
+worker agent and the GPU executable is
+[WORK_UNIT_CONTRACT.md](WORK_UNIT_CONTRACT.md) (work units are the
+packets of the sections below); the chain lives in
+`tools/worker/coprocessor/`: a work-unit dispatcher and worker agent
+speaking HTTP, and the `synrad_service` work-unit loop holding geometry
+and the OptiX context resident across units. Unit output is a pure
+function of the unit spec — verified byte-identical across stream
+positions, and reference-exact across platforms
+([SYNRAD_VALIDATION.md](SYNRAD_VALIDATION.md)). A self-contained driver
+runs a unit batch as a PanDA job payload on `BNL_NPPS_GPU`, with the
+reference-set check inside the job and the verdict in the job record:
+work enters through PanDA only, runs through the chain, and is
+accounted end to end.
+
 ## Roadmap
 
 Each step de-privileges the worker further, until the first worker
 and a collaborator's machine are configured identically.
 
-1. **Gateway v0 — uploads (devcloud).** A small authenticated
-   service holding a device registry and an S3 presigner. Workers
-   enroll once and receive a device token; uploads use
-   gateway-issued presigned PUT URLs — time-limited, single-object.
-   The AWS keys leave the worker. The s3 copytool data path is
-   unchanged; only the credential source changes.
-2. **Gateway v1 — PanDA mediation.** The gateway proxies job
-   acquisition and status updates, holding the robot identity
-   internally; workers authenticate to the gateway with their device
-   token. The PanDA proxy leaves the worker. A worker then carries
-   only its revocable device token — the full untrusted-machine
-   posture, while running production-shaped jobs.
+1. **Gateway — the pool's mediation service (devcloud).** The gateway
+   mediates between PanDA-side work and the workers; it is never an
+   intake — every work unit carries the identity of the PanDA job that
+   produced it. It accretes in steps, each usable on its own:
+   the unit service (the work-unit dispatcher served at a public
+   address; first deployment serves owned machines, with trust by
+   ownership); device identity (enrollment, per-device tokens,
+   revocation as the whole security lifecycle); the S3 presigner
+   (uploads by gateway-issued presigned PUT, time-limited and
+   single-object — the AWS keys leave the worker); and the agent tick
+   endpoint below. PanDA mediation for full workers (the robot
+   identity held gateway-side) completes the untrusted-machine
+   posture: a worker then carries only its revocable device token.
+2. **The pool agent.** One agent for every pool machine, identical on
+   lab and volunteer hosts: a single static binary speaking outbound
+   HTTPS to the gateway and nothing else — no broker, no inbound
+   port, no held connections. Its single verb is the tick. Running,
+   the tick carries telemetry and unit progress out; idle, the same
+   tick is the request for work; in both states the reply carries
+   unit leases and commands (fire pilots, pause), with cadence the
+   only knob. On lab hosts the fire-pilots command drives pilot
+   passes through the existing per-GPU lock machinery, retiring the
+   polling launcher loop.
 3. **Worker bundle.** Launcher, pass script, git configuration, and
    the enrollment step packaged as an installable kit for any NVIDIA
    RTX Linux host. The bundle is the volunteer landing.
-4. **Windows port.** RTX-class Windows PCs are where the volunteer
-   resource largely lives. OptiX is unsupported under WSL2, so the
-   route is a native Windows build of the worker executable under
-   the coprocessor model below; the container-on-Windows path is not
-   pursued. This is the one open R&D item in the plan, and nothing
-   earlier depends on it.
+4. **Windows port.** Complete: the four core packages build native
+   with MSVC/CUDA/OptiX, and the Windows service executable
+   reproduces the Linux reference set exactly
+   ([SYNRAD_VALIDATION.md](SYNRAD_VALIDATION.md),
+   [simphony PR #438](https://github.com/BNLNPPS/simphony/pull/438)).
+   The remaining Windows work belongs to the worker prototype:
+   service soak under the WDDM watchdog, and packaging (the
+   executable, its runtime libraries, and the pool agent as the
+   participation package).
 5. **Fleet operation.** O(10) machines; a tailnet as the
    community-internal transport so workers reach the gateway over
    authenticated, non-public paths; per-device revocation as the
@@ -101,8 +132,10 @@ scaffolding with pieces sized to this system.
 Interruption robustness follows the event-service model: work is
 streamed in small units so an interrupted worker loses at most
 the unit in flight (see Preemption and checkpointing below). The
-current single-job smoke tests do not exercise this; it enters
-with the first production-shaped streaming workload.
+work-unit layer now carries this: units are the streamed,
+interruption-bounded quantum, idempotent by construction — an
+abandoned unit is simply reprocessed
+([WORK_UNIT_CONTRACT.md](WORK_UNIT_CONTRACT.md)).
 
 ## The Windows coprocessor model
 
