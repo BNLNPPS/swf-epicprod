@@ -75,10 +75,9 @@ accounted end to end.
 Each step de-privileges the worker further, until the first worker
 and a collaborator's machine are configured identically.
 
-1. **Gateway — the pool's mediation service (devcloud).** The gateway
-   mediates between PanDA-side work and the workers; it is never an
-   intake — every work unit carries the identity of the PanDA job that
-   produced it. It accretes in steps, each usable on its own:
+1. **Gateway — the pool's mediation service (devcloud).** Design: The
+   gateway and the pool agent, below. It accretes in steps, each
+   usable on its own:
    the unit service (the work-unit dispatcher served at a public
    address; first deployment serves owned machines, with trust by
    ownership); device identity (enrollment, per-device tokens,
@@ -228,6 +227,59 @@ top-level build currently always includes the Geant4-dependent
 packages), Windows export declarations in place of the gcc
 visibility attributes, and replacement of POSIX usages (unistd,
 /proc, popen) in the utility layer.
+
+## The gateway and the pool agent
+
+The gateway is the pool's mediation service: the single meeting point
+between the lab side, where work originates, and the workers, wherever
+they sit. It is never an intake — work enters the system only through
+PanDA, and every work unit the gateway serves carries the identity of
+the PanDA job that produced it. On its lab side the gateway is an
+ordinary platform service: the production ops agent messages it,
+monitoring reads it, and the platform's message bus ends there. On its
+worker side it speaks nothing but HTTPS request-response under device
+tokens; no worker anywhere speaks a platform protocol.
+
+The gateway has four functions. It holds the device registry: a machine
+enrolls once and receives a per-device token, and revoking that token
+is the entire security lifecycle for the machine. It serves work units
+under the contract of [WORK_UNIT_CONTRACT.md](WORK_UNIT_CONTRACT.md):
+the driver of a PanDA job enqueues units, workers lease them and return
+hits and unit records, lease expiry re-queues abandoned units, and unit
+idempotency makes both reprocessing and duplicate-dispatch verification
+exact. It issues presigned S3 uploads — time-limited, single-object —
+so bulk results travel directly to lab-side storage while AWS
+credentials never reach a worker. And it answers the pool agent's tick.
+
+The pool agent is the worker-side counterpart, and there is exactly one
+of it: the same agent on lab and volunteer machines, a single static
+binary speaking outbound HTTPS to the gateway and nothing else — no
+message broker, no inbound port, no held connections. A stranger's
+machine behind NAT and a firewall runs it unchanged, which is the
+untrusted-worker doctrine applied to the agent itself: the first worker
+and a volunteer's machine converge on identical configuration. The
+agent's single verb is the tick. While units run, the tick carries
+telemetry, unit progress, and completion manifests out; while idle, the
+same tick is the request for work; in both states the reply carries
+unit leases and any queued commands — fire pilots, pause — so command
+delivery needs no channel of its own and its latency is the tick
+cadence, the protocol's only knob. On lab hosts the fire-pilots command
+starts pilot passes through the existing per-GPU lock machinery,
+retiring the polling launcher loop; on volunteer hosts the command set
+implements the preemption and scheduling policy of the sections below.
+
+The public face is devcloud. Heavy back-end functions can sit on lab
+GPU hardware behind the established reverse-tunnel pattern, keeping the
+public host thin. The gateway accretes in stages, each usable on its
+own: the unit service alone first — the running loopback chain moved to
+a public address, serving owned machines with trust supplied by
+ownership — then device identity, then the presigner, then the tick.
+Nothing built for an earlier stage is discarded by a later one.
+
+Gateway state — the roster, leases, heartbeats, and per-unit records —
+is the source the pool monitoring pages and history views render.
+Workers never talk to the monitor; the gateway relays their state to
+the platform.
 
 ## Preemption and checkpointing
 
