@@ -228,6 +228,55 @@ packages), Windows export declarations in place of the gcc
 visibility attributes, and replacement of POSIX usages (unistd,
 /proc, popen) in the utility layer.
 
+## Generation tiers and sample integrity
+
+Two generators feed the optical transport
+([ADEPT_AUDIT.md](ADEPT_AUDIT.md) § Generation tiers):
+AdePT+Simphony, the full-fidelity electron-fed chain, running
+wherever the container goes; and the source table, the
+volunteer-grade generator requiring none of the AdePT stack. The
+AdePT-to-Simphony handoff passes gensteps through files — the
+work-unit contract's own handoff form — so on a containerized worker
+the two stages compose into one contract executable that generates
+fresh electrons per unit from a compact primaries specification.
+
+A table generator approximates the electron phase space, and the
+approximation is weakest in the tails: near-IP transport is
+non-linear and coupled (detector solenoid over the final-focus
+quadrupoles, crossing angle, fringe fields), so the rare electrons
+that matter are exactly what a frozen electron set or a Gaussian
+surrogate loses. The combined sample keeps statistical integrity by
+stratified generation:
+
+- A hard boundary in generator-level electron variables splits the
+  phase space into a bulk region and a tail region.
+- Bulk-region events are generated only by the table, sampling
+  conditioned inside the boundary, where its fidelity is a finite
+  claim continuously validated against AdePT+Simphony; validation
+  drift shrinks the bulk region rather than silently biasing the
+  sample.
+- Tail-region events are generated only by AdePT+Simphony — exact by
+  construction, with no reweighting and no surrogate.
+- The relative normalization is the tail fraction measured by
+  unconditioned AdePT+Simphony runs, and the hard boundary excludes
+  double counting.
+
+This is standard stratified sampling, the construction behind
+enriched Monte Carlo production generally; the alternative of
+reweighting table events fails where the table lacks support. The
+work-unit architecture implements the strata as unit flavors: the
+dispatcher issues bulk units to table-capable workers and tail and
+validation units to containerized AdePT+Simphony workers, with the
+mix a dispatch policy. Tails are rare, so a few full-stack GPUs
+carry the tail stratum and the validation stream while the volunteer
+fleet produces bulk. Worker-side Geant4 independence for AdePT is
+therefore not a dependency of this plan; it arrives, if wanted, with
+the upstream AdePT+Simphony integration
+([ADEPT_AUDIT.md](ADEPT_AUDIT.md) § Encapsulation). Until AdePT's
+cross-platform random-number determinism is verified, duplicate
+dispatch of electron-fed units is judged by the statistical
+comparison machinery rather than bitwise.
+
 ## The gateway and the pool agent
 
 The gateway is the pool's mediation service: the single meeting point
