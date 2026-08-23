@@ -57,109 +57,115 @@ unchanged. The payload is the dispatcher chain:
   tail range duration plus packaging and stage-out, so abandonment is
   the exception (a pathological straggler), not the rule.
 - **Deferral, never loss.** An abandoned or unprocessed range is named
-  work: the ranges still in flight or undispatched at the deadline are
-  recorded in the manifest as unprocessed and are re-dispatched in
-  later allocations. This is a correctness requirement, not an
+  work: ranges still in flight or undispatched at the deadline return
+  to the server's range bookkeeping and are re-dispatched to later
+  allocations. This is a correctness requirement, not an
   optimization: ranges abandoned at a deadline are preferentially the
   slow ones, and slowness correlates with physics (multiplicity,
   topology), so dropping rather than deferring them would bias the
   sample against exactly those events.
-- **Package.** Completed range outputs concatenate into a single
-  uncompressed zip — archive-only packing at disk speed — one output
-  file per allocation with its name fixed at job generation, plus a
-  manifest recording each range's identity, event count, and
-  completion. No many-small-files pressure on the HPC filesystem, no
-  scattered outputs; the file count reaching Rucio is per-allocation.
-- **Clean exit.** The job ends `finished` inside the wall; the pilot
-  stages out and registers the one output through the normal path.
-  The taskbuffer-300 failure class disappears for these jobs except
-  for genuine node failures.
+- **Package.** Completed range outputs concatenate into uncompressed
+  zip — archive-only packing at disk speed. The pilot's Event Service
+  machinery performs this packing and stages the zip out periodically
+  (`es_stageout_gap`), a handful of files per allocation. No
+  many-small-files pressure on the HPC filesystem, no scattered
+  outputs, and periodic stage-out bounds what a node failure can
+  take.
+- **Clean exit.** The job ends inside the wall with every completed
+  range staged and reported. The taskbuffer-300 failure class
+  disappears for these jobs except for genuine node failures.
 
 ### Completeness and accounting
 
-Two mechanisms can own range completeness; the payload-side harness is
-the same work either way.
+Range completeness is owned by the **PanDA Event Service** — the
+native mode, selected 2026-08-23 after a live probe verified it for
+the epic VO.
 
-**The PanDA Event Service, the native mode.** Ordinary PanDA jobs are
-atomic over their inputs; the Event Service is the long-established
-mode that is not: event ranges are first-class JEDI state
-(`JEDI_Events` rows with per-range status, attempts, and retry
-policy), enabled per task by standard parameters (`eventService`,
-`nEventsPerWorker`, `nEsConsumers`, `notDiscardEvents`, `esToNormal`).
-The pilot version already deployed on this queue carries the complete
-generic ES executor: it delivers ranges to the payload over a socket
-channel (`PILOT_EVENTRANGECHANNEL`), collects per-range outputs, packs
-them with archive-only zip, stages the zip out periodically
+Ordinary PanDA jobs are atomic over their inputs; the Event Service
+is the long-established mode that is not: event ranges are
+first-class JEDI state (`JEDI_Events` rows with per-range status,
+attempts, and retry policy), enabled per task by standard parameters
+(`nEventsPerWorker` switches the mode on; `nEsConsumers`,
+`notDiscardEvents`, `esToNormal` refine it). The pilot version
+already deployed on this queue carries the complete generic ES
+executor: it delivers ranges to the payload over a socket channel
+(`PILOT_EVENTRANGECHANNEL`), collects per-range outputs, packs them
+with archive-only zip, stages the zip out periodically
 (`es_stageout_gap` in the queue data) with storage failover, and
 reports each range's disposition to the server, which retries
 unfinished ranges. Deferral-not-loss is this mode's native semantics,
-in production for well over a decade. Under this option the node
-harness speaks the range channel instead of running its own
-dispatcher — request a range per free slot, fan out to N workers,
-emit per-range completions — and packaging, stage-out, and range
-bookkeeping ride the pilot and server machinery. To verify for epic:
-the JEDI ES generation and merge-job paths for a non-ATLAS VO (the
-ancillary audit's pattern predicts ATLAS-shaped corners), and the
+in production for well over a decade. The node harness therefore
+speaks the range channel instead of running its own dispatcher —
+request a range per free slot, fan out to N workers, emit per-range
+completions — and packaging, stage-out, and range bookkeeping ride
+the pilot and server machinery.
+
+**The probe** (task 39057, `scripts/es-probe/` in swf-monitor,
+2026-08-23): a tiny ES-mode task against the production queue whose
+payload deliberately did not speak the range channel. It verified,
+at the cost of two 2-minute single-core jobs: ES task refinement for
+epic (`eventservice=1`, through the VO-neutral base refiner), range
+creation at job generation (100 events into 10 `JEDI_Events` ranges),
+dispatch and start on the site within about 5 minutes, and — on the
+payload failure — cancellation of the attempt's ranges and their
+re-issue to a successor job. The feared ATLAS-shaped corners at
+generation and retry are absent. Remaining to verify: merge-job
+generation (reached only when ranges finish) and the
 `es_events`/`es_failover` storage-activity mapping to BNL storage.
 
-**Coverage-layer completeness, the epicprod-side alternative.** The
-manifest states exactly which ranges completed; the coverage
-machinery (the produced-output mapping of EPICPROD_DATA_LINEAGE.md
-and the delivery record) diffs completed ranges against campaign
-assignments and issues unprocessed remainder as follow-up tasks. A
-deferred slow range re-runs with a full fresh time budget, removing
-the bias by construction. This path has no PanDA-side unknowns and
-keeps all state in systems the production domain owns.
+An epicprod coverage-layer alternative — manifest-declared range
+completion diffed against campaign assignments by the produced-output
+machinery of EPICPROD_DATA_LINEAGE.md — was considered and set aside
+in favor of the native mechanism.
 
-The manifest also closes the events-source gap: the dispatcher reports
-exactly what it produced, entering the measurement store as a
-highest-provenance tier (`reported`) in place of today's
+Per-range reporting also closes the events-source gap: each completed
+range carries its exact event count, entering the measurement store as
+a highest-provenance tier (`reported`) in place of today's
 byte-size-class inference (CAMPAIGN_DELIVERY.md § The events source).
 
 ## Implementation basis: the coprocessor chain
 
 The volunteer-GPU coprocessor workflow (`tools/worker/coprocessor/`,
-WORK_UNIT_CONTRACT.md) is working, PanDA-verified code for exactly
-this shape, and its self-contained driver mode — the PanDA payload
-spawns dispatcher, agents, and executables on localhost, the whole
-chain living and dying with the job — is the deployment model here.
-The site sees the same batch job and container as today: no services,
-no ports beyond localhost, no new infrastructure. No pilot changes (the
-zip is an ordinary declared output), no harvester changes (one
-standard mcore worker per allocation, output data only).
+WORK_UNIT_CONTRACT.md) is working, PanDA-verified code for the node
+fan-out this design needs: the payload spawns its worker chain on the
+node, the whole chain living and dying with the job. The site sees
+the same batch job and container as today: no services, no ports
+beyond localhost, no new infrastructure; harvester submits one
+standard mcore worker per allocation and sees output data only.
 
-Component disposition:
+Under the native Event Service, the harness is the coprocessor chain
+with the range transport swapped: the pilot's ES executor owns range
+delivery (the socket channel), packaging, periodic stage-out, and
+server reporting, so the harness's job is the node-local fan-out —
+receive ranges from the channel, keep N single-core workers fed
+through the inbox/outbox contract, and return per-range completions
+to the channel. Component disposition:
 
-- `dispatcher.py` (stdlib + sqlite): reused essentially verbatim. Its
-  lease-TTL re-queue gives in-node retry — a worker process that dies
-  or hangs has its range re-served within the allocation.
-- `worker_agent.py`: reused as-is, one agent and work directory per
-  core slot; the same unmodified chain then serves both deployments —
-  remote dispatcher for the volunteer pool, localhost for the node.
+- The harness front end speaks the pilot range channel (in the role
+  `dispatcher.py` plays for the volunteer pool, where it remains in
+  service unchanged); the in-node lease/retry of a died worker's
+  range is preserved.
+- `worker_agent.py` staging and the inbox/outbox/done contract:
+  reused as-is, one work directory per core slot.
 - A new contract executable wraps the simulation payload: consume a
   unit spec of the contract's input form extended with an event range,
   run the payload for that range, write outputs and counts per the
-  contract. Specs are opaque to dispatcher and agent; the contract is
+  contract. Specs are opaque to the staging layer; the contract is
   versioned for new source forms without schema change.
-- Driver deltas: spawn N agent/executable pairs instead of one;
-  deadline semantics become stop-dispatch, drain, and succeed with
-  the manifest; outbox-to-zip packaging; a unit builder over the
-  job's assigned input ranges. The per-unit counts and timing records
-  and the in-job reference-unit check (a fixed-seed physics canary)
-  carry over unchanged.
+- The driver spawns N agent/executable pairs and mediates between
+  the range channel and the unit contract. The per-unit counts and
+  timing records and the in-job reference-unit check (a fixed-seed
+  physics canary) carry over unchanged.
 
 The new code is a few hundred lines against roughly eight hundred
-proven ones; the substantial work is validation at the site and the
-coverage re-dispatch loop.
+proven ones; the substantial work is validation at the site.
 
 ## What it does not fix
 
 - Genuine node failures (NODE_FAIL, ~2,900 of the 14-day 300s) still
-  lose the node's completed-but-unstaged ranges; the Event Service
-  option's periodic stage-out bounds that exposure natively, the
-  coverage-layer option needs a later increment for it, and the
-  deferral machinery recovers the work either way. Node failure is
-  ~1% of allocations.
+  lose the node's completed-but-unstaged ranges; periodic Event
+  Service stage-out bounds that exposure, and the server's range
+  bookkeeping recovers the work. Node failure is ~1% of allocations.
 - The memory-bound half-thread occupancy is a payload property,
   untouched here.
 
@@ -171,34 +177,40 @@ coverage re-dispatch loop.
 - Site facts that size the parameters: the allocation walltime and
   whether it can lengthen, and the worker-shape configuration for
   one-job-per-allocation submission.
-- The completeness-mechanism decision: verify the JEDI Event Service
-  generation and merge-job paths for the epic VO — the deciding fact
-  between native ES and coverage-layer completeness. If coverage-layer:
-  assignment granularity for re-dispatched ranges and their manifest
-  lineage.
+- The remaining Event Service verifications: merge-job generation
+  behavior for the epic VO (reached only when ranges finish), and the
+  `es_events`/`es_failover` storage-activity mapping to BNL storage.
 - Queue-record hygiene independent of this design: `maxtime` should
   state the real ceiling so every duration check regains meaning.
 
 ## Next steps
 
-1. Verify the JEDI Event Service generation and merge-job paths for
-   the epic VO, in the source and the live server configuration, and
-   the `es_events`/`es_failover` storage-activity mapping — the
-   completeness-mechanism decision.
+Completed steps do not disappear; they move to number 0 with a
+Completed leader, so the record shows what has been done and proven.
+
+0. Completed — the Event Service probe (task 39057, 2026-08-23)
+   verified the server side live for the epic VO: ES task refinement,
+   range creation at job generation, dispatch and start on the site
+   within minutes, and range-level cancel and re-issue on payload
+   failure. On that result the native Event Service was selected as
+   the completeness mechanism.
+1. Complete the Event Service verification: merge-job generation for
+   the epic VO and the `es_events`/`es_failover` storage-activity
+   mapping.
 2. Correct the queue record: `maxtime` to the real allocation
    ceiling. Independent of the rest and immediately useful.
 3. Obtain the site facts: allocation walltime and its prospects, and
    the worker-shape configuration for one-job-per-allocation
    submission.
-4. Build the node harness against the coprocessor contract: the
+4. Build the node harness: the pilot-range-channel front end, the
    range-form unit spec, the simulation contract executable, and the
    N-pair driver; smoke-run as a loopback on a development host, the
    coprocessor pattern.
 5. Settle the packaged-output consumer contract with the downstream
    processing step.
 6. Run a first task on the queue — a few one-node allocations under
-   the chosen completeness mechanism, validated against a reference
-   sample — then scale and retire the wave model.
+   the Event Service, validated against a reference sample — then
+   scale and retire the wave model.
 
 ## Related
 
@@ -213,11 +225,11 @@ coverage re-dispatch loop.
   — the EVGEN inputs production consumes, and the definitions cost
   model.
 - [EPICPROD_DATA_LINEAGE.md](https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/EPICPROD_DATA_LINEAGE.md)
-  — the produced-output coverage machinery the deferral loop builds
-  on.
+  — the produced-output coverage machinery; the basis of the
+  considered coverage-layer alternative.
 - [CAMPAIGN_DELIVERY.md](https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/CAMPAIGN_DELIVERY.md)
-  — the delivered-data record and the events source the manifest
-  reports into.
+  — the delivered-data record and the events source that per-range
+  reporting feeds.
 - [JEDI_INTEGRATION.md](https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/JEDI_INTEGRATION.md)
   — submission design; payload-side data handling.
 - [PANDA_ANCILLARY_AUDIT.md](https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/PANDA_ANCILLARY_AUDIT.md)
