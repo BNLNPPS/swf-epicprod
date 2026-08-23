@@ -109,9 +109,31 @@ creation at job generation (100 events into 10 `JEDI_Events` ranges),
 dispatch and start on the site within about 5 minutes, and — on the
 payload failure — cancellation of the attempt's ranges and their
 re-issue to a successor job. The feared ATLAS-shaped corners at
-generation and retry are absent. Remaining to verify: merge-job
-generation (reached only when ranges finish) and the
-`es_events`/`es_failover` storage-activity mapping to BNL storage.
+generation and retry are absent.
+
+**The remaining verification (completed 2026-08-23, source-level):**
+
+- *Storage activities*: the pilot resolves stage-out activities in
+  order and uses the first with storages defined
+  (`pilot/api/data.py`, `prepare_destinations`); with no `es_events`
+  entry the ES request `['es_events', 'pw']` resolves to the
+  production write storage — BNL_PROD_DISK_1 — with `es_failover`
+  falling back the same way. The stage-out cadence is already
+  configured: the pilot's `es_stageout_gap` maps from the queue field
+  `zip_time_gap`, which the queue carries as 7200 s. No configuration
+  work is needed.
+- *Merge*: one true ATLAS-shaped corner exists — registration of the
+  pre-merge zips (`zipoutput` files, the `registerEsFiles` path) is
+  implemented only in the ATLAS adder plugin; `AdderSimplePlugin`
+  registers `output`/`log` types only. The open path for epic is
+  **on-site merging**: `onSiteMerging` with an `esmergeSpec` in the
+  task parameters — handled in the VO-neutral base refiner and core
+  job generator — runs the merge inside the ES job on the node, and
+  the final outputs are ordinary files the simple adder registers
+  normally. This is the selected merge form; it also matches the
+  design's node-side packaging shape. A `zipoutput` extension to the
+  simple adder remains a fallback if separate merge jobs are ever
+  wanted.
 
 An epicprod coverage-layer alternative — manifest-declared range
 completion diffed against campaign assignments by the produced-output
@@ -177,9 +199,10 @@ proven ones; the substantial work is validation at the site.
 - Site facts that size the parameters: the allocation walltime and
   whether it can lengthen, and the worker-shape configuration for
   one-job-per-allocation submission.
-- The remaining Event Service verifications: merge-job generation
-  behavior for the epic VO (reached only when ranges finish), and the
-  `es_events`/`es_failover` storage-activity mapping to BNL storage.
+- Under on-site merging, whether the periodic pre-merge zip
+  stage-out still runs (the node-failure exposure bound) or the
+  range outputs stay node-local until the in-job merge — to confirm
+  in the harness smoke run.
 - Queue-record hygiene independent of this design: `maxtime` should
   state the real ceiling so every duration check regains meaning.
 
@@ -188,29 +211,34 @@ proven ones; the substantial work is validation at the site.
 Completed steps do not disappear; they move to number 0 with a
 Completed leader, so the record shows what has been done and proven.
 
-0. Completed — the Event Service probe (task 39057, 2026-08-23)
-   verified the server side live for the epic VO: ES task refinement,
-   range creation at job generation, dispatch and start on the site
-   within minutes, and range-level cancel and re-issue on payload
-   failure. On that result the native Event Service was selected as
-   the completeness mechanism.
-1. Complete the Event Service verification: merge-job generation for
-   the epic VO and the `es_events`/`es_failover` storage-activity
-   mapping.
-2. Correct the queue record: `maxtime` to the real allocation
-   ceiling. Independent of the rest and immediately useful.
-3. Obtain the site facts: allocation walltime and its prospects, and
-   the worker-shape configuration for one-job-per-allocation
-   submission.
-4. Build the node harness: the pilot-range-channel front end, the
-   range-form unit spec, the simulation contract executable, and the
-   N-pair driver; smoke-run as a loopback on a development host, the
-   coprocessor pattern.
-5. Settle the packaged-output consumer contract with the downstream
-   processing step.
-6. Run a first task on the queue — a few one-node allocations under
-   the Event Service, validated against a reference sample — then
-   scale and retire the wave model.
+- **0. Completed** — the Event Service probe (task 39057,
+  2026-08-23) verified the server side live for the epic VO: ES task
+  refinement, range creation at job generation, dispatch and start
+  on the site within minutes, and range-level cancel and re-issue on
+  payload failure. On that result the native Event Service was
+  selected as the completeness mechanism.
+- **0. Completed** — the remaining Event Service verification
+  (2026-08-23, source-level): stage-out activities resolve to
+  BNL_PROD_DISK_1 with no configuration work and the zip cadence is
+  already set (`zip_time_gap`); merge is taken as on-site merging
+  (`onSiteMerging` + `esmergeSpec`, VO-neutral), avoiding the one
+  ATLAS-only corner found (`zipoutput` registration in the ATLAS
+  adder). Details in Completeness and accounting.
+- **1.** Correct the queue record: `maxtime` to the real allocation
+  ceiling. Independent of the rest and immediately useful.
+- **2.** Obtain the site facts: allocation walltime and its
+  prospects, and the worker-shape configuration for
+  one-job-per-allocation submission.
+- **3.** Build the node harness: the pilot-range-channel front end,
+  the range-form unit spec, the simulation contract executable, and
+  the N-pair driver; smoke-run as a loopback on a development host,
+  the coprocessor pattern. The smoke run also settles the on-site
+  merge and periodic stage-out interplay (Open questions).
+- **4.** Settle the packaged-output consumer contract with the
+  downstream processing step.
+- **5.** Run a first task on the queue — a few one-node allocations
+  under the Event Service, validated against a reference sample —
+  then scale and retire the wave model.
 
 ## Related
 
