@@ -64,15 +64,24 @@ unchanged. The payload is the dispatcher chain:
   slow ones, and slowness correlates with physics (multiplicity,
   topology), so dropping rather than deferring them would bias the
   sample against exactly those events.
-- **Package.** Completed range outputs concatenate into uncompressed
-  zip — archive-only packing at disk speed. The pilot's Event Service
-  machinery performs this packing and stages the zip out periodically
-  (`es_stageout_gap`), a handful of files per allocation. No
-  many-small-files pressure on the HPC filesystem, no scattered
-  outputs, and periodic stage-out bounds what a node failure can
-  take.
-- **Clean exit.** The job ends inside the wall with every completed
-  range staged and reported. The taskbuffer-300 failure class
+- **Package: rolling merge, rolling stage-out.** The harness holds an
+  uncompressed zip open and appends each range's output the moment it
+  completes, deleting the member file — archive-only packing as a
+  background trickle, no terminal merge latency, and no double-size
+  disk peak (peak is the accumulated volume plus one range output).
+  Every ~30 minutes the open zip closes and the harness registers it
+  to JLab Rucio as an ordinary output file, on the payload data path
+  and credential production uses today (the single-Rucio convention;
+  PanDA stays out of the science data). Measured volumes: 0.46
+  MB/event and ~552 MB per today's job give ~146 GB per full
+  allocation, ~18 GB per 30-minute zip — and roughly 8 output files
+  per allocation against ~260 today, so the dataset's file count
+  falls thirty-fold. Each zip crosses the wire once, as the final
+  product; nothing pre-ships and nothing ships twice.
+- **Clean exit.** At the deadline the last zip closes, registers, and
+  the job ends inside the wall with every completed range reported.
+  The terminal cost is the last zip's transfer and the archive
+  directory finalize — minutes. The taskbuffer-300 failure class
   disappears for these jobs except for genuine node failures.
 
 ### Completeness and accounting
@@ -89,16 +98,16 @@ attempts, and retry policy), enabled per task by standard parameters
 `notDiscardEvents`, `esToNormal` refine it). The pilot version
 already deployed on this queue carries the complete generic ES
 executor: it delivers ranges to the payload over a socket channel
-(`PILOT_EVENTRANGECHANNEL`), collects per-range outputs, packs them
-with archive-only zip, stages the zip out periodically
-(`es_stageout_gap` in the queue data) with storage failover, and
-reports each range's disposition to the server, which retries
-unfinished ranges. Deferral-not-loss is this mode's native semantics,
-in production for well over a decade. The node harness therefore
-speaks the range channel instead of running its own dispatcher —
-request a range per free slot, fan out to N workers, emit per-range
-completions — and packaging, stage-out, and range bookkeeping ride
-the pilot and server machinery.
+(`PILOT_EVENTRANGECHANNEL`) and reports each range's disposition to
+the server, which retries unfinished ranges. Deferral-not-loss is
+this mode's native semantics, in production for well over a decade.
+The node harness therefore speaks the range channel instead of
+running its own dispatcher — request a range per free slot, fan out
+to N workers, emit per-range completions — and range bookkeeping
+rides the server machinery, while packaging and output registration
+stay with the harness on the payload data path (Design § Package;
+the pilot executor's own zip stage-out machinery goes unused for
+science data).
 
 **The probe** (task 39057, `scripts/es-probe/` in swf-monitor,
 2026-08-23): a tiny ES-mode task against the production queue whose
@@ -125,15 +134,21 @@ generation and retry are absent.
 - *Merge*: one true ATLAS-shaped corner exists — registration of the
   pre-merge zips (`zipoutput` files, the `registerEsFiles` path) is
   implemented only in the ATLAS adder plugin; `AdderSimplePlugin`
-  registers `output`/`log` types only. The open path for epic is
-  **on-site merging**: `onSiteMerging` with an `esmergeSpec` in the
-  task parameters — handled in the VO-neutral base refiner and core
-  job generator — runs the merge inside the ES job on the node, and
-  the final outputs are ordinary files the simple adder registers
-  normally. This is the selected merge form; it also matches the
-  design's node-side packaging shape. A `zipoutput` extension to the
-  simple adder remains a fallback if separate merge jobs are ever
-  wanted.
+  registers `output`/`log` types only.
+
+**The merge resolution: no PanDA merge at all.** Epic production
+moves no science data through PanDA — the payload self-registers
+outputs to JLab Rucio under the single-Rucio convention — and the
+dispatcher harness inherits that path: it rolls its own zips and
+registers each to JLab as it closes (Design § Package). The Event
+Service supplies range dispatch, bookkeeping, and retry; its own
+zip stage-out and merge machinery (esmerge jobs, `onSiteMerging`,
+`zipoutput` registration) go unused, which retires the ATLAS-only
+corner rather than working around it. One consequence to confirm in
+the harness smoke run: the harness reports ranges finished over the
+channel without attached zip records — the server-side update
+handler treats the zip block as conditional
+(`task_event_module.py`), so this should hold.
 
 An epicprod coverage-layer alternative — manifest-declared range
 completion diffed against campaign assignments by the produced-output
@@ -157,11 +172,12 @@ standard mcore worker per allocation and sees output data only.
 
 Under the native Event Service, the harness is the coprocessor chain
 with the range transport swapped: the pilot's ES executor owns range
-delivery (the socket channel), packaging, periodic stage-out, and
-server reporting, so the harness's job is the node-local fan-out —
-receive ranges from the channel, keep N single-core workers fed
-through the inbox/outbox contract, and return per-range completions
-to the channel. Component disposition:
+delivery (the socket channel) and server reporting, so the harness's
+job is the node-local fan-out and the output path — receive ranges
+from the channel, keep N single-core workers fed through the
+inbox/outbox contract, return per-range completions to the channel,
+and run the rolling zip merger with its 30-minute closes registered
+to JLab Rucio (Design § Package). Component disposition:
 
 - The harness front end speaks the pilot range channel (in the role
   `dispatcher.py` plays for the volunteer pool, where it remains in
@@ -185,9 +201,10 @@ proven ones; the substantial work is validation at the site.
 ## What it does not fix
 
 - Genuine node failures (NODE_FAIL, ~2,900 of the 14-day 300s) still
-  lose the node's completed-but-unstaged ranges; periodic Event
-  Service stage-out bounds that exposure, and the server's range
-  bookkeeping recovers the work. Node failure is ~1% of allocations.
+  lose the node's open zip — at most ~30 minutes of one node's output
+  under the rolling closes — and the server's range bookkeeping
+  recovers the work. Node failure is ~1% of allocations; pre-shipping
+  protection beyond the rolling closes is not justified for it.
 - The memory-bound half-thread occupancy is a payload property,
   untouched here.
 
@@ -199,10 +216,10 @@ proven ones; the substantial work is validation at the site.
 - Site facts that size the parameters: the allocation walltime and
   whether it can lengthen, and the worker-shape configuration for
   one-job-per-allocation submission.
-- Under on-site merging, whether the periodic pre-merge zip
-  stage-out still runs (the node-failure exposure bound) or the
-  range outputs stay node-local until the in-job merge — to confirm
-  in the harness smoke run.
+- Whether the server accepts range-finished updates without attached
+  zip records (the update handler reads the zip block conditionally;
+  the harness reports ranges bare) — to confirm in the harness smoke
+  run.
 - Queue-record hygiene independent of this design: `maxtime` should
   state the real ceiling so every duration check regains meaning.
 
@@ -220,20 +237,22 @@ Completed leader, so the record shows what has been done and proven.
 - **0. Completed** — the remaining Event Service verification
   (2026-08-23, source-level): stage-out activities resolve to
   BNL_PROD_DISK_1 with no configuration work and the zip cadence is
-  already set (`zip_time_gap`); merge is taken as on-site merging
-  (`onSiteMerging` + `esmergeSpec`, VO-neutral), avoiding the one
-  ATLAS-only corner found (`zipoutput` registration in the ATLAS
-  adder). Details in Completeness and accounting.
+  already set (`zip_time_gap`); the one ATLAS-only corner found —
+  `zipoutput` registration exists only in the ATLAS adder — is
+  retired by the merge resolution: no PanDA merge, harness-rolled
+  zips registered on the payload data path. Details in Completeness
+  and accounting.
 - **1.** Correct the queue record: `maxtime` to the real allocation
   ceiling. Independent of the rest and immediately useful.
 - **2.** Obtain the site facts: allocation walltime and its
   prospects, and the worker-shape configuration for
   one-job-per-allocation submission.
 - **3.** Build the node harness: the pilot-range-channel front end,
-  the range-form unit spec, the simulation contract executable, and
-  the N-pair driver; smoke-run as a loopback on a development host,
-  the coprocessor pattern. The smoke run also settles the on-site
-  merge and periodic stage-out interplay (Open questions).
+  the range-form unit spec, the simulation contract executable, the
+  N-pair driver, and the rolling zip merger with 30-minute closes
+  registered to JLab Rucio; smoke-run as a loopback on a development
+  host, the coprocessor pattern. The smoke run also confirms bare
+  range-finished reporting (Open questions).
 - **4.** Settle the packaged-output consumer contract with the
   downstream processing step.
 - **5.** Run a first task on the queue — a few one-node allocations
