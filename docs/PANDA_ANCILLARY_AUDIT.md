@@ -197,11 +197,11 @@ outcomes are recorded in place.
    datasetManager name-skip has nothing to leak. No cleanup chore is
    needed.
 3. **Job Retry Module — closed 2026-08-12: the first rules on this
-   instance are loaded.** The `RETRYERRORS`/`RETRYACTIONS` tables were
-   empty for every VO; epicprod loaded the initial epic set directly
-   (the tables are instance data and the epicprod database credential
-   holds write access), both rules passive (`active='N'`, log-only)
-   until observed flagging correctly:
+   instance are loaded; both enforcing as of 2026-08-23.** The
+   `RETRYERRORS`/`RETRYACTIONS` tables were empty for every VO;
+   epicprod loaded the initial epic set directly (the tables are
+   instance data and the epicprod database credential holds write
+   access), passive at first and activated after observation:
    - `ddmErrorCode` 200, diagnostic matching `is closed` → `no_retry` —
      job-level retries against a closed dataset are structurally
      futile; task-level handling is the reopen-before-retry doer.
@@ -210,10 +210,14 @@ outcomes are recorded in place.
      attempt covers transient failures; the keepalive prevents the
      standing cause.
 
-   The retry module reloads rules on a one-hour cache; normal
-   per-job attempt retries are untouched. The live rule set is
-   displayed in the System page's PanDA Configuration section
-   (`panda-retry-rules` collector).
+   A rule enforces only when both its own `active` flag and its
+   action's are `'Y'` (`taskbuffer/db_proxy_mods/misc_standalone_module.py`,
+   `getRetrialRules`); the rule-level switch is managed with
+   `swf-monitor/scripts/panda-retry-rules.py` (list, activate,
+   deactivate; dry-run default). The retry module reloads rules on a
+   one-hour cache; normal per-job attempt retries are untouched. The
+   live rule set is displayed in the System page's PanDA Configuration
+   section (`panda-retry-rules` collector).
 4. **Throttler share handling — checked, currently safe.** All six epic and wlcg
    workqueues carry `queue_share = NULL`, the value for which
    `GenJobThrottler` does not throttle. The caveat stands: assigning a
