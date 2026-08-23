@@ -214,9 +214,12 @@ proven ones; the substantial work is validation at the site.
 - The consumer contract for the packaged output: downstream steps
   reading range members from the zip container directly, versus an
   unpack step at the consuming site.
-- Site facts that size the parameters: the allocation walltime and
-  whether it can lengthen, and the worker-shape configuration for
-  one-job-per-allocation submission.
+- The worker-shape configuration for one-job-per-allocation
+  submission (the harvester and Globus Compute endpoint on the
+  site's login node). The 4-hour allocation itself stays: short
+  single-node requests backfill well — queue wait is 7 minutes at
+  the median — and under event ranges the wall costs only the
+  deadline margin.
 - Whether the server accepts range-finished updates without attached
   zip records (the update handler reads the zip block conditionally;
   the harness reports ranges bare) — to confirm in the harness smoke
@@ -283,9 +286,11 @@ proven ones; the substantial work is validation at the site.
   and accounting.
 - **1.** Correct the queue record: `maxtime` to the real allocation
   ceiling. Independent of the rest and immediately useful.
-- **2.** Obtain the site facts: allocation walltime and its
-  prospects, and the worker-shape configuration for
-  one-job-per-allocation submission.
+- **2.** Arrange the worker-shape change with the site operator:
+  one mcore job per allocation, on the existing 4-hour wall. The
+  other site facts are recorded: harvester runs on the site login
+  node via Globus Compute, the wall request is 4 hours, and queue
+  wait is 7 minutes at the median (p90 about 12 hours).
 - **3.** Build the node harness: the pilot-range-channel front end,
   the range-form unit spec, the simulation contract executable, the
   N-pair driver, and the rolling zip merger with 30-minute closes
