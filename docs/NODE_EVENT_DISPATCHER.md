@@ -100,25 +100,26 @@ already deployed on this queue carries the complete generic ES
 executor: it delivers ranges to the payload over a socket channel
 (`PILOT_EVENTRANGECHANNEL`) and reports each range's disposition to
 the server, which retries unfinished ranges. Deferral-not-loss is
-this mode's native semantics, in production for well over a decade.
-The node harness therefore speaks the range channel instead of
-running its own dispatcher — request a range per free slot, fan out
+this mode's native semantics. The node harness therefore speaks the
+range channel instead of running its own dispatcher — request a range per free slot, fan out
 to N workers, emit per-range completions — and range bookkeeping
 rides the server machinery, while packaging and output registration
 stay with the harness on the payload data path (Design § Package;
 the pilot executor's own zip stage-out machinery goes unused for
 science data).
 
-**The probe** (task 39057, `scripts/es-probe/` in swf-monitor,
-2026-08-23): a tiny ES-mode task against the production queue whose
+**The probe**
+([task 39057](https://epic-devcloud.org/prod/panda/tasks/39057/),
+`scripts/es-probe/` in swf-monitor, 2026-08-23): a tiny ES-mode task
+against the production queue whose
 payload deliberately did not speak the range channel. It verified,
 at the cost of two 2-minute single-core jobs: ES task refinement for
 epic (`eventservice=1`, through the VO-neutral base refiner), range
 creation at job generation (100 events into 10 `JEDI_Events` ranges),
 dispatch and start on the site within about 5 minutes, and — on the
 payload failure — cancellation of the attempt's ranges and their
-re-issue to a successor job. The feared ATLAS-shaped corners at
-generation and retry are absent.
+re-issue to a successor job. No ATLAS-only gating appears at
+generation or retry.
 
 **The remaining verification (completed 2026-08-23, source-level):**
 
@@ -131,7 +132,7 @@ generation and retry are absent.
   configured: the pilot's `es_stageout_gap` maps from the queue field
   `zip_time_gap`, which the queue carries as 7200 s. No configuration
   work is needed.
-- *Merge*: one true ATLAS-shaped corner exists — registration of the
+- *Merge*: one ATLAS-only gap exists — registration of the
   pre-merge zips (`zipoutput` files, the `registerEsFiles` path) is
   implemented only in the ATLAS adder plugin; `AdderSimplePlugin`
   registers `output`/`log` types only.
@@ -143,8 +144,8 @@ dispatcher harness inherits that path: it rolls its own zips and
 registers each to JLab as it closes (Design § Package). The Event
 Service supplies range dispatch, bookkeeping, and retry; its own
 zip stage-out and merge machinery (esmerge jobs, `onSiteMerging`,
-`zipoutput` registration) go unused, which retires the ATLAS-only
-corner rather than working around it. One consequence to confirm in
+`zipoutput` registration) go unused, which takes the ATLAS-only
+gap out of the path entirely. One consequence to confirm in
 the harness smoke run: the harness reports ranges finished over the
 channel without attached zip records — the server-side update
 handler treats the zip block as conditional
@@ -165,8 +166,8 @@ byte-size-class inference (CAMPAIGN_DELIVERY.md § The events source).
 The volunteer-GPU coprocessor workflow (`tools/worker/coprocessor/`,
 WORK_UNIT_CONTRACT.md) is working, PanDA-verified code for the node
 fan-out this design needs: the payload spawns its worker chain on the
-node, the whole chain living and dying with the job. The site sees
-the same batch job and container as today: no services, no ports
+node, the whole chain starting and ending with the job. The site
+sees the same batch job and container as today: no services, no ports
 beyond localhost, no new infrastructure; harvester submits one
 standard mcore worker per allocation and sees output data only.
 
@@ -223,12 +224,50 @@ proven ones; the substantial work is validation at the site.
 - Queue-record hygiene independent of this design: `maxtime` should
   state the real ceiling so every duration check regains meaning.
 
+## Benefits
+
+- **Stops throwing away finished work.** Today the clock kills 9% of
+  the jobs at NERSC — 27,265 jobs in two weeks, about 106,000
+  core-hours — and every event they produced is thrown away. With
+  small work units, the clock can only catch the last few minutes of
+  work, and even that gets re-run later.
+- **Stops paying for idle cores.** Today a core that finishes its
+  two-hour job sits idle while the slowest job in the allocation
+  runs on; in an allocation that reaches its four-hour limit, that
+  can idle half the capacity. With an event stream, every core stays
+  busy to the deadline.
+- **Keeps the physics unbiased.** The events the clock catches are
+  preferentially the slow ones — high multiplicity — and dropping
+  them would skew the sample. They are re-run instead.
+- **Counts events exactly.** Every completed range reports exactly
+  how many events it produced; the delivery bookkeeping stops
+  estimating event counts from file sizes.
+- **Thirty times fewer files.** About 8 files of ~18 GB per
+  allocation instead of ~260 small ones — easier on the catalogs and
+  the storage at both ends.
+- **No end-of-job pileup.** Merging happens continuously as results
+  arrive, so at the deadline there is nothing left to do but close
+  and ship the last file — minutes, with no double-size disk spike
+  on the node.
+- **A node failure costs half an hour, not several hours.** About
+  1% of nodes fail, today taking their jobs' completed work with
+  them. With results shipped every 30 minutes, a failure loses at
+  most half an hour of one node's output, and the affected events
+  are re-run automatically.
+- **One architecture, used twice.** This is the same work-unit
+  design as the volunteer GPU coprocessor — the same contract and
+  much of the same code, already proven in PanDA jobs. Building one
+  improves the other, and both are facets of the same streaming
+  approach.
+- **A small build on proven parts.** No new site infrastructure and
+  no changes to PanDA, the pilot, or harvester: a few hundred new
+  lines on top of working coprocessor code, driving established
+  Event Service machinery.
+
 ## Next steps
 
-Completed steps do not disappear; they move to number 0 with a
-Completed leader, so the record shows what has been done and proven.
-
-- **0. Completed** — the Event Service probe (task 39057,
+- **0. Completed** — the Event Service probe
+  ([task 39057](https://epic-devcloud.org/prod/panda/tasks/39057/),
   2026-08-23) verified the server side live for the epic VO: ES task
   refinement, range creation at job generation, dispatch and start
   on the site within minutes, and range-level cancel and re-issue on
@@ -237,9 +276,9 @@ Completed leader, so the record shows what has been done and proven.
 - **0. Completed** — the remaining Event Service verification
   (2026-08-23, source-level): stage-out activities resolve to
   BNL_PROD_DISK_1 with no configuration work and the zip cadence is
-  already set (`zip_time_gap`); the one ATLAS-only corner found —
-  `zipoutput` registration exists only in the ATLAS adder — is
-  retired by the merge resolution: no PanDA merge, harness-rolled
+  already set (`zip_time_gap`); the one ATLAS-only gap found
+  (`zipoutput` registration exists only in the ATLAS adder) does not
+  apply under the merge resolution: no PanDA merge, harness-rolled
   zips registered on the payload data path. Details in Completeness
   and accounting.
 - **1.** Correct the queue record: `maxtime` to the real allocation
