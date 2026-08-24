@@ -411,8 +411,12 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
 
         # Composed-identity guard (docs/PCS_COMPOSED_NAME_INTEGRITY.md
         # step 2): a new dataset whose composed name already exists gets
-        # a discriminating sample from the underived remainder tokens;
-        # a guard that cannot discriminate is flagged, never silent.
+        # a discriminating sample from the underived remainder tokens.
+        # When no discriminator exists, the arriving task derives the
+        # same classification as the holder — the same identity by the
+        # tags-classify rule — so it attaches to the existing dataset
+        # rather than erroring: this task is another physical attempt of
+        # that identity, not a new dataset.
         from monitor_app.epicprod_logging import log_epicprod_action
         sample_name = ''
         dataset = existing_dataset
@@ -421,8 +425,8 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
                 scope='group.EIC', detector_version=det_version,
                 detector_config=det_config, physics_tag=row_physics_tag,
                 evgen_tag=evgen, simu_tag=simu, reco_tag=reco)
-            if Dataset.objects.filter(
-                    composed_name=probe.build_dataset_name()).exists():
+            probe_name = probe.build_dataset_name()
+            if Dataset.objects.filter(composed_name=probe_name).exists():
                 candidate = _intake_sample_candidate(remainder, derived)
                 if candidate and not sample_name_reserved_collision(candidate):
                     sample_name = candidate
@@ -431,13 +435,25 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
                         subject_type='dataset', subject_key=task_name,
                         reason=f'composed-name collision; sample {candidate!r}')
                 else:
-                    log_epicprod_action(
-                        'pcs', 'direct_intake_sample', outcome='error',
-                        sublevel='high', live_default=True,
-                        subject_type='dataset', subject_key=task_name,
-                        reason='composed-name collision with no usable '
-                               f'discriminator (candidate {candidate!r})')
+                    holder = (Dataset.objects
+                              .filter(composed_name=probe_name)
+                              .order_by('id').first())
+                    if holder is not None:
+                        dataset = holder
+                        log_epicprod_action(
+                            'pcs', 'direct_intake_sample', outcome='ok',
+                            subject_type='dataset', subject_key=task_name,
+                            reason='composed-name collision resolved to '
+                                   f'existing identity {probe_name!r}')
+                    else:
+                        log_epicprod_action(
+                            'pcs', 'direct_intake_sample', outcome='error',
+                            sublevel='high', live_default=True,
+                            subject_type='dataset', subject_key=task_name,
+                            reason='composed-name collision with no usable '
+                                   f'discriminator (candidate {candidate!r})')
 
+        if dataset is None:
             dataset, _ds_created = Dataset.objects.get_or_create(
                 did=did,
                 defaults={
