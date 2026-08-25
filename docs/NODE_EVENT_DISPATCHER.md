@@ -27,8 +27,10 @@ simulation/reconstruction over EVGEN inputs:
   terminal jobs — died as taskbuffer-300 (worker ended while the job
   ran), each burning its full allocation share and losing every event
   it had produced. That is roughly 106k core-hours of discarded work
-  per 14 days, before counting the idle time of slots whose finished
-  jobs wait out the wave's stragglers.
+  per 14 days, against 384k core-hours delivered by the finished
+  jobs in the same window: about 22% of the core-hours consumed by
+  finished and wall-killed jobs together, before counting the idle
+  time of slots whose finished jobs wait out the wave's stragglers.
 - The queue record advertises `maxtime` of 96 hours against the real
   4-hour ceiling, so every duration check in brokerage and pilot is
   blind. The pilot's multi-job window (`timefloor`) is no remedy: its
@@ -231,7 +233,8 @@ proven ones; the substantial work is validation at the site.
 
 - **Stops throwing away finished work.** Today the clock kills 9% of
   the jobs at NERSC — 27,265 jobs in two weeks, about 106,000
-  core-hours — and every event they produced is thrown away. With
+  core-hours, roughly a fifth of the core-hours consumed — and every
+  event they produced is thrown away. With
   small work units, the clock can only catch the last few minutes of
   work, and even that gets re-run later.
 - **Stops paying for idle cores.** Today a core that finishes its
