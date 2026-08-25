@@ -12,9 +12,11 @@ transport — are presented in [Optical photon and X-ray simulation
 on GPU for EIC (Galgoczi, BNL EIC group meeting, August
 2026)](https://docs.google.com/presentation/d/1C__dMS2L-lwcW_p3WcNr3CaZf5mK8XwIK8z6_nzoqkc/).
 Synchrotron-radiation background transport is the priority workload
-for this track: X-ray propagation on one RTX 4090 runs about 3000
-times faster than a production CPU thread, freeing millions of CPU
-core-hours per year, and its vacuum-and-wall transport driven by
+for this track: X-ray propagation on one RTX 4090 runs 113 times
+faster than a Geant4 thread on analytic geometry and about 1900
+times faster on the CAD-meshed layout
+([SYNRAD_VALIDATION.md](SYNRAD_VALIDATION.md)), freeing millions of
+CPU core-hours per year, and its vacuum-and-wall transport driven by
 file-fed photon arrays matches the coprocessor contract below
 ([simphony `synrad`
 branch](https://github.com/BNLNPPS/simphony/tree/synrad)).
@@ -25,7 +27,7 @@ worth no more than that worker's participation — scoped to its own
 uploads, individually revocable, useless beyond its slot. Outputs
 are small (logs, hit summaries); bulk data stays on lab storage.
 
-## Implemented (as of 2026-08-14)
+## Implemented
 
 The first worker is the NPPS GPU server npps0 (2× RTX 4090), a host
 outside the SCDF perimeter — deliberately treated as a strange
@@ -52,8 +54,6 @@ collaborator's box.
 Credential posture on npps0 is the trusted-machine tier: production
 token, proxies, and an AWS profile held on the host under our
 administration. The roadmap below removes them one class at a time.
-
-## Implemented (as of 2026-08-20)
 
 The coprocessor work-unit layer is running. The contract between the
 worker agent and the GPU executable is
@@ -134,7 +134,10 @@ the unit in flight (see Preemption and checkpointing below). The
 work-unit layer now carries this: units are the streamed,
 interruption-bounded quantum, idempotent by construction — an
 abandoned unit is simply reprocessed
-([WORK_UNIT_CONTRACT.md](WORK_UNIT_CONTRACT.md)).
+([WORK_UNIT_CONTRACT.md](WORK_UNIT_CONTRACT.md)). The same
+work-unit design, contract, and much of the same code serve the
+node event dispatcher for fixed-lifetime HPC allocations
+([NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md)).
 
 ## The Windows coprocessor model
 
@@ -176,7 +179,9 @@ processing amortizes the overheads at either end — transfer,
 dispatch, and stage-out round trips that are far larger for a remote
 worker than for a local one. Package size is the central tuning
 knob, bounded below by amortization and above by the loss a single
-interruption may cause. Event attribution for batched propagation —
+interruption may cause. Return traffic is small: fewer than 1% of
+generated photons appear in the output (Galgoczi). Event
+attribution for batched propagation —
 gensteps accumulated across events and propagated in one GPU pass —
 is solved by Simphony's EventBatcher
 (`event-batching` branch, built against the original simg4ox
@@ -348,9 +353,11 @@ timeout detection), so compute yields at the speed of a context
 switch. GPU memory returns by terminating the worker process,
 well under a second, freeing the geometry and photon buffers for
 the owner's use. The abandoned packet re-queues through the
-event-range accounting on the server, and packet granularity
-keeps the loss trivial. The seconds of reload and rebuild are
-paid when the owner leaves the machine, not when they return.
+event-range accounting on the server: PanDA's fine-grained
+processing mechanism, the Event Service, supports this
+granularity, and packet granularity keeps the loss trivial. The
+seconds of reload and rebuild are paid when the owner leaves the
+machine, not when they return.
 
 A local cache of fetched packets keeps the GPU fed independently
 of network latency and variability, and draws on the network in a
@@ -393,6 +400,8 @@ scheduling.
 | Storage catalog | `tools/npps0/config/agis_ddmendpoints.json` | live |
 | Stage-out target | devcloud S3 (`DEVCLOUD_STAGEOUT.md`) | live |
 | Worker runtime | `tools/npps0/` launcher + pass | live |
+| Work-unit dispatcher and worker agent | `tools/worker/coprocessor/` | live |
+| Service executable | `tools/worker/synrad-service/` | live |
 | Gateway | devcloud | planned (v0 next) |
 | Worker bundle | packaging of the above | planned |
-| Windows worker executable | native build of the Simphony core packages | planned |
+| Windows worker executable | native build of the Simphony core packages | built and validated; packaging planned |
