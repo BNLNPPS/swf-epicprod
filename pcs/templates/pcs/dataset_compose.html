@@ -502,7 +502,7 @@
             // Four buttons, always: the selected level solid and
             // unclickable, the others pastel and clickable.
             let buttons = '';
-            ['1', '2', '3', '0'].forEach(l => {
+            ['0', '1', '2', '3'].forEach(l => {
                 const current = (l === '0') ? !e.priority : String(e.priority) === l;
                 if (current) {
                     buttons += `<button type="button" class="btn btn-sm btn-primary evgen-prio-current py-0 px-1 me-1" disabled title="Current priority">${l}</button>`;
