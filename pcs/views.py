@@ -4582,6 +4582,7 @@ def prod_task_compose(request):
     from .services import prodtask_readiness_problems
     tasks_list = _annotate_task_questionnaire_matches(tasks_list)
     tasks_list = _annotate_task_pc_requests(tasks_list)
+    tasks_list = annotate_pwg_priority(tasks_list)
     tasks_data = []
     for t in tasks_list:
         tasks_data.append({
@@ -4591,6 +4592,8 @@ def prod_task_compose(request):
             # links tasks on this, never on the pk or the legacy slash name.
             'composed_name': t.composed_name,
             'status': t.status,
+            # PWG priority of the EVGEN input (1 = highest, 0 = unset).
+            'pwg_priority': t.pwg_priority,
             # The recorded submission — the JS reads `submitted = !!t.panda_task_id`
             # to show the PanDA-task link + the operator Reset control. Omitting it
             # left every submitted task with only the Copy button on page load.
