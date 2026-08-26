@@ -1097,7 +1097,9 @@
     // unclickable, the others pastel and clickable — set here as there.
     function evgenPriorityRow(t) {
         const entries = Array.isArray(t.evgen_priority) ? t.evgen_priority : [];
-        if (!entries.length) return '';
+        if (!entries.length) {
+            return `<div class="mb-2"><strong>PWG priority</strong> <span class="text-muted">— no EVGEN input resolved for this task (set on <a href="${EVGEN_INPUTS_URL}">EVGEN inputs</a>)</span></div>`;
+        }
         const lines = entries.map(e => {
             let buttons = '';
             ['0', '1', '2', '3'].forEach(l => {
