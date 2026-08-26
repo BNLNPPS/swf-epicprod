@@ -497,10 +497,17 @@
             const who = e.priority ? ` <span class="text-muted">set by ${htmlEscape(e.set_by)} ${htmlEscape(e.set_at)} ET</span>` : '';
             let buttons = '';
             if (currentUser) {
-                ['1', '2', '3'].forEach(l => {
-                    if (String(e.priority) !== l) buttons += ` <button type="button" class="btn btn-sm btn-primary evgen-prio py-0 px-1" data-path="${htmlEscape(e.path)}" data-priority="${l}" title="Set priority ${l}">${l}</button>`;
+                // Fixed row 1 2 3 0; the current level greyed and unclickable.
+                ['1', '2', '3', '0'].forEach(l => {
+                    const current = (l === '0') ? !e.priority : String(e.priority) === l;
+                    if (current) {
+                        buttons += ` <button type="button" class="btn btn-sm btn-light text-muted py-0 px-1" disabled title="Current">${l}</button>`;
+                    } else {
+                        const cls = (l === '0') ? 'btn-secondary' : 'btn-primary';
+                        const title = (l === '0') ? 'Unset priority' : `Set priority ${l}`;
+                        buttons += ` <button type="button" class="btn btn-sm ${cls} evgen-prio py-0 px-1" data-path="${htmlEscape(e.path)}" data-priority="${l}" title="${title}">${l}</button>`;
+                    }
                 });
-                if (e.priority) buttons += ` <button type="button" class="btn btn-sm btn-secondary evgen-prio py-0 px-1" data-path="${htmlEscape(e.path)}" data-priority="0" title="Unset priority">0</button>`;
             }
             const pathNote = entries.length > 1 ? ` <span class="text-muted">${htmlEscape(e.path)}</span>` : '';
             return `<div>${level}${buttons}${who}${pathNote}</div>`;
