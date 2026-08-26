@@ -53,6 +53,11 @@
 .fd-arrow { color: #664d03; }
 .fd-new { font-weight: 600; color: #664d03; }
 .fd-apply { font-size: .68rem; padding: .05rem .4rem; margin-left: auto; }
+/* EVGEN priority buttons: selected solid at full strength, others pastel. */
+.evgen-prio-current.btn:disabled { opacity: 1; }
+.evgen-prio-other.btn { background: #d6e4ff; border-color: #b6ccf5; color: #0d47a1; }
+.evgen-prio-other.btn:hover:not(:disabled) { background: #b6ccf5; }
+.evgen-prio-other.btn:disabled { opacity: .5; }
 </style>
 
 <div class="compose-wrap">
@@ -493,24 +498,23 @@
         const entries = ds.evgen_priority;
         if (!entries || !entries.length) return '';
         const lines = entries.map(e => {
-            const level = e.priority ? `<strong>${e.priority}</strong>` : '<span class="text-muted">&mdash;</span>';
             const who = e.priority ? ` <span class="text-muted">set by ${htmlEscape(e.set_by)} ${htmlEscape(e.set_at)} ET</span>` : '';
+            // Four buttons, always: the selected level solid and
+            // unclickable, the others pastel and clickable.
             let buttons = '';
-            if (currentUser) {
-                // Fixed row 1 2 3 0; the current level greyed and unclickable.
-                ['1', '2', '3', '0'].forEach(l => {
-                    const current = (l === '0') ? !e.priority : String(e.priority) === l;
-                    if (current) {
-                        buttons += ` <button type="button" class="btn btn-sm btn-light text-muted py-0 px-1" disabled title="Current">${l}</button>`;
-                    } else {
-                        const cls = (l === '0') ? 'btn-secondary' : 'btn-primary';
-                        const title = (l === '0') ? 'Unset priority' : `Set priority ${l}`;
-                        buttons += ` <button type="button" class="btn btn-sm ${cls} evgen-prio py-0 px-1" data-path="${htmlEscape(e.path)}" data-priority="${l}" title="${title}">${l}</button>`;
-                    }
-                });
-            }
+            ['1', '2', '3', '0'].forEach(l => {
+                const current = (l === '0') ? !e.priority : String(e.priority) === l;
+                if (current) {
+                    buttons += `<button type="button" class="btn btn-sm btn-primary evgen-prio-current py-0 px-1 me-1" disabled title="Current priority">${l}</button>`;
+                } else if (currentUser) {
+                    const title = (l === '0') ? 'Unset priority' : `Set priority ${l}`;
+                    buttons += `<button type="button" class="btn btn-sm evgen-prio evgen-prio-other py-0 px-1 me-1" data-path="${htmlEscape(e.path)}" data-priority="${l}" title="${title}">${l}</button>`;
+                } else {
+                    buttons += `<button type="button" class="btn btn-sm evgen-prio-other py-0 px-1 me-1" disabled title="Sign in to set the priority">${l}</button>`;
+                }
+            });
             const pathNote = entries.length > 1 ? ` <span class="text-muted">${htmlEscape(e.path)}</span>` : '';
-            return `<div>${level}${buttons}${who}${pathNote}</div>`;
+            return `<div>${buttons}${who}${pathNote}</div>`;
         });
         return `<tr><td><strong>Priority</strong></td><td>${lines.join('')}</td></tr>`;
     }
