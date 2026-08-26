@@ -28,6 +28,9 @@
   #pcs-find-table { max-width: 100%; }
   #pcs-find-table td:nth-child(3) { word-break: break-all; font-size: .875rem; }
   #pcs-find-table td:nth-child(2) { white-space: nowrap; }
+  .evgen-prio-current.btn:disabled { opacity: 1; }
+  .evgen-prio-other.btn { background: #d6e4ff; border-color: #b6ccf5; color: #0d47a1; }
+  .evgen-prio-other.btn:disabled { opacity: .5; }
   /* The dialog: a chat narrative above the composer, in document flow.
      Grows to 80% of the window then scrolls internally. Lavender lives
      only in the title chip. */
@@ -368,7 +371,7 @@
           data-species="{{ e.facets.species }}" data-energy="{{ e.facets.energy }}"
           data-generator="{{ e.facets.generator }}">
         <td>{{ e.kind }}</td>
-        <td data-sort-val="{% if e.pwg_priority %}{{ e.pwg_priority }}{% elif e.pwg_resolved %}8{% else %}9{% endif %}">{% if e.pwg_priority %}<strong>{{ e.pwg_priority }}</strong>{% elif e.pwg_resolved %}unset{% else %}<span class="text-muted" title="no EVGEN input resolved">no EVGEN input</span>{% endif %}</td>
+        {% if e.pwg_resolved %}{% include "pcs/_evgen_priority_cell.html" with priority=e.pwg_priority readonly=True %}{% else %}<td class="text-muted text-nowrap" data-sort-val="10" title="no EVGEN input resolved">no EVGEN input</td>{% endif %}
         <td>
           {% if e.did %}
           <a href="{% url 'pcs:rucio_did_detail' e.scope e.name %}">{{ e.did }}</a>
