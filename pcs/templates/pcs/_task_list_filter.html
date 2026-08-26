@@ -447,7 +447,7 @@ Context expected:
         <td class="small text-center">{% if t.pre_tdr_use %}Yes{% endif %}</td>
         <td class="small text-center">{% if t.early_science_use %}Yes{% endif %}</td>
         <td class="small" data-sort-val="{{ t.priority|default:'' }}">{{ t.priority|default:"" }}</td>
-        <td class="small" data-sort-val="{{ t.pwg_priority|default:9 }}">{% if t.pwg_priority %}<strong>{{ t.pwg_priority }}</strong>{% endif %}</td>
+        <td class="small" data-sort-val="{{ t.pwg_priority|default:9 }}">{% if t.pwg_priority %}<strong>{{ t.pwg_priority }}</strong>{% elif t.evgen_paths %}<span class="text-muted" title="EVGEN input resolved; no PWG priority set">unset</span>{% else %}<span class="text-muted" title="no EVGEN input resolved for this task">n/a</span>{% endif %}</td>
         {% endif %}
       </tr>
       {% if catalog_view == 'progress' %}
