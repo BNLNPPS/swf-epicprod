@@ -80,6 +80,11 @@
 .fd-arrow { color: #664d03; }
 .fd-new { font-weight: 600; color: #664d03; }
 .fd-apply { font-size: .68rem; padding: .05rem .4rem; margin-left: auto; }
+/* EVGEN priority buttons: selected solid at full strength, others pastel. */
+.evgen-prio-current.btn:disabled { opacity: 1; }
+.evgen-prio-other.btn { background: #d6e4ff; border-color: #b6ccf5; color: #0d47a1; }
+.evgen-prio-other.btn:hover:not(:disabled) { background: #b6ccf5; }
+.evgen-prio-other.btn:disabled { opacity: .5; }
 </style>
 
 {% if ambiguous_matches %}
@@ -1087,6 +1092,53 @@
         }
     });
 
+    // PWG priority of the task's EVGEN input(s): the EVGEN inputs page's
+    // button row — four buttons 0 1 2 3, the selected level solid and
+    // unclickable, the others pastel and clickable — set here as there.
+    function evgenPriorityRow(t) {
+        const entries = Array.isArray(t.evgen_priority) ? t.evgen_priority : [];
+        if (!entries.length) return '';
+        const lines = entries.map(e => {
+            let buttons = '';
+            ['0', '1', '2', '3'].forEach(l => {
+                const current = (l === '0') ? !e.priority : String(e.priority) === l;
+                if (current) {
+                    buttons += `<button type="button" class="btn btn-sm btn-primary evgen-prio-current py-0 px-1 me-1" disabled title="Current priority">${l}</button>`;
+                } else if (currentUser) {
+                    const title = (l === '0') ? 'Unset priority' : `Set priority ${l}`;
+                    buttons += `<button type="button" class="btn btn-sm evgen-prio evgen-prio-other py-0 px-1 me-1" data-path="${htmlEscape(e.path)}" data-priority="${l}" title="${title}">${l}</button>`;
+                } else {
+                    buttons += `<button type="button" class="btn btn-sm evgen-prio-other py-0 px-1 me-1" disabled title="Sign in to set the priority">${l}</button>`;
+                }
+            });
+            const pathNote = entries.length > 1 ? ` <span class="text-muted small">${htmlEscape(e.path)}</span>` : '';
+            return `<div>${buttons}${pathNote}</div>`;
+        });
+        return `<div class="mb-2"><strong>PWG priority</strong> <span class="text-muted">— the production priority from requestors (<a href="${EVGEN_INPUTS_URL}">EVGEN inputs</a>)</span>${lines.join('')}</div>`;
+    }
+    document.addEventListener('click', async function (e) {
+        const b = e.target.closest ? e.target.closest('button.evgen-prio') : null;
+        if (!b) return;
+        b.disabled = true;
+        try {
+            const resp = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/evgen/marks/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+                body: JSON.stringify({paths: [b.getAttribute('data-path')],
+                                      priority: parseInt(b.getAttribute('data-priority'), 10)}),
+            });
+            if (!resp.ok) {
+                let m = 'HTTP ' + resp.status;
+                try { const j = await resp.json(); m = j.detail || m; } catch (_) {}
+                throw new Error(m);
+            }
+            window.location.reload();
+        } catch (err) {
+            b.disabled = false;
+            alert('Could not set the priority: ' + err.message);
+        }
+    });
+
     function showTaskDetail(id) {
         const t = allTasks.find(x => x.id === id);
         if (!t) return;
@@ -1139,11 +1191,7 @@
             : `<span class="badge bg-${statusColors[t.status]||'secondary'}">${htmlEscape(t.status)}</span>`;
 
         let html = `<p>${statusBadge}<span class="item-meta${statusBadge ? ' ms-2' : ''}">by ${htmlEscape(t.created_by)} | ${htmlEscape(t.updated_at)}</span></p>`;
-        if (t.pwg_priority) {
-            // The PWG's production order for this task's EVGEN input, set on
-            // the EVGEN inputs page; 1 = highest.
-            html += `<div class="mb-2"><strong>PWG priority ${htmlEscape(String(t.pwg_priority))}</strong> <span class="text-muted">— the working group's production order for this EVGEN input (1 = highest), set on the <a href="${EVGEN_INPUTS_URL}">EVGEN inputs page</a></span></div>`;
-        }
+        html += evgenPriorityRow(t);
         html += proposalHtml(t);
         html += aiAssessmentsHtml(t.ai_content || []);
         html += pandaTasksHtml(t);

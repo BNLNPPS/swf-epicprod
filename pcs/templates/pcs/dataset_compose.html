@@ -495,8 +495,10 @@
     // text with who set it and when, the other levels as one-click
     // buttons — the EVGEN inputs page's Priority cell, on the dataset.
     function evgenPriorityRow(ds) {
-        const entries = ds.evgen_priority;
-        if (!entries || !entries.length) return '';
+        const entries = ds.evgen_priority || [];
+        if (!entries.length) {
+            return `<tr><td><strong>PWG priority</strong></td><td><span class="text-muted">no EVGEN input resolved for this dataset</span></td></tr>`;
+        }
         const lines = entries.map(e => {
             const who = e.priority ? ` <span class="text-muted">set by ${htmlEscape(e.set_by)} ${htmlEscape(e.set_at)} ET</span>` : '';
             // Four buttons, always: the selected level solid and
@@ -516,7 +518,7 @@
             const pathNote = entries.length > 1 ? ` <span class="text-muted">${htmlEscape(e.path)}</span>` : '';
             return `<div>${buttons}${who}${pathNote}</div>`;
         });
-        return `<tr><td><strong>Priority</strong></td><td>${lines.join('')}</td></tr>`;
+        return `<tr><td><strong>PWG priority</strong></td><td>${lines.join('')}</td></tr>`;
     }
     document.addEventListener('click', async function (e) {
         const b = e.target.closest ? e.target.closest('button.evgen-prio') : null;

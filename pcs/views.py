@@ -1504,24 +1504,26 @@ def tag_edit(request, tag_type, tag_number):
 
 # ── Datasets ──────────────────────────────────────────────────────
 
-def _dataset_evgen_priority(ds, marks):
-    """The EVGEN paths an evgen-stage dataset resolves to (its matched
-    Rucio DIDs, else the request's /EVGEN/ tail) with the PWG priority
-    mark on each; None for datasets of other stages."""
+def _dataset_evgen_paths(ds):
+    """An evgen-stage dataset's EVGEN paths: its matched Rucio DIDs, else
+    the request's /EVGEN/ tail."""
+    from .models import evgen_paths_for
     metadata = ds.metadata or {}
     if metadata.get('stage') != 'evgen':
-        return None
-    paths = []
-    for entry in (metadata.get('rucio') or {}).get('matched') or []:
-        did = str(entry.get('did') or '')
-        tail = did.partition(':')[2] if ':' in did else did
-        path = '/' + tail.lstrip('/')
-        if path.startswith('/EVGEN/') and path not in paths:
-            paths.append(path)
-    if not paths:
-        location = str((metadata.get('source') or {}).get('location') or '')
-        if '/EVGEN/' in location:
-            paths.append('/EVGEN/' + location.split('/EVGEN/', 1)[1].strip('/'))
+        return []
+    return evgen_paths_for((metadata.get('rucio') or {}).get('matched'),
+                           (metadata.get('source') or {}).get('location'))
+
+
+def _dataset_evgen_priority(ds, marks, pc_paths=None):
+    """The EVGEN paths a dataset resolves to with the PWG priority mark on
+    each. An evgen-stage dataset resolves its own paths; any other stage
+    (RECO, FULL editions) resolves through the evgen dataset of the same
+    physics configuration (``pc_paths``: physics_config_id -> paths).
+    Empty when nothing resolves."""
+    paths = _dataset_evgen_paths(ds)
+    if not paths and pc_paths and ds.physics_config_id:
+        paths = list(pc_paths.get(ds.physics_config_id) or [])
     out = []
     for path in paths:
         mark = marks.get(path)
@@ -1568,13 +1570,20 @@ def datasets_compose(request):
     # PWG priority of an evgen dataset's EVGEN input(s), keyed by the
     # /EVGEN/... path as on the EVGEN inputs page (EPICPROD_EVGEN_INPUTS.md,
     # PWG marks); the detail panel shows and sets it.
-    from .models import EvgenMark
     evgen_marks = {m.path: m for m in EvgenMark.objects.exclude(priority=0)}
+    # Physics configuration -> the EVGEN paths of its evgen dataset, so a
+    # RECO or FULL edition resolves the same input as its evgen sibling.
+    pc_paths = {}
+    for ds in qs:
+        if ds.physics_config_id and (ds.metadata or {}).get('stage') == 'evgen':
+            paths = _dataset_evgen_paths(ds)
+            if paths:
+                pc_paths.setdefault(ds.physics_config_id, paths)
     datasets_data = []
     for ds in qs:
         datasets_data.append({
             'id': ds.id,
-            'evgen_priority': _dataset_evgen_priority(ds, evgen_marks),
+            'evgen_priority': _dataset_evgen_priority(ds, evgen_marks, pc_paths),
             'dataset_name': ds.dataset_name,
             'composed_name': ds.build_dataset_name(),
             'did': ds.did,
@@ -4583,6 +4592,8 @@ def prod_task_compose(request):
     tasks_list = _annotate_task_questionnaire_matches(tasks_list)
     tasks_list = _annotate_task_pc_requests(tasks_list)
     tasks_list = annotate_pwg_priority(tasks_list)
+    pwg_marks = {m.path: int(m.priority)
+                 for m in EvgenMark.objects.filter(priority__gt=0)}
     tasks_data = []
     for t in tasks_list:
         tasks_data.append({
@@ -4592,8 +4603,12 @@ def prod_task_compose(request):
             # links tasks on this, never on the pk or the legacy slash name.
             'composed_name': t.composed_name,
             'status': t.status,
-            # PWG priority of the EVGEN input (1 = highest, 0 = unset).
+            # PWG priority of the EVGEN input (1 = highest, 0 = unset), and
+            # the per-path levels the detail's button row sets.
             'pwg_priority': t.pwg_priority,
+            'evgen_priority': [
+                {'path': p, 'priority': pwg_marks.get(p, 0)}
+                for p in t.evgen_paths],
             # The recorded submission — the JS reads `submitted = !!t.panda_task_id`
             # to show the PanDA-task link + the operator Reset control. Omitting it
             # left every submitted task with only the Copy button on page load.
