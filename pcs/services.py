@@ -3345,6 +3345,92 @@ def fetch_jlab_rucio_did_files(scope, name):
     return files
 
 
+def _jlab_rucio_post(path, token, body, *, timeout=120):
+    """POST a JSON body to a JLab Rucio path with the auth token; returns
+    the response text (newline-delimited JSON for listing endpoints)."""
+    import urllib.request as _ur
+    import ssl as _ssl
+    import os as _os
+    import json as _json
+    ctx = _ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = _ssl.CERT_NONE
+    url = (_os.environ.get('JLAB_RUCIO_URL') or JLAB_RUCIO_URL) + path
+    req = _ur.Request(url, data=_json.dumps(body).encode(), method='POST')
+    req.add_header('X-Rucio-Auth-Token', token)
+    req.add_header('Content-Type', 'application/json')
+    req.add_header('Accept', 'application/x-json-stream')
+    return _ur.urlopen(req, context=ctx, timeout=timeout).read().decode()
+
+
+def fetch_jlab_rucio_dataset_arrival(scope, name):
+    """Per-RSE arrival of a JLab Rucio dataset from its dataset-replica
+    summary: ``[{rse, length, available_length, state}, ...]``. One fast
+    call stating how many of the registered files have an available
+    replica on each RSE, without resolving any file."""
+    import urllib.error as _ue
+    name = '/' + name.lstrip('/')
+    try:
+        token = _jlab_rucio_auth()
+        rows = [r for r in _ndjson(
+            _jlab_rucio_get(f'/replicas/{scope}/{name}/datasets', token))
+            if isinstance(r, dict)]
+    except _ue.HTTPError as e:
+        if e.code == 404:
+            raise ServiceError(
+                f'DID not found in JLab Rucio: {scope}:{name}', status=404)
+        raise ServiceError(
+            f'JLab Rucio error {e.code} for {scope}:{name}', status=502)
+    except (_ue.URLError, OSError) as e:
+        raise ServiceError(f'Could not reach JLab Rucio: {e}', status=502)
+    return [{'rse': r.get('rse'), 'length': r.get('length'),
+             'available_length': r.get('available_length'),
+             'state': r.get('state')} for r in rows]
+
+
+def fetch_jlab_rucio_unarrived_files(scope, file_names):
+    """The names among ``file_names`` (file DIDs of ``scope``) with no
+    AVAILABLE replica on any RSE — registered, not arrived. Resolved by
+    explicit file DIDs in batches: the dataset-form replica listing takes
+    Rucio a minute for a few thousand files and trips the gateway's 60 s
+    limit, while the same files by DID resolve in about a second per
+    thousand. A file the listing does not return has no replica row at
+    all and counts as unarrived."""
+    import urllib.error as _ue
+    from concurrent.futures import ThreadPoolExecutor
+    batch = 1000
+    unarrived = set()
+    seen = set()
+
+    def _one(token, names):
+        return _ndjson(_jlab_rucio_post(
+            '/replicas/list', token,
+            {'dids': [{'scope': scope, 'name': n} for n in names],
+             'all_states': True, 'ignore_availability': True}))
+
+    try:
+        token = _jlab_rucio_auth()
+        batches = [file_names[start:start + batch]
+                   for start in range(0, len(file_names), batch)]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(lambda b: _one(token, b), batches))
+        for rows in results:
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                seen.add(r.get('name'))
+                states = r.get('states') or {}
+                if not any(v == 'AVAILABLE' for v in states.values()):
+                    unarrived.add(r.get('name'))
+    except _ue.HTTPError as e:
+        raise ServiceError(
+            f'JLab Rucio error {e.code} listing file replicas', status=502)
+    except (_ue.URLError, OSError) as e:
+        raise ServiceError(f'Could not reach JLab Rucio: {e}', status=502)
+    unarrived.update(n for n in file_names if n not in seen)
+    return unarrived
+
+
 def _request_input_tail(ds_path):
     """Return the comparable tail of a CSV input dataset path.
 

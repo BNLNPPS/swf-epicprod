@@ -556,18 +556,27 @@ RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4})\.eicrecon\.edm4eic\.root$')
 
 def _delivered_row_keys(task):
     """The (relative-dir, stem, chunk) keys of every RECO file already
-    registered for this task across its attempts, with the DIDs checked.
+    delivered for this task across its attempts — registered in JLab
+    Rucio and arrived, with an AVAILABLE replica on at least one RSE —
+    with the DIDs checked and the per-DID arrival counts.
 
     Sources the task's recorded RECO outputs (``overrides['outputs']``
     entries and ``output_refs``, written by the lineage sweeps) and lists
-    each against JLab Rucio. The payload's naming convention
-    (simulation_campaign_hepmc3 run.sh) writes each input row's RECO file
-    to ``RECO/<ver>/<config>/<input dir below EVGEN>/<stem>.<chunk>``
-    ``.eicrecon.edm4eic.root``, so the key maps one-to-one onto manifest
-    rows. Returns (None, []) when the task records no RECO outputs —
-    there is nothing to diff against, and the caller refuses.
+    each against JLab Rucio. Arrival is judged first at the dataset level
+    (one fast call: registered versus available file counts per RSE); a
+    dataset complete on any RSE needs no file resolution, otherwise the
+    files are resolved by DID in batches and those without an available
+    replica anywhere are left out of the delivered set. The payload's
+    naming convention (simulation_campaign_hepmc3 run.sh) writes each
+    input row's RECO file to ``RECO/<ver>/<config>/<input dir below
+    EVGEN>/<stem>.<chunk>.eicrecon.edm4eic.root``, so the key maps
+    one-to-one onto manifest rows. Returns (None, [], {}) when the task
+    records no RECO outputs — there is nothing to diff against, and the
+    caller refuses.
     """
-    from .services import fetch_jlab_rucio_did_files
+    from .services import (fetch_jlab_rucio_did_files,
+                           fetch_jlab_rucio_dataset_arrival,
+                           fetch_jlab_rucio_unarrived_files)
     overrides = task.overrides or {}
     dids = []
     for entry in (overrides.get('outputs') or []):
@@ -578,14 +587,28 @@ def _delivered_row_keys(task):
             dids.append(ref['did'])
     dids = sorted(set(dids))
     if not dids:
-        return None, []
+        return None, [], {}
     keys = set()
+    arrival = {}
     for did in dids:
         scope, sep, name = did.partition(':')
         if not sep:
             scope, name = 'epic', did
-        for f in fetch_jlab_rucio_did_files(scope, name):
-            fname = str(f.get('name') or '')
+        names = [str(f.get('name') or '')
+                 for f in fetch_jlab_rucio_did_files(scope, name)]
+        summary = fetch_jlab_rucio_dataset_arrival(scope, name)
+        complete = any(
+            r.get('length') is not None
+            and r.get('available_length') == r.get('length')
+            for r in summary)
+        unarrived = (set() if complete
+                     else fetch_jlab_rucio_unarrived_files(scope, names))
+        arrival[did] = {'registered': len(names),
+                        'unarrived': len(unarrived),
+                        'rses': summary}
+        for fname in names:
+            if fname in unarrived:
+                continue
             m = RECO_LFN_TAIL_RE.search(fname)
             if not m:
                 continue
@@ -598,11 +621,12 @@ def _delivered_row_keys(task):
             head = '/'.join(parts[3:-1])
             stem = parts[-1]
             keys.add((head, stem, chunk))
-    return keys, dids
+    return keys, dids, arrival
 
 
 def _residual_rows(task, csv_rows):
-    """The manifest rows whose RECO output is not registered, with the
+    """The manifest rows whose RECO output is not delivered — not
+    registered, or registered without an available replica — with the
     coverage record. Raises ValueError with the refusal reason when the
     residual cannot be established honestly (design:
     JEDI_INTEGRATION.md § Residual rerun)."""
@@ -612,7 +636,7 @@ def _residual_rows(task, csv_rows):
             'residual rerun is not supported for background-mixed tasks '
             '(TAG_PREFIX changes the output path shape); rerun the '
             'entire task instead')
-    keys, dids = _delivered_row_keys(task)
+    keys, dids, arrival = _delivered_row_keys(task)
     if keys is None:
         raise ValueError(
             'no recorded RECO outputs to diff against — run the Rucio '
@@ -623,14 +647,20 @@ def _residual_rows(task, csv_rows):
         head, _, stem = file_col.rpartition('/')
         if (head, stem, chunk) not in keys:
             residual.append(row)
+    files_registered = sum(a['registered'] for a in arrival.values())
+    files_unarrived = sum(a['unarrived'] for a in arrival.values())
     if not residual:
         raise ValueError(
             f'zero residual: all {len(csv_rows)} manifest rows have '
-            f'registered RECO outputs — nothing to rerun')
+            f'RECO outputs registered and arrived at JLab — nothing to '
+            f'rerun')
     return residual, {
         'rows_total': len(csv_rows),
         'rows_residual': len(residual),
         'checked_dids': dids,
+        'files_registered': files_registered,
+        'files_unarrived': files_unarrived,
+        'arrival': arrival,
     }
 
 

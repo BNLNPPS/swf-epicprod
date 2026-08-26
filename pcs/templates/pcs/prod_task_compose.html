@@ -1471,7 +1471,9 @@
             }
             confirmText = `Rerun the residual as a new PanDA task attempt? `
                 + `${preview.rows_residual} of ${preview.rows_total} manifest rows have no `
-                + `registered RECO output and will be resubmitted; delivered rows are not regenerated.`;
+                + `RECO output registered and arrived at JLab and will be resubmitted `
+                + `(${preview.files_unarrived} of ${preview.files_registered} registered files `
+                + `not yet arrived); delivered rows are not regenerated.`;
         } else {
             return;
         }

@@ -637,15 +637,24 @@ For external-EVGEN tasks (one manifest row per EVGEN file):
 
 1. **Delivered set** — the task's recorded RECO output datasets are listed
    in JLab Rucio and each output file is mapped back to its manifest row.
-   Output names derive from the input stem by the payload's convention;
-   the first implementation step is extracting that exact transform from
-   the working payload (`run.sh`, the condor reference basis).
+   Delivered means registered *and arrived*: a file counts only with an
+   AVAILABLE replica on at least one RSE, so a catalog entry whose data
+   never landed falls into the residual. Arrival is judged first from
+   the dataset-replica summary (one call: registered versus available
+   file counts per RSE); a dataset complete on any RSE needs no file
+   resolution, otherwise the files are resolved by DID in batches of a
+   thousand (about a second each — the dataset-form replica listing
+   takes Rucio a minute for a few thousand files and trips the gateway's
+   60 s limit). Output names derive from the input stem by the payload's
+   convention, extracted from the working payload (`run.sh`, the condor
+   reference basis).
 2. **Residual manifest** — the rows whose output is absent.
    `build_evgen_task_params` gains a residual mode emitting only those
    rows; job count follows as today.
 3. **Identity** — the next `.tryN` is allocated as today. The `PandaTasks`
-   association records `residual_of` and the row coverage ("M of N rows")
-   in its metadata, so every surface can state what the attempt covers.
+   association records `residual_of` and the row coverage ("M of N rows",
+   with the registered and unarrived file counts per checked DID) in its
+   metadata, so every surface can state what the attempt covers.
 4. **Refusals, never guesses** — no recorded outputs to diff against,
    an input resolving differently than at first submission, or a zero
    residual each refuse with the reason instead of submitting.
