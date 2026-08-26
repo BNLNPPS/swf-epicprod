@@ -912,9 +912,18 @@ class ProdTask(models.Model):
     @property
     def evgen_paths(self):
         """The /EVGEN/... paths of the task's EVGEN input: its matched Rucio
-        DIDs, else the request's /EVGEN/ tail. The key of the PWG marks
-        (EvgenMark; EPICPROD_EVGEN_INPUTS.md, PWG marks)."""
-        return evgen_paths_for(self.inputs, self.input_source_location)
+        DIDs, else the request's /EVGEN/ tail, else — for a task whose
+        dataset is a RECO or FULL edition — the evgen dataset of the same
+        physics configuration. The key of the PWG marks (EvgenMark;
+        EPICPROD_EVGEN_INPUTS.md, PWG marks)."""
+        cached = getattr(self, '_evgen_paths', None)
+        if cached is not None:
+            return cached
+        paths = evgen_paths_for(self.inputs, self.input_source_location)
+        if not paths and self.dataset_id and self.dataset.physics_config_id:
+            paths = evgen_paths_for_physics_config(self.dataset.physics_config_id)
+        self._evgen_paths = paths
+        return paths
 
     @property
     def pwg_priority(self):
@@ -1132,14 +1141,41 @@ def pwg_priority_for(paths, marks=None):
     return min(levels) if levels else 0
 
 
+def evgen_paths_by_physics_config():
+    """physics_config_id -> the EVGEN paths of its evgen-stage dataset
+    (the first with any), one query."""
+    out = {}
+    for ds in (Dataset.objects.filter(metadata__stage='evgen')
+               .exclude(physics_config=None)
+               .only('physics_config_id', 'metadata')):
+        if ds.physics_config_id in out:
+            continue
+        metadata = ds.metadata or {}
+        paths = evgen_paths_for((metadata.get('rucio') or {}).get('matched'),
+                                (metadata.get('source') or {}).get('location'))
+        if paths:
+            out[ds.physics_config_id] = paths
+    return out
+
+
+def evgen_paths_for_physics_config(physics_config_id):
+    return evgen_paths_by_physics_config().get(physics_config_id) or []
+
+
 def annotate_pwg_priority(tasks):
-    """Attach ``task._pwg_priority`` to every task from one query over
-    the marks, so list views read ``task.pwg_priority`` without a query
-    per row."""
+    """Attach ``task._pwg_priority`` (and the resolved EVGEN paths) to
+    every task from two queries — the marks and the physics
+    configurations' evgen paths — so list views read ``task.pwg_priority``
+    without a query per row."""
     tasks = list(tasks)
     marks = {m.path: m for m in EvgenMark.objects.filter(priority__gt=0)}
+    pc_paths = evgen_paths_by_physics_config()
     for task in tasks:
-        task._pwg_priority = pwg_priority_for(task.evgen_paths, marks)
+        paths = evgen_paths_for(task.inputs, task.input_source_location)
+        if not paths and task.dataset_id and task.dataset.physics_config_id:
+            paths = list(pc_paths.get(task.dataset.physics_config_id) or [])
+        task._evgen_paths = paths
+        task._pwg_priority = pwg_priority_for(paths, marks)
     return tasks
 
 
