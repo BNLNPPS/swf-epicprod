@@ -2077,8 +2077,10 @@ def _build_find_corpus():
 def _find_corpus():
     """The cached find corpus (empty list on build failure, error logged)."""
     from monitor_app.cached_product import get_product
-    product = get_product('pcs_find_corpus:v4', _build_find_corpus,
-                          ttl_seconds=900)
+    # A PWG mark change re-keys the corpus, so the badges follow at once.
+    marks_stamp = EvgenMark.objects.aggregate(m=Max('priority_set_at'))['m']
+    key = f"pcs_find_corpus:v5:{marks_stamp.isoformat() if marks_stamp else 'none'}"
+    product = get_product(key, _build_find_corpus, ttl_seconds=900)
     return product.get('value') or []
 
 
