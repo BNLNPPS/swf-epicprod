@@ -2080,7 +2080,7 @@ def _find_corpus():
     from monitor_app.cached_product import get_product
     # A PWG mark change re-keys the corpus, so the badges follow at once.
     marks_stamp = EvgenMark.objects.aggregate(m=Max('priority_set_at'))['m']
-    key = f"pcs_find_corpus:v5:{marks_stamp.isoformat() if marks_stamp else 'none'}"
+    key = f"pcs_find_corpus:v6:{marks_stamp.isoformat() if marks_stamp else 'none'}"
     product = get_product(key, _build_find_corpus, ttl_seconds=900)
     return product.get('value') or []
 
