@@ -452,6 +452,43 @@ def disposition_mix(campaign, window_start, window_end):
     })
 
 
+def pwg_priority(campaign, window_start, window_end):
+    """The working groups' production order for the campaign's tasks —
+    the PWG priority of each task's EVGEN input (EPICPROD_EVGEN_INPUTS.md,
+    PWG marks): tasks per level with how many are produced, submitted,
+    or not started, and the priority-1 tasks not yet produced."""
+    from pcs.models import ProdTask, annotate_pwg_priority
+
+    tasks = annotate_pwg_priority(
+        ProdTask.objects.filter(campaign=campaign)
+        .exclude(status='past_output')
+        .select_related('dataset'))
+    levels = {}
+    pending_top = []
+    for t in tasks:
+        level = t.pwg_priority
+        key = str(level) if level else 'unset'
+        entry = levels.setdefault(
+            key, {'tasks': 0, 'produced': 0, 'submitted': 0, 'not_started': 0})
+        entry['tasks'] += 1
+        if t.has_output:
+            entry['produced'] += 1
+        elif t.panda_task_id:
+            entry['submitted'] += 1
+        else:
+            entry['not_started'] += 1
+            if level == 1:
+                pending_top.append(t.composed_name)
+    marked = sum(v['tasks'] for k, v in levels.items() if k != 'unset')
+    return _block('pwg_priority', window_start, window_end, {
+        'available': True,
+        'marked_tasks': marked,
+        'levels': levels,
+        'priority_1_not_started': sorted(pending_top)[:20],
+        'priority_1_not_started_count': len(pending_top),
+    })
+
+
 def action_stream_activity(campaign, window_start, window_end):
     """epicprod action-stream aggregate over the window, plus chain freshness."""
     from monitor_app.models import AppLog
@@ -852,6 +889,7 @@ def credential_status(campaign, window_start, window_end):
 
 
 MEMBERS = (
+    pwg_priority,
     campaign_progress,
     panda_health,
     window_activity,

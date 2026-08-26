@@ -220,6 +220,7 @@
     const csrfToken   = '{{ csrf_token }}';
     const QUESTIONNAIRE_LIST_URL = "../../questionnaires/";
     const RUCIO_DID_URL = "../../rucio/";
+    const EVGEN_INPUTS_URL = "../../evgen/";
     const EDITION_DATA_URL = "../../data/";
 
     // ── Tag-based naming: the new system's names enter the world here ──
@@ -1138,6 +1139,11 @@
             : `<span class="badge bg-${statusColors[t.status]||'secondary'}">${htmlEscape(t.status)}</span>`;
 
         let html = `<p>${statusBadge}<span class="item-meta${statusBadge ? ' ms-2' : ''}">by ${htmlEscape(t.created_by)} | ${htmlEscape(t.updated_at)}</span></p>`;
+        if (t.pwg_priority) {
+            // The PWG's production order for this task's EVGEN input, set on
+            // the EVGEN inputs page; 1 = highest.
+            html += `<div class="mb-2"><strong>PWG priority ${htmlEscape(String(t.pwg_priority))}</strong> <span class="text-muted">— the working group's production order for this EVGEN input (1 = highest), set on the <a href="${EVGEN_INPUTS_URL}">EVGEN inputs page</a></span></div>`;
+        }
         html += proposalHtml(t);
         html += aiAssessmentsHtml(t.ai_content || []);
         html += pandaTasksHtml(t);

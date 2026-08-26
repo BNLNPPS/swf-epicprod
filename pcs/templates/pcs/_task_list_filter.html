@@ -212,6 +212,11 @@ Context expected:
     <a href="#" data-toggle="incomplete_input" class="filter-link">incomplete (<span data-count="incomplete_input">0</span>)</a>
   </div>
   <div class="pcs-tlf-bar-row">
+    <span class="pcs-tlf-label" title="The PWG's production order for the task's EVGEN input, set on the EVGEN inputs page; 1 = highest">PWG priority:</span>
+    <a href="#" data-filter="pwg_priority" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-pwg_priority-opts"></span>
+  </div>
+  <div class="pcs-tlf-bar-row">
     <span class="pcs-tlf-label ai-attr-text">AI:</span>
     <a href="#" data-toggle="ai_proposed" class="filter-link ai-attr-text">proposed (<span data-count="ai_proposed">0</span>)</a>
     <a href="#" data-toggle="ai_executed" class="filter-link ai-attr-text">executed (<span data-count="ai_executed">0</span>)</a>
@@ -318,6 +323,7 @@ Context expected:
         <th data-sort="pre_tdr_use" class="pcs-sort sorting">pTDR</th>
         <th data-sort="early_science_use" class="pcs-sort sorting">early</th>
         <th data-sort="priority" class="pcs-sort sorting">Priority</th>
+        <th data-sort="pwg_priority" class="pcs-sort sorting" title="PWG priority of the EVGEN input (1 = highest), set on the EVGEN inputs page">PWG</th>
         {% endif %}
       </tr>
     </thead>
@@ -338,6 +344,7 @@ Context expected:
           data-new-request="{% if t.new_request %}1{% else %}0{% endif %}"
           data-background="{% if bg|lower == 'yes' %}1{% else %}0{% endif %}"
           data-priority="{{ t.priority|default:'' }}"
+          data-pwg-priority="{% if t.pwg_priority %}{{ t.pwg_priority }}{% else %}unset{% endif %}"
           data-nevents="{{ nev|millions }}"
           data-evgen="{{ evgen }}"
           data-edition="{{ t.dataset.detector_version|default:'' }}"
@@ -440,6 +447,7 @@ Context expected:
         <td class="small text-center">{% if t.pre_tdr_use %}Yes{% endif %}</td>
         <td class="small text-center">{% if t.early_science_use %}Yes{% endif %}</td>
         <td class="small" data-sort-val="{{ t.priority|default:'' }}">{{ t.priority|default:"" }}</td>
+        <td class="small" data-sort-val="{{ t.pwg_priority|default:9 }}">{% if t.pwg_priority %}<strong>{{ t.pwg_priority }}</strong>{% endif %}</td>
         {% endif %}
       </tr>
       {% if catalog_view == 'progress' %}
@@ -513,7 +521,7 @@ Context expected:
      state of the other filters. Initial state comes from URL query params
      so the catalog stays bookmarkable. */
 
-  const STR = ['status','propagation','requestor','evgen','submission_path','priority','nevents',
+  const STR = ['status','propagation','requestor','evgen','submission_path','priority','pwg_priority','nevents',
                'edition','detector','beam','physics','q2','species','energy'];
   const BOOL = ['new_request','pre_tdr_use','early_science_use','other_use','background',
                 'has_output','no_output','incomplete_output','has_simu','has_reco',
@@ -521,7 +529,7 @@ Context expected:
   const DS = { status:'status', propagation:'propagation',
                requestor:'requestor', evgen:'evgen',
                submission_path:'submissionPath',
-               priority:'priority', nevents:'nevents',
+               priority:'priority', pwg_priority:'pwgPriority', nevents:'nevents',
                edition:'edition',
                detector:'detector', beam:'beam', physics:'physics',
                q2:'q2', species:'species', energy:'energy' };
@@ -610,7 +618,7 @@ Context expected:
     // filters, bucketed by the row's own value of that filter. Boolean
     // filters count rows that would still match if that boolean were ON.
     const strCounts = { status:{}, propagation:{}, requestor:{}, evgen:{}, submission_path:{},
-                        priority:{}, nevents:{},
+                        priority:{}, pwg_priority:{}, nevents:{},
                         edition:{},
                         detector:{}, beam:{}, physics:{}, q2:{}, species:{}, energy:{} };
     const boolCounts = { new_request:0, pre_tdr_use:0, early_science_use:0, other_use:0, background:0,
@@ -665,7 +673,7 @@ Context expected:
   function syncUrl() {
     const u = new URL(window.location.href);
     const p = u.searchParams;
-    ['q','status','propagation','requestor','evgen','submission_path','priority','nevents',
+    ['q','status','propagation','requestor','evgen','submission_path','priority','pwg_priority','nevents',
      'edition','detector','beam','physics','q2','species','energy',
      'new_request','pre_tdr_use','early_science_use','other_use','background',
      'has_output','no_output','incomplete_output','has_simu','has_reco',

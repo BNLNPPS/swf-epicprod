@@ -910,6 +910,26 @@ class ProdTask(models.Model):
         return bool(self.inputs)
 
     @property
+    def evgen_paths(self):
+        """The /EVGEN/... paths of the task's EVGEN input: its matched Rucio
+        DIDs, else the request's /EVGEN/ tail. The key of the PWG marks
+        (EvgenMark; EPICPROD_EVGEN_INPUTS.md, PWG marks)."""
+        return evgen_paths_for(self.inputs, self.input_source_location)
+
+    @property
+    def pwg_priority(self):
+        """The PWG priority of the task's EVGEN input — the highest level
+        (lowest number) across its paths; 0 = unset. A guide to the
+        operations team's ordering, distinct from ``priority`` (the
+        requester or production priority). List views preload the marks
+        with ``annotate_pwg_priority``; a bare access queries once."""
+        cached = getattr(self, '_pwg_priority', None)
+        if cached is None:
+            cached = pwg_priority_for(self.evgen_paths)
+            self._pwg_priority = cached
+        return cached
+
+    @property
     def input_incomplete(self):
         """True if any resolved Rucio input is not fully replicated at every RSE."""
         return any(not i.get('complete', True) for i in self.inputs)
@@ -1079,6 +1099,48 @@ class EvgenMark(models.Model):
         state = 'obsolete' if self.obsolete else 'not obsolete'
         prio = f', priority {self.priority}' if self.priority else ''
         return f'{self.path}: {state}{prio}'
+
+
+def evgen_paths_for(matched, source_location=''):
+    """/EVGEN/... paths from matched Rucio entries (``{did, ...}``), else
+    from a request location carrying an /EVGEN/ tail."""
+    paths = []
+    for entry in matched or []:
+        did = str((entry or {}).get('did') or '')
+        tail = did.partition(':')[2] if ':' in did else did
+        path = '/' + tail.lstrip('/')
+        if path.startswith('/EVGEN/') and path not in paths:
+            paths.append(path)
+    if not paths:
+        location = str(source_location or '')
+        if '/EVGEN/' in location:
+            paths.append('/EVGEN/' + location.split('/EVGEN/', 1)[1].strip('/'))
+    return paths
+
+
+def pwg_priority_for(paths, marks=None):
+    """The highest PWG priority (lowest number) marked on any of ``paths``;
+    0 when none. ``marks`` is an optional preloaded {path: EvgenMark}."""
+    if not paths:
+        return 0
+    if marks is None:
+        levels = list(EvgenMark.objects.filter(path__in=paths, priority__gt=0)
+                      .values_list('priority', flat=True))
+    else:
+        levels = [marks[p].priority for p in paths
+                  if p in marks and marks[p].priority]
+    return min(levels) if levels else 0
+
+
+def annotate_pwg_priority(tasks):
+    """Attach ``task._pwg_priority`` to every task from one query over
+    the marks, so list views read ``task.pwg_priority`` without a query
+    per row."""
+    tasks = list(tasks)
+    marks = {m.path: m for m in EvgenMark.objects.filter(priority__gt=0)}
+    for task in tasks:
+        task._pwg_priority = pwg_priority_for(task.evgen_paths, marks)
+    return tasks
 
 
 def _allocate_simple_tag(state_key):

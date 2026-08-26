@@ -222,13 +222,22 @@ class ProdTaskSerializer(serializers.ModelSerializer):
             'input_dataset_dids', 'output_dataset_dids', 'intermediate_dataset_dids',
             'condor_command', 'panda_command',
             'panda_task_id', 'panda_tasks', 'condor_cluster_id',
+            'pwg_priority',
             'created_by', 'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'condor_command', 'panda_command',
             'input_dataset_dids', 'output_dataset_dids', 'intermediate_dataset_dids',
+            'pwg_priority',
             'created_by', 'created_at', 'updated_at',
         ]
+
+    pwg_priority = serializers.SerializerMethodField()
+
+    def get_pwg_priority(self, obj):
+        """The PWG priority of the task's EVGEN input (0 = unset), a guide
+        to the operations team's ordering (EPICPROD_EVGEN_INPUTS.md)."""
+        return obj.pwg_priority
 
     def get_input_dataset_dids(self, obj):
         return [d.did for d in obj.input_datasets]

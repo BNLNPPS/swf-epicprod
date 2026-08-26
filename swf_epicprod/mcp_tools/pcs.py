@@ -216,9 +216,22 @@ async def pcs_search_tags(
 # share validation, idempotency, and lifecycle rules.
 # ---------------------------------------------------------------------------
 
+def _dataset_pwg_priority(ds):
+    """PWG priority of an evgen dataset's EVGEN input (1 = highest, 0 =
+    unset); None for datasets of other stages."""
+    from pcs.models import evgen_paths_for, pwg_priority_for
+    metadata = ds.metadata or {}
+    if metadata.get('stage') != 'evgen':
+        return None
+    return pwg_priority_for(evgen_paths_for(
+        (metadata.get('rucio') or {}).get('matched'),
+        (metadata.get('source') or {}).get('location')))
+
+
 def _dataset_to_dict(ds, full=True):
     out = {
         'composed_name': ds.composed_name,
+        'pwg_priority': _dataset_pwg_priority(ds),
         'did': ds.did,
         'dataset_name': ds.dataset_name,
         'scope': ds.scope,
@@ -261,6 +274,9 @@ def _prodtask_to_dict(t, full=True):
         'input_source_kind': t.input_source_kind,
         'input_source_location': t.input_source_location,
         'input_source_stage': t.input_source_stage,
+        # PWG priority of the EVGEN input, 1 = highest, 0 = unset — the
+        # working groups' production order, a guide to operations.
+        'pwg_priority': t.pwg_priority,
     }
     if full:
         out.update({

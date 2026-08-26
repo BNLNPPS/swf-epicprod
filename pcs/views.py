@@ -62,8 +62,8 @@ from monitor_app.utils import DataTablesProcessor, get_filter_params, format_dat
 from .models import (
     PhysicsCategory, PhysicsTag, EvgenTag, SimuTag, RecoTag, BackgroundTag,
     Dataset, PhysicsConfig, ProdConfig, ProdTask,
-    Campaign, Questionnaire, ProdRequest,
-    PRODTASK_STATUS_CHOICES,
+    Campaign, Questionnaire, ProdRequest, EvgenMark,
+    PRODTASK_STATUS_CHOICES, annotate_pwg_priority,
 )
 from .serializers import _redact_contact
 from . import services
@@ -325,6 +325,9 @@ def _catalog_task_list_cache_signature(campaign, catalog_view, progress_snapshot
         'campaign_name': campaign.name,
         'task_count': task_meta['count'] or 0,
         'task_updated_at': _catalog_cache_dt(task_meta['updated']),
+        # A PWG priority change re-renders the table (the PWG column).
+        'pwg_priority_set_at': _catalog_cache_dt(
+            EvgenMark.objects.aggregate(m=Max('priority_set_at'))['m']),
         'proposal_count': proposal_meta['count'] or 0,
         'proposal_created_at': _catalog_cache_dt(proposal_meta['created']),
         'proposal_decided_at': _catalog_cache_dt(proposal_meta['decided']),
@@ -498,6 +501,12 @@ def _current_catalog_tasks(campaign, catalog_view, progress_snapshot, timings=No
         timings,
         'pc request projection',
         lambda: _annotate_task_pc_requests(tasks),
+        detail_fn=lambda rows: f'{len(rows)} rows',
+    )
+    tasks = _timed(
+        timings,
+        'pwg priority preload',
+        lambda: annotate_pwg_priority(tasks),
         detail_fn=lambda rows: f'{len(rows)} rows',
     )
     if catalog_view == 'progress':
@@ -1990,6 +1999,9 @@ def _build_find_corpus():
                 'blob': blob,
             })
 
+    # PWG priority marks keyed by /EVGEN/ path (EPICPROD_EVGEN_INPUTS.md).
+    pwg_marks = {m.path: int(m.priority)
+                 for m in EvgenMark.objects.filter(priority__gt=0)}
     registered_paths = set()
     try:
         with open(_os.path.join(RUCIO_SNAPSHOT_DIR,
@@ -2009,13 +2021,16 @@ def _build_find_corpus():
         facets = _augment_facets(_extract_evgen_did_filters(did),
                                  [s for s in name.split('/') if s])
         facets['version'] = ''
+        pwg = pwg_marks.get('/' + name, 0)
         entries.append({
             'kind': 'EVGEN',
             'did': did, 'scope': scope, 'name': name,
             'campaign': '',
             'files': entry['file_count'], 'bytes': entry['bytes'],
             'facets': facets,
-            'blob': (did + ' evgen registered').lower(),
+            'pwg_priority': pwg,
+            'blob': (did + ' evgen registered'
+                     + (f' pwg priority {pwg}' if pwg else '')).lower(),
         })
 
     # Convention-implied EVGEN paths absent from the registered inventory
@@ -2034,6 +2049,7 @@ def _build_find_corpus():
             _extract_evgen_did_filters('epic:' + epath),
             [s for s in epath.split('/') if s])
         facets['version'] = ''
+        pwg = pwg_marks.get(epath, 0)
         entries.append({
             'kind': 'EVGEN (unregistered)',
             'did': '', 'scope': scope, 'name': name,
@@ -2042,7 +2058,9 @@ def _build_find_corpus():
             'xrootd_path': XROOTD_EPIC_BASE + epath,
             'files': None, 'bytes': None,
             'facets': facets,
-            'blob': (epath + ' ' + reco_did + ' evgen unregistered').lower(),
+            'pwg_priority': pwg,
+            'blob': (epath + ' ' + reco_did + ' evgen unregistered'
+                     + (f' pwg priority {pwg}' if pwg else '')).lower(),
         })
     return entries
 
