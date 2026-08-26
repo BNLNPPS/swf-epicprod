@@ -122,7 +122,32 @@ every registered EVGEN dataset with its file count, size, last Rucio update,
 RSEs, completeness, and the PCS evgen dataset it resolves to, newest update
 first; a dataset no request claims shows as unmatched. The page reads the recorded snapshot and matched references only —
 no Rucio call in the render path — and carries the same "Update EVGEN from
-Rucio" action as the catalog.
+Rucio" action as the catalog. Its second view, registration coverage,
+lists the EVGEN paths that recorded produced datasets imply but the
+inventory lacks — the registration worklist.
+
+### PWG marks
+
+Physics working groups triage the inventory and the worklist on the page
+with two marks, both keyed by the `/EVGEN/...` path so they apply alike to
+a registered dataset and to an unregistered path, and both recorded with
+who set them and when (`EvgenMark`; every change is an action-stream
+event; setting a mark requires a signed-in user):
+
+- **Obsolete** — data that should not be produced against or registered.
+  A comment is required when marking obsolete. Obsolete paths leave the
+  registration worklist and its count; the Validity filter reaches them
+  for review.
+- **Priority** — the group's production order, 1 first, 2, 3; 0 unset.
+  No comment. It is a guide to the operations team: the worklist reads
+  priority-first, the Priority column sorts and filters, and the level
+  shows on the dataset page. It does not feed PanDA task priority; that
+  mapping is a later decision, and the submission spec already knows a
+  task's matched EVGEN inputs when it is wanted.
+
+Both marks are set in bulk from the tick-box panels above the tables;
+priority is also set in one click from the compact level buttons in the
+Priority cell of a row.
 
 ## Current state
 

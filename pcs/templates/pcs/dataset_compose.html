@@ -486,6 +486,50 @@
         updateUrl();
     }
 
+    // PWG priority of an evgen dataset's EVGEN input(s): the level as
+    // text with who set it and when, the other levels as one-click
+    // buttons — the EVGEN inputs page's Priority cell, on the dataset.
+    function evgenPriorityRow(ds) {
+        const entries = ds.evgen_priority;
+        if (!entries || !entries.length) return '';
+        const lines = entries.map(e => {
+            const level = e.priority ? `<strong>${e.priority}</strong>` : '<span class="text-muted">&mdash;</span>';
+            const who = e.priority ? ` <span class="text-muted">set by ${htmlEscape(e.set_by)} ${htmlEscape(e.set_at)} ET</span>` : '';
+            let buttons = '';
+            if (currentUser) {
+                ['1', '2', '3'].forEach(l => {
+                    if (String(e.priority) !== l) buttons += ` <button type="button" class="btn btn-sm btn-primary evgen-prio py-0 px-1" data-path="${htmlEscape(e.path)}" data-priority="${l}" title="Set priority ${l}">${l}</button>`;
+                });
+                if (e.priority) buttons += ` <button type="button" class="btn btn-sm btn-secondary evgen-prio py-0 px-1" data-path="${htmlEscape(e.path)}" data-priority="0" title="Unset priority">0</button>`;
+            }
+            const pathNote = entries.length > 1 ? ` <span class="text-muted">${htmlEscape(e.path)}</span>` : '';
+            return `<div>${level}${buttons}${who}${pathNote}</div>`;
+        });
+        return `<tr><td><strong>Priority</strong></td><td>${lines.join('')}</td></tr>`;
+    }
+    document.addEventListener('click', async function (e) {
+        const b = e.target.closest ? e.target.closest('button.evgen-prio') : null;
+        if (!b) return;
+        b.disabled = true;
+        try {
+            const resp = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/evgen/marks/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+                body: JSON.stringify({paths: [b.getAttribute('data-path')],
+                                      priority: parseInt(b.getAttribute('data-priority'), 10)}),
+            });
+            if (!resp.ok) {
+                let m = 'HTTP ' + resp.status;
+                try { const j = await resp.json(); m = j.detail || m; } catch (_) {}
+                throw new Error(m);
+            }
+            window.location.reload();
+        } catch (err) {
+            b.disabled = false;
+            alert('Could not set the priority: ' + err.message);
+        }
+    });
+
     // ── Browse: dataset detail ──
     function showDatasetDetail(id) {
         const ds = allDatasets.find(d => d.id === id);
@@ -513,6 +557,7 @@
                 <tr><td><strong>Blocks</strong></td><td>${htmlEscape(ds.blocks)}</td></tr>
                 <tr><td><strong>Created By</strong></td><td>${htmlEscape(ds.created_by)} | ${htmlEscape(ds.created_at)}</td></tr>
                 ${ds.description ? `<tr><td><strong>Description</strong></td><td>${htmlEscape(ds.description)}</td></tr>` : ''}
+                ${evgenPriorityRow(ds)}
             </table>
             <h6>Tags</h6>
             <table class="table table-sm table-bordered" style="font-size:.82rem;">

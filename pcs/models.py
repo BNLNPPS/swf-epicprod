@@ -1062,6 +1062,14 @@ class EvgenMark(models.Model):
     set_by = models.CharField(max_length=150, blank=True, default='')
     set_at = models.DateTimeField(null=True, blank=True)
     comment = models.TextField(blank=True, default='')
+    # PWG priority: 0 = unset, 1 (highest) to 3. A guide to the
+    # operations team's ordering; it does not feed PanDA task priority.
+    # Its own attribution, independent of the obsolete mark's.
+    priority = models.PositiveSmallIntegerField(default=0)
+    priority_set_by = models.CharField(max_length=150, blank=True, default='')
+    priority_set_at = models.DateTimeField(null=True, blank=True)
+
+    PRIORITY_LEVELS = (1, 2, 3)
 
     class Meta:
         db_table = 'pcs_evgen_mark'
@@ -1069,7 +1077,8 @@ class EvgenMark(models.Model):
 
     def __str__(self):
         state = 'obsolete' if self.obsolete else 'not obsolete'
-        return f'{self.path}: {state}'
+        prio = f', priority {self.priority}' if self.priority else ''
+        return f'{self.path}: {state}{prio}'
 
 
 def _allocate_simple_tag(state_key):

@@ -1029,10 +1029,12 @@ def validation_results_receive(request):
                          TokenAuthentication])
 @permission_classes([IsAuthenticated])
 def evgen_mark(request):
-    """Set or clear the obsolete mark on EVGEN paths — the EVGEN inputs
-    page's tick-box action, for PWG triage of the inventory and the
-    registration worklist. Body: {"paths": ["/EVGEN/..."],
-    "obsolete": true|false, "comment": "why"}. One call per save, one
+    """Set a PWG mark on EVGEN paths — the EVGEN inputs page's tick-box
+    actions and the per-row priority buttons, for PWG triage of the
+    inventory and the registration worklist. Body: {"paths":
+    ["/EVGEN/..."]} plus one of "obsolete": true|false (with "comment",
+    required when marking obsolete) or "priority": 0|1|2|3 (0 clears).
+    The two marks keep separate attribution. One call per save, one
     action-stream event; works identically on the internal face and
     through the swf-remote proxy (EXTERNAL_ACCESS.md write contract:
     JSON in, JSON out, no redirect)."""
@@ -1041,15 +1043,22 @@ def evgen_mark(request):
     data = request.data if isinstance(request.data, dict) else {}
     paths = data.get('paths')
     obsolete = data.get('obsolete')
+    priority = data.get('priority')
     comment = str(data.get('comment') or '').strip()
+    usage = ('body must be {"paths": ["/EVGEN/..."]} with either '
+             '"obsolete": true|false (and "comment") or "priority": 0|1|2|3')
     if (not isinstance(paths, list) or not paths
             or not all(isinstance(p, str) and p.startswith('/EVGEN/')
-                       for p in paths)
-            or not isinstance(obsolete, bool)):
-        return Response(
-            {'detail': 'body must be {"paths": ["/EVGEN/..."], '
-                       '"obsolete": true|false, "comment": "..."}'},
-            status=status.HTTP_400_BAD_REQUEST)
+                       for p in paths)):
+        return Response({'detail': usage}, status=status.HTTP_400_BAD_REQUEST)
+    if (obsolete is None) == (priority is None):
+        return Response({'detail': usage}, status=status.HTTP_400_BAD_REQUEST)
+    if obsolete is not None and not isinstance(obsolete, bool):
+        return Response({'detail': usage}, status=status.HTTP_400_BAD_REQUEST)
+    if priority is not None and (
+            isinstance(priority, bool) or not isinstance(priority, int)
+            or priority not in (0,) + EvgenMark.PRIORITY_LEVELS):
+        return Response({'detail': usage}, status=status.HTTP_400_BAD_REQUEST)
     if obsolete and not comment:
         return Response(
             {'detail': 'a comment is required to mark data obsolete'},
@@ -1062,17 +1071,32 @@ def evgen_mark(request):
         return Response({'detail': 'sign in to mark EVGEN data'},
                         status=status.HTTP_403_FORBIDDEN)
     now = dj_timezone.now()
+    if obsolete is not None:
+        for p in paths:
+            EvgenMark.objects.update_or_create(
+                path=p, defaults={'obsolete': obsolete, 'set_by': username,
+                                  'set_at': now, 'comment': comment})
+        log_epicprod_action(
+            'web', 'evgen_mark_obsolete',
+            subject_type='evgen_path',
+            subject_key=paths[0] if len(paths) == 1 else f'{len(paths)} paths',
+            username=username,
+            sublevel='high', live_default=True,
+            obsolete=obsolete, count=len(paths), comment=comment,
+            paths=paths[:20])
+        return Response({'ok': True, 'updated': len(paths),
+                         'obsolete': obsolete})
     for p in paths:
         EvgenMark.objects.update_or_create(
-            path=p, defaults={'obsolete': obsolete, 'set_by': username,
-                              'set_at': now, 'comment': comment})
+            path=p, defaults={'priority': priority,
+                              'priority_set_by': username,
+                              'priority_set_at': now})
     log_epicprod_action(
-        'web', 'evgen_mark_obsolete',
+        'web', 'evgen_mark_priority',
         subject_type='evgen_path',
         subject_key=paths[0] if len(paths) == 1 else f'{len(paths)} paths',
         username=username,
         sublevel='high', live_default=True,
-        obsolete=obsolete, count=len(paths), comment=comment,
-        paths=paths[:20])
+        priority=priority, count=len(paths), paths=paths[:20])
     return Response({'ok': True, 'updated': len(paths),
-                     'obsolete': obsolete})
+                     'priority': priority})

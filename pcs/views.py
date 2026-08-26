@@ -1495,6 +1495,37 @@ def tag_edit(request, tag_type, tag_number):
 
 # ── Datasets ──────────────────────────────────────────────────────
 
+def _dataset_evgen_priority(ds, marks):
+    """The EVGEN paths an evgen-stage dataset resolves to (its matched
+    Rucio DIDs, else the request's /EVGEN/ tail) with the PWG priority
+    mark on each; None for datasets of other stages."""
+    metadata = ds.metadata or {}
+    if metadata.get('stage') != 'evgen':
+        return None
+    paths = []
+    for entry in (metadata.get('rucio') or {}).get('matched') or []:
+        did = str(entry.get('did') or '')
+        tail = did.partition(':')[2] if ':' in did else did
+        path = '/' + tail.lstrip('/')
+        if path.startswith('/EVGEN/') and path not in paths:
+            paths.append(path)
+    if not paths:
+        location = str((metadata.get('source') or {}).get('location') or '')
+        if '/EVGEN/' in location:
+            paths.append('/EVGEN/' + location.split('/EVGEN/', 1)[1].strip('/'))
+    out = []
+    for path in paths:
+        mark = marks.get(path)
+        out.append({
+            'path': path,
+            'priority': int(mark.priority) if mark else 0,
+            'set_by': mark.priority_set_by if mark else '',
+            'set_at': (mark.priority_set_at.strftime('%Y-%m-%d %H:%M')
+                       if mark and mark.priority_set_at else ''),
+        })
+    return out
+
+
 def datasets_compose(request):
     """Two-pane browse/create UI for datasets."""
     if request.method == 'POST' and request.user.is_authenticated:
@@ -1525,10 +1556,16 @@ def datasets_compose(request):
     qs = Dataset.objects.filter(block_num=1).select_related(
         'physics_tag', 'evgen_tag', 'simu_tag', 'reco_tag', 'background_tag',
     ).order_by('-created_at')
+    # PWG priority of an evgen dataset's EVGEN input(s), keyed by the
+    # /EVGEN/... path as on the EVGEN inputs page (EPICPROD_EVGEN_INPUTS.md,
+    # PWG marks); the detail panel shows and sets it.
+    from .models import EvgenMark
+    evgen_marks = {m.path: m for m in EvgenMark.objects.exclude(priority=0)}
     datasets_data = []
     for ds in qs:
         datasets_data.append({
             'id': ds.id,
+            'evgen_priority': _dataset_evgen_priority(ds, evgen_marks),
             'dataset_name': ds.dataset_name,
             'composed_name': ds.build_dataset_name(),
             'did': ds.did,
@@ -1668,6 +1705,8 @@ def evgen_inputs(request):
         mark = marks.get(path)
         row['obsolete'] = bool(mark and mark.obsolete)
         row['mark'] = mark if row['obsolete'] else None
+        row['priority'] = int(mark.priority) if mark else 0
+        row['pmark'] = mark if row['priority'] else None
 
     # Registration coverage of produced data: the convention-side EVGEN
     # path of every recorded RECO/FULL output (the payload's physics-path
@@ -1733,6 +1772,12 @@ def evgen_inputs(request):
         mark = marks.get(path)
         entry['obsolete'] = bool(mark and mark.obsolete)
         entry['mark'] = mark if entry['obsolete'] else None
+        entry['priority'] = int(mark.priority) if mark else 0
+        entry['pmark'] = mark if entry['priority'] else None
+    # The worklist reads priority-first: the PWG's ordering is the
+    # operations team's ordering; within a level, by path.
+    coverage['missing'].sort(
+        key=lambda e: (e['priority'] or 4, e['evgen_path']))
     # Obsolete-marked paths leave the registration worklist and its
     # count — the point of the triage; the Validity filter still
     # reaches them for review.
@@ -1750,15 +1795,18 @@ def evgen_inputs(request):
         'matched': (request.GET.get('matched') or '').strip(),
         'complete': (request.GET.get('complete') or '').strip(),
         'validity': (request.GET.get('validity') or '').strip(),
+        'priority': (request.GET.get('priority') or '').strip(),
     }
     if selected['validity'] not in ('', 'current', 'obsolete'):
         selected['validity'] = ''
+    if selected['priority'] not in ('', '1', '2', '3', 'unset'):
+        selected['priority'] = ''
 
     def _qs(**over):
         params = {}
         if view == 'coverage':
             params['view'] = 'coverage'
-        for key in ('cls', 'matched', 'complete', 'validity'):
+        for key in ('cls', 'matched', 'complete', 'validity', 'priority'):
             value = over.get(key, selected[key])
             if value:
                 params[key] = value
@@ -1798,8 +1846,22 @@ def evgen_inputs(request):
                      'url': _qs(validity=v)}
                     for v in ('current', 'obsolete')
                     if validity_counts.get(v)]})
+    priority_counts = Counter(
+        str(x['priority']) if x['priority'] else 'unset' for x in population)
+    filters.append({
+        'key': 'priority', 'label': 'Priority',
+        'selected': selected['priority'], 'all_url': _qs(priority=''),
+        'options': [{'value': v, 'count': priority_counts[v],
+                     'url': _qs(priority=v)}
+                    for v in ('1', '2', '3', 'unset')
+                    if priority_counts.get(v)]})
 
     def _keep(x, is_row):
+        if selected['priority'] == 'unset' and x['priority']:
+            return False
+        if selected['priority'] in ('1', '2', '3') \
+                and str(x['priority']) != selected['priority']:
+            return False
         if selected['cls'] and x['cls'] != selected['cls']:
             return False
         if is_row:

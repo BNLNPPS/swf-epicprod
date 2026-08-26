@@ -1,0 +1,5 @@
+{# Priority cell for an EVGEN path: the current level as text (attribution in the hover floater), the other levels as compact one-click buttons for a signed-in user. #}
+<td class="text-nowrap" data-order="{% if priority %}{{ priority }}{% else %}9{% endif %}"{% if pmark %} data-comment="priority {{ priority }} set by {{ pmark.priority_set_by }} {{ pmark.priority_set_at|date:'Y-m-d H:i' }} ET"{% endif %}>
+  {% if priority %}<strong class="me-1">{{ priority }}</strong>{% else %}<span class="text-muted me-1">&mdash;</span>{% endif %}
+  {% if user.is_authenticated %}{% for level in "123" %}{% if level != priority|stringformat:"s" %}<button type="button" class="btn btn-sm btn-primary evgen-prio py-0 px-1 me-1" data-path="{{ path }}" data-priority="{{ level }}" title="Set priority {{ level }}">{{ level }}</button>{% endif %}{% endfor %}{% if priority %}<button type="button" class="btn btn-sm btn-secondary evgen-prio py-0 px-1" data-path="{{ path }}" data-priority="0" title="Unset priority">0</button>{% endif %}{% endif %}
+</td>
