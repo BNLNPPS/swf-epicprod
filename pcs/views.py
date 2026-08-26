@@ -1515,15 +1515,16 @@ def _dataset_evgen_paths(ds):
                            (metadata.get('source') or {}).get('location'))
 
 
-def _dataset_evgen_priority(ds, marks, pc_paths=None):
+def _dataset_evgen_priority(ds, marks, tag_map=None):
     """The EVGEN paths a dataset resolves to with the PWG priority mark on
     each. An evgen-stage dataset resolves its own paths; any other stage
-    (RECO, FULL editions) resolves through the evgen dataset of the same
-    physics configuration (``pc_paths``: physics_config_id -> paths).
+    (RECO, FULL editions) resolves through the evgen dataset carrying the
+    same physics and evgen tags (``tag_map``: models.evgen_paths_by_tags).
     Empty when nothing resolves."""
     paths = _dataset_evgen_paths(ds)
-    if not paths and pc_paths and ds.physics_config_id:
-        paths = list(pc_paths.get(ds.physics_config_id) or [])
+    if not paths and tag_map:
+        from .models import evgen_paths_for_tags
+        paths = evgen_paths_for_tags(ds, tag_map)
     out = []
     for path in paths:
         mark = marks.get(path)
@@ -1571,19 +1572,15 @@ def datasets_compose(request):
     # /EVGEN/... path as on the EVGEN inputs page (EPICPROD_EVGEN_INPUTS.md,
     # PWG marks); the detail panel shows and sets it.
     evgen_marks = {m.path: m for m in EvgenMark.objects.exclude(priority=0)}
-    # Physics configuration -> the EVGEN paths of its evgen dataset, so a
-    # RECO or FULL edition resolves the same input as its evgen sibling.
-    pc_paths = {}
-    for ds in qs:
-        if ds.physics_config_id and (ds.metadata or {}).get('stage') == 'evgen':
-            paths = _dataset_evgen_paths(ds)
-            if paths:
-                pc_paths.setdefault(ds.physics_config_id, paths)
+    # Tags -> the EVGEN paths of the evgen dataset, so a RECO or FULL
+    # edition resolves the same input as its evgen sibling.
+    from .models import evgen_paths_by_tags
+    tag_map = evgen_paths_by_tags()
     datasets_data = []
     for ds in qs:
         datasets_data.append({
             'id': ds.id,
-            'evgen_priority': _dataset_evgen_priority(ds, evgen_marks, pc_paths),
+            'evgen_priority': _dataset_evgen_priority(ds, evgen_marks, tag_map),
             'dataset_name': ds.dataset_name,
             'composed_name': ds.build_dataset_name(),
             'did': ds.did,

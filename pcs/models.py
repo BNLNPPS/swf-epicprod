@@ -913,15 +913,16 @@ class ProdTask(models.Model):
     def evgen_paths(self):
         """The /EVGEN/... paths of the task's EVGEN input: its matched Rucio
         DIDs, else the request's /EVGEN/ tail, else — for a task whose
-        dataset is a RECO or FULL edition — the evgen dataset of the same
-        physics configuration. The key of the PWG marks (EvgenMark;
-        EPICPROD_EVGEN_INPUTS.md, PWG marks)."""
+        dataset is a RECO or FULL edition — the evgen dataset carrying the
+        same physics and evgen tags (and sample), which name the EVGEN
+        sample independently of background and detector. The key of the
+        PWG marks (EvgenMark; EPICPROD_EVGEN_INPUTS.md, PWG marks)."""
         cached = getattr(self, '_evgen_paths', None)
         if cached is not None:
             return cached
         paths = evgen_paths_for(self.inputs, self.input_source_location)
-        if not paths and self.dataset_id and self.dataset.physics_config_id:
-            paths = evgen_paths_for_physics_config(self.dataset.physics_config_id)
+        if not paths and self.dataset_id:
+            paths = evgen_paths_for_tags(self.dataset, evgen_paths_by_tags())
         self._evgen_paths = paths
         return paths
 
@@ -1141,39 +1142,46 @@ def pwg_priority_for(paths, marks=None):
     return min(levels) if levels else 0
 
 
-def evgen_paths_by_physics_config():
-    """physics_config_id -> the EVGEN paths of its evgen-stage dataset
-    (the first with any), one query."""
-    out = {}
+def evgen_paths_by_tags():
+    """The EVGEN paths of every evgen-stage dataset, keyed two ways: by
+    (physics tag, evgen tag, sample name) and, as the fallback, by
+    (physics tag, evgen tag) — the tags that name the EVGEN sample
+    independently of background, detector, and campaign. One query."""
+    exact, loose = {}, {}
     for ds in (Dataset.objects.filter(metadata__stage='evgen')
-               .exclude(physics_config=None)
-               .only('physics_config_id', 'metadata')):
-        if ds.physics_config_id in out:
-            continue
+               .only('physics_tag_id', 'evgen_tag_id', 'sample_name',
+                     'metadata')):
         metadata = ds.metadata or {}
         paths = evgen_paths_for((metadata.get('rucio') or {}).get('matched'),
                                 (metadata.get('source') or {}).get('location'))
-        if paths:
-            out[ds.physics_config_id] = paths
-    return out
+        if not paths:
+            continue
+        exact.setdefault((ds.physics_tag_id, ds.evgen_tag_id,
+                          ds.sample_name or ''), paths)
+        loose.setdefault((ds.physics_tag_id, ds.evgen_tag_id), paths)
+    return {'exact': exact, 'loose': loose}
 
 
-def evgen_paths_for_physics_config(physics_config_id):
-    return evgen_paths_by_physics_config().get(physics_config_id) or []
+def evgen_paths_for_tags(dataset, tag_map):
+    """A dataset's EVGEN paths through its tags (see evgen_paths_by_tags)."""
+    key = (dataset.physics_tag_id, dataset.evgen_tag_id,
+           dataset.sample_name or '')
+    return list(tag_map['exact'].get(key)
+                or tag_map['loose'].get(key[:2]) or [])
 
 
 def annotate_pwg_priority(tasks):
     """Attach ``task._pwg_priority`` (and the resolved EVGEN paths) to
-    every task from two queries — the marks and the physics
-    configurations' evgen paths — so list views read ``task.pwg_priority``
+    every task from two queries — the marks and the evgen datasets'
+    paths by tags — so list views read ``task.pwg_priority``
     without a query per row."""
     tasks = list(tasks)
     marks = {m.path: m for m in EvgenMark.objects.filter(priority__gt=0)}
-    pc_paths = evgen_paths_by_physics_config()
+    tag_map = evgen_paths_by_tags()
     for task in tasks:
         paths = evgen_paths_for(task.inputs, task.input_source_location)
-        if not paths and task.dataset_id and task.dataset.physics_config_id:
-            paths = list(pc_paths.get(task.dataset.physics_config_id) or [])
+        if not paths and task.dataset_id:
+            paths = evgen_paths_for_tags(task.dataset, tag_map)
         task._evgen_paths = paths
         task._pwg_priority = pwg_priority_for(paths, marks)
     return tasks
