@@ -366,7 +366,7 @@
           data-physics="{{ e.facets.physics }}" data-q2="{{ e.facets.q2 }}"
           data-species="{{ e.facets.species }}" data-energy="{{ e.facets.energy }}"
           data-generator="{{ e.facets.generator }}">
-        <td>{{ e.kind }}{% if e.pwg_priority %} <span class="badge bg-primary" style="font-size:inherit" title="PWG priority (1 = highest), set on the EVGEN inputs page">PWG {{ e.pwg_priority }}</span>{% elif e.kind|slice:":5" == "EVGEN" %} <span class="text-muted" title="no PWG priority set; set on the EVGEN inputs page">PWG unset</span>{% endif %}</td>
+        <td>{{ e.kind }}{% if e.pwg_priority %} <span class="badge bg-primary" style="font-size:inherit" title="PWG priority (1 = highest), set on the EVGEN inputs page">PWG {{ e.pwg_priority }}</span>{% elif e.pwg_resolved %} <span class="text-muted" title="no PWG priority set; set on the EVGEN inputs page">PWG unset</span>{% else %} <span class="text-muted" title="no EVGEN input resolved">PWG n/a</span>{% endif %}</td>
         <td>
           {% if e.did %}
           <a href="{% url 'pcs:rucio_did_detail' e.scope e.name %}">{{ e.did }}</a>

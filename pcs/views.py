@@ -1975,9 +1975,13 @@ def _build_find_corpus():
     entries = []
     seen_dids = set()
     produced_paths = {}
-    for t in (ProdTask.objects.select_related('campaign', 'dataset')
-              .only('overrides', 'name', 'description', 'campaign__name',
-                    'dataset__composed_name')):
+    # PWG priority marks keyed by /EVGEN/ path (EPICPROD_EVGEN_INPUTS.md);
+    # produced entries carry their task's resolved priority, EVGEN
+    # entries the mark on their own path.
+    pwg_marks = {m.path: int(m.priority)
+                 for m in EvgenMark.objects.filter(priority__gt=0)}
+    for t in annotate_pwg_priority(
+            ProdTask.objects.select_related('campaign', 'dataset')):
         camp = t.campaign.name if t.campaign else ''
         for out in (t.overrides or {}).get('outputs') or []:
             did = str(out.get('did') or '')
@@ -2002,12 +2006,12 @@ def _build_find_corpus():
                 'campaign': camp,
                 'files': out.get('file_count'), 'bytes': out.get('bytes'),
                 'facets': facets,
-                'blob': blob,
+                'pwg_priority': t.pwg_priority,
+                'pwg_resolved': bool(t.evgen_paths),
+                'blob': blob + (f' pwg priority {t.pwg_priority}'
+                                if t.pwg_priority else ''),
             })
 
-    # PWG priority marks keyed by /EVGEN/ path (EPICPROD_EVGEN_INPUTS.md).
-    pwg_marks = {m.path: int(m.priority)
-                 for m in EvgenMark.objects.filter(priority__gt=0)}
     registered_paths = set()
     try:
         with open(_os.path.join(RUCIO_SNAPSHOT_DIR,
@@ -2034,7 +2038,7 @@ def _build_find_corpus():
             'campaign': '',
             'files': entry['file_count'], 'bytes': entry['bytes'],
             'facets': facets,
-            'pwg_priority': pwg,
+            'pwg_priority': pwg, 'pwg_resolved': True,
             'blob': (did + ' evgen registered'
                      + (f' pwg priority {pwg}' if pwg else '')).lower(),
         })
@@ -2064,7 +2068,7 @@ def _build_find_corpus():
             'xrootd_path': XROOTD_EPIC_BASE + epath,
             'files': None, 'bytes': None,
             'facets': facets,
-            'pwg_priority': pwg,
+            'pwg_priority': pwg, 'pwg_resolved': True,
             'blob': (epath + ' ' + reco_did + ' evgen unregistered'
                      + (f' pwg priority {pwg}' if pwg else '')).lower(),
         })
