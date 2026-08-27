@@ -365,6 +365,15 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
     authentication_classes = [TunnelAuthentication, SessionAuthentication, TokenAuthentication]
     permission_classes = [IsAuthenticatedOrReadOnly]
 
+    def list(self, request, *args, **kwargs):
+        # The PWG priority of every task from two queries (the marks and
+        # the evgen datasets' paths by tags), not a rescan per task: the
+        # unpaginated list is thousands of tasks.
+        from .models import annotate_pwg_priority
+        tasks = annotate_pwg_priority(
+            self.filter_queryset(self.get_queryset()))
+        return Response(self.get_serializer(tasks, many=True).data)
+
     # Detail routes are keyed by the composed tag name. Composed names contain
     # dots, so the default lookup regex ([^/.]+) is widened to allow them.
     # get_object() resolves the composed name (and, inbound-only, the legacy

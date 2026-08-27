@@ -139,11 +139,25 @@ event; setting a mark requires a signed-in user):
   registration worklist and its count; the Validity filter reaches them
   for review.
 - **Priority** — the group's production order, 1 first, 2, 3; 0 unset.
-  No comment. It is a guide to the operations team: the worklist reads
-  priority-first, the Priority column sorts and filters, and the level
-  shows on the dataset page. It does not feed PanDA task priority; that
-  mapping is a later decision, and the submission spec already knows a
-  task's matched EVGEN inputs when it is wanted.
+  No comment. It is a guide to the operations team, read wherever a task
+  or dataset is presented. A task's priority is that of its EVGEN input;
+  a RECO or FULL edition resolves its input through the evgen dataset
+  carrying the same physics and evgen tags (and sample), which name the
+  sample independently of background and detector. The surfaces:
+  - EVGEN inputs page: the worklist reads priority-first; the Priority
+    column sorts and filters.
+  - Task catalog: a PWG column and filter.
+  - Task compose detail and the dataset page: the level as a button row,
+    settable there.
+  - Find data: a PWG priority column, read-only.
+  - REST task record and the MCP task and dataset records: `pwg_priority`
+    (0 unset; the MCP dataset record gives null when no input resolves).
+  - Campaign status rollup: the `pwg_priority` member counts tasks per
+    level as produced, submitted, or not started, and lists priority-1
+    tasks not started.
+  Priority does not feed PanDA task priority; that mapping is a later
+  decision, and the submission spec already knows a task's matched EVGEN
+  inputs when it is wanted.
 
 Both marks are set in bulk from the tick-box panels above the tables;
 priority is also set in one click from the compact level buttons in the

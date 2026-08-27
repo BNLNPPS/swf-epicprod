@@ -1532,7 +1532,8 @@ def _dataset_evgen_priority(ds, marks, tag_map=None):
             'path': path,
             'priority': int(mark.priority) if mark else 0,
             'set_by': mark.priority_set_by if mark else '',
-            'set_at': (mark.priority_set_at.strftime('%Y-%m-%d %H:%M')
+            'set_at': (timezone.localtime(mark.priority_set_at)
+                       .strftime('%Y-%m-%d %H:%M')
                        if mark and mark.priority_set_at else ''),
         })
     return out
@@ -1980,8 +1981,15 @@ def _build_find_corpus():
     # entries the mark on their own path.
     pwg_marks = {m.path: int(m.priority)
                  for m in EvgenMark.objects.filter(priority__gt=0)}
+    # Only the columns the corpus and the priority preload read: a task's
+    # inputs and source location come from its dataset's metadata, the
+    # tag fallback from the dataset's physics/evgen tags and sample.
     for t in annotate_pwg_priority(
-            ProdTask.objects.select_related('campaign', 'dataset')):
+            ProdTask.objects.select_related('campaign', 'dataset')
+            .only('overrides', 'name', 'description', 'csv_file',
+                  'campaign__name', 'dataset__composed_name',
+                  'dataset__metadata', 'dataset__physics_tag',
+                  'dataset__evgen_tag', 'dataset__sample_name')):
         camp = t.campaign.name if t.campaign else ''
         for out in (t.overrides or {}).get('outputs') or []:
             did = str(out.get('did') or '')

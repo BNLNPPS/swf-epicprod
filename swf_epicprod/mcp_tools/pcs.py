@@ -216,22 +216,34 @@ async def pcs_search_tags(
 # share validation, idempotency, and lifecycle rules.
 # ---------------------------------------------------------------------------
 
-def _dataset_pwg_priority(ds):
-    """PWG priority of an evgen dataset's EVGEN input (1 = highest, 0 =
-    unset); None for datasets of other stages."""
-    from pcs.models import evgen_paths_for, pwg_priority_for
+def _dataset_pwg_priority(ds, tag_map=None, marks=None):
+    """PWG priority of a dataset's EVGEN input (1 = highest, 0 = unset):
+    an evgen dataset's own matched paths, else — as on the dataset page —
+    the evgen dataset carrying the same physics and evgen tags (and
+    sample), so a RECO or FULL edition resolves the same input. None when
+    nothing resolves. List callers pass ``tag_map``
+    (models.evgen_paths_by_tags) and ``marks`` ({path: EvgenMark}) built
+    once for the page."""
+    from pcs.models import (evgen_paths_by_tags, evgen_paths_for,
+                            evgen_paths_for_tags, pwg_priority_for)
     metadata = ds.metadata or {}
-    if metadata.get('stage') != 'evgen':
+    paths = []
+    if metadata.get('stage') == 'evgen':
+        paths = evgen_paths_for((metadata.get('rucio') or {}).get('matched'),
+                                (metadata.get('source') or {}).get('location'))
+    if not paths:
+        if tag_map is None:
+            tag_map = evgen_paths_by_tags()
+        paths = evgen_paths_for_tags(ds, tag_map)
+    if not paths:
         return None
-    return pwg_priority_for(evgen_paths_for(
-        (metadata.get('rucio') or {}).get('matched'),
-        (metadata.get('source') or {}).get('location')))
+    return pwg_priority_for(paths, marks)
 
 
-def _dataset_to_dict(ds, full=True):
+def _dataset_to_dict(ds, full=True, tag_map=None, marks=None):
     out = {
         'composed_name': ds.composed_name,
-        'pwg_priority': _dataset_pwg_priority(ds),
+        'pwg_priority': _dataset_pwg_priority(ds, tag_map, marks),
         'did': ds.did,
         'dataset_name': ds.dataset_name,
         'scope': ds.scope,
@@ -315,7 +327,13 @@ def _dataset_list_sync(stage=None, source_kind=None, source_location=None,
     if source_location:
         qs = qs.filter(metadata__source__location=source_location)
     total = qs.count()
-    items = [_dataset_to_dict(d, full=False) for d in qs[offset:offset + limit]]
+    # PWG priority inputs built once for the page: the evgen datasets'
+    # paths by tags and the marks.
+    from pcs.models import EvgenMark, evgen_paths_by_tags
+    tag_map = evgen_paths_by_tags()
+    marks = {m.path: m for m in EvgenMark.objects.filter(priority__gt=0)}
+    items = [_dataset_to_dict(d, full=False, tag_map=tag_map, marks=marks)
+             for d in qs[offset:offset + limit]]
     return {'count': total, 'limit': limit, 'offset': offset, 'datasets': items}
 
 
@@ -520,7 +538,10 @@ def _prodtask_list_sync(status=None, public_catalog_issue=None,
         qs = qs.filter(Q(name__icontains=name_contains)
                        | Q(dataset__composed_name__icontains=name_contains))
     total = qs.count()
-    items = [_prodtask_to_dict(t, full=False) for t in qs[offset:offset + limit]]
+    # PWG priority preloaded for the page in two queries, not per task.
+    from pcs.models import annotate_pwg_priority
+    items = [_prodtask_to_dict(t, full=False)
+             for t in annotate_pwg_priority(qs[offset:offset + limit])]
     return {'count': total, 'limit': limit, 'offset': offset, 'tasks': items}
 
 
