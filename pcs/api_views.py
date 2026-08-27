@@ -1096,7 +1096,7 @@ def evgen_mark(request):
         subject_type='evgen_path',
         subject_key=paths[0] if len(paths) == 1 else f'{len(paths)} paths',
         username=username,
-        sublevel='high', live_default=True,
+        sublevel='low', live_default=False,
         priority=priority, count=len(paths), paths=paths[:20])
     return Response({'ok': True, 'updated': len(paths),
                      'priority': priority})
