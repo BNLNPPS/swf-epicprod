@@ -210,6 +210,29 @@ EVGEN log template is `{outDS}.$JEDITASKID.${SN}.log.tgz`
 (`scripts/evgen_panda_submit.py`), and under `managed` the literal string would
 survive into log file names, so the template has to change first.
 
+### Payload-managed output naming (live path)
+
+The templates above apply to JEDI-managed outputs. On the live production path
+(`noOutput=True`, see
+[Client-API EVGEN submission](#client-api-evgen-submission)) PanDA manages no
+science output: the payload names and registers its files in JLab Rucio. The
+convention is work-unit naming — the file name derives from the unit of work,
+which does not change across job attempts. For external-EVGEN tasks the work
+unit is the manifest row, and the payload writes
+`RECO/<ver>/<config>/<input dir below EVGEN>/<stem>.<chunk>.eicrecon.edm4eic.root`
+(`simulation_campaign_hepmc3` `run.sh`). Internal evgen (no input files)
+preserves the convention: file names derive from the job's stable work-unit
+handle, the `${SEQNUMBER}` pseudo-input serial, which a retried job reuses.
+
+A within-task job retry therefore regenerates the same file DID as its
+predecessor. Registration handles this by checking the DID before upload: a
+registered file with an available replica was delivered by the previous
+attempt, and the job exits successfully without uploading; a file present on
+storage without registration is removed and replaced. Uniqueness across full
+submissions comes from the `.tryN` namespace
+([Output dataset](#output-dataset-rucio-did)); attempt identifiers such as the
+PanDA job id do not appear in file names.
+
 ## Example: taskParamMap Built from PCS
 
 Given a ProdTask with:
