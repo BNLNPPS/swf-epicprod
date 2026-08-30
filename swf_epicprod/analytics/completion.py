@@ -362,13 +362,20 @@ def completion_line(campaign_name, overall, by_source):
     if fraction is None:
         head = f'{campaign_name}: completion not estimable (no targets)'
     else:
-        derived = by_source.get('derived', 0)
-        head = (f'{campaign_name}: ~{round(100 * fraction)}% complete '
-                f'(targets on {overall["targeted"]} of '
-                f'{overall["configurations"]} configurations, '
-                f'{derived} derived)')
+        sources = ', '.join(
+            f'{count} {label}' for label, count in (
+                ('included', by_source.get('included', 0)),
+                ('requested', by_source.get('requested', 0)),
+                ('derived', by_source.get('derived', 0)))
+            if count)
+        head = (f'{campaign_name}: ~{round(100 * fraction)}% complete — '
+                f'the mean completion of {overall["covered"]} of '
+                f'{overall["configurations"]} physics configurations: '
+                f'{overall["targeted"]} with a target ({sources}) plus '
+                f'{overall["not_started"]} not started; '
+                f'{overall["no_target"]} delivering without a target are '
+                f'not counted')
     tb = overall['bytes'] / 1e12
-    return (f'{head} · {overall["complete"]} done · '
-            f'{overall["not_started"]} not started · '
+    return (f'{head} · {overall["complete"]} configurations complete · '
             f'{_fmt_events(overall["delivered_events"])} events, '
             f'{tb:.0f} TB delivered')
