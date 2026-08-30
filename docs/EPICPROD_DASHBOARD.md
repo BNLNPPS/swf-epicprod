@@ -122,6 +122,13 @@ A single factual line on the Nav tab — current campaign, producing
 campaigns, open alarm count, nearest credential expiry — built last,
 once the panels are in place. No status coloring in version 1.
 
+The campaign part of the strip is in place: one completion line per
+current or producing campaign, from the completion estimate
+([CAMPAIGN_DELIVERY.md](CAMPAIGN_DELIVERY.md), Completion), served as
+the cached product `prod_hub_campaign_completion` (600 s) and linking
+to the campaign view. The alarm count and credential expiry remain to
+be added.
+
 ## Build sequence
 
 Each step is a functional delivery and a release boundary:

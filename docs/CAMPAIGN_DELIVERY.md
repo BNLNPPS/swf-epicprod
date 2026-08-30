@@ -18,11 +18,12 @@ requires, and the surfaces it feeds.
 - **Completion fraction** = events available / expected events. The
   denominator follows a recorded precedence chain per PC:
   **campaign-included** (what the campaign is set up to produce) →
-  **requested** (the original request) → **absent**. Where absent, no
-  fraction is shown; the PC carries an unobtrusive, visible no-target
-  marker, the same marker in every surface. A future automated
-  campaign processing system requires the campaign-included number,
-  which is therefore recorded as production data.
+  **requested** (the original request) → **derived** (from the
+  record's own evidence; see Completion below) → **absent**. Where
+  absent, no fraction is shown; the PC carries an unobtrusive, visible
+  no-target marker, the same marker in every surface. A future
+  automated campaign processing system requires the campaign-included
+  number, which is therefore recorded as production data.
 - **Bytes placed** — the practical companion metric. The disk/tape
   split and the disk fraction of total capacity are wanted but second
   order (operations rather than delivery); live capture only, since
@@ -155,6 +156,75 @@ per location.
    `PhysicsConfig` entity (PCS.md § Datasets), whose first association
    is the requesting-group list seeded from PC-anchored requests.
 
+## Completion
+
+The campaign's completion is stated from the recorded targets against
+delivered events, per physics configuration, and rolled up. Where the
+intake supplies no target, the record's own evidence supplies one, so
+that the statement covers as much of the campaign as the evidence
+allows and states the coverage it does not reach.
+
+### Derived targets
+
+`scripts/derive_expected_events.py` (dry-run default; rules in
+`swf_epicprod/analytics/completion.py`) proposes a target for every PC
+in the campaign that has none and writes the proposals through the
+expected-events service with source `derived`, one service call per
+rule, the rule and its evidence in the required comment. Existing
+targets of any source are never overwritten; re-running is idempotent.
+Rules, in precedence:
+
+- **R1 round closure** — the PC's delivered events close within 3% on
+  a round sample size (10M, 5M, 4M, 2M, 1M, 500k, 400k, 200k, 100k)
+  and no task is in flight: the round number. Production samples are
+  sized in round numbers, and a sample that reached one has reached
+  its size.
+- **R2 prior campaign** — the same PC's delivered events in the newest
+  earlier campaign in the daily record, snapped to a round size. A
+  continued configuration is expected at its previous size unless the
+  request says otherwise.
+
+A PC matching neither rule keeps no target and is reported as
+uncovered. PanDA job counts are not a basis: a task's job total counts
+every retry, so a task that delivered one file from thousands of
+attempts would derive a target thousands of times its sample size. A
+recorded target at or above 10⁹ events is not a sample size; the
+script clears such rows with a comment.
+
+### The estimate
+
+The `campaign_completion` analytics member (EPICPROD_ASSESSMENTS.md)
+reads the recorded targets of every source — the first edition head
+carrying one, per PC, the rule every denominator reader shares
+(`completion.pc_targets`) — against delivered events from the newest
+daily delivery snap:
+
+- per PC, completion = min(delivered / target, 1); a PC with no files,
+  no events, and no task in flight counts as not started (0); a PC
+  delivering without a target has no completion and is counted as
+  uncovered;
+- **PC-weighted fraction** = the mean over PCs with a completion value,
+  stated with its coverage (covered of total PCs);
+- **events-weighted fraction** = Σ capped delivered / Σ targets over
+  targeted PCs;
+- the same rollups by physics category and by request priority, the
+  target count by source, and the unmeasured-file count, since event
+  sums are floors where files are unmeasured.
+
+### The one-line summary
+
+`completion.completion_line` renders the estimate as one line:
+
+```
+26.07: ~40% complete (targets on 259 of 538 configurations, 199 derived) · 133 done · 104 not started · 498M events, 283 TB delivered
+```
+
+The line states the PC-weighted fraction, the denominator's coverage
+and provenance, the PCs complete (≥ 97%), the PCs not started, and the
+delivered totals. It is the campaign summary strip on the production
+home page (EPICPROD_DASHBOARD.md), served as a cached product, and the
+`line` field of the member block.
+
 ## Surfaces
 
 1. **Campaign plan list** (PCS): the Physics Configurations page's row
@@ -183,6 +253,8 @@ per location.
    machinery.
 3. **Ops dashboard embed**: the existing snapper embed carrying the
    delivery curve family, click-through to the campaign view.
+4. **Production home summary strip**: the one-line completion summary
+   per current or producing campaign, linking to the campaign view.
 
 Candidates not committed in this plan: delivered-dataset arcs as
 episodic lanes (a tile per dataset from first arrival to fully
@@ -199,6 +271,8 @@ Each step is a functional delivery and release boundary:
 3. The Snapper campaign view: lens projection in the provider, the
    campaign tabs and preset, the delivery cut card.
 4. The ops dashboard embed placement.
+5. Completion: derived targets, the completion member, and the summary
+   strip.
 
 Categorization assignment (extension 3) can land any time after step
 2; lenses apply retroactively by construction.

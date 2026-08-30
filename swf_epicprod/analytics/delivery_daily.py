@@ -191,29 +191,32 @@ def location_map(campaigns):
 def expected_map(campaigns):
     """pc label -> (expected, tier) per campaign, the current recorded
     denominator chain."""
-    from pcs.models import Dataset
     from pcs.services import pc_request_projection
+
+    from .completion import campaign_heads, pc_targets
 
     out = {}
     for name in campaigns:
-        heads = list(Dataset.objects.filter(campaign__name=name)
-                     .select_related('physics_config')
-                     .order_by('composed_name', 'block_num', 'pk')
-                     .distinct('composed_name'))
+        heads = campaign_heads(name)
         projection = pc_request_projection(heads)
-        per = {}
+        # The recorded target on any edition head of the PC wins
+        # (pc_targets, the rule every denominator reader shares); the
+        # request fallback fills only PCs with no recorded target.
+        per = dict(pc_targets(heads))
         for head in heads:
             if not head.physics_config_id:
                 continue
-            expected = head.expected_events
-            tier = head.expected_events_source
-            if expected is None:
-                anchored = [r.nevents for r in
-                            projection.get(head.composed_name, ())
-                            if r.nevents]
-                if anchored:
-                    expected, tier = max(anchored), 'requested'
-            per[head.physics_config.label] = (expected, tier or '')
+            label = head.physics_config.label
+            if label in per:
+                continue
+            anchored = [r.nevents for r in
+                        projection.get(head.composed_name, ())
+                        if r.nevents]
+            if anchored:
+                per[label] = (max(anchored), 'requested')
+        for head in heads:
+            if head.physics_config_id:
+                per.setdefault(head.physics_config.label, (None, ''))
         out[name] = per
     return out
 

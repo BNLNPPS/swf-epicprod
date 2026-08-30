@@ -888,8 +888,23 @@ def credential_status(campaign, window_start, window_end):
     })
 
 
+def campaign_completion(campaign, window_start, window_end):
+    """The campaign completion estimate — delivered events against the
+    recorded targets, per physics configuration (CAMPAIGN_DELIVERY.md,
+    Completion). The full per-configuration table stays with the
+    computation; the block carries the rollups and the one-line
+    summary."""
+    from .completion import campaign_completion as compute
+
+    data = compute(campaign.name)
+    if data.get('available'):
+        data = {k: v for k, v in data.items() if k != 'configurations'}
+    return _block('campaign_completion', window_start, window_end, data)
+
+
 MEMBERS = (
     pwg_priority,
+    campaign_completion,
     campaign_progress,
     panda_health,
     window_activity,
