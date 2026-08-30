@@ -62,6 +62,28 @@ def daily_leaves():
             snap.snap_time)
 
 
+def first_delivery_day(campaign_name):
+    """The Eastern-Time day of the campaign's first recorded arrivals in
+    the daily delivery record, else None."""
+    from zoneinfo import ZoneInfo
+
+    from snapper_ai.models import SystemSnap
+
+    snaps = (SystemSnap.objects
+             .filter(scope='epicprod', capture_policy='delivery-daily-v1')
+             .order_by('snap_time')
+             .only('snap_time', 'state'))
+    for snap in snaps.iterator():
+        block = ((((snap.state or {}).get('components') or {})
+                  .get('delivery') or {}).get('data') or {})
+        totals = ((block.get('campaigns') or {}).get(campaign_name) or {}
+                  ).get('totals') or {}
+        if totals.get('arrived_files') or totals.get('cum_files'):
+            return snap.snap_time.astimezone(
+                ZoneInfo('America/New_York')).date()
+    return None
+
+
 def campaign_heads(campaign_name):
     """Head rows of the campaign's editions, ordered as every target
     reader orders them (composed name, block, pk)."""
@@ -318,6 +340,8 @@ def campaign_completion(campaign_name):
         }
 
     overall = rollup(pcs)
+    since = first_delivery_day(campaign_name)
+    overall['delivered_since'] = since.isoformat() if since else None
     by_source = collections.Counter(r['target_source'] for r in pcs
                                     if r['target'])
     by_category = {name: rollup([r for r in pcs if r['category'] == name])
@@ -369,13 +393,21 @@ def completion_line(campaign_name, overall, by_source):
                 ('derived', by_source.get('derived', 0)))
             if count)
         head = (f'{campaign_name}: ~{round(100 * fraction)}% complete — '
-                f'the mean completion of {overall["covered"]} of '
-                f'{overall["configurations"]} physics configurations: '
-                f'{overall["targeted"]} with a target ({sources}) plus '
-                f'{overall["not_started"]} not started; '
+                f'the mean completion over {overall["covered"]} of the '
+                f'campaign\'s {overall["configurations"]} physics '
+                f'configurations: {overall["targeted"]} with a target '
+                f'({sources}) plus {overall["not_started"]} not started; '
                 f'{overall["no_target"]} delivering without a target are '
                 f'not counted')
     tb = overall['bytes'] / 1e12
-    return (f'{head} · {overall["complete"]} configurations complete · '
-            f'{_fmt_events(overall["delivered_events"])} events, '
-            f'{tb:.0f} TB delivered')
+    since = overall.get('delivered_since')
+    if since:
+        import datetime as _dt
+        day = _dt.date.fromisoformat(since)
+        since_text = f'Delivered since {day:%b} {day.day}'
+    else:
+        since_text = 'Delivered'
+    return (f'{head} · {overall["complete"]} physics configurations '
+            f'complete · '
+            f'{since_text}: {_fmt_events(overall["delivered_events"])} '
+            f'events, {tb:.0f} TB')
