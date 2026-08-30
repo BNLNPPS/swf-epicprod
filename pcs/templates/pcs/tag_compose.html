@@ -84,6 +84,9 @@
         margin-bottom: .75rem; margin-top: 1rem;
     }
     .required-star { color: #dc3545; }
+    /* EvGen background fields predate the background (k) tag, which now
+       carries them; shown only for an existing tag that has one filled. */
+    .field-group.legacy-bg:not(.legacy-shown) { display: none; }
     .choice-wrap { display: flex; gap: .4rem; }
     .choice-wrap .form-select { flex: 0 0 auto; width: auto; min-width: 140px; }
     .choice-wrap .form-control { flex: 1; }
@@ -210,7 +213,7 @@
                 </div>
                 {% for field in form %}
                     {% if field.name|slice:":6" == "param_" %}
-                    <div class="field-group" data-param="{{ field.label }}">
+                    <div class="field-group{% if schema.prefix == 'e' and field.name in 'param_signal_freq,param_signal_status,param_bg_tag_prefix,param_bg_files' %} legacy-bg{% endif %}" data-param="{{ field.label }}">
                         <label>
                             {{ field.label }}
                             {% if field.field.required %}<span class="required-star">*</span>{% endif %}
@@ -415,6 +418,7 @@
             sel.value = '';
         });
         createPanel.querySelectorAll('.choice-wrap .hidden-other').forEach(el => el.classList.add('hidden-other'));
+        createPanel.querySelectorAll('.field-group.legacy-bg').forEach(g => g.classList.remove('legacy-shown'));
         createPanel.querySelectorAll('.suggestion-bar').forEach(b => b.classList.remove('visible'));
         createPanel.querySelectorAll('.field-changed').forEach(el => el.classList.remove('field-changed'));
         Object.keys(editOriginals).forEach(k => delete editOriginals[k]);
@@ -441,6 +445,8 @@
             const fname = wrap.dataset.fieldName;
             const paramKey = fname.replace('param_', '');
             if (params[paramKey]) { setFieldValue(fname, params[paramKey], false); userEdited[fname] = true; }
+            const group = wrap.closest('.field-group.legacy-bg');
+            if (group) group.classList.toggle('legacy-shown', !!params[paramKey]);
         });
     }
 

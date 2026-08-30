@@ -21,6 +21,9 @@ Historically, the execution fields were spread across `EvgenTag`
 The `k` tag gathers the background-specific fields into one locked record and
 gives them a place in the dataset identity. Runtime command generation prefers
 the `k` tag when it is specified and keeps the EvGen fields as a legacy fallback.
+The EvGen compose form hides those legacy fields; they appear only when an
+existing tag that has one of them filled is edited or copied. New background
+definitions go on a `k` tag.
 
 ## Why `k`
 
