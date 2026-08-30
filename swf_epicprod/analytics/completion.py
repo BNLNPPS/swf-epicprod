@@ -395,10 +395,10 @@ def completion_line(campaign_name, overall, by_source):
         head = (f'{campaign_name}: ~{round(100 * fraction)}% complete, '
                 f'the mean completion over {overall["covered"]} of the '
                 f'campaign\'s {overall["configurations"]} physics '
-                f'configurations: {overall["targeted"]} with a target '
-                f'({sources}) plus {overall["not_started"]} not started; '
-                f'{overall["no_target"]} delivering without a target are '
-                f'not counted')
+                f'configurations: {overall["targeted"]} with an event '
+                f'count target ({sources}) plus {overall["not_started"]} '
+                f'not started; {overall["no_target"]} delivering without '
+                f'an event count target are not counted')
     tb = overall['bytes'] / 1e12
     since = overall.get('delivered_since')
     if since:

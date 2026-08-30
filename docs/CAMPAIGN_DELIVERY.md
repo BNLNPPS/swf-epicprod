@@ -216,7 +216,7 @@ daily delivery snap:
 `completion.completion_line` renders the estimate as one line:
 
 ```
-26.07: ~40% complete, the mean completion over 363 of the campaign's 538 physics configurations: 259 with a target (60 requested, 199 derived) plus 104 not started; 175 delivering without a target are not counted · 133 physics configurations complete · Delivered since Jul 13: 498M events, 283 TB
+26.07: ~40% complete, the mean completion over 363 of the campaign's 538 physics configurations: 259 with an event count target (60 requested, 199 derived) plus 104 not started; 175 delivering without an event count target are not counted · 133 physics configurations complete · Delivered since Jul 13: 498M events, 283 TB
 ```
 
 The line states the PC-weighted fraction and exactly what it is the
