@@ -401,8 +401,10 @@ def completion_line(campaign_name, overall, by_source):
                 f'campaign\'s {overall["configurations"]} physics '
                 f'configurations: {overall["targeted"]} with an event '
                 f'count target, {sources}, plus {overall["not_started"]} '
-                f'not started;\n{overall["no_target"]} delivering without '
-                f'an event count target are not counted')
+                f'not started;\n{overall["no_target"]} physics '
+                f'configurations have delivered data but no event count '
+                f'target, so their completion is unknown and they are '
+                f'left out of the average')
     tb = overall['bytes'] / 1e12
     since = overall.get('delivered_since')
     if since:

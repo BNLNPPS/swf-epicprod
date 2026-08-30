@@ -217,7 +217,7 @@ daily delivery snap:
 
 ```
 26.07: ~40% complete, the mean completion over 363 of the campaign's 538 physics configurations: 259 with an event count target, 60 with explicitly requested count and 199 derived (guessed), plus 104 not started;
-175 delivering without an event count target are not counted · 133 physics configurations complete · Delivered since Jul 13: 498M events, 283 TB
+175 physics configurations have delivered data but no event count target, so their completion is unknown and they are left out of the average · 133 physics configurations complete · Delivered since Jul 13: 498M events, 283 TB
 ```
 
 The line states the PC-weighted fraction and exactly what it is the
