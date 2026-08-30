@@ -66,8 +66,8 @@
 <div class="compose-wrap">
     <!-- LEFT PANE -->
     <div class="browse-panel">
-        <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom: 2px solid #dee2e6; margin-bottom:.75rem;">
-            <div class="browser-tabs" style="border-bottom: none; margin-bottom: 0;">
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; border-bottom: 2px solid #dee2e6; margin-bottom:.75rem;">
+            <div class="browser-tabs" style="border-bottom: none; margin-bottom: 0; flex-wrap:wrap;">
                 <span class="browser-tab" data-browse="datasets">Datasets</span>
                 <span class="browser-tab" data-browse="p">Physics</span>
                 <span class="browser-tab" data-browse="e">EvGen</span>
@@ -98,6 +98,7 @@
                 {% endif %}
                 <button class="btn btn-secondary btn-sm" id="btn-clear" style="display:none;">Clear</button>
                 <button class="btn btn-secondary btn-sm" id="btn-cancel" style="display:none;">Cancel</button>
+                <span id="save-hint" style="display:none; font-size:.85rem; color:#495057; margin:0 .5rem;"></span>
                 <button class="btn btn-primary btn-sm" id="btn-save" style="display:none;" disabled>Create Dataset</button>
             </div>
         </div>
@@ -209,6 +210,7 @@
     const btnClear = document.getElementById('btn-clear');
     const btnCancel = document.getElementById('btn-cancel');
     const btnSave = document.getElementById('btn-save');
+    const saveHint = document.getElementById('save-hint');
 
     const TAG_LABELS = {p:'Physics', e:'EvGen', s:'Simu', r:'Reco', k:'Background'};
     const TAG_FK = {p:'physics_tag', e:'evgen_tag', s:'simu_tag', r:'reco_tag', k:'background_tag'};
@@ -318,7 +320,18 @@
         if (mode !== 'compose') return;
         const ver = document.getElementById('ds-version').value.trim();
         const cfg = document.getElementById('ds-config').value.trim();
-        btnSave.disabled = !(ver && cfg && compose.p && compose.e && compose.s && compose.r);
+        // The button says what it is still waiting for; a background tag
+        // is optional and never enables it on its own.
+        const missing = [];
+        if (!ver) missing.push('detector version');
+        if (!cfg) missing.push('detector config');
+        if (!compose.p) missing.push('physics tag');
+        if (!compose.e) missing.push('evgen tag');
+        if (!compose.s) missing.push('simu tag');
+        if (!compose.r) missing.push('reco tag');
+        btnSave.disabled = missing.length > 0;
+        saveHint.textContent = missing.length ? 'Still needed: ' + missing.join(', ') : '';
+        saveHint.style.display = missing.length ? 'inline' : 'none';
     }
 
     // ── Mode switching ──
@@ -328,6 +341,7 @@
         browsePanel.style.display = 'block';
         btnCancel.style.display = 'none';
         btnSave.style.display = 'none';
+        saveHint.style.display = 'none';
         btnClear.style.display = 'none';
         if (btnNew) btnNew.style.display = browseType === 'datasets' ? 'block' : 'none';
         if (btnEdit) btnEdit.style.display = 'none';
@@ -390,6 +404,7 @@
             btnSave.textContent = 'Create Dataset';
         }
         updatePreview();
+        updateSaveButton();
         updateUrl();
     }
 
