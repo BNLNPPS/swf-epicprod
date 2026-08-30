@@ -16,6 +16,9 @@
 .browser-tab.active { color: #0d6efd; border-bottom-color: #0d6efd; font-weight: 600; }
 .browser-tab:hover { color: #0d6efd; }
 
+/* Empty-field hints must not read as entered values: Bootstrap 5.3 paints
+   placeholders in near-text colour, so set an unmistakable grey here. */
+#compose-panel .form-control::placeholder { color: #9aa0a6; opacity: 1; font-style: italic; }
 .browser-search { width: 100%; padding: .35rem .6rem; border: 1px solid #dee2e6;
                    border-radius: .375rem; font-size: .85rem; margin-bottom: .5rem; }
 .item-list { flex: 1; overflow-y: auto; border: 1px solid #dee2e6; border-radius: .375rem; }
@@ -113,9 +116,9 @@
                             <div class="col-md-3"><label class="form-label" style="font-size:.82rem;"><strong>Scope</strong></label>
                                 <input type="text" id="ds-scope" class="form-control form-control-sm" value="group.EIC"></div>
                             <div class="col-md-3"><label class="form-label" style="font-size:.82rem;"><strong>Detector Version</strong></label>
-                                <input type="text" id="ds-version" class="form-control form-control-sm" placeholder="26.02.0"></div>
+                                <input type="text" id="ds-version" class="form-control form-control-sm" placeholder="e.g. 26.07.0"></div>
                             <div class="col-md-3"><label class="form-label" style="font-size:.82rem;"><strong>Detector Config</strong></label>
-                                <input type="text" id="ds-config" class="form-control form-control-sm" placeholder="epic_craterlake"></div>
+                                <input type="text" id="ds-config" class="form-control form-control-sm" placeholder="e.g. epic_craterlake"></div>
                             <div class="col-md-3"><label class="form-label" style="font-size:.82rem;"><strong>Created By</strong></label>
                                 <input type="text" id="ds-created-by" class="form-control form-control-sm" value="{{ username }}" readonly></div>
                         </div>
