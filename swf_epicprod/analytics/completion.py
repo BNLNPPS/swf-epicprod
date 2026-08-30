@@ -392,7 +392,7 @@ def completion_line(campaign_name, overall, by_source):
                 ('requested', by_source.get('requested', 0)),
                 ('derived', by_source.get('derived', 0)))
             if count)
-        head = (f'{campaign_name}: ~{round(100 * fraction)}% complete — '
+        head = (f'{campaign_name}: ~{round(100 * fraction)}% complete, '
                 f'the mean completion over {overall["covered"]} of the '
                 f'campaign\'s {overall["configurations"]} physics '
                 f'configurations: {overall["targeted"]} with a target '
