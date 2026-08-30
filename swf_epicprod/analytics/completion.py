@@ -386,18 +386,22 @@ def completion_line(campaign_name, overall, by_source):
     if fraction is None:
         head = f'{campaign_name}: completion not estimable (no targets)'
     else:
-        sources = ', '.join(
+        sources = ' and '.join(
             f'{count} {label}' for label, count in (
-                ('included', by_source.get('included', 0)),
-                ('requested', by_source.get('requested', 0)),
-                ('derived', by_source.get('derived', 0)))
+                ('with campaign-included count',
+                 by_source.get('included', 0)),
+                ('with explicitly requested count',
+                 by_source.get('requested', 0)),
+                ('derived (guessed)', by_source.get('derived', 0)))
             if count)
+        # The line breaks once, after the covered population, so the
+        # basis and the totals read as two lines on a page.
         head = (f'{campaign_name}: ~{round(100 * fraction)}% complete, '
                 f'the mean completion over {overall["covered"]} of the '
                 f'campaign\'s {overall["configurations"]} physics '
                 f'configurations: {overall["targeted"]} with an event '
-                f'count target ({sources}) plus {overall["not_started"]} '
-                f'not started; {overall["no_target"]} delivering without '
+                f'count target, {sources}, plus {overall["not_started"]} '
+                f'not started;\n{overall["no_target"]} delivering without '
                 f'an event count target are not counted')
     tb = overall['bytes'] / 1e12
     since = overall.get('delivered_since')
