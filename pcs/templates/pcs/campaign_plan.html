@@ -120,6 +120,48 @@
     (function () {
         const approveBtn = document.getElementById('asm-approve');
         if (!approveBtn) return;
+        const NOTICE_KEY = 'asmNotice:{{ campaign.name }}';
+        // A decision's incomplete-rows message renders after the reload
+        // as a dismissible panel, held until the X clears it.
+        (function () {
+            let notice = null;
+            try {
+                notice = JSON.parse(sessionStorage.getItem(NOTICE_KEY));
+            } catch (e) { notice = null; }
+            if (!notice || !notice.incomplete || !notice.incomplete.length) {
+                return;
+            }
+            const panel = document.createElement('div');
+            panel.style.cssText =
+                'border:1px solid #b8860b; background:#fff8e1; ' +
+                'color:#212529; border-radius:6px; padding:.6rem .9rem; ' +
+                'margin:.4rem 0 .8rem; font-size:1.02rem;';
+            const esc = function (s) {
+                return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+            };
+            panel.innerHTML =
+                '<button type="button" style="float:right; border:none; ' +
+                'background:none; font-size:1.3rem; line-height:1; ' +
+                'cursor:pointer;" aria-label="Dismiss" ' +
+                'id="asm-notice-dismiss">&times;</button>'
+                + (notice.done
+                   ? '<strong>' + notice.done + ' decided.</strong> ' : '')
+                + '<strong>' + notice.incomplete.length
+                + ' left as proposals</strong> — target events and '
+                + 'priority are required to approve: '
+                + notice.incomplete.slice(0, 8).map(esc).join('; ')
+                + (notice.incomplete.length > 8
+                   ? '; and ' + (notice.incomplete.length - 8) + ' more'
+                   : '');
+            const anchor = document.querySelector('.ai-attr-text');
+            anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+            document.getElementById('asm-notice-dismiss')
+                .addEventListener('click', function () {
+                    try { sessionStorage.removeItem(NOTICE_KEY); }
+                    catch (e) { /* ignore */ }
+                    panel.remove();
+                });
+        })();
         const denyBtn = document.getElementById('asm-deny');
         const statusEl = document.getElementById('asm-status');
         const countEl = document.getElementById('asm-selected-count');
@@ -199,27 +241,19 @@
                 }
                 return r.json();
             }).then(function (result) {
+                // Incomplete rows stay proposals; the message survives
+                // the reload as a dismissible panel.
                 const incomplete = result.incomplete || [];
-                if (!incomplete.length) {
-                    window.location.reload();
-                    return;
+                if (incomplete.length) {
+                    const done = (result.approved || []).length
+                        + (result.denied || []).length;
+                    try {
+                        sessionStorage.setItem(NOTICE_KEY, JSON.stringify({
+                            done: done, incomplete: incomplete,
+                        }));
+                    } catch (e) { /* storage unavailable: reload only */ }
                 }
-                // Incomplete rows stay proposals; say so and let the
-                // reviewer fill the missing fields before reloading.
-                const done = (result.approved || []).length
-                    + (result.denied || []).length;
-                statusEl.innerHTML =
-                    (done ? done + ' decided; ' : '')
-                    + '<strong>' + incomplete.length
-                    + ' left as proposals</strong> — '
-                    + incomplete.slice(0, 5).map(function (s) {
-                        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-                      }).join('; ')
-                    + (incomplete.length > 5
-                       ? '; and ' + (incomplete.length - 5) + ' more' : '')
-                    + ' · <a href="">reload</a>';
-                statusEl.style.color = '#c62828';
-                refresh();
+                window.location.reload();
             }).catch(function (error) {
                 statusEl.textContent = String(error.message || error);
                 statusEl.style.color = '#c62828';
