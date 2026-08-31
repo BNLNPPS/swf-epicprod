@@ -248,6 +248,10 @@ by-priority table carrying the rest.
    path. A per-configuration view (`view=pc`) rolls the list up to one
    row per PC — the campaign completion table the home panel's counts
    link into; the edition view remains the target-curation surface.
+   The page carries the campaign's last-7-day arrivals quilt and
+   accrued-files stack (the snapper embed), pruned to the active
+   filters; its click-through opens the campaign view with the same
+   filters carried.
 2. **Snapper campaign view**: one campaign shown at a time, selected
    by tab, defaulting to the current campaign; the window opens at the
    campaign's first recorded delivery. The primary display is the
@@ -262,7 +266,10 @@ by-priority table carrying the rest.
    its samples with completion to each sample's PCS dataset page. The
    lens and campaign are carried in the URL, so a group's view is a
    bookmarkable link. The view is a report-page preset over the existing scope
-   machinery.
+   machinery. It also accepts the campaign plan's filter parameters
+   (priority, status, process, ...), narrowing the plotted
+   configurations to the plan page's slice with the restriction stated
+   on the page and carried through the cut and window stepping.
 3. **Ops dashboard embed**: the existing snapper embed carrying the
    delivery curve family, click-through to the campaign view.
 4. **Production home completion panel**: a framed panel per current or

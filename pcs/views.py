@@ -2924,40 +2924,50 @@ def pcs_config_detail(request, label):
     })
 
 
-def _plan_delivery_embed(campaign):
-    """The campaign's arrivals quilt over the last 30 days for the plan
-    page (CAMPAIGN_DELIVERY.md surface 3): the factorized snapper embed
-    as a cached product, built from the delivery component's snaps
-    alone, click-through to the campaign Time history. None when the
-    campaign has no recorded deliveries in the window or the build
-    fails (failure is logged, never fatal to the plan page)."""
+def _plan_delivery_embed(campaign, state):
+    """The campaign's last-7-day arrivals quilt and accrued-files stack
+    for the plan page (CAMPAIGN_DELIVERY.md surface 1): the factorized
+    snapper embed as a cached product, built unfiltered from the
+    delivery component's snaps and pruned per request to the active
+    plan filters; the click-through opens the campaign Time history
+    carrying the same filters. None when nothing matches the window or
+    the build fails (failure is logged, never fatal to the plan
+    page)."""
     import logging
     from datetime import timedelta
-    from urllib.parse import quote
+    from urllib.parse import quote, urlencode
 
     from django.utils import timezone as dj_timezone
 
     from monitor_app.cached_product import get_product
     from snapper_ai.embed import embed_context
 
+    tag = campaign.name.replace('.', '_')
+
     def build():
         now = dj_timezone.now()
         ctx = embed_context(
-            'epicprod', now - timedelta(days=30), now,
-            families=(f'Arrivals {campaign.name} files',),
+            'epicprod', now - timedelta(days=7), now,
+            families=(
+                f'Arrivals {campaign.name} files',
+                # Inline panel spec: the per-PC accrued-files curves,
+                # stacked — the accrual companion to the quilt.
+                {'name': f'plan-accrued-{campaign.name}',
+                 'title': f'Accrued {campaign.name} files',
+                 'prefixes': [f'dlvpcf_{tag}_'],
+                 'stacked': True},
+            ),
             snap_components=('delivery',))
         if ctx.get('error'):
             raise RuntimeError(ctx['error'])
         ctx['report_focus_slug'] = 'campaign'
         ctx['report_query'] += f'&campaign={quote(campaign.name)}'
-        # The quilt is the page's map: double the embed's default
-        # panel height.
-        ctx['panel_px'] = 300
+        ctx['panel_px'] = 220
         return ctx
 
     try:
         product = get_product(
-            f'snapper_embed:v1:pcs_plan:{campaign.name}', build,
+            f'snapper_embed:v2:pcs_plan:{campaign.name}', build,
             ttl_seconds=300)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger(__name__).error(
@@ -2966,33 +2976,55 @@ def _plan_delivery_embed(campaign):
     ctx = product.get('value')
     if not ctx or not ctx.get('has_points'):
         return None
+    echo = state.get('filter_echo') or {}
+    if echo:
+        # Prune the cached full-campaign context to the filtered slice
+        # (the value is deserialized fresh per request, so in-place is
+        # safe) and carry the filters into the Time-history link.
+        pc_set = {r['pc_label'] for r in state['rows'] if r['pc_label']}
+        prefixes = tuple(f'{p}{tag}_'
+                         for p in ('dlvq_', 'dlvqf_', 'dlvpc_', 'dlvpcf_'))
+
+        def keep(curve_id):
+            for prefix in prefixes:
+                if curve_id.startswith(prefix):
+                    return curve_id[len(prefix):] in pc_set
+            return False
+
+        data = ctx['data']
+        data['curves'] = {curve_id: curve
+                          for curve_id, curve in data['curves'].items()
+                          if keep(curve_id)}
+        for panel in data['panels']:
+            panel['ids'] = [curve_id for curve_id in panel['ids']
+                            if keep(curve_id)]
+        ctx['has_points'] = any(curve['points']
+                                for curve in data['curves'].values())
+        ctx['report_query'] += '&' + urlencode(echo)
+        if not ctx['has_points']:
+            return None
     return ctx
 
 
-def pcs_campaign_plan(request):
-    """The campaign plan list (CAMPAIGN_DELIVERY.md surface 1): one
-    active or future campaign's physics configurations with the
-    campaign-included target-events column — filled where set, visibly
-    missing where not. The curation surface for the delivery
-    denominator: per-row entry saved in bulk through the
-    expected-events REST endpoint with one required comment. Read-open;
-    saving requires login.
-    """
-    plan_campaigns = list(
-        Campaign.objects.filter(lifecycle__in=('current', 'future'))
-        .order_by('-name'))
-    selected_name = (request.GET.get('campaign') or '').strip()
-    campaign = None
-    if selected_name:
-        campaign = Campaign.objects.filter(name=selected_name).first()
-    if campaign is None:
-        campaign = next((c for c in plan_campaigns
-                         if c.lifecycle == 'current'), None)
-    if campaign is None and plan_campaigns:
-        campaign = plan_campaigns[0]
-    if campaign is not None and campaign not in plan_campaigns:
-        plan_campaigns.append(campaign)
+PLAN_STATUS_SLUGS = (('complete', 'complete'),
+                     ('below-target', 'below target'),
+                     ('not-started', 'not started'),
+                     ('no-target', 'no target'))
 
+# The plan's filter parameters, in facet-row order — the vocabulary the
+# plan page, its snapper embed, and the campaign Time history filter
+# carry-through all share.
+PLAN_FILTER_PARAMS = ('requestor', 'process', 'generator', 'beam', 'q2',
+                      'sample', 'nev', 'priority', 'status')
+
+
+def _campaign_plan_state(campaign, query, pc_view):
+    """Rows and filter state of the campaign plan — the single source
+    for the plan page and the snapper campaign-view filter
+    carry-through. Builds the per-head rows with the completion join,
+    collapses to one row per PC when ``pc_view``, applies every plan
+    filter in ``query`` (a plain mapping), and names the active
+    filters."""
     heads = []
     requested = {}
     if campaign is not None:
@@ -3008,7 +3040,6 @@ def pcs_campaign_plan(request):
         # the largest single ask stands in, never a sum of possible
         # duplicates.
         projection = services.pc_request_projection(heads)
-        requested = {}
         for name, reqs in projection.items():
             values = [r.nevents for r in reqs if r.nevents]
             if values:
@@ -3071,8 +3102,7 @@ def pcs_campaign_plan(request):
             'expected_source': head.expected_events_source,
             'requested_events': requested.get(head.composed_name),
         })
-    view_mode = 'pc' if (request.GET.get('view') or '') == 'pc' else 'edition'
-    if view_mode == 'pc':
+    if pc_view:
         # One row per physics configuration — the completion table the
         # home panel's counts link into. The representative edition is
         # the first head carrying a target, else the first head (the
@@ -3093,6 +3123,121 @@ def pcs_campaign_plan(request):
         (int(r['physics'][1:]) if r['physics'][1:].isdigit() else 0)
         if r['physics'] else 0, r['sample']))
 
+    rows_all = rows
+    filters = {key: (query.get(key) or '').strip()
+               for key in ('process', 'generator', 'beam', 'q2', 'sample')}
+    for key, value in filters.items():
+        if value:
+            rows = [r for r in rows if r[key] == value]
+    # Requestor is multi-membership: a row matches when it carries the
+    # label; 'Unassigned' matches the empty list.
+    requestor_filter = (query.get('requestor') or '').strip()
+    if requestor_filter == 'Unassigned':
+        rows = [r for r in rows if not r['requestors']]
+    elif requestor_filter:
+        rows = [r for r in rows if requestor_filter in r['requestors']]
+    nev = (query.get('nev') or '').strip()
+    if nev == 'specified':
+        rows = [r for r in rows if r['expected_events'] is not None]
+    elif nev == 'unspecified':
+        rows = [r for r in rows if r['expected_events'] is None]
+    priority_filter = (query.get('priority') or '').strip()
+    if priority_filter == 'none':
+        rows = [r for r in rows if r['priority'] is None]
+    elif priority_filter.isdigit():
+        rows = [r for r in rows if r['priority'] == int(priority_filter)]
+    status_filter = (query.get('status') or '').strip()
+    status_label = dict(PLAN_STATUS_SLUGS).get(status_filter)
+    if status_label:
+        rows = [r for r in rows if r['status'] == status_label]
+
+    # The named active filters (the page's Active-filters line and the
+    # Time-history carry-through statement) and their parameter echo
+    # (the query fragment that reproduces this slice).
+    active_filters = []
+    filter_echo = {}
+    if requestor_filter:
+        active_filters.append(('Requestor', requestor_filter))
+        filter_echo['requestor'] = requestor_filter
+    for key, label in (('process', 'Process'), ('generator', 'Generator'),
+                       ('beam', 'Beam'), ('q2', 'Q²'), ('sample', 'Sample')):
+        if filters[key]:
+            active_filters.append((label, filters[key]))
+            filter_echo[key] = filters[key]
+    if nev:
+        active_filters.append(('Target', nev))
+        filter_echo['nev'] = nev
+    if priority_filter:
+        active_filters.append(('Priority', priority_filter))
+        filter_echo['priority'] = priority_filter
+    if status_label:
+        active_filters.append(('Status', status_label))
+        filter_echo['status'] = status_filter
+
+    return {'rows_all': rows_all, 'rows': rows, 'filters': filters,
+            'requestor_filter': requestor_filter, 'nev': nev,
+            'priority_filter': priority_filter,
+            'status_filter': status_filter, 'status_label': status_label,
+            'active_filters': active_filters, 'filter_echo': filter_echo}
+
+
+def campaign_plan_pc_filter(campaign_name, query):
+    """The snapper campaign view's filter carry-through: resolve the
+    plan filter parameters in ``query`` against ``campaign_name`` and
+    return ``(active_filters, pc label set)`` — or ``(None, None)``
+    when no plan filter is active or the campaign is unknown."""
+    if not any((query.get(key) or '').strip()
+               for key in PLAN_FILTER_PARAMS):
+        return None, None
+    campaign = Campaign.objects.filter(name=campaign_name).first()
+    if campaign is None:
+        return None, None
+    state = _campaign_plan_state(campaign, query, pc_view=True)
+    if not state['active_filters']:
+        return None, None
+    return (state['active_filters'],
+            {r['pc_label'] for r in state['rows'] if r['pc_label']})
+
+
+def pcs_campaign_plan(request):
+    """The campaign plan list (CAMPAIGN_DELIVERY.md surface 1): one
+    active or future campaign's physics configurations with the
+    campaign-included target-events column — filled where set, visibly
+    missing where not. The curation surface for the delivery
+    denominator: per-row entry saved in bulk through the
+    expected-events REST endpoint with one required comment. Read-open;
+    saving requires login.
+    """
+    plan_campaigns = list(
+        Campaign.objects.filter(lifecycle__in=('current', 'future'))
+        .order_by('-name'))
+    selected_name = (request.GET.get('campaign') or '').strip()
+    campaign = None
+    if selected_name:
+        campaign = Campaign.objects.filter(name=selected_name).first()
+    if campaign is None:
+        campaign = next((c for c in plan_campaigns
+                         if c.lifecycle == 'current'), None)
+    if campaign is None and plan_campaigns:
+        campaign = plan_campaigns[0]
+    if campaign is not None and campaign not in plan_campaigns:
+        plan_campaigns.append(campaign)
+
+    view_mode = 'pc' if (request.GET.get('view') or '') == 'pc' else 'edition'
+    state = _campaign_plan_state(campaign, request.GET, view_mode == 'pc')
+    rows_all = state['rows_all']
+    rows = state['rows']
+    filters = state['filters']
+    requestor_filter = state['requestor_filter']
+    nev = state['nev']
+    priority_filter = state['priority_filter']
+    status_filter = state['status_filter']
+
+    with_target = sum(1 for r in rows_all
+                      if r['expected_events'] is not None)
+    target_total = sum(r['expected_events'] for r in rows_all
+                       if r['expected_events'] is not None)
+
     def url_with(**updates):
         params = request.GET.copy()
         for key, value in updates.items():
@@ -3102,45 +3247,6 @@ def pcs_campaign_plan(request):
                 params.pop(key, None)
         encoded = params.urlencode()
         return f'{request.path}?{encoded}' if encoded else request.path
-
-    # Facet filters over the campaign's rows, the physics-page approach,
-    # plus the target-status facet (specified/unspecified nev) — the
-    # speed-filling workflow filters to a coherent slice first.
-    rows_all = rows
-    with_target = sum(1 for r in rows_all
-                      if r['expected_events'] is not None)
-    target_total = sum(r['expected_events'] for r in rows_all
-                       if r['expected_events'] is not None)
-    filters = {key: (request.GET.get(key) or '').strip()
-               for key in ('process', 'generator', 'beam', 'q2', 'sample')}
-    for key, value in filters.items():
-        if value:
-            rows = [r for r in rows if r[key] == value]
-    # Requestor is multi-membership: a row matches when it carries the
-    # label; 'Unassigned' matches the empty list.
-    requestor_filter = (request.GET.get('requestor') or '').strip()
-    if requestor_filter == 'Unassigned':
-        rows = [r for r in rows if not r['requestors']]
-    elif requestor_filter:
-        rows = [r for r in rows if requestor_filter in r['requestors']]
-    nev = (request.GET.get('nev') or '').strip()
-    if nev == 'specified':
-        rows = [r for r in rows if r['expected_events'] is not None]
-    elif nev == 'unspecified':
-        rows = [r for r in rows if r['expected_events'] is None]
-    priority_filter = (request.GET.get('priority') or '').strip()
-    if priority_filter == 'none':
-        rows = [r for r in rows if r['priority'] is None]
-    elif priority_filter.isdigit():
-        rows = [r for r in rows if r['priority'] == int(priority_filter)]
-    STATUS_SLUGS = (('complete', 'complete'),
-                    ('below-target', 'below target'),
-                    ('not-started', 'not started'),
-                    ('no-target', 'no target'))
-    status_filter = (request.GET.get('status') or '').strip()
-    status_label = dict(STATUS_SLUGS).get(status_filter)
-    if status_label:
-        rows = [r for r in rows if r['status'] == status_label]
 
     def facet(param):
         counts = {}
@@ -3226,34 +3332,18 @@ def pcs_campaign_plan(request):
                  'count': sum(1 for r in rows_all if r['status'] == label),
                  'url': url_with(status=slug),
                  'active': status_filter == slug}
-                for slug, label in STATUS_SLUGS],
+                for slug, label in PLAN_STATUS_SLUGS],
             'all_url': url_with(status=''),
             'all_active': not status_filter}))
 
-    # The active-filter line under the view toggle: every filter now
-    # narrowing the table, named as the facet rows name them.
-    active_filters = []
-    if requestor_filter:
-        active_filters.append(('Requestor', requestor_filter))
-    for key, label in (('process', 'Process'), ('generator', 'Generator'),
-                       ('beam', 'Beam'), ('q2', 'Q²'), ('sample', 'Sample')):
-        if filters[key]:
-            active_filters.append((label, filters[key]))
-    if nev:
-        active_filters.append(('Target', nev))
-    if priority_filter:
-        active_filters.append(('Priority', priority_filter))
-    if status_label:
-        active_filters.append(('Status', status_label))
-
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
-        'active_filters': active_filters,
+        'active_filters': state['active_filters'],
         'view_mode': view_mode,
         'view_edition_url': url_with(view=''),
         'view_pc_url': url_with(view='pc'),
         'plan_campaigns': plan_campaigns,
-        'snapper_embed': (_plan_delivery_embed(campaign)
+        'snapper_embed': (_plan_delivery_embed(campaign, state)
                           if campaign is not None else None),
         'rows': rows,
         'total': len(rows_all),

@@ -52,9 +52,10 @@
     </p>
 
     {% if snapper_embed %}
-    <!-- The delivery map above the plan: last-30-day arrivals quilt
-         (snapper embed, cached product); click lands on the campaign
-         Time history. -->
+    <!-- The delivery map above the plan: last-7-day arrivals quilt and
+         accrued-files stack (snapper embed, cached product), pruned to
+         the active filters; click lands on the campaign Time history
+         carrying the same filters. -->
     <div class="mb-3">
         {% include 'snapper_ai/_snapper_embed.html' with embed=snapper_embed %}
     </div>
