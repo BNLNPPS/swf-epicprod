@@ -3242,6 +3242,13 @@ def _campaign_assembly_context(campaign):
     pending = {row.subject_key: row for row in Proposal.objects.filter(
         action='campaign_plan', counterpart_key=campaign.name,
         status='proposed')}
+    # The latest executed proposal per configuration backs the in-place
+    # Undo on approved rows.
+    executed = {}
+    for prow in Proposal.objects.filter(
+            action='campaign_plan', counterpart_key=campaign.name,
+            status='executed').order_by('decided_at'):
+        executed[prow.subject_key] = prow
     labels = sorted(set(plan) | set(pending))
     if not labels:
         return None
@@ -3265,11 +3272,13 @@ def _campaign_assembly_context(campaign):
             counts['proposed'] += 1
         else:
             entry = plan[label]
+            done = executed.get(label)
             row = {
                 'pc': label,
                 'state': 'approved',
                 'proposal_id': None,
-                'ref': '',
+                'ref': done.ref if done else '',
+                'undo_id': done.pk if done else None,
                 'disposition': entry.get('disposition', ''),
                 'target_events': entry.get('target_events'),
                 'priority': entry.get('priority'),

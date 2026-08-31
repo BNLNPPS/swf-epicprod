@@ -114,7 +114,11 @@
                 <td class="text-end" data-order="{{ r.target_events|default_if_none:'-1' }}">{% if r.proposal_id %}<input type="number" min="0" class="form-control form-control-sm asm-target" style="width: 11em; display: inline-block;" value="{{ r.target_events|default_if_none:'' }}">{% else %}{{ r.target_events|default_if_none:'' }}{% endif %}</td>
                 <td class="text-end" data-order="{{ r.priority|default_if_none:'99' }}">{% if r.proposal_id %}<input type="number" class="form-control form-control-sm asm-priority" style="width: 5em; display: inline-block;" value="{{ r.priority|default_if_none:'' }}">{% else %}{{ r.priority|default_if_none:'' }}{% endif %}</td>
                 <td>{{ r.evidence }}</td>
-                <td>{% if r.state == 'proposed' %}<span class="ai-attr">proposed · {{ r.ref }}</span>{% else %}approved{% endif %}</td>
+                <td style="white-space: nowrap;">{% if r.state == 'proposed' %}<span class="ai-attr">{{ r.ref }}</span>
+                    <button type="button" class="btn btn-sm btn-success asm-row-approve">Approve</button>
+                    <button type="button" class="btn btn-sm btn-secondary asm-row-deny">Deny</button>
+                    {% else %}approved{% if r.undo_id %}
+                    <button type="button" class="btn btn-sm btn-secondary asm-row-undo" data-undo-id="{{ r.undo_id }}">Undo</button>{% endif %}{% endif %}</td>
             </tr>
         {% endfor %}
         </tbody>
@@ -205,25 +209,33 @@
             function () { ticks().forEach(function (t) { t.checked = true; }); refresh(); });
         document.getElementById('asm-select-none').addEventListener('click',
             function () { ticks().forEach(function (t) { t.checked = false; }); refresh(); });
-        function decide(decision) {
-            const ids = [];
-            const amendments = {};
-            ticks().forEach(function (t) {
-                if (!t.checked) return;
-                const tr = t.closest('tr');
-                const id = parseInt(tr.dataset.proposalId, 10);
-                ids.push(id);
-                const target = tr.querySelector('.asm-target');
-                const priority = tr.querySelector('.asm-priority');
-                const amended = {};
-                if (target && target.value.trim() !== (tr.dataset.origTarget || '')) {
-                    amended.target_events = target.value.trim();
-                }
-                if (priority && priority.value.trim() !== (tr.dataset.origPriority || '')) {
-                    amended.priority = priority.value.trim();
-                }
-                if (Object.keys(amended).length) amendments[id] = amended;
-            });
+        function rowAmendment(tr) {
+            const amended = {};
+            const target = tr.querySelector('.asm-target');
+            const priority = tr.querySelector('.asm-priority');
+            if (target && target.value.trim() !== (tr.dataset.origTarget || '')) {
+                amended.target_events = target.value.trim();
+            }
+            if (priority && priority.value.trim() !== (tr.dataset.origPriority || '')) {
+                amended.priority = priority.value.trim();
+            }
+            return amended;
+        }
+        function decide(decision, onlyIds, onlyAmendments) {
+            let ids = onlyIds;
+            let amendments = onlyAmendments;
+            if (!ids) {
+                ids = [];
+                amendments = {};
+                ticks().forEach(function (t) {
+                    if (!t.checked) return;
+                    const tr = t.closest('tr');
+                    const id = parseInt(tr.dataset.proposalId, 10);
+                    ids.push(id);
+                    const amended = rowAmendment(tr);
+                    if (Object.keys(amended).length) amendments[id] = amended;
+                });
+            }
             statusEl.textContent = 'Deciding...';
             statusEl.style.color = '';
             approveBtn.disabled = denyBtn.disabled = true;
@@ -265,6 +277,52 @@
         }
         approveBtn.addEventListener('click', function () { decide('approve'); });
         denyBtn.addEventListener('click', function () { decide('deny'); });
+        // Per-row processing: the State cell's own controls.
+        document.addEventListener('click', function (event) {
+            const target = event.target;
+            if (target.classList.contains('asm-row-approve')
+                    || target.classList.contains('asm-row-deny')) {
+                const tr = target.closest('tr');
+                const id = parseInt(tr.dataset.proposalId, 10);
+                const amended = rowAmendment(tr);
+                const amendments = {};
+                if (Object.keys(amended).length) amendments[id] = amended;
+                decide(target.classList.contains('asm-row-approve')
+                       ? 'approve' : 'deny', [id], amendments);
+            }
+            if (target.classList.contains('asm-row-undo')) {
+                const id = parseInt(target.dataset.undoId, 10);
+                statusEl.textContent = 'Undoing...';
+                statusEl.style.color = '';
+                const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1];
+                fetch('{{ request.META.SCRIPT_NAME }}/ai/api/proposals/undo/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json',
+                              'X-CSRFToken': csrf || ''},
+                    body: JSON.stringify({ids: [id]}),
+                }).then(function (r) {
+                    if (!r.ok) {
+                        return r.json().catch(function () { return {}; })
+                            .then(function (body) {
+                                throw new Error(body.detail
+                                    || ('undo failed (HTTP ' + r.status + ')'));
+                            });
+                    }
+                    return r.json();
+                }).then(function (result) {
+                    if ((result.undone || []).length) {
+                        window.location.reload();
+                        return;
+                    }
+                    statusEl.textContent =
+                        'Undo expired — the plan entry has moved on.';
+                    statusEl.style.color = '#c62828';
+                }).catch(function (error) {
+                    statusEl.textContent = String(error.message || error);
+                    statusEl.style.color = '#c62828';
+                });
+            }
+        });
     })();
     </script>
     {% else %}
