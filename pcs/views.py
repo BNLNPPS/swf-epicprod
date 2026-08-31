@@ -3230,8 +3230,25 @@ def pcs_campaign_plan(request):
             'all_url': url_with(status=''),
             'all_active': not status_filter}))
 
+    # The active-filter line under the view toggle: every filter now
+    # narrowing the table, named as the facet rows name them.
+    active_filters = []
+    if requestor_filter:
+        active_filters.append(('Requestor', requestor_filter))
+    for key, label in (('process', 'Process'), ('generator', 'Generator'),
+                       ('beam', 'Beam'), ('q2', 'Q²'), ('sample', 'Sample')):
+        if filters[key]:
+            active_filters.append((label, filters[key]))
+    if nev:
+        active_filters.append(('Target', nev))
+    if priority_filter:
+        active_filters.append(('Priority', priority_filter))
+    if status_label:
+        active_filters.append(('Status', status_label))
+
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
+        'active_filters': active_filters,
         'view_mode': view_mode,
         'view_edition_url': url_with(view=''),
         'view_pc_url': url_with(view='pc'),

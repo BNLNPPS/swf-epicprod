@@ -33,6 +33,15 @@
         <a href="{{ view_pc_url }}" class="btn btn-sm {% if view_mode == 'pc' %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
            title="One row per physics configuration — the campaign completion table">Physics configurations</a>
     </div>
+    <div class="mb-2">
+        <strong>Active filters:</strong>
+        {% if active_filters %}
+        {% for label, value in active_filters %}<span class="me-2">{{ label }}: <strong>{{ value }}</strong></span>{% endfor %}
+        <a href="{{ clear_url }}">clear</a>
+        {% else %}
+        none
+        {% endif %}
+    </div>
     <p>
         <strong>{{ shown }}</strong> of <strong>{{ total }}</strong> physics configurations ·
         <strong>{{ with_target }}</strong> with targets
