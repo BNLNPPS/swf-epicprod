@@ -28,8 +28,45 @@ def _round_2sig(value):
     return int(round(value / magnitude) * magnitude)
 
 
-def build_assembly_items(source_campaign):
-    """One proposal item per source-campaign physics configuration.
+def _added_pc_items(target_campaign, covered):
+    """Configurations added via PCS beyond the source walk: an edition
+    composed in the target campaign, or a configuration created after
+    the target campaign row appeared. Proposed include with the target
+    left open — the approval gate holds them until target and priority
+    are set."""
+    from .models import Campaign, PhysicsConfig
+
+    campaign = Campaign.objects.filter(name=target_campaign).first()
+    seen = {}
+    for pc in PhysicsConfig.objects.filter(
+            editions__campaign__name=target_campaign).distinct():
+        seen[pc.label] = f'composed in {target_campaign} via PCS'
+    if campaign is not None:
+        for pc in PhysicsConfig.objects.filter(
+                created_at__gte=campaign.created_at):
+            seen.setdefault(
+                pc.label,
+                f'added in PCS {pc.created_at.date().isoformat()}')
+    items = []
+    for label in sorted(seen):
+        if label in covered:
+            continue
+        facts = seen[label]
+        items.append({
+            'pc': label,
+            'disposition': 'include',
+            'target_events': None,
+            'priority': None,
+            'evidence': facts,
+            'comment': f'include: {facts}',
+        })
+    return items
+
+
+def build_assembly_items(source_campaign, target_campaign=None):
+    """One proposal item per source-campaign physics configuration,
+    plus configurations added via PCS for the target campaign
+    (``_added_pc_items``).
 
     Defaults, in precedence:
 
@@ -110,6 +147,9 @@ def build_assembly_items(source_campaign):
             'evidence': facts,
             'comment': f'{disposition}: {facts}',
         })
+    if target_campaign:
+        items.extend(_added_pc_items(target_campaign,
+                                     {item['pc'] for item in items}))
     return {'items': items, 'skipped': skipped,
             'source_campaign': source_campaign}
 
@@ -121,7 +161,7 @@ def propose_campaign_assembly(source_campaign, target_campaign, *,
     propose-service result plus the item summary."""
     from ai.services import propose_campaign_plan
 
-    built = build_assembly_items(source_campaign)
+    built = build_assembly_items(source_campaign, target_campaign)
     result = propose_campaign_plan(
         target_campaign, built['items'],
         proposer=PROPOSER, batch_id=batch_id, created_by=created_by)

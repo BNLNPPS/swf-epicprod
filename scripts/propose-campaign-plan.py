@@ -39,7 +39,7 @@ def main():
                         help='sample items to print per disposition')
     args = parser.parse_args()
 
-    built = build_assembly_items(args.source)
+    built = build_assembly_items(args.source, args.target)
     by_disposition = collections.defaultdict(list)
     for item in built['items']:
         by_disposition[item['disposition']].append(item)
