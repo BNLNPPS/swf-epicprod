@@ -100,10 +100,10 @@
                 <th></th>
                 <th>PC</th>
                 <th>Sample</th>
-                <th title="Include in this campaign, defer, or retire — the AI proposal initially, the applied result once decided">Disposition</th>
                 <th title="Editable before approval; the amended value is recorded with the decision">Target events</th>
                 <th title="Editable before approval; 1 = highest">Priority</th>
                 <th>Evidence</th>
+                <th title="Include in this campaign, defer, or retire — the AI proposal initially, the applied result once decided">Disposition</th>
                 <th>Action</th>
             </tr>
         </thead>
@@ -113,10 +113,10 @@
                 <td><input type="checkbox" class="form-check-input asm-tick"></td>
                 <td><a href="{% url 'pcs:pcs_config_detail' label=r.pc %}">{{ r.pc }}</a></td>
                 <td>{{ r.sample }}</td>
-                <td>{{ r.disposition_label }}</td>
                 <td class="text-end" data-order="{{ r.target_events|default_if_none:'-1' }}">{% if r.proposal_id %}<input type="number" min="0" class="form-control form-control-sm asm-target" style="width: 11em; display: inline-block;" value="{{ r.target_events|default_if_none:'' }}">{% else %}{{ r.target_events|default_if_none:'' }}{% endif %}</td>
                 <td class="text-end" data-order="{{ r.priority|default_if_none:'99' }}">{% if r.proposal_id %}<input type="number" class="form-control form-control-sm asm-priority" style="width: 5em; display: inline-block;" value="{{ r.priority|default_if_none:'' }}">{% else %}{{ r.priority|default_if_none:'' }}{% endif %}</td>
                 <td>{{ r.evidence }}</td>
+                <td>{{ r.disposition_label }}</td>
                 <td style="white-space: nowrap;{% if r.state == 'proposed' %} background-color: var(--ai-bg); box-shadow: none; border: 1px solid var(--ai-fg);{% endif %}">{% if r.state == 'proposed' %}<span style="color: var(--ai-fg); font-weight: 600;">{{ r.ref }}</span>
                     <select class="form-select form-select-sm asm-dispo" style="display: inline-block; width: auto;">
                         <option value="include" {% if r.disposition != 'defer' and r.disposition != 'retire' %}selected{% endif %}>Include</option>
