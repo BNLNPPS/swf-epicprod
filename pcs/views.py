@@ -3196,7 +3196,7 @@ def _campaign_plan_state(campaign, query, pc_view):
             active_filters.append((label, filters[key]))
             filter_echo[key] = filters[key]
     if nev:
-        active_filters.append(('Target', nev))
+        active_filters.append(('Target events', nev))
         filter_echo['nev'] = nev
     if priority_filter:
         active_filters.append(('Priority', priority_filter))
@@ -3443,7 +3443,7 @@ def pcs_campaign_plan(request):
     nev_base = _apply_plan_filters(rows_all, request.GET, skip=('nev',))
     specified_count = sum(
         1 for r in nev_base if r['expected_events'] is not None)
-    facet_rows.append(('Target', {
+    facet_rows.append(('Target events', {
         'items': [
             {'value': 'specified', 'count': specified_count,
              'url': url_with(nev='specified'), 'active': nev == 'specified'},

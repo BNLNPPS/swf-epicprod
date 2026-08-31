@@ -75,10 +75,10 @@
                 <button type="button" id="asm-select-none" class="btn btn-sm btn-secondary">None</button>
                 <span><strong id="asm-selected-count">0</strong> selected</span>
                 <input type="number" min="0" id="asm-fill-target" class="form-control form-control-sm"
-                       style="width: 12em; margin-left: 1cm;" placeholder="Target events">
+                       style="width: 18em; margin-left: 1cm;" placeholder="Target events">
                 <button type="button" id="asm-fill-target-btn" class="btn btn-sm btn-primary" disabled>Fill target</button>
                 <input type="number" id="asm-fill-priority" class="form-control form-control-sm"
-                       style="width: 6em;" placeholder="Priority">
+                       style="width: 9em;" placeholder="Priority">
                 <button type="button" id="asm-fill-priority-btn" class="btn btn-sm btn-primary" disabled>Fill priority</button>
             </div>
             <div class="d-flex align-items-center flex-wrap gap-2">
@@ -108,8 +108,8 @@
                 <td><a href="{% url 'pcs:pcs_config_detail' label=r.pc %}">{{ r.pc }}</a></td>
                 <td>{{ r.sample }}</td>
                 <td>{{ r.disposition_label }}</td>
-                <td class="text-end" data-order="{{ r.target_events|default_if_none:'-1' }}">{% if r.proposal_id %}<input type="number" min="0" class="form-control form-control-sm asm-target" style="width: 11em; display: inline-block;" value="{{ r.target_events|default_if_none:'' }}">{% else %}{{ r.target_events|default_if_none:'' }}{% endif %}</td>
-                <td class="text-end" data-order="{{ r.priority|default_if_none:'99' }}">{% if r.proposal_id %}<input type="number" class="form-control form-control-sm asm-priority" style="width: 5em; display: inline-block;" value="{{ r.priority|default_if_none:'' }}">{% else %}{{ r.priority|default_if_none:'' }}{% endif %}</td>
+                <td class="text-end" data-order="{{ r.target_events|default_if_none:'-1' }}">{% if r.proposal_id %}<input type="number" min="0" class="form-control form-control-sm asm-target" style="width: 16.5em; display: inline-block;" value="{{ r.target_events|default_if_none:'' }}">{% else %}{{ r.target_events|default_if_none:'' }}{% endif %}</td>
+                <td class="text-end" data-order="{{ r.priority|default_if_none:'99' }}">{% if r.proposal_id %}<input type="number" class="form-control form-control-sm asm-priority" style="width: 7.5em; display: inline-block;" value="{{ r.priority|default_if_none:'' }}">{% else %}{{ r.priority|default_if_none:'' }}{% endif %}</td>
                 <td>{{ r.evidence }}</td>
                 <td>{% if r.state == 'proposed' %}<span class="ai-attr">proposed · {{ r.ref }}</span>{% else %}approved{% endif %}</td>
             </tr>
