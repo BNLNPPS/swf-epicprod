@@ -3400,7 +3400,8 @@ def pcs_campaign_plan(request):
                            CAMPAIGN_PLAN_DISPO_LABELS.get(dispo_filter,
                                                           dispo_filter)))
         if astate_filter:
-            active.append(('State', astate_filter))
+            active.append(('State', 'applied' if astate_filter == 'approved'
+                           else astate_filter))
         state['active_filters'] = active
 
     rows_all = state['rows_all']
@@ -3559,7 +3560,7 @@ def pcs_campaign_plan(request):
         astate_base = _assembly_base(skip_astate=True)
         facet_rows.append(('State', {
             'items': [
-                {'value': value,
+                {'value': 'applied' if value == 'approved' else value,
                  'count': sum(1 for r in astate_base
                               if r['state'] == value),
                  'url': url_with(astate=value),

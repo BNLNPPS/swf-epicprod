@@ -47,7 +47,7 @@
     <p>
         <strong>{{ assembly.total }}</strong> configurations ·
         <strong>{{ assembly.proposed }}</strong> proposed ·
-        <strong>{{ assembly.approved }}</strong> approved{% if assembly.denied %} ·
+        <strong>{{ assembly.approved }}</strong> applied{% if assembly.denied %} ·
         <strong>{{ assembly.denied }}</strong> denied{% endif %}
         {% for d, n in assembly.by_disposition %} · {{ d }}: <strong>{{ n }}</strong>{% endfor %}
         · showing <strong>{{ assembly.shown }}</strong>
@@ -127,7 +127,7 @@
                     <button type="button" class="btn btn-sm btn-secondary asm-row-deny">Deny</button>
                     {% elif r.state == 'denied' %}denied{% if r.undo_id %}
                     <button type="button" class="btn btn-sm btn-secondary asm-row-undo" data-undo-id="{{ r.undo_id }}">Undo</button>{% endif %}
-                    {% else %}approved{% if r.undo_id %}
+                    {% else %}applied{% if r.undo_id %}
                     <button type="button" class="btn btn-sm btn-secondary asm-row-undo" data-undo-id="{{ r.undo_id }}">Undo</button>{% endif %}{% endif %}</td>
             </tr>
         {% endfor %}
