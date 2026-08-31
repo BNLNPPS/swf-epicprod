@@ -116,7 +116,7 @@
                 <td class="text-end" data-order="{{ r.target_events|default_if_none:'-1' }}">{% if r.proposal_id %}<input type="number" min="0" class="form-control form-control-sm asm-target" style="width: 11em; display: inline-block;" value="{{ r.target_events|default_if_none:'' }}">{% else %}{{ r.target_events|default_if_none:'' }}{% endif %}</td>
                 <td class="text-end" data-order="{{ r.priority|default_if_none:'99' }}">{% if r.proposal_id %}<input type="number" class="form-control form-control-sm asm-priority" style="width: 5em; display: inline-block;" value="{{ r.priority|default_if_none:'' }}">{% else %}{{ r.priority|default_if_none:'' }}{% endif %}</td>
                 <td>{{ r.evidence }}</td>
-                <td style="white-space: nowrap;{% if r.state == 'proposed' %} background-color: var(--ai-bg); box-shadow: none;{% endif %}">{% if r.state == 'proposed' %}<span style="color: var(--ai-fg); font-weight: 600;">{{ r.ref }}</span>
+                <td style="white-space: nowrap;{% if r.state == 'proposed' %} background-color: var(--ai-bg); box-shadow: none; border: 1px solid var(--ai-fg);{% endif %}">{% if r.state == 'proposed' %}<span style="color: var(--ai-fg); font-weight: 600;">{{ r.ref }}</span>
                     <button type="button" class="btn btn-sm btn-success asm-row-approve">Approve</button>
                     <button type="button" class="btn btn-sm btn-secondary asm-row-deny">Deny</button>
                     {% elif r.state == 'denied' %}denied{% if r.undo_id %}
