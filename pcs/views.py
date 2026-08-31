@@ -3178,7 +3178,8 @@ def _campaign_plan_state(campaign, query, pc_view):
             'requestor_filter': requestor_filter, 'nev': nev,
             'priority_filter': priority_filter,
             'status_filter': status_filter, 'status_label': status_label,
-            'active_filters': active_filters, 'filter_echo': filter_echo}
+            'active_filters': active_filters, 'filter_echo': filter_echo,
+            'has_completion': bool(completion_by_pc)}
 
 
 def campaign_plan_pc_filter(campaign_name, query):
@@ -3304,7 +3305,7 @@ def pcs_campaign_plan(request):
     }))
     # Priority and Status facets exist only where the completion record
     # covers the campaign (current or producing).
-    if completion_by_pc:
+    if state['has_completion']:
         priority_counts = {}
         no_priority_count = 0
         for r in rows_all:
