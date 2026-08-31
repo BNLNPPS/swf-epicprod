@@ -3031,8 +3031,6 @@ def pcs_campaign_plan(request):
 
     gen_case = _generator_display_case()
     rows = []
-    with_target = 0
-    target_total = 0
     for head in heads:
         params = (head.physics_tag.parameters or {}) if head.physics_tag_id \
             else {}
@@ -3047,9 +3045,6 @@ def pcs_campaign_plan(request):
             be = ''
         if bh.upper() == 'N/A':
             bh = ''
-        if head.expected_events is not None:
-            with_target += 1
-            target_total += head.expected_events
         comp = (completion_by_pc.get(head.physics_config.label)
                 if head.physics_config_id else None) or {}
         rows.append({
@@ -3076,6 +3071,24 @@ def pcs_campaign_plan(request):
             'expected_source': head.expected_events_source,
             'requested_events': requested.get(head.composed_name),
         })
+    view_mode = 'pc' if (request.GET.get('view') or '') == 'pc' else 'edition'
+    if view_mode == 'pc':
+        # One row per physics configuration — the completion table the
+        # home panel's counts link into. The representative edition is
+        # the first head carrying a target, else the first head (the
+        # pc_targets rule); heads without a configuration are outside
+        # the completion record and are not shown in this view.
+        by_pc = {}
+        for r in rows:
+            label = r['pc_label']
+            if not label:
+                continue
+            keep = by_pc.get(label)
+            if keep is None or (keep['expected_events'] is None
+                                and r['expected_events'] is not None):
+                by_pc[label] = r
+        rows = list(by_pc.values())
+
     rows.sort(key=lambda r: (
         (int(r['physics'][1:]) if r['physics'][1:].isdigit() else 0)
         if r['physics'] else 0, r['sample']))
@@ -3094,6 +3107,10 @@ def pcs_campaign_plan(request):
     # plus the target-status facet (specified/unspecified nev) — the
     # speed-filling workflow filters to a coherent slice first.
     rows_all = rows
+    with_target = sum(1 for r in rows_all
+                      if r['expected_events'] is not None)
+    target_total = sum(r['expected_events'] for r in rows_all
+                       if r['expected_events'] is not None)
     filters = {key: (request.GET.get(key) or '').strip()
                for key in ('process', 'generator', 'beam', 'q2', 'sample')}
     for key, value in filters.items():
@@ -3215,6 +3232,9 @@ def pcs_campaign_plan(request):
 
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
+        'view_mode': view_mode,
+        'view_edition_url': url_with(view=''),
+        'view_pc_url': url_with(view='pc'),
         'plan_campaigns': plan_campaigns,
         'snapper_embed': (_plan_delivery_embed(campaign)
                           if campaign is not None else None),

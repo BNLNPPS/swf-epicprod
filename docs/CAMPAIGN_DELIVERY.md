@@ -245,7 +245,9 @@ by-priority table carrying the rest.
    fraction, and status (complete / below target / not started / no
    target), with priority and status filter rows — joined from the
    campaign-completion cached product, never built in the request
-   path.
+   path. A per-configuration view (`view=pc`) rolls the list up to one
+   row per PC — the campaign completion table the home panel's counts
+   link into; the edition view remains the target-curation surface.
 2. **Snapper campaign view**: one campaign shown at a time, selected
    by tab, defaulting to the current campaign; the window opens at the
    campaign's first recorded delivery. The primary display is the

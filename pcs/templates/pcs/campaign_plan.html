@@ -27,6 +27,12 @@
     {% if not campaign %}
     <p class="text-muted">No current or future campaign exists.</p>
     {% else %}
+    <div class="mb-2">
+        <strong>View:</strong>
+        <a href="{{ view_edition_url }}" class="btn btn-sm {% if view_mode == 'edition' %}btn-secondary active{% else %}btn-outline-secondary{% endif %} me-1">Editions</a>
+        <a href="{{ view_pc_url }}" class="btn btn-sm {% if view_mode == 'pc' %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
+           title="One row per physics configuration — the campaign completion table">Physics configurations</a>
+    </div>
     <p>
         <strong>{{ shown }}</strong> of <strong>{{ total }}</strong> physics configurations ·
         <strong>{{ with_target }}</strong> with targets
@@ -60,7 +66,9 @@
     <!-- Target entry and save: edits collect in the Set target column
          (typed per row, or bulk-filled into ticked rows), then one save
          writes them all with one required comment - one bulk call, one
-         action-stream event. -->
+         action-stream event. Curation is the edition view's job; the
+         physics-configuration view is the read-only completion table. -->
+    {% if view_mode == 'edition' %}
     <div class="card mb-2">
         <div class="card-body py-2">
             <div class="mb-1"><strong>Enter target events</strong>
@@ -83,11 +91,12 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
         <thead>
             <tr>
-                <th></th>
+                {% if view_mode == 'edition' %}<th></th>{% endif %}
                 <th>PC</th>
                 <th>Physics</th>
                 <th>Process</th>
@@ -102,13 +111,13 @@
                 <th title="min(delivered / target, 1)">Completion</th>
                 <th title="complete: delivered reached the target; below target: has a target, delivered below it; not started: no files and no task in flight; no target: delivering with no event count target">Status</th>
                 <th>Disposition</th>
-                <th>Set target</th>
+                {% if view_mode == 'edition' %}<th>Set target</th>{% endif %}
             </tr>
         </thead>
         <tbody>
         {% for r in rows %}
             <tr data-name="{{ r.name }}">
-                <td><input type="checkbox" class="form-check-input plan-tick"></td>
+                {% if view_mode == 'edition' %}<td><input type="checkbox" class="form-check-input plan-tick"></td>{% endif %}
                 <td>{% if r.pc_label %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc_label %}" title="The physics configuration page: identity, associations, editions, requests">{{ r.pc_label }}</a>{% endif %}</td>
                 <td><a href="{% url 'pcs:pcs_catalog' %}?q={{ r.name|urlencode }}" title="{{ r.name }}">{{ r.physics }}</a></td>
                 <td>{{ r.process }}</td>
@@ -133,9 +142,9 @@
                 <td class="text-end">{% if r.completion_pct is not None %}{{ r.completion_pct }}%{% endif %}</td>
                 <td>{{ r.status }}</td>
                 <td>{% if r.propagation != 'continue' %}<span class="badge bg-secondary">{{ r.propagation }}</span>{% else %}{{ r.propagation }}{% endif %}</td>
-                <td><input type="number" min="0" class="form-control form-control-sm plan-target-input"
+                {% if view_mode == 'edition' %}<td><input type="number" min="0" class="form-control form-control-sm plan-target-input"
                            style="width: 11em; display: inline-block;"
-                           {% if r.expected_events is not None %}placeholder="{{ r.expected_events }}"{% elif r.requested_events is not None %}placeholder="{{ r.requested_events }}"{% endif %}></td>
+                           {% if r.expected_events is not None %}placeholder="{{ r.expected_events }}"{% elif r.requested_events is not None %}placeholder="{{ r.requested_events }}"{% endif %}></td>{% endif %}
             </tr>
         {% endfor %}
         </tbody>
