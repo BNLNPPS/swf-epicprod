@@ -5823,8 +5823,7 @@ def validation_result_receive(payload, *, received_from=''):
 # Plan-level dispositions: what a future campaign does with one physics
 # configuration. Distinct from the edition-level propagation states —
 # the plan exists before any edition does.
-CAMPAIGN_PLAN_DISPOSITIONS = ('include_prior', 'include_requested',
-                              'defer', 'retire')
+CAMPAIGN_PLAN_DISPOSITIONS = ('include', 'defer', 'retire')
 
 
 def campaign_plan_get(campaign_name):
@@ -5872,8 +5871,7 @@ def validate_plan_entry(pc_label, entry, require_complete=True):
                                f'got {value!r}')
         if out[field] < 0 and field == 'target_events':
             raise ServiceError(f'{pc_label}: target_events must be >= 0')
-    if require_complete and disposition in (
-            'include_prior', 'include_requested') and (
+    if require_complete and disposition == 'include' and (
             out['target_events'] is None or out['priority'] is None):
         raise ServiceError(
             f'{pc_label}: an include disposition requires both '

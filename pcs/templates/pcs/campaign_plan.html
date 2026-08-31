@@ -87,7 +87,7 @@
                 <button type="button" id="asm-fill-priority-btn" class="btn btn-sm btn-primary" disabled>Fill priority</button>
             </div>
             <div class="d-flex align-items-center flex-wrap gap-2">
-                <button type="button" id="asm-approve" class="btn btn-sm btn-success" disabled>Approve selected</button>
+                <button type="button" id="asm-approve" class="btn btn-sm btn-success" disabled>Apply selected</button>
                 <button type="button" id="asm-deny" class="btn btn-sm btn-secondary" disabled>Deny selected</button>
                 <button type="button" id="asm-undo" class="btn btn-sm btn-secondary" disabled>Undo selected</button>
                 <span id="asm-status"></span>
@@ -100,16 +100,16 @@
                 <th></th>
                 <th>PC</th>
                 <th>Sample</th>
-                <th title="Include in this campaign at the prior campaign's size, include at the requested event count, defer, or retire">Recommendation</th>
+                <th title="Include in this campaign, defer, or retire — the AI proposal initially, the applied result once decided">Disposition</th>
                 <th title="Editable before approval; the amended value is recorded with the decision">Target events</th>
                 <th title="Editable before approval; 1 = highest">Priority</th>
                 <th>Evidence</th>
-                <th>AI proposal</th>
+                <th>Action</th>
             </tr>
         </thead>
         <tbody>
         {% for r in assembly.rows_filtered %}
-            <tr {% if r.proposal_id %}data-proposal-id="{{ r.proposal_id }}" data-orig-target="{{ r.target_events|default_if_none:'' }}" data-orig-priority="{{ r.priority|default_if_none:'' }}"{% endif %}{% if r.undo_id %} data-undo-id="{{ r.undo_id }}"{% endif %}>
+            <tr {% if r.proposal_id %}data-proposal-id="{{ r.proposal_id }}" data-orig-target="{{ r.target_events|default_if_none:'' }}" data-orig-priority="{{ r.priority|default_if_none:'' }}" data-orig-dispo="{{ r.disposition }}"{% endif %}{% if r.undo_id %} data-undo-id="{{ r.undo_id }}"{% endif %}>
                 <td><input type="checkbox" class="form-check-input asm-tick"></td>
                 <td><a href="{% url 'pcs:pcs_config_detail' label=r.pc %}">{{ r.pc }}</a></td>
                 <td>{{ r.sample }}</td>
@@ -118,8 +118,12 @@
                 <td class="text-end" data-order="{{ r.priority|default_if_none:'99' }}">{% if r.proposal_id %}<input type="number" class="form-control form-control-sm asm-priority" style="width: 5em; display: inline-block;" value="{{ r.priority|default_if_none:'' }}">{% else %}{{ r.priority|default_if_none:'' }}{% endif %}</td>
                 <td>{{ r.evidence }}</td>
                 <td style="white-space: nowrap;{% if r.state == 'proposed' %} background-color: var(--ai-bg); box-shadow: none; border: 1px solid var(--ai-fg);{% endif %}">{% if r.state == 'proposed' %}<span style="color: var(--ai-fg); font-weight: 600;">{{ r.ref }}</span>
-                    <strong>{% if r.disposition == 'defer' %}Defer:{% elif r.disposition == 'retire' %}Retire:{% else %}Include:{% endif %}</strong>
-                    <button type="button" class="btn btn-sm btn-success asm-row-approve">Approve</button>
+                    <select class="form-select form-select-sm asm-dispo" style="display: inline-block; width: auto;">
+                        <option value="include" {% if r.disposition != 'defer' and r.disposition != 'retire' %}selected{% endif %}>Include</option>
+                        <option value="defer" {% if r.disposition == 'defer' %}selected{% endif %}>Defer</option>
+                        <option value="retire" {% if r.disposition == 'retire' %}selected{% endif %}>Retire</option>
+                    </select>
+                    <button type="button" class="btn btn-sm btn-success asm-row-approve">Apply</button>
                     <button type="button" class="btn btn-sm btn-secondary asm-row-deny">Deny</button>
                     {% elif r.state == 'denied' %}denied{% if r.undo_id %}
                     <button type="button" class="btn btn-sm btn-secondary asm-row-undo" data-undo-id="{{ r.undo_id }}">Undo</button>{% endif %}
@@ -161,7 +165,7 @@
                    ? '<strong>' + notice.done + ' decided.</strong> ' : '')
                 + '<strong>' + notice.incomplete.length
                 + ' left as proposals</strong> — target events and '
-                + 'priority are required to approve: '
+                + 'priority are required to apply an include: '
                 + notice.incomplete.slice(0, 8).map(esc).join('; ')
                 + (notice.incomplete.length > 8
                    ? '; and ' + (notice.incomplete.length - 8) + ' more'
@@ -234,6 +238,10 @@
             }
             if (priority && priority.value.trim() !== (tr.dataset.origPriority || '')) {
                 amended.priority = priority.value.trim();
+            }
+            const dispo = tr.querySelector('.asm-dispo');
+            if (dispo && dispo.value !== (tr.dataset.origDispo || '')) {
+                amended.disposition = dispo.value;
             }
             return amended;
         }

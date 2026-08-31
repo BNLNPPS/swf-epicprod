@@ -45,8 +45,7 @@ def main():
         by_disposition[item['disposition']].append(item)
     print(f"{args.source} -> {args.target}: {len(built['items'])} "
           f"configurations")
-    for disposition in ('include_requested', 'include_prior', 'defer',
-                        'retire'):
+    for disposition in ('include', 'defer', 'retire'):
         rows = by_disposition.get(disposition, [])
         print(f"\n{disposition}: {len(rows)}")
         for item in rows[:args.show]:

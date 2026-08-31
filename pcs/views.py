@@ -3024,8 +3024,7 @@ PLAN_FILTER_PARAMS = ('requestor', 'process', 'generator', 'beam', 'q2',
 # Reader-facing wording for the campaign-plan recommendation values
 # (the internal identifiers stay stable in payloads and the executor).
 CAMPAIGN_PLAN_DISPO_LABELS = {
-    'include_prior': 'include at prior size',
-    'include_requested': 'include at requested count',
+    'include': 'include',
     'defer': 'defer',
     'retire': 'retire',
 }
@@ -3397,7 +3396,7 @@ def pcs_campaign_plan(request):
         state['has_completion'] = True
         active = list(state['active_filters'])
         if dispo_filter:
-            active.append(('Recommendation',
+            active.append(('Disposition',
                            CAMPAIGN_PLAN_DISPO_LABELS.get(dispo_filter,
                                                           dispo_filter)))
         if astate_filter:
@@ -3544,7 +3543,7 @@ def pcs_campaign_plan(request):
             return base
 
         dispo_base = _assembly_base(skip_dispo=True)
-        facet_rows.append(('Recommendation', {
+        facet_rows.append(('Disposition', {
             'items': [
                 {'value': CAMPAIGN_PLAN_DISPO_LABELS[value],
                  'count': sum(1 for r in dispo_base

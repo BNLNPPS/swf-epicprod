@@ -36,11 +36,11 @@ def build_assembly_items(source_campaign):
     - a decided ``final`` propagation anywhere in the configuration's
       editions -> ``retire``;
     - a decided ``hold`` -> ``defer``;
-    - an anchoring request with an event count -> ``include_requested``
+    - an anchoring request with an event count -> ``include``
       at the requested count;
-    - delivered events on record -> ``include_prior`` at the recorded
+    - delivered events on record -> ``include`` at the recorded
       target, else the delivered count snapped to a round sample size;
-    - otherwise -> ``defer``.
+    - otherwise -> ``include`` with the target left open.
 
     Priority comes from the completion record (the best request
     priority). Returns {'items': [...], 'skipped': {...}} — a
@@ -91,17 +91,17 @@ def build_assembly_items(source_campaign):
             disposition, plan_target = 'defer', None
             facts += '; decided hold'
         elif req:
-            disposition, plan_target = 'include_requested', req
+            disposition, plan_target = 'include', req
         elif delivered > 0:
             plan_target = (target or snap_round(delivered)
                            or _round_2sig(delivered))
-            disposition = 'include_prior'
+            disposition = 'include'
         else:
             # Not started is not a reason to drop the work: carry the
             # recorded target forward, or leave the target open — the
             # approval gate holds an include row until target and
             # priority are filled.
-            disposition, plan_target = 'include_prior', target or None
+            disposition, plan_target = 'include', target or None
         items.append({
             'pc': pc,
             'disposition': disposition,
