@@ -207,9 +207,10 @@ daily delivery snap:
   stated with its coverage (covered of total PCs);
 - **events-weighted fraction** = Σ capped delivered / Σ targets over
   targeted PCs;
-- the same rollups by physics category and by request priority, the
-  target count by source, and the unmeasured-file count, since event
-  sums are floors where files are unmeasured.
+- the same rollups by physics category and by request priority (with a
+  `none` bucket for configurations carrying no prioritized request),
+  the target count by source, and the unmeasured-file count, since
+  event sums are floors where files are unmeasured.
 
 ### The one-line summary
 
@@ -224,9 +225,9 @@ The line states the PC-weighted fraction and exactly what it is the
 mean of — the PCs with a target, by provenance, plus the PCs not
 started — and what it leaves out, then the PCs complete (≥ 97% of
 target) and the delivered totals since the campaign's first recorded
-arrivals. It is the campaign summary strip on the production
-home page (EPICPROD_DASHBOARD.md), served as a cached product, and the
-`line` field of the member block.
+arrivals. It heads the completion panel on the production home page
+(EPICPROD_DASHBOARD.md, surface 4 below), served as a cached product,
+and is the `line` field of the member block.
 
 ## Surfaces
 
@@ -256,8 +257,12 @@ home page (EPICPROD_DASHBOARD.md), served as a cached product, and the
    machinery.
 3. **Ops dashboard embed**: the existing snapper embed carrying the
    delivery curve family, click-through to the campaign view.
-4. **Production home summary strip**: the one-line completion summary
-   per current or producing campaign, linking to the campaign view.
+4. **Production home completion panel**: a framed panel per current or
+   producing campaign — the one-line completion summary linking to the
+   campaign view, over a table of completion by request priority
+   (priorities 1–3, no priority, all: configurations complete / below
+   target / not started / without a target, with the
+   configuration-weighted and event-weighted percentages).
 
 Candidates not committed in this plan: delivered-dataset arcs as
 episodic lanes (a tile per dataset from first arrival to fully

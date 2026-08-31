@@ -351,6 +351,9 @@ def campaign_completion(campaign_name):
                          if r['priority'] is not None}):
         by_priority[str(level)] = rollup(
             [r for r in pcs if r['priority'] == level])
+    unprioritized = [r for r in pcs if r['priority'] is None]
+    if unprioritized:
+        by_priority['none'] = rollup(unprioritized)
 
     return {
         'available': True,
