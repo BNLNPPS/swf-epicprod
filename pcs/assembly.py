@@ -97,7 +97,11 @@ def build_assembly_items(source_campaign):
                            or _round_2sig(delivered))
             disposition = 'include_prior'
         else:
-            disposition, plan_target = 'defer', None
+            # Not started is not a reason to drop the work: carry the
+            # recorded target forward, or leave the target open — the
+            # approval gate holds an include row until target and
+            # priority are filled.
+            disposition, plan_target = 'include_prior', target or None
         items.append({
             'pc': pc,
             'disposition': disposition,
