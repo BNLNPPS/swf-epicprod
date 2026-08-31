@@ -7,7 +7,8 @@
     <h2>Campaign Plan</h2>
     <p style="max-width: 75ch;">One row per physics configuration in the campaign, with the
     campaign-included target event count — the campaign's production
-    plan (docs/CAMPAIGN_DELIVERY.md). Targets entered here are saved
+    plan (<a href="https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/CAMPAIGN_DELIVERY.md">CAMPAIGN_DELIVERY.md</a>).
+    Targets entered here are saved
     with a comment through the expected-events service. Note that one
     target event count can be applied to every selected configuration
     in a single step.</p>
@@ -39,9 +40,10 @@
     requested event count), defer it, or retire it. Review, adjust
     target or priority where needed, and approve or deny. Approved
     entries form the campaign plan. To add a configuration that is not
-    listed, submit a production request (Request Production) or compose
-    it in PCS; it is picked up the next time recommendations are
-    generated.</p>
+    listed, submit a production request
+    (<a href="{% url 'pcs:pcs_request_composer' %}">Request Production</a>)
+    or compose it in PCS; it is picked up the next time recommendations
+    are generated.</p>
     <p>
         <strong>{{ assembly.total }}</strong> configurations ·
         <strong>{{ assembly.proposed }}</strong> proposed ·
