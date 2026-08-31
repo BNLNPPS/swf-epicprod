@@ -3021,6 +3021,15 @@ PLAN_STATUS_SLUGS = (('complete', 'complete'),
 PLAN_FILTER_PARAMS = ('requestor', 'process', 'generator', 'beam', 'q2',
                       'sample', 'nev', 'priority', 'status')
 
+# Reader-facing wording for the campaign-plan recommendation values
+# (the internal identifiers stay stable in payloads and the executor).
+CAMPAIGN_PLAN_DISPO_LABELS = {
+    'include_prior': 'include at prior size',
+    'include_requested': 'include at requested count',
+    'defer': 'defer',
+    'retire': 'retire',
+}
+
 
 def _apply_plan_filters(rows, query, skip=()):
     """Apply the plan filters carried in ``query`` to ``rows``, skipping
@@ -3309,6 +3318,59 @@ def pcs_campaign_plan(request):
 
     view_mode = 'pc' if (request.GET.get('view') or '') == 'pc' else 'edition'
     state = _campaign_plan_state(campaign, request.GET, view_mode == 'pc')
+
+    # Assembly view (CONTINUOUS_PRODUCTION.md, Campaign assembly): a
+    # future campaign with no editions renders its plan build. The full
+    # filter machinery carries over — identity attributes join from the
+    # current campaign's PC spine, the standard plan filters apply, and
+    # the assembly-only recommendation and review-state axes join them.
+    assembly = None
+    dispo_filter = astate_filter = ''
+    if campaign is not None and not state['rows_all']:
+        assembly = _campaign_assembly_context(campaign)
+    if assembly:
+        source = next((c for c in plan_campaigns
+                       if c.lifecycle == 'current' and c != campaign), None)
+        attr_map = {}
+        if source is not None:
+            attr_state = _campaign_plan_state(source, {}, True)
+            attr_map = {r['pc_label']: r for r in attr_state['rows_all']}
+        for row in assembly['rows']:
+            attrs = attr_map.get(row['pc'], {})
+            for key in ('physics', 'process', 'beam', 'q2', 'generator',
+                        'sample'):
+                row[key] = attrs.get(key, '')
+            row['requestors'] = attrs.get('requestors') or []
+            row['pc_label'] = row['pc']
+            row['expected_events'] = row['target_events']
+            row['status'] = ''
+            row['disposition_label'] = CAMPAIGN_PLAN_DISPO_LABELS.get(
+                row['disposition'], row['disposition'])
+        arows = _apply_plan_filters(assembly['rows'], request.GET)
+        dispo_filter = (request.GET.get('dispo') or '').strip()
+        astate_filter = (request.GET.get('astate') or '').strip()
+        if dispo_filter:
+            arows = [r for r in arows if r['disposition'] == dispo_filter]
+        if astate_filter:
+            arows = [r for r in arows if r['state'] == astate_filter]
+        assembly['rows_filtered'] = arows
+        assembly['shown'] = len(arows)
+        assembly['by_disposition'] = [
+            (CAMPAIGN_PLAN_DISPO_LABELS.get(d, d), n)
+            for d, n in assembly['by_disposition']]
+        state = dict(state)
+        state['rows_all'] = assembly['rows']
+        state['rows'] = arows
+        state['has_completion'] = True
+        active = list(state['active_filters'])
+        if dispo_filter:
+            active.append(('Recommendation',
+                           CAMPAIGN_PLAN_DISPO_LABELS.get(dispo_filter,
+                                                          dispo_filter)))
+        if astate_filter:
+            active.append(('State', astate_filter))
+        state['active_filters'] = active
+
     rows_all = state['rows_all']
     rows = state['rows']
     filters = state['filters']
@@ -3421,24 +3483,60 @@ def pcs_campaign_plan(request):
             'items': priority_items,
             'all_url': url_with(priority=''),
             'all_active': not priority_filter}))
-        status_base = _apply_plan_filters(rows_all, request.GET,
-                                          skip=('status',))
-        status_counts = {label: sum(1 for r in status_base
-                                    if r['status'] == label)
-                         for _slug, label in PLAN_STATUS_SLUGS}
-        facet_rows.append(('Status', {
-            'items': [
-                {'value': label, 'count': status_counts[label],
-                 'url': url_with(status=slug),
-                 'active': status_filter == slug}
-                for slug, label in PLAN_STATUS_SLUGS
-                if status_counts[label] or status_filter == slug],
-            'all_url': url_with(status=''),
-            'all_active': not status_filter}))
+        if assembly is None:
+            status_base = _apply_plan_filters(rows_all, request.GET,
+                                              skip=('status',))
+            status_counts = {label: sum(1 for r in status_base
+                                        if r['status'] == label)
+                             for _slug, label in PLAN_STATUS_SLUGS}
+            facet_rows.append(('Status', {
+                'items': [
+                    {'value': label, 'count': status_counts[label],
+                     'url': url_with(status=slug),
+                     'active': status_filter == slug}
+                    for slug, label in PLAN_STATUS_SLUGS
+                    if status_counts[label] or status_filter == slug],
+                'all_url': url_with(status=''),
+                'all_active': not status_filter}))
+    if assembly is not None:
+        # The assembly axes, self-excluded like every other facet: each
+        # counts over the rows the OTHER filters leave.
+        def _assembly_base(skip_dispo=False, skip_astate=False):
+            base = _apply_plan_filters(rows_all, request.GET)
+            if dispo_filter and not skip_dispo:
+                base = [r for r in base
+                        if r['disposition'] == dispo_filter]
+            if astate_filter and not skip_astate:
+                base = [r for r in base if r['state'] == astate_filter]
+            return base
 
-    assembly = None
-    if campaign is not None and not rows_all:
-        assembly = _campaign_assembly_context(campaign)
+        dispo_base = _assembly_base(skip_dispo=True)
+        facet_rows.append(('Recommendation', {
+            'items': [
+                {'value': CAMPAIGN_PLAN_DISPO_LABELS[value],
+                 'count': sum(1 for r in dispo_base
+                              if r['disposition'] == value),
+                 'url': url_with(dispo=value),
+                 'active': dispo_filter == value}
+                for value in CAMPAIGN_PLAN_DISPO_LABELS
+                if sum(1 for r in dispo_base
+                       if r['disposition'] == value)
+                or dispo_filter == value],
+            'all_url': url_with(dispo=''),
+            'all_active': not dispo_filter}))
+        astate_base = _assembly_base(skip_astate=True)
+        facet_rows.append(('State', {
+            'items': [
+                {'value': value,
+                 'count': sum(1 for r in astate_base
+                              if r['state'] == value),
+                 'url': url_with(astate=value),
+                 'active': astate_filter == value}
+                for value in ('proposed', 'approved')
+                if sum(1 for r in astate_base if r['state'] == value)
+                or astate_filter == value],
+            'all_url': url_with(astate=''),
+            'all_active': not astate_filter}))
 
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
@@ -3456,7 +3554,7 @@ def pcs_campaign_plan(request):
         'facet_rows': facet_rows,
         'clear_url': url_with(process='', generator='', beam='', q2='',
                               sample='', requestor='', nev='', priority='',
-                              status=''),
+                              status='', dispo='', astate=''),
         'with_target': with_target,
         'without_target': len(rows_all) - with_target,
         'target_total': target_total,

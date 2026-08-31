@@ -27,29 +27,65 @@
     {% if not campaign %}
     <p class="text-muted">No current or future campaign exists.</p>
     {% elif assembly %}
-    <!-- Assembly (proposal-build) view: a future campaign with no
-         editions. Rows are campaign-plan proposals and approved plan
-         entries (CONTINUOUS_PRODUCTION.md, Campaign assembly); target
-         and priority are editable before approval, and the amended
-         values are recorded with the decision. -->
-    <p class="ai-attr-text"><strong>Assembly stage:</strong> this campaign's plan
-    is being built as disposition proposals, one per physics
-    configuration. Review, adjust target or priority where needed, and
-    approve — approved entries form the campaign plan.</p>
+    <!-- Assembly view: a future campaign with no editions. Rows are
+         AI recommendations and approved plan entries
+         (CONTINUOUS_PRODUCTION.md, Campaign assembly); target and
+         priority are editable before approval, and the amended values
+         are recorded with the decision. -->
+    <p class="ai-attr-text"><strong>Assembly stage:</strong> this campaign's
+    plan is being built from AI recommendations, one per physics
+    configuration: include it in the campaign (at the prior campaign's
+    size, or at the requested event count), defer it, or retire it.
+    Review, adjust target or priority where needed, and approve or
+    deny. Approved entries form the campaign plan. To add a
+    configuration that is not listed, submit a production request
+    (Request Production) or compose it in PCS — it joins the
+    recommendations on the next assembly pass.</p>
     <p>
         <strong>{{ assembly.total }}</strong> configurations ·
         <strong>{{ assembly.proposed }}</strong> proposed ·
         <strong>{{ assembly.approved }}</strong> approved
         {% for d, n in assembly.by_disposition %} · {{ d }}: <strong>{{ n }}</strong>{% endfor %}
+        · showing <strong>{{ assembly.shown }}</strong>
     </p>
+    <div class="mb-2">
+        <strong>Active filters:</strong>
+        {% if active_filters %}
+        {% for label, value in active_filters %}<span class="me-2">{{ label }}: <strong>{{ value }}</strong></span>{% endfor %}
+        <a href="{{ clear_url }}">clear</a>
+        {% else %}
+        none
+        {% endif %}
+    </div>
+    <div class="mb-3">
+        {% for label, f in facet_rows %}
+        <div><strong>{{ label }}:</strong>
+            <a href="{{ f.all_url }}" {% if f.all_active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">All</a>
+            {% for item in f.items %}
+            <a href="{{ item.url }}" {% if item.active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">{{ item.value }} ({{ item.count }})</a>
+            {% endfor %}
+        </div>
+        {% endfor %}
+        <a href="{{ clear_url }}" class="btn btn-sm btn-secondary mt-1">Clear filters</a>
+    </div>
     <div class="card mb-2">
-        <div class="card-body py-2 d-flex align-items-center flex-wrap gap-2">
-            <button type="button" id="asm-select-all" class="btn btn-sm btn-secondary">Select all</button>
-            <button type="button" id="asm-select-none" class="btn btn-sm btn-secondary">None</button>
-            <span><strong id="asm-selected-count">0</strong> selected</span>
-            <button type="button" id="asm-approve" class="btn btn-sm btn-success" disabled>Approve selected</button>
-            <button type="button" id="asm-deny" class="btn btn-sm btn-secondary" disabled>Deny selected</button>
-            <span id="asm-status"></span>
+        <div class="card-body py-2">
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+                <button type="button" id="asm-select-all" class="btn btn-sm btn-secondary">Select all</button>
+                <button type="button" id="asm-select-none" class="btn btn-sm btn-secondary">None</button>
+                <span><strong id="asm-selected-count">0</strong> selected</span>
+                <input type="number" min="0" id="asm-fill-target" class="form-control form-control-sm"
+                       style="width: 12em; margin-left: 1cm;" placeholder="Target events">
+                <button type="button" id="asm-fill-target-btn" class="btn btn-sm btn-primary" disabled>Fill target</button>
+                <input type="number" id="asm-fill-priority" class="form-control form-control-sm"
+                       style="width: 6em;" placeholder="Priority">
+                <button type="button" id="asm-fill-priority-btn" class="btn btn-sm btn-primary" disabled>Fill priority</button>
+            </div>
+            <div class="d-flex align-items-center flex-wrap gap-2">
+                <button type="button" id="asm-approve" class="btn btn-sm btn-success" disabled>Approve selected</button>
+                <button type="button" id="asm-deny" class="btn btn-sm btn-secondary" disabled>Deny selected</button>
+                <span id="asm-status"></span>
+            </div>
         </div>
     </div>
     <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
@@ -57,7 +93,8 @@
             <tr>
                 <th></th>
                 <th>PC</th>
-                <th title="include_prior / include_requested / defer / retire">Disposition</th>
+                <th>Sample</th>
+                <th title="Include in this campaign at the prior campaign's size, include at the requested event count, defer, or retire">Recommendation</th>
                 <th title="Editable before approval; the amended value is recorded with the decision">Target events</th>
                 <th title="Editable before approval; 1 = highest">Priority</th>
                 <th>Evidence</th>
@@ -65,11 +102,12 @@
             </tr>
         </thead>
         <tbody>
-        {% for r in assembly.rows %}
+        {% for r in assembly.rows_filtered %}
             <tr {% if r.proposal_id %}data-proposal-id="{{ r.proposal_id }}" data-orig-target="{{ r.target_events|default_if_none:'' }}" data-orig-priority="{{ r.priority|default_if_none:'' }}"{% endif %}>
                 <td>{% if r.proposal_id %}<input type="checkbox" class="form-check-input asm-tick">{% endif %}</td>
                 <td><a href="{% url 'pcs:pcs_config_detail' label=r.pc %}">{{ r.pc }}</a></td>
-                <td>{{ r.disposition }}</td>
+                <td>{{ r.sample }}</td>
+                <td>{{ r.disposition_label }}</td>
                 <td class="text-end">{% if r.proposal_id %}<input type="number" min="0" class="form-control form-control-sm asm-target" style="width: 11em; display: inline-block;" value="{{ r.target_events|default_if_none:'' }}">{% else %}{{ r.target_events|default_if_none:'' }}{% endif %}</td>
                 <td class="text-end">{% if r.proposal_id %}<input type="number" class="form-control form-control-sm asm-priority" style="width: 5em; display: inline-block;" value="{{ r.priority|default_if_none:'' }}">{% else %}{{ r.priority|default_if_none:'' }}{% endif %}</td>
                 <td>{{ r.evidence }}</td>
@@ -88,13 +126,35 @@
         function ticks() {
             return Array.from(document.querySelectorAll('.asm-tick'));
         }
+        const fillTarget = document.getElementById('asm-fill-target');
+        const fillTargetBtn = document.getElementById('asm-fill-target-btn');
+        const fillPriority = document.getElementById('asm-fill-priority');
+        const fillPriorityBtn = document.getElementById('asm-fill-priority-btn');
         function refresh() {
             const n = ticks().filter(function (t) { return t.checked; }).length;
             countEl.textContent = n;
             approveBtn.disabled = denyBtn.disabled = n === 0;
+            fillTargetBtn.disabled = n === 0 || fillTarget.value.trim() === '';
+            fillPriorityBtn.disabled = n === 0 || fillPriority.value.trim() === '';
         }
         document.addEventListener('change', function (event) {
             if (event.target.classList.contains('asm-tick')) refresh();
+        });
+        fillTarget.addEventListener('input', refresh);
+        fillPriority.addEventListener('input', refresh);
+        function fillSelected(input, selector) {
+            const value = input.value.trim();
+            ticks().forEach(function (t) {
+                if (!t.checked) return;
+                const field = t.closest('tr').querySelector(selector);
+                if (field) field.value = value;
+            });
+        }
+        fillTargetBtn.addEventListener('click', function () {
+            fillSelected(fillTarget, '.asm-target');
+        });
+        fillPriorityBtn.addEventListener('click', function () {
+            fillSelected(fillPriority, '.asm-priority');
         });
         document.getElementById('asm-select-all').addEventListener('click',
             function () { ticks().forEach(function (t) { t.checked = true; }); refresh(); });
