@@ -50,6 +50,52 @@ at the source while EVGEN registration is manual. The registration
 action is designed and awaits the JLab credential (door read plus
 Rucio write) — a standing ask.**
 
+## Campaign assembly — the future plan
+
+The campaign plan page is the assembly surface: a future-lifecycle
+campaign's plan view is the proposal build. The row spine for a future
+campaign is not edition heads — none exist before the software is
+defined — but the physics configurations themselves: for 26.09, every
+PC of the previous campaign. Each row carries a plan-membership
+record — (PC, campaign, disposition, target events, priority,
+provenance) — and the membership records are the plan. Software
+definition turns the plan into editions and draft tasks by instancing,
+copying target and priority onto the editions, so every existing
+denominator reader is unchanged.
+
+Each row arrives as a disposition proposal — include at prior size,
+include at requested size, defer, or retire — pre-filled with its
+evidence (the anchoring requests, delivered events and residual from
+the completion record, the recorded priority) and with defaults in
+the established target tiers (requested → prior-campaign delivered
+snapped to round → derived). Target events and priority are editable
+on the row before approval; the disposition is a flippable select;
+each approval act carries one comment. Background conditions,
+requestor curation, job sizing, and site targeting are deliberately
+not plan-row fields — each has its own surface and its own time. Bulk
+approval works the plan page's existing pattern: filter to a slice,
+tick, approve as one act.
+
+The AI proposal subsystem
+([AI_PROPOSALS.md](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/AI_PROPOSALS.md))
+is the template, not a sketch — proposals as frozen executable
+payloads, deterministic validate/decide/execute, origin-stamped
+events, denial memory, the scan heartbeat, and the `.ai-attr` review
+treatment all carry over, and the category follows the subsystem's
+own checklist. The adaptations this category needs: **creation
+subjects** (the proposal creates a plan-membership record, anchored on
+an idempotency key — a growth path the subsystem reserves),
+**edit-then-approve** (the reviewer may amend target and priority
+before deciding; the amended values replace the proposed ones in the
+payload and are recorded with the decision), and the plan page as the
+category's domain review surface.
+
+Contact coverage is a stated assembly objective, not a row field: each
+anchoring request contributes its contact to the PC's registry (the
+request composer already requires name and email), and the plan page
+states coverage — contacts known for N of M configurations — so the
+gaps are a worklist. Contact editing is PC-page curation.
+
 ## The dispatcher
 
 The dispatcher is a production-operations agent
