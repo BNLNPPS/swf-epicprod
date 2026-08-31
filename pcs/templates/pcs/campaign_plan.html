@@ -52,24 +52,26 @@
         {% for d, n in assembly.by_disposition %} · {{ d }}: <strong>{{ n }}</strong>{% endfor %}
         · showing <strong>{{ assembly.shown }}</strong>
     </p>
-    <div class="mb-2" style="display: inline-block; padding: .35em .8em; border-radius: .5em;{% if active_filters %} border: 2px solid #d39e00; background-color: rgba(255, 193, 7, .12);{% else %} border: 1px solid #888;{% endif %}">
-        <strong>Active filters:</strong>
-        {% if active_filters %}
-        {% for label, value in active_filters %}<span class="me-2">{{ label }}: <strong>{{ value }}</strong></span>{% endfor %}
-        <a href="{{ clear_url }}">clear</a>
-        {% else %}
-        none
-        {% endif %}
-    </div>
-    <div class="mb-3">
-        {% for label, f in facet_rows %}
-        <div><strong>{{ label }}:</strong>
-            <a href="{{ f.all_url }}" {% if f.all_active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">All</a>
-            {% for item in f.items %}
-            <a href="{{ item.url }}" {% if item.active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">{{ item.value }} ({{ item.count }})</a>
+    <div class="card mb-3">
+        <div class="card-body">
+            {% for label, f in facet_rows %}
+            <div><strong>{{ label }}:</strong>
+                <a href="{{ f.all_url }}" {% if f.all_active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">All</a>
+                {% for item in f.items %}
+                <a href="{{ item.url }}" {% if item.active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">{{ item.value }} ({{ item.count }})</a>
+                {% endfor %}
+            </div>
             {% endfor %}
+            <div class="mt-2" style="display: inline-block;{% if active_filters %} padding: .35em .8em; border-radius: .5em; border: 2px solid #d39e00; background-color: rgba(255, 193, 7, .12);{% endif %}">
+                <strong>Active filters:</strong>
+                {% if active_filters %}
+                {% for label, value in active_filters %}<span class="me-2">{{ label }}: <strong>{{ value }}</strong></span>{% endfor %}
+                <a href="{{ clear_url }}" class="btn btn-link btn-sm p-0 ms-2">clear all</a>
+                {% else %}
+                <span class="text-muted">None</span>
+                {% endif %}
+            </div>
         </div>
-        {% endfor %}
     </div>
     <div class="card mb-2">
         <div class="card-body py-2">
@@ -353,15 +355,6 @@
         <a href="{{ view_pc_url }}" class="btn btn-sm {% if view_mode == 'pc' %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
            title="One row per physics configuration — the campaign completion table">Physics configurations</a>
     </div>
-    <div class="mb-2" style="display: inline-block; padding: .35em .8em; border-radius: .5em;{% if active_filters %} border: 2px solid #d39e00; background-color: rgba(255, 193, 7, .12);{% else %} border: 1px solid #888;{% endif %}">
-        <strong>Active filters:</strong>
-        {% if active_filters %}
-        {% for label, value in active_filters %}<span class="me-2">{{ label }}: <strong>{{ value }}</strong></span>{% endfor %}
-        <a href="{{ clear_url }}">clear</a>
-        {% else %}
-        none
-        {% endif %}
-    </div>
     <p>
         <strong>{{ shown }}</strong> of <strong>{{ total }}</strong> physics configurations ·
         <strong>{{ with_target }}</strong> with targets
@@ -381,15 +374,26 @@
     </div>
     {% endif %}
 
-    <div class="mb-3">
-        {% for label, f in facet_rows %}
-        <div><strong>{{ label }}:</strong>
-            <a href="{{ f.all_url }}" {% if f.all_active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">All</a>
-            {% for item in f.items %}
-            <a href="{{ item.url }}" {% if item.active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">{{ item.value }} ({{ item.count }})</a>
+    <div class="card mb-3">
+        <div class="card-body">
+            {% for label, f in facet_rows %}
+            <div><strong>{{ label }}:</strong>
+                <a href="{{ f.all_url }}" {% if f.all_active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">All</a>
+                {% for item in f.items %}
+                <a href="{{ item.url }}" {% if item.active %}style="font-weight:bold;text-decoration:underline;"{% endif %} class="me-2">{{ item.value }} ({{ item.count }})</a>
+                {% endfor %}
+            </div>
             {% endfor %}
+            <div class="mt-2" style="display: inline-block;{% if active_filters %} padding: .35em .8em; border-radius: .5em; border: 2px solid #d39e00; background-color: rgba(255, 193, 7, .12);{% endif %}">
+                <strong>Active filters:</strong>
+                {% if active_filters %}
+                {% for label, value in active_filters %}<span class="me-2">{{ label }}: <strong>{{ value }}</strong></span>{% endfor %}
+                <a href="{{ clear_url }}" class="btn btn-link btn-sm p-0 ms-2">clear all</a>
+                {% else %}
+                <span class="text-muted">None</span>
+                {% endif %}
+            </div>
         </div>
-        {% endfor %}
     </div>
 
     <!-- Target entry and save: edits collect in the Set target column
