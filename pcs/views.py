@@ -3222,14 +3222,75 @@ def campaign_plan_pc_filter(campaign_name, query):
             {r['pc_label'] for r in state['rows'] if r['pc_label']})
 
 
+def _campaign_assembly_context(campaign):
+    """The assembly (proposal-build) context for a future campaign with
+    no editions (CONTINUOUS_PRODUCTION.md, Campaign assembly): the
+    union of pending campaign-plan proposals and approved plan entries,
+    one row per physics configuration. None when neither exists."""
+    from ai.models import Proposal
+
+    plan = services.campaign_plan_get(campaign.name)
+    pending = {row.subject_key: row for row in Proposal.objects.filter(
+        action='campaign_plan', counterpart_key=campaign.name,
+        status='proposed')}
+    labels = sorted(set(plan) | set(pending))
+    if not labels:
+        return None
+    rows = []
+    counts = {'proposed': 0, 'approved': 0}
+    by_disposition = {}
+    for label in labels:
+        proposal = pending.get(label)
+        if proposal is not None:
+            payload = proposal.payload or {}
+            row = {
+                'pc': label,
+                'state': 'proposed',
+                'proposal_id': proposal.pk,
+                'ref': proposal.ref,
+                'disposition': payload.get('disposition', ''),
+                'target_events': payload.get('target_events'),
+                'priority': payload.get('priority'),
+                'evidence': payload.get('evidence', ''),
+            }
+            counts['proposed'] += 1
+        else:
+            entry = plan[label]
+            row = {
+                'pc': label,
+                'state': 'approved',
+                'proposal_id': None,
+                'ref': '',
+                'disposition': entry.get('disposition', ''),
+                'target_events': entry.get('target_events'),
+                'priority': entry.get('priority'),
+                'evidence': entry.get('evidence', ''),
+            }
+            counts['approved'] += 1
+        by_disposition[row['disposition']] = (
+            by_disposition.get(row['disposition'], 0) + 1)
+        rows.append(row)
+    rows.sort(key=lambda r: (r['priority'] if r['priority'] is not None
+                             else 99, r['pc']))
+    return {
+        'rows': rows,
+        'total': len(rows),
+        'proposed': counts['proposed'],
+        'approved': counts['approved'],
+        'by_disposition': sorted(by_disposition.items()),
+    }
+
+
 def pcs_campaign_plan(request):
     """The campaign plan list (CAMPAIGN_DELIVERY.md surface 1): one
     active or future campaign's physics configurations with the
     campaign-included target-events column — filled where set, visibly
     missing where not. The curation surface for the delivery
     denominator: per-row entry saved in bulk through the
-    expected-events REST endpoint with one required comment. Read-open;
-    saving requires login.
+    expected-events REST endpoint with one required comment. A future
+    campaign with no editions renders the assembly (proposal-build)
+    view instead (CONTINUOUS_PRODUCTION.md, Campaign assembly).
+    Read-open; deciding requires login.
     """
     plan_campaigns = list(
         Campaign.objects.filter(lifecycle__in=('current', 'future'))
@@ -3375,8 +3436,13 @@ def pcs_campaign_plan(request):
             'all_url': url_with(status=''),
             'all_active': not status_filter}))
 
+    assembly = None
+    if campaign is not None and not rows_all:
+        assembly = _campaign_assembly_context(campaign)
+
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
+        'assembly': assembly,
         'active_filters': state['active_filters'],
         'view_mode': view_mode,
         'view_edition_url': url_with(view=''),

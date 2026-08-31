@@ -5816,3 +5816,139 @@ def validation_result_receive(payload, *, received_from=''):
         status=status_value, revision=revision)
     return {'sample': composed, 'revision': revision, 'status': status_value,
             'received_at': row.received_at.isoformat()}
+
+
+# ── Campaign plan (CONTINUOUS_PRODUCTION.md, Campaign assembly) ─────────
+
+# Plan-level dispositions: what a future campaign does with one physics
+# configuration. Distinct from the edition-level propagation states —
+# the plan exists before any edition does.
+CAMPAIGN_PLAN_DISPOSITIONS = ('include_prior', 'include_requested',
+                              'defer', 'retire')
+
+
+def campaign_plan_get(campaign_name):
+    """The campaign's plan document: {pc label: entry}, from
+    ``Campaign.data['plan']``. Empty when the campaign or plan is
+    absent."""
+    campaign = Campaign.objects.filter(name=campaign_name).first()
+    if campaign is None:
+        return {}
+    return dict((campaign.data or {}).get('plan') or {})
+
+
+def plan_entry_anchor(entry):
+    """The deterministic staleness projection of a plan entry: the
+    decision-bearing fields, ignoring bookkeeping."""
+    if not entry:
+        return None
+    return {'disposition': entry.get('disposition'),
+            'target_events': entry.get('target_events'),
+            'priority': entry.get('priority')}
+
+
+def validate_plan_entry(pc_label, entry):
+    if entry is None:
+        return None
+    disposition = (entry.get('disposition') or '').strip()
+    if disposition not in CAMPAIGN_PLAN_DISPOSITIONS:
+        raise ServiceError(
+            f'{pc_label}: disposition must be one of '
+            f'{", ".join(CAMPAIGN_PLAN_DISPOSITIONS)}; got {disposition!r}')
+    out = {'disposition': disposition}
+    for field in ('target_events', 'priority'):
+        value = entry.get(field)
+        if value in (None, ''):
+            out[field] = None
+            continue
+        try:
+            out[field] = int(value)
+        except (TypeError, ValueError):
+            raise ServiceError(f'{pc_label}: {field} must be an integer; '
+                               f'got {value!r}')
+        if out[field] < 0 and field == 'target_events':
+            raise ServiceError(f'{pc_label}: target_events must be >= 0')
+    if (out['target_events'] is None
+            and disposition in ('include_prior', 'include_requested')):
+        raise ServiceError(
+            f'{pc_label}: an include disposition requires target_events')
+    out['evidence'] = str(entry.get('evidence') or '')
+    return out
+
+
+def campaign_plan_entries_set(campaign_name, entries, comment, *,
+                              changed_by='', origin=None):
+    """Set campaign-plan entries — the executor behind plan-proposal
+    approvals and hand edits alike (CONTINUOUS_PRODUCTION.md, Campaign
+    assembly).
+
+    ``entries`` maps pc label -> entry dict (disposition, target_events,
+    priority, evidence) or None to remove the entry (the undo path of a
+    creation). Every pc label must name an existing PhysicsConfig.
+    The campaign row is created if absent (lifecycle ``future``, the
+    model default — the instancing precedent). One transaction under a
+    row lock, one origin-stamped ``campaign_plan_set`` action-stream
+    event. Returns {'set', 'removed', 'prev', 'log_id'}.
+    """
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    from .models import PhysicsConfig
+
+    comment = (comment or '').strip()
+    if not comment:
+        raise ServiceError('comment is required on every plan change')
+    if not entries:
+        raise ServiceError('no plan entries supplied')
+    if not changed_by:
+        raise ServiceError('an authenticated changer is required')
+    validated = {}
+    for pc_label, entry in entries.items():
+        label = (pc_label or '').strip()
+        if not label:
+            raise ServiceError('empty pc label in plan entries')
+        validated[label] = validate_plan_entry(label, entry)
+    known = set(PhysicsConfig.objects
+                .filter(label__in=validated)
+                .values_list('label', flat=True))
+    unknown = sorted(set(validated) - known)
+    if unknown:
+        raise ServiceError(
+            f'unknown physics configuration(s): {", ".join(unknown[:5])}'
+            + (f' and {len(unknown) - 5} more' if len(unknown) > 5 else ''))
+
+    now = _timezone.now().isoformat()
+    set_labels, removed_labels, prev = [], [], {}
+    with transaction.atomic():
+        campaign = (Campaign.objects.select_for_update()
+                    .filter(name=campaign_name).first())
+        if campaign is None:
+            campaign = Campaign.objects.create(
+                name=campaign_name, created_by=changed_by)
+        data = dict(campaign.data or {})
+        plan = dict(data.get('plan') or {})
+        for label, entry in validated.items():
+            prev[label] = plan_entry_anchor(plan.get(label))
+            if entry is None:
+                if label in plan:
+                    plan.pop(label)
+                    removed_labels.append(label)
+                continue
+            plan[label] = {**entry, 'comment': comment,
+                           'updated_by': changed_by, 'updated_at': now}
+            set_labels.append(label)
+        data['plan'] = plan
+        campaign.data = data
+        campaign.save(update_fields=['data', 'updated_at'])
+
+    origin = origin or {}
+    log_id = log_epicprod_action(
+        'web', 'campaign_plan_set',
+        subject_type='campaign', subject_key=campaign_name,
+        username=changed_by, sublevel='normal', live_default=True,
+        message=(f'campaign plan {campaign_name}: {len(set_labels)} '
+                 f'entr(ies) set, {len(removed_labels)} removed: {comment}'),
+        entries_set=len(set_labels), entries_removed=len(removed_labels),
+        **{f'origin_{k}': v for k, v in origin.items()},
+    )
+    return {'set': set_labels, 'removed': removed_labels, 'prev': prev,
+            'log_id': log_id}
