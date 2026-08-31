@@ -198,8 +198,28 @@
                         });
                 }
                 return r.json();
-            }).then(function () {
-                window.location.reload();
+            }).then(function (result) {
+                const incomplete = result.incomplete || [];
+                if (!incomplete.length) {
+                    window.location.reload();
+                    return;
+                }
+                // Incomplete rows stay proposals; say so and let the
+                // reviewer fill the missing fields before reloading.
+                const done = (result.approved || []).length
+                    + (result.denied || []).length;
+                statusEl.innerHTML =
+                    (done ? done + ' decided; ' : '')
+                    + '<strong>' + incomplete.length
+                    + ' left as proposals</strong> — '
+                    + incomplete.slice(0, 5).map(function (s) {
+                        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+                      }).join('; ')
+                    + (incomplete.length > 5
+                       ? '; and ' + (incomplete.length - 5) + ' more' : '')
+                    + ' · <a href="">reload</a>';
+                statusEl.style.color = '#c62828';
+                refresh();
             }).catch(function (error) {
                 statusEl.textContent = String(error.message || error);
                 statusEl.style.color = '#c62828';

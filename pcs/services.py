@@ -5847,7 +5847,11 @@ def plan_entry_anchor(entry):
             'priority': entry.get('priority')}
 
 
-def validate_plan_entry(pc_label, entry):
+def validate_plan_entry(pc_label, entry, require_complete=True):
+    """Validate one plan entry. ``require_complete`` enforces the
+    approval rule — an include recommendation needs both target_events
+    and priority; proposals are validated without it, since filling
+    those fields is exactly the reviewer's job."""
     if entry is None:
         return None
     disposition = (entry.get('disposition') or '').strip()
@@ -5868,10 +5872,12 @@ def validate_plan_entry(pc_label, entry):
                                f'got {value!r}')
         if out[field] < 0 and field == 'target_events':
             raise ServiceError(f'{pc_label}: target_events must be >= 0')
-    if (out['target_events'] is None
-            and disposition in ('include_prior', 'include_requested')):
+    if require_complete and disposition in (
+            'include_prior', 'include_requested') and (
+            out['target_events'] is None or out['priority'] is None):
         raise ServiceError(
-            f'{pc_label}: an include disposition requires target_events')
+            f'{pc_label}: an include disposition requires both '
+            f'target_events and priority')
     out['evidence'] = str(entry.get('evidence') or '')
     return out
 

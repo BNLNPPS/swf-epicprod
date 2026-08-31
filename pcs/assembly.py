@@ -18,6 +18,16 @@ _log = logging.getLogger(__name__)
 PROPOSER = 'campaign-assembly'
 
 
+def _round_2sig(value):
+    """Round to two significant digits — 1% granularity is enough for a
+    plan target; a delivered count must not become an 8-digit target."""
+    if not value or value <= 0:
+        return value
+    from math import floor, log10
+    magnitude = 10 ** max(floor(log10(value)) - 1, 0)
+    return int(round(value / magnitude) * magnitude)
+
+
 def build_assembly_items(source_campaign):
     """One proposal item per source-campaign physics configuration.
 
@@ -83,7 +93,8 @@ def build_assembly_items(source_campaign):
         elif req:
             disposition, plan_target = 'include_requested', req
         elif delivered > 0:
-            plan_target = target or snap_round(delivered) or delivered
+            plan_target = (target or snap_round(delivered)
+                           or _round_2sig(delivered))
             disposition = 'include_prior'
         else:
             disposition, plan_target = 'defer', None
