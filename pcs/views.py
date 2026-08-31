@@ -3249,14 +3249,37 @@ def _campaign_assembly_context(campaign):
             action='campaign_plan', counterpart_key=campaign.name,
             status='executed').order_by('decided_at'):
         executed[prow.subject_key] = prow
-    labels = sorted(set(plan) | set(pending))
+    # Denied configurations stay visible so a denial can be undone.
+    denied = {}
+    for prow in Proposal.objects.filter(
+            action='campaign_plan', counterpart_key=campaign.name,
+            status='denied').order_by('decided_at'):
+        denied[prow.subject_key] = prow
+    labels = sorted(set(plan) | set(pending) | set(denied))
     if not labels:
         return None
     rows = []
-    counts = {'proposed': 0, 'approved': 0}
+    counts = {'proposed': 0, 'approved': 0, 'denied': 0}
     by_disposition = {}
     for label in labels:
         proposal = pending.get(label)
+        if proposal is None and label not in plan:
+            drow = denied[label]
+            payload = drow.payload or {}
+            rows.append({
+                'pc': label,
+                'state': 'denied',
+                'proposal_id': None,
+                'ref': drow.ref,
+                'undo_id': drow.pk,
+                'disposition': payload.get('disposition', ''),
+                'disposition_label': '',
+                'target_events': payload.get('target_events'),
+                'priority': payload.get('priority'),
+                'evidence': payload.get('evidence', ''),
+            })
+            counts['denied'] += 1
+            continue
         if proposal is not None:
             payload = proposal.payload or {}
             row = {
@@ -3295,6 +3318,7 @@ def _campaign_assembly_context(campaign):
         'total': len(rows),
         'proposed': counts['proposed'],
         'approved': counts['approved'],
+        'denied': counts['denied'],
         'by_disposition': sorted(by_disposition.items()),
     }
 
