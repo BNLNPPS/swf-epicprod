@@ -383,6 +383,21 @@ def _fmt_events(value):
     return f'{value:,}'
 
 
+def delivered_summary(overall):
+    """The delivered-totals summary, e.g.
+    'Delivered since Jul 13: 501M events, 286 TB'."""
+    tb = overall['bytes'] / 1e12
+    since = overall.get('delivered_since')
+    if since:
+        import datetime as _dt
+        day = _dt.date.fromisoformat(since)
+        since_text = f'Delivered since {day:%b} {day.day}'
+    else:
+        since_text = 'Delivered'
+    return (f'{since_text}: {_fmt_events(overall["delivered_events"])} '
+            f'events, {tb:.0f} TB')
+
+
 def completion_line(campaign_name, overall, by_source):
     """The one-line campaign summary."""
     fraction = overall.get('fraction_pc')
@@ -408,15 +423,5 @@ def completion_line(campaign_name, overall, by_source):
                 f'configurations have delivered data but no event count '
                 f'target, so their completion is unknown and they are '
                 f'left out of the average')
-    tb = overall['bytes'] / 1e12
-    since = overall.get('delivered_since')
-    if since:
-        import datetime as _dt
-        day = _dt.date.fromisoformat(since)
-        since_text = f'Delivered since {day:%b} {day.day}'
-    else:
-        since_text = 'Delivered'
     return (f'{head} · {overall["complete"]} physics configurations '
-            f'complete · '
-            f'{since_text}: {_fmt_events(overall["delivered_events"])} '
-            f'events, {tb:.0f} TB')
+            f'complete · {delivered_summary(overall)}')

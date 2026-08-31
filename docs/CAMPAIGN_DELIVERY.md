@@ -225,9 +225,10 @@ The line states the PC-weighted fraction and exactly what it is the
 mean of — the PCs with a target, by provenance, plus the PCs not
 started — and what it leaves out, then the PCs complete (≥ 97% of
 target) and the delivered totals since the campaign's first recorded
-arrivals. It heads the completion panel on the production home page
-(EPICPROD_DASHBOARD.md, surface 4 below), served as a cached product,
-and is the `line` field of the member block.
+arrivals. It is the `line` field of the member block; the production
+home completion panel (surface 4 below, served as a cached product)
+shows only its delivered-totals tail (`delivered_summary`), the
+by-priority table carrying the rest.
 
 ## Surfaces
 
@@ -258,8 +259,8 @@ and is the `line` field of the member block.
 3. **Ops dashboard embed**: the existing snapper embed carrying the
    delivery curve family, click-through to the campaign view.
 4. **Production home completion panel**: a framed panel per current or
-   producing campaign — the one-line completion summary linking to the
-   campaign view, over a table of completion by request priority
+   producing campaign — the delivered totals linking to the campaign
+   view, over a table of completion by request priority
    (priorities 1–3, no priority, all: configurations complete / below
    target / not started / without a target, with the
    configuration-weighted and event-weighted percentages).
