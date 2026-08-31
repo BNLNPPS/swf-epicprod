@@ -240,7 +240,12 @@ by-priority table carrying the rest.
    backfill) and makes campaign membership explicit before production
    exists. The list of PCs with targets constitutes the campaign's
    machine-readable production plan and the input to future
-   automation.
+   automation. For a campaign the completion record covers, each row
+   also carries request priority, delivered events, completion
+   fraction, and status (complete / below target / not started / no
+   target), with priority and status filter rows — joined from the
+   campaign-completion cached product, never built in the request
+   path.
 2. **Snapper campaign view**: one campaign shown at a time, selected
    by tab, defaulting to the current campaign; the window opens at the
    campaign's first recorded delivery. The primary display is the
@@ -263,7 +268,9 @@ by-priority table carrying the rest.
    view, over a table of completion by request priority
    (priorities 1–3, no priority, all: configurations complete / below
    target / not started / without a target, with the
-   configuration-weighted and event-weighted percentages).
+   configuration-weighted and event-weighted percentages). Each count
+   links into the campaign plan list carrying the matching priority
+   and status filters.
 
 Candidates not committed in this plan: delivered-dataset arcs as
 episodic lanes (a tile per dataset from first arrival to fully

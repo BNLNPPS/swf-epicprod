@@ -96,8 +96,12 @@
                 <th>Generator</th>
                 <th>Sample</th>
                 <th>Requestor</th>
-                <th>Disposition</th>
+                <th title="Request priority; a configuration takes the highest priority among its requests">Priority</th>
                 <th>Target events</th>
+                <th title="Events delivered and accessible (nightly delivery record)">Delivered</th>
+                <th title="min(delivered / target, 1)">Completion</th>
+                <th title="complete: delivered reached the target; below target: has a target, delivered below it; not started: no files and no task in flight; no target: delivering with no event count target">Status</th>
+                <th>Disposition</th>
                 <th>Set target</th>
             </tr>
         </thead>
@@ -113,7 +117,7 @@
                 <td>{{ r.generator }}</td>
                 <td>{{ r.sample }}</td>
                 <td>{% if r.requestors %}{{ r.requestors|join:", " }}{% else %}<span class="swf-no-target">Unassigned</span>{% endif %}</td>
-                <td>{% if r.propagation != 'continue' %}<span class="badge bg-secondary">{{ r.propagation }}</span>{% else %}{{ r.propagation }}{% endif %}</td>
+                <td class="text-end">{% if r.priority is not None %}{{ r.priority }}{% endif %}</td>
                 <td class="text-end">
                     {% if r.expected_events is not None %}
                     <strong>{{ r.expected_events }}</strong>
@@ -125,6 +129,10 @@
                     <span class="swf-no-target">no target</span>
                     {% endif %}
                 </td>
+                <td class="text-end">{% if r.delivered_events is not None %}{{ r.delivered_events }}{% endif %}</td>
+                <td class="text-end">{% if r.completion_pct is not None %}{{ r.completion_pct }}%{% endif %}</td>
+                <td>{{ r.status }}</td>
+                <td>{% if r.propagation != 'continue' %}<span class="badge bg-secondary">{{ r.propagation }}</span>{% else %}{{ r.propagation }}{% endif %}</td>
                 <td><input type="number" min="0" class="form-control form-control-sm plan-target-input"
                            style="width: 11em; display: inline-block;"
                            {% if r.expected_events is not None %}placeholder="{{ r.expected_events }}"{% elif r.requested_events is not None %}placeholder="{{ r.requested_events }}"{% endif %}></td>

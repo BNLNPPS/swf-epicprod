@@ -3014,6 +3014,21 @@ def pcs_campaign_plan(request):
             if values:
                 requested[name] = max(values)
 
+    # Completion join (CAMPAIGN_DELIVERY.md, Completion): per-PC rows
+    # from the shared campaign-completion cached product — the panel's
+    # source, never a build in the request path. Empty for campaigns
+    # outside the product (future, not yet producing).
+    completion_by_pc = {}
+    if campaign is not None:
+        from monitor_app.cached_product import get_product
+        from swf_epicprod.analytics.completion import completion_product_value
+        product = get_product('prod_hub_campaign_completion',
+                              completion_product_value, ttl_seconds=600)
+        entry = next((e for e in (product['value'] or [])
+                      if e.get('campaign') == campaign.name), None)
+        if entry:
+            completion_by_pc = {r['pc']: r for r in (entry.get('pcs') or [])}
+
     gen_case = _generator_display_case()
     rows = []
     with_target = 0
@@ -3035,7 +3050,15 @@ def pcs_campaign_plan(request):
         if head.expected_events is not None:
             with_target += 1
             target_total += head.expected_events
+        comp = (completion_by_pc.get(head.physics_config.label)
+                if head.physics_config_id else None) or {}
         rows.append({
+            'priority': comp.get('priority'),
+            'delivered_events': comp.get('delivered_events'),
+            'completion_pct': (round(100 * comp['completion'])
+                               if comp.get('completion') is not None
+                               else None),
+            'status': comp.get('status', ''),
             'name': head.composed_name,
             'physics': head.physics_tag.tag_label if head.physics_tag_id
                        else '',
@@ -3088,6 +3111,19 @@ def pcs_campaign_plan(request):
         rows = [r for r in rows if r['expected_events'] is not None]
     elif nev == 'unspecified':
         rows = [r for r in rows if r['expected_events'] is None]
+    priority_filter = (request.GET.get('priority') or '').strip()
+    if priority_filter == 'none':
+        rows = [r for r in rows if r['priority'] is None]
+    elif priority_filter.isdigit():
+        rows = [r for r in rows if r['priority'] == int(priority_filter)]
+    STATUS_SLUGS = (('complete', 'complete'),
+                    ('below-target', 'below target'),
+                    ('not-started', 'not started'),
+                    ('no-target', 'no target'))
+    status_filter = (request.GET.get('status') or '').strip()
+    status_label = dict(STATUS_SLUGS).get(status_filter)
+    if status_label:
+        rows = [r for r in rows if r['status'] == status_label]
 
     def facet(param):
         counts = {}
@@ -3143,6 +3179,39 @@ def pcs_campaign_plan(request):
         'all_url': url_with(nev=''),
         'all_active': not nev,
     }))
+    # Priority and Status facets exist only where the completion record
+    # covers the campaign (current or producing).
+    if completion_by_pc:
+        priority_counts = {}
+        no_priority_count = 0
+        for r in rows_all:
+            if r['priority'] is None:
+                no_priority_count += 1
+            else:
+                priority_counts[r['priority']] = (
+                    priority_counts.get(r['priority'], 0) + 1)
+        priority_items = [
+            {'value': str(p), 'count': n, 'url': url_with(priority=str(p)),
+             'active': priority_filter == str(p)}
+            for p, n in sorted(priority_counts.items())]
+        if no_priority_count:
+            priority_items.append(
+                {'value': 'none', 'count': no_priority_count,
+                 'url': url_with(priority='none'),
+                 'active': priority_filter == 'none'})
+        facet_rows.append(('Priority', {
+            'items': priority_items,
+            'all_url': url_with(priority=''),
+            'all_active': not priority_filter}))
+        facet_rows.append(('Status', {
+            'items': [
+                {'value': label,
+                 'count': sum(1 for r in rows_all if r['status'] == label),
+                 'url': url_with(status=slug),
+                 'active': status_filter == slug}
+                for slug, label in STATUS_SLUGS],
+            'all_url': url_with(status=''),
+            'all_active': not status_filter}))
 
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
@@ -3154,7 +3223,8 @@ def pcs_campaign_plan(request):
         'shown': len(rows),
         'facet_rows': facet_rows,
         'clear_url': url_with(process='', generator='', beam='', q2='',
-                              sample='', requestor='', nev=''),
+                              sample='', requestor='', nev='', priority='',
+                              status=''),
         'with_target': with_target,
         'without_target': len(rows_all) - with_target,
         'target_total': target_total,

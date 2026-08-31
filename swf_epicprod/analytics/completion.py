@@ -21,6 +21,9 @@ unmeasured, and the block carries the unmeasured count.
 """
 
 import collections
+import logging
+
+logger = logging.getLogger(__name__)
 
 ROUND_LADDER = (10_000_000, 5_000_000, 4_000_000, 2_000_000, 1_000_000,
                 500_000, 400_000, 200_000, 100_000)
@@ -303,6 +306,12 @@ def campaign_completion(campaign_name):
             fraction, basis = 0.0, 'not started'
         else:
             fraction, basis = None, 'no target'
+        if basis in ('not started', 'no target'):
+            status = basis
+        elif fraction >= COMPLETE_FRACTION:
+            status = 'complete'
+        else:
+            status = 'below target'
         pcs.append({
             'pc': pc, 'category': category_of[pc],
             'priority': priorities.get(pc),
@@ -311,7 +320,7 @@ def campaign_completion(campaign_name):
             'unmeasured_files': int(leaf.get('unmeasured_files') or 0),
             'target': target[0] if target else None,
             'target_source': target[1] if target else '',
-            'basis': basis, 'completion': fraction,
+            'basis': basis, 'completion': fraction, 'status': status,
             'in_flight': in_flight,
         })
 
@@ -396,6 +405,70 @@ def delivered_summary(overall):
         since_text = 'Delivered'
     return (f'{since_text}: {_fmt_events(overall["delivered_events"])} '
             f'events, {tb:.0f} TB')
+
+
+def panel_priority_row(label, rollup, param):
+    """One completion-panel row from a rollup dict; ``param`` is the
+    priority filter value its links carry ('' for the all row)."""
+    targeted = rollup.get('targeted') or 0
+    complete = rollup.get('complete') or 0
+    fraction_pc = rollup.get('fraction_pc')
+    fraction_events = rollup.get('fraction_events')
+    return {
+        'label': label,
+        'param': param,
+        'configurations': rollup.get('configurations') or 0,
+        'complete': complete,
+        'below_target': targeted - complete,
+        'not_started': rollup.get('not_started') or 0,
+        'no_target': rollup.get('no_target') or 0,
+        'pct_configs': (round(100 * fraction_pc)
+                        if fraction_pc is not None else None),
+        'pct_events': (round(100 * fraction_events)
+                       if fraction_events is not None else None),
+    }
+
+
+def panel_priority_rows(block):
+    """Completion-panel rows: one per request priority, then the
+    configurations with no prioritized request, then all."""
+    by_priority = block.get('by_priority') or {}
+    rows = [panel_priority_row(f'priority {key}', by_priority[key], key)
+            for key in sorted(k for k in by_priority if k != 'none')]
+    if 'none' in by_priority:
+        rows.append(panel_priority_row('no priority', by_priority['none'],
+                                       'none'))
+    if rows:
+        rows.append(panel_priority_row('all', block['overall'], ''))
+    return rows
+
+
+def completion_product_value():
+    """Value of the campaign-completion cached product
+    (``prod_hub_campaign_completion``): one entry per current or
+    producing campaign — the delivered-totals summary, the panel's
+    by-priority rows, and the per-configuration rows the campaign plan
+    page joins in."""
+    from swf_epicprod.analytics.rollup import resolve_target_campaigns
+
+    entries = []
+    for name in sorted(resolve_target_campaigns(), reverse=True):
+        block = campaign_completion(name)
+        if not block.get('available'):
+            logger.error('campaign completion unavailable for %s: %s',
+                         name, block.get('reason'))
+            entries.append({
+                'campaign': name,
+                'summary': (f'{name}: completion unavailable '
+                            f'({block.get("reason")})'),
+                'priority_rows': [], 'pcs': []})
+            continue
+        entries.append({
+            'campaign': name,
+            'summary': delivered_summary(block['overall']),
+            'priority_rows': panel_priority_rows(block),
+            'pcs': block['configurations']})
+    return entries
 
 
 def completion_line(campaign_name, overall, by_source):
