@@ -31,8 +31,8 @@ leaving a permanent stub at its old path): the PCS docs, the
 inputs, questionnaire, validation, narratives, assessments, LLM
 operations, succession), `PANDA_USER_JOBS.md`,
 `JEDI_INTEGRATION.md`, `JEDI_EPIC_PROPOSAL.md`,
-`CAMPAIGN_CONTINUUM.md`, `CAMPAIGN_DELIVERY.md`, and
-`COMMISSIONING_RELAXATIONS.md`.
+`CAMPAIGN_CONTINUUM.md`, `CAMPAIGN_DELIVERY.md`,
+`CONTINUOUS_PRODUCTION.md`, and `COMMISSIONING_RELAXATIONS.md`.
 Platform-service docs (action stream, SSE, external access, MCP,
 deployment) remain in `swf-monitor/docs/`.
 
