@@ -21,6 +21,8 @@ urlpatterns = [
     path('catalog/instancing-execute/', views.pcs_catalog_instancing_execute, name='pcs_catalog_instancing_execute'),
     path('physics/', views.pcs_physics_configs, name='pcs_physics_configs'),
     path('plan/', views.pcs_campaign_plan, name='pcs_campaign_plan'),
+    path('plan/withdraw-edition/', views.pcs_plan_withdraw_edition,
+         name='pcs_plan_withdraw_edition'),
     path('config/<str:label>/', views.pcs_config_detail,
          name='pcs_config_detail'),
     path('data/<str:name>/', views.pcs_edition_data, name='pcs_edition_data'),

@@ -5836,6 +5836,62 @@ def campaign_plan_get(campaign_name):
     return dict((campaign.data or {}).get('plan') or {})
 
 
+def campaign_withdrawn_editions(campaign_name):
+    """{edition: mark} from ``Campaign.data['withdrawn_editions']``.
+    A withdrawn edition's outputs are test-only: its rows carry the
+    withdrawn label and its tasks leave the completion aggregates.
+    Each mark records note, by, and at."""
+    campaign = Campaign.objects.filter(name=campaign_name).first()
+    if campaign is None:
+        return {}
+    return dict((campaign.data or {}).get('withdrawn_editions') or {})
+
+
+def campaign_edition_set_withdrawn(campaign_name, edition, withdrawn, *,
+                                   note='', changed_by=''):
+    """Mark one edition of the campaign withdrawn (test-only), or clear
+    the mark. The edition must belong to the campaign family and name
+    at least one dataset. One origin-stamped action-stream event.
+    Returns the campaign's withdrawn-editions map."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    edition = (edition or '').strip()
+    if not edition or campaign_family(edition) != campaign_name:
+        raise ServiceError(
+            f'{edition!r} is not an edition of campaign {campaign_name}')
+    with transaction.atomic():
+        campaign = (Campaign.objects.select_for_update()
+                    .filter(name=campaign_name).first())
+        if campaign is None:
+            raise ServiceError(f'no campaign named {campaign_name}')
+        if not Dataset.objects.filter(detector_version=edition).exists():
+            raise ServiceError(f'no datasets carry edition {edition}')
+        data = dict(campaign.data or {})
+        marks = dict(data.get('withdrawn_editions') or {})
+        if withdrawn:
+            marks[edition] = {'note': str(note or ''),
+                              'by': changed_by or '',
+                              'at': _timezone.now().isoformat()}
+        else:
+            if edition not in marks:
+                raise ServiceError(f'{edition} is not withdrawn')
+            marks.pop(edition)
+        data['withdrawn_editions'] = marks
+        campaign.data = data
+        campaign.save(update_fields=['data'])
+    log_epicprod_action(
+        'web', 'campaign_edition_withdrawn',
+        username=changed_by,
+        sublevel='normal', live_default=True,
+        message=(f'edition {edition} '
+                 + ('withdrawn (test-only)' if withdrawn else 'restored')
+                 + f' in campaign {campaign_name}'
+                 + (f': {note}' if note else '')),
+        campaign=campaign_name, edition=edition,
+        withdrawn=bool(withdrawn))
+    return marks
+
+
 def plan_entry_anchor(entry):
     """The deterministic staleness projection of a plan entry: the
     decision-bearing fields, ignoring bookkeeping."""

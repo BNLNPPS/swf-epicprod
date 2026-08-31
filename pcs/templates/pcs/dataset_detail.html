@@ -14,6 +14,11 @@
     </nav>
 
     <h2>{{ dataset.composed_name }}</h2>
+    {% if edition_withdrawn %}
+    <p><span title="{{ edition_withdrawn.note }}"
+             style="color: #6c757d; border: 1px solid #ced4da; border-radius: .6em; padding: .1em .6em;">
+        edition {{ dataset.detector_version }} withdrawn — test only; use the campaign's other editions</span></p>
+    {% endif %}
     <p class="text-muted">Created by {{ dataset.created_by }} on {{ dataset.created_at|date:"Y-m-d H:i" }}</p>
 
     {% if dataset.description %}

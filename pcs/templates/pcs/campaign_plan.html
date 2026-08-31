@@ -409,6 +409,27 @@
          writes them all with one required comment - one bulk call, one
          action-stream event. Curation is the edition view's job; the
          physics-configuration view is the read-only completion table. -->
+    {% if withdrawn_editions %}
+    <p class="mb-2">{% for e, m in withdrawn_editions.items %}<span class="swf-no-target me-2" title="{{ m.note }}">edition {{ e }} withdrawn — test only</span>{% endfor %}</p>
+    {% endif %}
+    {% if view_mode == 'edition' and user.is_authenticated and campaign_editions %}
+    <div class="card mb-2">
+        <div class="card-body py-2">
+            <form method="post" action="{% url 'pcs:pcs_plan_withdraw_edition' %}" class="d-flex align-items-center flex-wrap gap-2 mb-0">
+                {% csrf_token %}
+                <input type="hidden" name="campaign" value="{{ campaign.name }}">
+                <strong>Withdraw an edition</strong>
+                <span class="text-muted">— test-only output: its rows are labeled and its tasks leave the completion counts.</span>
+                <select name="edition" class="form-select form-select-sm" style="width: auto; display: inline-block;">
+                    {% for e in campaign_editions %}<option value="{{ e }}">{{ e }}{% if e in withdrawn_editions %} (withdrawn){% endif %}</option>{% endfor %}
+                </select>
+                <input type="text" name="note" class="form-control form-control-sm" style="max-width: 28em;" placeholder="Note, e.g. test only, use 26.07.1 or 26.07.2">
+                <button type="submit" name="withdrawn" value="yes" class="btn btn-sm btn-success">Withdraw</button>
+                <button type="submit" name="withdrawn" value="no" class="btn btn-sm btn-secondary">Restore</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
     {% if view_mode == 'edition' %}
     <div class="card mb-2">
         <div class="card-body py-2">
@@ -481,7 +502,7 @@
                 </td>
                 <td class="text-end">{% if r.delivered_events is not None %}{{ r.delivered_events }}{% endif %}</td>
                 <td class="text-end">{% if r.completion_pct is not None %}{{ r.completion_pct }}%{% endif %}</td>
-                <td>{{ r.status }}</td>
+                <td>{% if r.withdrawn %}<span class="swf-no-target" title="Edition {{ r.edition }} is withdrawn — test only; use the campaign's other editions">withdrawn: test only</span>{% else %}{{ r.status }}{% endif %}</td>
                 <td>{% if r.propagation != 'continue' %}<span class="badge bg-secondary">{{ r.propagation }}</span>{% else %}{{ r.propagation }}{% endif %}</td>
                 {% if view_mode == 'edition' %}<td><input type="number" min="0" class="form-control form-control-sm plan-target-input"
                            style="width: 11em; display: inline-block;"

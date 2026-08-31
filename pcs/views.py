@@ -1941,6 +1941,34 @@ def evgen_inputs_update(request):
     return redirect(reverse('pcs:evgen_inputs'))
 
 
+def pcs_plan_withdraw_edition(request):
+    """Mark or clear a withdrawn (test-only) edition from the campaign
+    plan page. POST-only; a write, so login-gated."""
+    from .services import ServiceError, campaign_edition_set_withdrawn
+
+    campaign_name = (request.POST.get('campaign')
+                     or request.GET.get('campaign') or '').strip()
+    url = reverse('pcs:pcs_campaign_plan') + (
+        f'?campaign={campaign_name}' if campaign_name else '')
+    if request.method != 'POST':
+        return _post_only_redirect(request, url,
+                                   action_label='Withdraw edition')
+    if not request.user.is_authenticated:
+        messages.error(request, 'Login required to withdraw an edition.')
+        return redirect(url)
+    try:
+        campaign_edition_set_withdrawn(
+            campaign_name, request.POST.get('edition'),
+            request.POST.get('withdrawn') == 'yes',
+            note=(request.POST.get('note') or '').strip(),
+            changed_by=request.user.username)
+    except ServiceError as e:
+        messages.error(request, e.detail)
+        return redirect(url)
+    messages.success(request, 'Edition mark saved.')
+    return redirect(url)
+
+
 def _build_find_corpus():
     """Search corpus for the find-data page: every produced Rucio DID on
     the task records, every registered EVGEN dataset in the recorded
@@ -2342,12 +2370,17 @@ def dataset_detail(request, pk):
                           .filter(overrides__intermediate_dataset_dids__contains=[did])
                           .order_by('name'))
 
+    family = services.campaign_family(dataset.detector_version)
+    edition_withdrawn = (services.campaign_withdrawn_editions(family)
+                         .get(dataset.detector_version) if family else None)
+
     context = {
         'dataset': dataset,
         'blocks': blocks,
         'output_tasks': output_tasks,
         'input_tasks': input_tasks,
         'intermediate_tasks': intermediate_tasks,
+        'edition_withdrawn': edition_withdrawn,
     }
     return render(request, 'pcs/dataset_detail.html', context)
 
@@ -3109,6 +3142,8 @@ def _campaign_plan_state(campaign, query, pc_view):
             completion_by_pc = {r['pc']: r for r in (entry.get('pcs') or [])}
 
     gen_case = _generator_display_case()
+    withdrawn_marks = (services.campaign_withdrawn_editions(campaign.name)
+                       if campaign is not None else {})
     rows = []
     for head in heads:
         params = (head.physics_tag.parameters or {}) if head.physics_tag_id \
@@ -3149,6 +3184,8 @@ def _campaign_plan_state(campaign, query, pc_view):
             'expected_events': head.expected_events,
             'expected_source': head.expected_events_source,
             'requested_events': requested.get(head.composed_name),
+            'edition': head.detector_version,
+            'withdrawn': head.detector_version in withdrawn_marks,
         })
     if pc_view:
         # One row per physics configuration — the completion table the
@@ -3162,8 +3199,11 @@ def _campaign_plan_state(campaign, query, pc_view):
             if not label:
                 continue
             keep = by_pc.get(label)
-            if keep is None or (keep['expected_events'] is None
-                                and r['expected_events'] is not None):
+            if (keep is None
+                    or (keep['withdrawn'] and not r['withdrawn'])
+                    or (keep['withdrawn'] == r['withdrawn']
+                        and keep['expected_events'] is None
+                        and r['expected_events'] is not None)):
                 by_pc[label] = r
         rows = list(by_pc.values())
 
@@ -3350,6 +3390,10 @@ def pcs_campaign_plan(request):
 
     view_mode = 'pc' if (request.GET.get('view') or '') == 'pc' else 'edition'
     state = _campaign_plan_state(campaign, request.GET, view_mode == 'pc')
+    withdrawn_editions = (services.campaign_withdrawn_editions(campaign.name)
+                          if campaign is not None else {})
+    campaign_editions = sorted({r.get('edition') for r in state['rows_all']
+                                if r.get('edition')})
 
     # Assembly view (CONTINUOUS_PRODUCTION.md, Campaign assembly): a
     # future campaign with no editions renders its plan build. The full
@@ -3574,6 +3618,8 @@ def pcs_campaign_plan(request):
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
         'assembly': assembly,
+        'withdrawn_editions': withdrawn_editions,
+        'campaign_editions': campaign_editions,
         'active_filters': state['active_filters'],
         'view_mode': view_mode,
         'view_edition_url': url_with(view=''),

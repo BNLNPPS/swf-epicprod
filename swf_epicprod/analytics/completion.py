@@ -121,9 +121,11 @@ def _pc_panda(campaign_name):
     snapshot: output files delivered and PanDA jobs submitted, summed
     over the PC's tasks, with the task states seen."""
     from pcs.models import Campaign, ProdTask
-    from pcs.services import load_campaign_progress_snapshot
+    from pcs.services import (campaign_withdrawn_editions,
+                              load_campaign_progress_snapshot)
 
     campaign = Campaign.objects.get(name=campaign_name)
+    withdrawn = campaign_withdrawn_editions(campaign_name)
     rows = (load_campaign_progress_snapshot(campaign) or {}).get('rows') or {}
     per = collections.defaultdict(
         lambda: {'files': 0, 'jobs': 0, 'states': set()})
@@ -132,6 +134,8 @@ def _pc_panda(campaign_name):
              .select_related('dataset__physics_config'))
     for task in tasks:
         if not task.dataset.physics_config_id:
+            continue
+        if task.dataset.detector_version in withdrawn:
             continue
         row = rows.get(str(task.pk)) or {}
         for output in row.get('outputs') or []:
