@@ -52,7 +52,7 @@
         {% for d, n in assembly.by_disposition %} · {{ d }}: <strong>{{ n }}</strong>{% endfor %}
         · showing <strong>{{ assembly.shown }}</strong>
     </p>
-    <div class="mb-2">
+    <div class="mb-2" style="display: inline-block; padding: .35em .8em; border-radius: .5em;{% if active_filters %} border: 2px solid #d39e00; background-color: rgba(255, 193, 7, .12);{% else %} border: 1px solid #888;{% endif %}">
         <strong>Active filters:</strong>
         {% if active_filters %}
         {% for label, value in active_filters %}<span class="me-2">{{ label }}: <strong>{{ value }}</strong></span>{% endfor %}
@@ -354,7 +354,7 @@
         <a href="{{ view_pc_url }}" class="btn btn-sm {% if view_mode == 'pc' %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
            title="One row per physics configuration — the campaign completion table">Physics configurations</a>
     </div>
-    <div class="mb-2">
+    <div class="mb-2" style="display: inline-block; padding: .35em .8em; border-radius: .5em;{% if active_filters %} border: 2px solid #d39e00; background-color: rgba(255, 193, 7, .12);{% else %} border: 1px solid #888;{% endif %}">
         <strong>Active filters:</strong>
         {% if active_filters %}
         {% for label, value in active_filters %}<span class="me-2">{{ label }}: <strong>{{ value }}</strong></span>{% endfor %}
