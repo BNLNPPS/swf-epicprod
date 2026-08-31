@@ -2955,11 +2955,15 @@ def _plan_delivery_embed(campaign, state):
                 {'name': f'plan-accrued-{campaign.name}',
                  'title': f'Accrued {campaign.name} files',
                  'prefixes': [f'dlvpcf_{tag}_'],
+                 'empty_note': 'No accrued files in this window',
                  'stacked': True},
             ),
             snap_components=('delivery',))
         if ctx.get('error'):
             raise RuntimeError(ctx['error'])
+        for panel in ctx['data']['panels']:
+            if str(panel.get('name', '')).startswith('Arrivals'):
+                panel['empty_note'] = 'No arrivals in this window'
         ctx['report_focus_slug'] = 'campaign'
         ctx['report_query'] += f'&campaign={quote(campaign.name)}'
         ctx['panel_px'] = 220
@@ -2967,7 +2971,7 @@ def _plan_delivery_embed(campaign, state):
 
     try:
         product = get_product(
-            f'snapper_embed:v2:pcs_plan:{campaign.name}', build,
+            f'snapper_embed:v3:pcs_plan:{campaign.name}', build,
             ttl_seconds=300)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger(__name__).error(
