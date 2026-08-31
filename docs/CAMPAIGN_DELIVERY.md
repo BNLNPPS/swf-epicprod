@@ -275,11 +275,10 @@ by-priority table carrying the rest.
 4. **Production home completion panel**: a framed panel per current or
    producing campaign — the delivered totals linking to the campaign
    view, over a table of completion by request priority
-   (priorities 1–3, no priority, all: configurations complete / below
-   target / not started / without a target, with the
-   configuration-weighted and event-weighted percentages). Each count
-   links into the campaign plan list carrying the matching priority
-   and status filters.
+   (priorities 1–3, no priority, all: configurations below target /
+   not started / without a target / complete). Each count links into
+   the campaign plan list carrying the matching priority and status
+   filters.
 
 Candidates not committed in this plan: delivered-dataset arcs as
 episodic lanes (a tile per dataset from first arrival to fully
