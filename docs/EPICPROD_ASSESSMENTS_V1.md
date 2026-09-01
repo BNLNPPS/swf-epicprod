@@ -82,6 +82,7 @@ status document and computes the **mechanical verdict floor** —
 | `assessment_enabled` | `true` | master gate for scheduled triggers |
 | `assessment_ffail_attention` | `0.10` | final-failure rate ≥ → at least `attention` |
 | `assessment_ffail_alarm` | `0.30` | final-failure rate ≥ → `alarm` |
+| `assessment_ffail_min_failed` | `50` | window failed-job count below this suppresses the rate verdicts — a tiny-population blip is not a bell; chronic breakage above it stays loud at the absolute thresholds |
 | `assessment_sync_stale_hours` | `26` | catalog_sync older → at least `attention` |
 | `assessment_arrivals_stall_days` | `2` | no arrivals while a validated production target is incomplete → at least `attention`; no stall verdict is inferred when target completion is unavailable |
 | `assessment_platform_floor_exclude` | `campaign-assessments` | comma-separated platform check names the floor ignores — the assessment system's own bookkeeping must not raise campaign verdicts about itself; floor reasons name the specific non-ok checks |

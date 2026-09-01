@@ -74,6 +74,7 @@ def _floor(blocks):
 
     ffail_attention = float(SysConfig.get_setting('assessment_ffail_attention', 0.10))
     ffail_alarm = float(SysConfig.get_setting('assessment_ffail_alarm', 0.30))
+    ffail_min_failed = int(SysConfig.get_setting('assessment_ffail_min_failed', 50))
     sync_stale_hours = float(SysConfig.get_setting('assessment_sync_stale_hours', 26))
     stall_days = float(SysConfig.get_setting('assessment_arrivals_stall_days', 2))
 
@@ -83,11 +84,14 @@ def _floor(blocks):
     # The floor alarms on the window, not the lifetime: an unchanged
     # accumulated failure burden must not re-alarm every night. Lifetime
     # figures ride as standing context for the report.
+    # A broken rate stays loud for as long as the system is broken —
+    # chronic breakage is never baselined away. The min-failed guard
+    # protects only against tiny-population blips.
     window = blocks.get('window_activity', {}).get('data', {})
     rate = window.get('window_failure_rate')
-    terminal = (window.get('window_jobs_finished') or 0) + \
-               (window.get('window_jobs_failed') or 0)
-    if rate is not None and terminal >= 20:
+    failed = window.get('window_jobs_failed') or 0
+    terminal = (window.get('window_jobs_finished') or 0) + failed
+    if rate is not None and terminal >= 20 and failed >= ffail_min_failed:
         if rate >= ffail_alarm:
             verdict = _worst(verdict, 'alarm')
             reasons.append(f'window failure rate {rate:.1%} >= {ffail_alarm:.0%} '
