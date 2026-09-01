@@ -264,8 +264,11 @@
   document.addEventListener('change', function (e) {
     if (e.target.classList.contains('evgen-tick')) refresh();
   });
-  document.getElementById('evgen-select-all').addEventListener('click', refresh);
-  document.getElementById('evgen-select-none').addEventListener('click', refresh);
+  // The selection buttons are handled by the marking script, which runs
+  // after this one: refresh once its handler has set the ticks.
+  const refreshAfter = () => setTimeout(refresh, 0);
+  document.getElementById('evgen-select-all').addEventListener('click', refreshAfter);
+  document.getElementById('evgen-select-none').addEventListener('click', refreshAfter);
   function line(path, text, color) {
     let li = lines.get(path);
     if (!li) {
