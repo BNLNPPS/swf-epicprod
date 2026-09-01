@@ -420,12 +420,13 @@
                 <input type="hidden" name="campaign" value="{{ campaign.name }}">
                 <strong>Withdraw an edition</strong>
                 <span class="text-muted">— test-only output: its rows are labeled and its tasks leave the completion counts.</span>
-                <select name="edition" class="form-select form-select-sm" style="width: auto; display: inline-block;">
+                <select name="edition" class="form-select form-select-sm" style="width: auto; display: inline-block;"{% if not withdraw_operable %} disabled{% endif %}>
                     {% for e in campaign_editions %}<option value="{{ e }}">{{ e }}{% if e in withdrawn_editions %} (withdrawn){% endif %}</option>{% endfor %}
                 </select>
-                <input type="text" name="note" class="form-control form-control-sm" style="max-width: 28em;" placeholder="Note, e.g. test only, use 26.07.1 or 26.07.2">
-                <button type="submit" name="withdrawn" value="yes" class="btn btn-sm btn-success">Withdraw</button>
-                <button type="submit" name="withdrawn" value="no" class="btn btn-sm btn-secondary">Restore</button>
+                <input type="text" name="note" class="form-control form-control-sm" style="max-width: 28em;" placeholder="Note, e.g. test only, use 26.07.1 or 26.07.2"{% if not withdraw_operable %} disabled{% endif %}>
+                <button type="submit" name="withdrawn" value="yes" class="btn btn-sm btn-success"{% if not withdraw_operable %} disabled{% endif %}>Withdraw</button>
+                <button type="submit" name="withdrawn" value="no" class="btn btn-sm btn-secondary"{% if not withdraw_operable %} disabled{% endif %}>Restore</button>
+                {% if not withdraw_operable %}<span style="margin-left: 1cm;">(use <a href="https://pandaserver02.sdcc.bnl.gov/swf-monitor{{ request.path_info }}{% if request.META.QUERY_STRING %}?{{ request.META.QUERY_STRING }}{% endif %}" target="_blank" rel="noopener">pandaserver02</a> to withdraw an edition)</span>{% endif %}
             </form>
         </div>
     </div>

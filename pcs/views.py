@@ -1946,6 +1946,8 @@ def pcs_plan_withdraw_edition(request):
     plan page. POST-only; a write, so login-gated."""
     from .services import ServiceError, campaign_edition_set_withdrawn
 
+    from monitor_app.middleware import is_tunnel_request
+
     campaign_name = (request.POST.get('campaign')
                      or request.GET.get('campaign') or '').strip()
     url = reverse('pcs:pcs_campaign_plan') + (
@@ -1953,6 +1955,10 @@ def pcs_plan_withdraw_edition(request):
     if request.method != 'POST':
         return _post_only_redirect(request, url,
                                    action_label='Withdraw edition')
+    if is_tunnel_request(request):
+        logger.warning('withdraw-edition POST refused on the tunnel face '
+                       '(campaign %s)', campaign_name)
+        return redirect(url)
     if not request.user.is_authenticated:
         messages.error(request, 'Login required to withdraw an edition.')
         return redirect(url)
@@ -3394,6 +3400,9 @@ def pcs_campaign_plan(request):
                           if campaign is not None else {})
     campaign_editions = sorted({r.get('edition') for r in state['rows_all']
                                 if r.get('edition')})
+    from monitor_app.middleware import is_tunnel_request
+    withdraw_operable = (request.user.is_authenticated
+                         and not is_tunnel_request(request))
 
     # Assembly view (CONTINUOUS_PRODUCTION.md, Campaign assembly): a
     # future campaign with no editions renders its plan build. The full
@@ -3620,6 +3629,7 @@ def pcs_campaign_plan(request):
         'assembly': assembly,
         'withdrawn_editions': withdrawn_editions,
         'campaign_editions': campaign_editions,
+        'withdraw_operable': withdraw_operable,
         'active_filters': state['active_filters'],
         'view_mode': view_mode,
         'view_edition_url': url_with(view=''),
