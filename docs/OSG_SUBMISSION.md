@@ -144,9 +144,11 @@ day. The queue is opportunistic capacity fed only when tasks target
 it; it idles for lack of work rather than lack of slots.
 
 The compute-usage page (`/compute-usage/`) shows the queue as
-"OSG Pool (BNL_OSG_EPIC_PROD_1)" and, beneath the site table, its
-breakdown by execute site for the selected period: jobs, failures,
-failure rate, core-hours, efficiency, and share. The execute site is
+"OSG Pool (BNL_OSG_EPIC_PROD_1)"; its row expands inline into its
+execute sites for the selected period, under a header of its own with
+an independent sort: jobs, failures, failure rate, core-hours,
+efficiency, and share within the pool. Test queues stay out of the page
+until the Test queues tick is on. The execute site is
 the glidein site the pilot records on the job: since the 2026-08-13
 change of the pilot user to `epic`, the pilot's epic module reads
 `GLIDEIN_Site` from the glidein's machine ad (`_CONDOR_MACHINE_AD`) and
