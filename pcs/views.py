@@ -2989,13 +2989,10 @@ def _plan_delivery_embed(campaign, state):
             'epicprod', now - timedelta(days=7), now,
             families=(
                 f'Arrivals {campaign.name} files',
-                # Inline panel spec: the per-PC accrued-files curves,
-                # stacked — the accrual companion to the quilt.
-                {'name': f'plan-accrued-{campaign.name}',
-                 'title': f'Accrued {campaign.name} files',
-                 'prefixes': [f'dlvpcf_{tag}_'],
-                 'empty_note': 'No accrued files in this window',
-                 'stacked': True},
+                # The registered physics-category rollup — the same
+                # stacked cumulative the campaign view shows, one band
+                # per category.
+                f'Cumulative {campaign.name} files category',
             ),
             snap_components=('delivery',))
         if ctx.get('error'):
@@ -3003,6 +3000,8 @@ def _plan_delivery_embed(campaign, state):
         for panel in ctx['data']['panels']:
             if str(panel.get('name', '')).startswith('Arrivals'):
                 panel['empty_note'] = 'No arrivals in this window'
+            elif str(panel.get('name', '')).startswith('Cumulative'):
+                panel['empty_note'] = 'No accrued files in this window'
         ctx['report_focus_slug'] = 'campaign'
         ctx['report_query'] += f'&campaign={quote(campaign.name)}'
         ctx['panel_px'] = 220
@@ -3010,7 +3009,7 @@ def _plan_delivery_embed(campaign, state):
 
     try:
         product = get_product(
-            f'snapper_embed:v3:pcs_plan:{campaign.name}', build,
+            f'snapper_embed:v4:pcs_plan:{campaign.name}', build,
             ttl_seconds=300)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger(__name__).error(
@@ -3041,6 +3040,9 @@ def _plan_delivery_embed(campaign, state):
         for panel in data['panels']:
             panel['ids'] = [curve_id for curve_id in panel['ids']
                             if keep(curve_id)]
+        # The category rollup cannot be sliced per PC — under filters
+        # it empties and drops, leaving the pruned arrivals quilt.
+        data['panels'] = [p for p in data['panels'] if p['ids']]
         ctx['has_points'] = any(curve['points']
                                 for curve in data['curves'].values())
         ctx['report_query'] += '&' + urlencode(echo)
