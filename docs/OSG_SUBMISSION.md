@@ -184,6 +184,49 @@ entries. They belong to the JLab VO frontend, whose groups are CLAS12
 and GlueX; an EIC group in that frontend, or an EIC frontend of its own,
 is what would give ePIC its own glidein policy and site list.
 
+### Queue behavior without a CRIC edit
+
+The BNL pilot wrapper takes its queue data from a `queuedata.json` in
+the pilot's working directory when one is present, and only otherwise
+from the CRIC cache
+(`http://pandaserver01.sdcc.bnl.gov:25080/cache/schedconfig/<queue>.all.json`).
+The OSG submit description already ships one file into every job
+(`transfer_input_files`); a `queuedata.json` added to that list is in
+effect on the next pilot for every pilot-side field: maxtime, container
+type and options, copytools, catchall. This is the mechanism the npps0
+worker runs on ([PANDA_CAPABILITIES.md](PANDA_CAPABILITIES.md)). CRIC
+follows; it keeps the queue's existence and the fields the server and
+harvester read. The harvester-side fields (worker limits, push or pull)
+are in the harvester's queue configuration on the submit host.
+
+### Pilot selection and the test pilot path
+
+The wrapper runs the pilot named by `--piloturl` when the harvester
+passes one (from the CRIC harvester parameter `pilot_url` on the
+queue); otherwise it fetches
+`/cvmfs/eic.opensciencegrid.org/panda/pilot/pilot3.tar.gz`, or
+`pilot3-<version>.tar.gz` when CRIC names a pilot version. A pilot-test
+queue exists: `BNL_OSG_PanDA_pilotest`, with its own submit description
+and its own copy of the wrapper, which differs only in the pilot
+directory, `/cvmfs/eic.opensciencegrid.org/panda/pilot/test/`. A test
+pilot therefore runs either from that CVMFS directory or, with neither
+CVMFS nor CRIC involved, from a `--piloturl` set in the pilot-test
+template and pointing at a tarball served from a host in hand (osgsub01
+serves its log directory over HTTPS). The template accepts the
+argument; the served-tarball route has not yet been exercised.
+
+### Targeting a site
+
+The submit description decides where a queue's pilots may land, so
+targeting is per queue, not per task. `+UNDESIRED_Sites` is proven to
+bind in this pool (no job at a listed site after the Aug 13 change);
+`+DESIRED_Sites` is the pool convention's counterpart, and a
+`Requirements` clause on `GLIDEIN_Site` binds by plain matchmaking. A
+probe queue of its own, with its template rewritten per probe, sends a
+canary probe to a chosen site and can carry its own `queuedata.json`.
+The desired-site attribute is to be confirmed by the first targeted
+probe.
+
 ## Plan
 
 1. Baseline: a canary probe to the queue as configured, recording what
