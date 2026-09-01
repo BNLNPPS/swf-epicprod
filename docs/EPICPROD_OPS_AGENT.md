@@ -251,8 +251,9 @@ Each item below is, by design, a new handler + doer on this agent.
   through the agent: the bot triggers, the agent (the credential holder)
   executes. The MCP server stays credential-free.
 - **OIDC service account** — submit as a robot rather than reusing the
-  operator's token; and **EVGEN-in-Rucio registration** once that workflow is
-  defined.
+  operator's token. (EVGEN-in-Rucio registration is implemented: the
+  `evgen_register` handler, [EPICPROD_EVGEN_INPUTS.md](EPICPROD_EVGEN_INPUTS.md)
+  § Registration.)
 
 ## Operation
 
@@ -272,6 +273,9 @@ doc does not duplicate them.
   PanDA server cache; nightly `catalog_sync` chain step —
   [JEDI_INTEGRATION.md](JEDI_INTEGRATION.md)),
   `rucio_snapshot_update`, `evgen_rucio_update`,
+  `evgen_register` (one EVGEN input directory registered in JLab Rucio
+  as `eicprod`, then the inventory re-assimilated;
+  [EPICPROD_EVGEN_INPUTS.md](EPICPROD_EVGEN_INPUTS.md) § Registration),
 `catalog_import`, `questionnaire_import`, `questionnaire_automatch`,
 `questionnaire_match_update`, `campaign_progress_refresh`,
 `association_sweep` (with auto-intake of direct group.EIC submissions),

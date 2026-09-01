@@ -1037,6 +1037,59 @@ def validation_results_receive(request):
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])
 @permission_classes([IsAuthenticated])
+def evgen_register(request):
+    """Queue the registration of EVGEN input directories in JLab Rucio —
+    the EVGEN inputs page's "Register in Rucio" action on the coverage
+    worklist and its free path box. Body: {"paths": ["/EVGEN/...", ...]}
+    (a path may also be given as the /volatile door path or the root://
+    URL). Each path is validated and queued independently
+    (services.evgen_register_request): the reply lists the queued
+    normalized paths and the refused ones with the reason. The web tier
+    holds no credential; the prod-ops agent registers and then
+    re-assimilates the inventory, pushing evgen_register_ready and
+    evgen_rucio_ready over the SSE relay. Signed-in users only; works
+    identically on the internal face and through the swf-remote proxy
+    (JSON in, JSON out, no redirect). See docs/EPICPROD_EVGEN_INPUTS.md
+    § Registration."""
+    data = request.data if isinstance(request.data, dict) else {}
+    paths = data.get('paths')
+    if (not isinstance(paths, list) or not paths
+            or not all(isinstance(p, str) and p.strip() for p in paths)):
+        return Response({'detail': 'body must be {"paths": ["/EVGEN/...", ...]}'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    username = getattr(request.user, 'username', '') or ''
+    # A Rucio write under the production account: the tunnel fallback
+    # identity (an anonymous external or bare-localhost request) may
+    # read, never register.
+    if not username or username == 'swf-remote-proxy':
+        return Response({'detail': 'sign in to register EVGEN data'},
+                        status=status.HTTP_403_FORBIDDEN)
+    convention = services.evgen_convention_paths_cached()
+    queued, refused = [], []
+    for raw in paths:
+        try:
+            queued.append(services.evgen_register_request(
+                path=raw, created_by=username, convention=convention))
+        except ServiceError as e:
+            refused.append({'path': raw.strip(), 'reason': e.detail})
+    log_epicprod_action(
+        'web', 'evgen_register_request',
+        subject_type='evgen_path',
+        subject_key=queued[0] if len(queued) == 1 else f'{len(queued)} paths',
+        username=username, sublevel='high', live_default=True,
+        outcome='ok' if queued else 'error',
+        reason=('' if queued else '; '.join(
+            f"{r['path']}: {r['reason']}" for r in refused)[:300]),
+        queued=len(queued), refused=len(refused), paths=queued[:20])
+    return Response({'ok': bool(queued), 'queued': queued, 'refused': refused},
+                    status=(status.HTTP_202_ACCEPTED if queued
+                            else status.HTTP_400_BAD_REQUEST))
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def evgen_mark(request):
     """Set a PWG mark on EVGEN paths — the EVGEN inputs page's tick-box
     actions and the per-row priority buttons, for PWG triage of the

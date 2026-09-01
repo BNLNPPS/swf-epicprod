@@ -163,6 +163,51 @@ Both marks are set in bulk from the tick-box panels above the tables;
 priority is also set in one click from the compact level buttons in the
 Priority cell of a row.
 
+### Registration
+
+The coverage worklist's action, **Register in Rucio**, registers the
+files at an EVGEN path as `epic:/EVGEN/...` datasets at RSE `EIC-XRD`
+under the `eicprod` account: tick worklist rows, or give one path (the
+DID tail, the `/volatile/eic/EPIC` door path, or the `root://` URL).
+The web tier validates and queues (`POST /pcs/api/evgen/register/`,
+body `{"paths": [...]}`); the production operations agent does the
+credentialed work (`evgen_register` handler, doer
+`scripts/register-evgen-rucio.py` in swf-monitor); the page reports
+each path's outcome as it arrives over the SSE relay
+(`evgen_register_ready`) and reloads once the inventory has caught up
+(`evgen_rucio_ready`). Registration requires a signed-in user.
+
+A path is accepted when it is not already in the recorded inventory,
+is not marked obsolete, and is known: implied by produced data (the
+worklist) or named by a dataset definition, or a directory above such
+paths (one registration of a generator-version directory yields one
+dataset per subdirectory holding files). The doer lists the
+directory on the JLab production door, takes each file's size and
+adler32 from the door (`xrdfs query checksum`; the server computes it
+and no bytes are read), and registers one dataset per directory
+holding files, one replica per file with its PFN on the door, and the
+attachments, then verifies the result against the catalog's file list.
+A checksum the door does not return makes the run incomplete and
+nothing is registered. Re-running is safe: existing datasets, replicas,
+and attachments are kept. The registration contract follows the
+production team's reference scripts (`eic/simulation_campaign_hepmc3`,
+`calculate_checksum_xrd.sh` and `register_from_checksum_listing.py`).
+On success the agent runs the EVGEN assimilation, so the new dataset
+enters the inventory, matched to its catalog request where one exists,
+and leaves the worklist.
+
+Every request and every outcome is an action-stream record
+(`evgen_register_request`, `evgen_register`) carrying the path, file
+count, bytes, and datasets.
+
+The credential is the JLab `eicprod` x509 proxy. `EVGEN_X509_PROXY`
+names the agent's private copy (the same file the submission doer ships
+in the sandbox); `EVGEN_X509_PROXY_SOURCE` names the production team's
+proxy drop, and a source proxy that outlives the private copy is copied
+over it before use, so a renewed proxy is picked up without an operator
+step. The nightly credential check reports the private copy's days
+left.
+
 ## Current state
 
 Implemented: the assimilation sweep, the input matcher, the catalog

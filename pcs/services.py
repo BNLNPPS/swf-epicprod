@@ -30,7 +30,7 @@ _log = _logging.getLogger(__name__)
 
 from .models import (
     Dataset, ProdConfig, ProdTask, PandaTasks,
-    Campaign, Questionnaire, ProdRequest,
+    Campaign, Questionnaire, ProdRequest, EvgenMark,
     PhysicsCategory, PhysicsTag, EvgenTag, SimuTag, RecoTag, BackgroundTag,
     ValidationResult,
 )
@@ -5476,6 +5476,171 @@ def evgen_rucio_update_request(*, created_by='evgen_rucio'):
         raise ServiceError(
             'EVGEN update could not be queued (ops-agent queue unreachable).',
             status=503)
+
+
+def evgen_convention_paths():
+    """The convention-side EVGEN path of every recorded RECO/FULL output
+    (the payload's physics-path law: ``/RECO/<campaign>/<config>/<tail>``
+    was produced from ``/EVGEN/<tail>``), keyed by path with the produced
+    DIDs and tasks that imply it. The EVGEN inputs page's registration
+    coverage worklist is this set minus the recorded Rucio inventory; the
+    registration action accepts a path from this set."""
+    convention = {}
+    for t in ProdTask.objects.all():
+        for entry in (t.overrides or {}).get('outputs') or []:
+            did = str(entry.get('did') or '')
+            path = '/' + did.partition(':')[2].lstrip('/') \
+                if ':' in did else '/' + did.lstrip('/')
+            segs = [s for s in path.split('/') if s]
+            if len(segs) > 3 and segs[0] in ('RECO', 'FULL'):
+                epath = '/EVGEN/' + '/'.join(segs[3:])
+                info = convention.setdefault(
+                    epath, {'evgen_path': epath,
+                            'xrootd_path': XROOTD_EPIC_BASE + epath,
+                            'reco_examples': set(), 'tasks': set()})
+                info['reco_examples'].add(path)
+                info['tasks'].add(t.composed_name)
+    return convention
+
+
+def evgen_convention_paths_cached():
+    """``evgen_convention_paths`` as a cached product: the task-overrides
+    scan is a long build, so the coverage worklist (page load) and the
+    registration request (button) share one hour-scale cache, keyed on
+    the recorded inventory's stamp so an EVGEN update rebuilds it
+    (docs/CACHED_PRODUCTS.md). Same shape, with the example and task
+    sets as sorted lists."""
+    from monitor_app.cached_product import get_product
+    fetched_at = None
+    try:
+        with open(_os.path.join(RUCIO_SNAPSHOT_DIR, EVGEN_RUCIO_SNAPSHOT_NAME)) as f:
+            fetched_at = _json.load(f).get('fetched_at')
+    except (OSError, ValueError):
+        pass
+
+    def _build():
+        return {path: {'evgen_path': info['evgen_path'],
+                       'xrootd_path': info['xrootd_path'],
+                       'reco_examples': sorted(info['reco_examples']),
+                       'tasks': sorted(info['tasks'])}
+                for path, info in evgen_convention_paths().items()}
+
+    product = get_product(f'evgen_convention:v1:{fetched_at or "none"}',
+                          _build, ttl_seconds=3600)
+    return product.get('value') or {}
+
+
+def evgen_registered_paths():
+    """EVGEN paths in the recorded JLab Rucio inventory (the evgen-rucio
+    snapshot the EVGEN update writes); empty when none is recorded."""
+    snap_path = _os.path.join(RUCIO_SNAPSHOT_DIR, EVGEN_RUCIO_SNAPSHOT_NAME)
+    try:
+        with open(snap_path) as f:
+            records = _json.load(f).get('datasets') or []
+    except FileNotFoundError:
+        return set()
+    paths = set()
+    for record in records:
+        did = str(_rucio_evgen_entry(record)['did'] or '')
+        paths.add('/' + did.partition(':')[2].lstrip('/')
+                  if ':' in did else '/' + did.lstrip('/'))
+    return paths
+
+
+def _definition_tails():
+    """Lower-cased EVGEN tails named by the dataset definitions snapshot
+    (definitions_sweep.py); empty when no sweep has run."""
+    from .definitions_sweep import SNAPSHOT_NAME
+    try:
+        with open(_os.path.join(RUCIO_SNAPSHOT_DIR, SNAPSHOT_NAME)) as f:
+            defs = _json.load(f).get('definitions') or []
+    except FileNotFoundError:
+        return set()
+    return {str(d.get('tail') or '') for d in defs}
+
+
+_EVGEN_PATH_OK = _re.compile(r'^/EVGEN/[A-Za-z0-9._=+\-/]+$')
+
+
+def normalize_evgen_path(raw):
+    """``/EVGEN/...`` from any form the page accepts: the DID tail, the
+    ``epic:`` DID, the ``/volatile/eic/EPIC`` door path, or the full
+    ``root://`` URL. Raises ServiceError(400) for anything else."""
+    p = str(raw or '').strip()
+    if '://' in p:
+        rest = p.split('://', 1)[1]            # host[:port]/path
+        p = '/' + rest.partition('/')[2].lstrip('/')
+    if p.startswith('epic:'):
+        p = p[len('epic:'):]
+    if p.startswith('/volatile/eic/EPIC/'):
+        p = p[len('/volatile/eic/EPIC'):]
+    p = '/' + p.strip('/')
+    if (not _EVGEN_PATH_OK.match(p) or '..' in p or '//' in p
+            or len(p.split('/')) < 4):
+        raise ServiceError(f'not an EVGEN path: {str(raw or "").strip()!r}',
+                           status=400)
+    return p
+
+
+def evgen_register_request(*, path, created_by, convention=None):
+    """Queue the registration of one EVGEN input directory in JLab Rucio
+    (the EVGEN inputs page's "Register in Rucio" action). The web tier
+    holds no credential; this validates, then publishes an
+    ``evgen_register`` message to the prod-ops agent, whose doer lists the
+    directory on the JLab door, takes sizes and checksums from the door,
+    registers ``epic:/EVGEN/...`` datasets at EIC-XRD as ``eicprod``, and
+    re-assimilates the inventory; the agent pushes ``evgen_register_ready``
+    and then ``evgen_rucio_ready`` over the SSE relay.
+
+    Validation before a DID is minted: the normalized path must not be in
+    the recorded inventory (409), must not be marked obsolete (400), and
+    must be a known EVGEN path or a directory above known paths: known is
+    one produced data implies (the coverage worklist,
+    ``evgen_convention_paths``, passed in as ``convention`` when the caller
+    has it) or one the dataset definitions name (400 otherwise).
+    Returns the normalized path. See docs/EPICPROD_EVGEN_INPUTS.md
+    § Registration."""
+    p = normalize_evgen_path(path)
+    if p in evgen_registered_paths():
+        raise ServiceError(f'{p} is already registered (epic:{p})', status=409)
+    mark = EvgenMark.objects.filter(path=p, obsolete=True).first()
+    if mark:
+        raise ServiceError(
+            f'{p} is marked obsolete by {mark.set_by}: {mark.comment}',
+            status=400)
+    # Known: the path itself, or a directory above known paths (one
+    # registration of a family, e.g. a generator-version directory, yields
+    # one dataset per subdirectory holding files, as the reference scripts
+    # do). Compared as directories, so /EVGEN/DIS/NC/10x1 never claims
+    # /EVGEN/DIS/NC/10x100.
+    known_paths = set(convention if convention is not None
+                      else evgen_convention_paths())
+    prefix = p + '/'
+    known = p in known_paths or any(k.startswith(prefix) for k in known_paths)
+    if not known:
+        tail = p[len('/EVGEN/'):].lower()
+        tails = _definition_tails()
+        known = tail in tails or any(t.startswith(tail + '/') for t in tails)
+    if not known:
+        raise ServiceError(
+            f'{p} is neither implied by produced data nor named by a dataset '
+            f'definition; registration is limited to known EVGEN paths and '
+            f'directories above them',
+            status=400)
+    msg = {'msg_type': 'evgen_register', 'namespace': 'prodops',
+           'path': p, 'created_by': created_by}
+    from monitor_app.activemq_connection import ActiveMQConnectionManager
+    try:
+        triggered = ActiveMQConnectionManager().send_message(
+            '/queue/epicprod.ops', _json.dumps(msg))
+    except Exception as e:
+        raise ServiceError(
+            f'Could not reach the prod-ops agent queue: {e}', status=503)
+    if not triggered:
+        raise ServiceError(
+            'Registration could not be queued (ops-agent queue unreachable).',
+            status=503)
+    return p
 
 
 def questionnaire_match_update_request(*, created_by='questionnaire_match'):

@@ -1731,7 +1731,7 @@ def evgen_inputs(request):
     # a cached product (docs/CACHED_PRODUCTS.md); no Rucio call either
     # way.
     from monitor_app.cached_product import get_product
-    from .services import XROOTD_EPIC_BASE
+    from .services import evgen_convention_paths_cached
 
     def _build_coverage():
         registered_paths = set()
@@ -1739,21 +1739,10 @@ def evgen_inputs(request):
             did = str(_rucio_evgen_entry(record)['did'] or '')
             registered_paths.add('/' + did.partition(':')[2].lstrip('/')
                                  if ':' in did else '/' + did.lstrip('/'))
-        convention = {}
-        for t in ProdTask.objects.all():
-            for entry in (t.overrides or {}).get('outputs') or []:
-                did = str(entry.get('did') or '')
-                path = '/' + did.partition(':')[2].lstrip('/') \
-                    if ':' in did else '/' + did.lstrip('/')
-                segs = [s for s in path.split('/') if s]
-                if len(segs) > 3 and segs[0] in ('RECO', 'FULL'):
-                    epath = '/EVGEN/' + '/'.join(segs[3:])
-                    info = convention.setdefault(
-                        epath, {'evgen_path': epath,
-                                'xrootd_path': XROOTD_EPIC_BASE + epath,
-                                'reco_examples': set(), 'tasks': set()})
-                    info['reco_examples'].add(path)
-                    info['tasks'].add(t.composed_name)
+        # The convention map is its own cached product on the same
+        # inventory stamp, shared with the registration action, so a
+        # page load warms what the button reads.
+        convention = evgen_convention_paths_cached()
         missing = []
         for epath in sorted(convention):
             if epath in registered_paths:

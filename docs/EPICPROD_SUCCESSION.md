@@ -88,7 +88,7 @@ hold no PanDA/Rucio/xrootd credential — only the ops agent does.
 |---|---|---|
 | PanDA OIDC token (`EIC.production`) | `PANDA_CONFIG_ROOT` (cached token), `PANDA_AUTH`, `PANDA_AUTH_VO` | ops agent |
 | BNL Rucio x509 proxy | `X509_USER_PROXY`, `RUCIO_BNL_X509_PROXY` → `longproxy-for-rucio` (copies at `/data/wenauseic/` and `/etc/swf-monitor/`) | ops agent; ASGI `bnl_rucio_*` |
-| EVGEN output proxy | `EVGEN_X509_PROXY` | ops agent EVGEN doers |
+| EVGEN output proxy (JLab `eicprod`) | `EVGEN_X509_PROXY` (private copy), `EVGEN_X509_PROXY_SOURCE` (production team's proxy drop; refreshes the copy) | ops agent EVGEN doers |
 | JLab Rucio userpass (`eicread`) | `RUCIO_JLAB_USERNAME/PASSWORD/URL`, `RUCIO_AUTH_HOST` | ASGI `jlab_rucio_*`; Rucio snapshot doer |
 | Anthropic | `ANTHROPIC_API_KEY` | PanDA bot (DISpatcher) |
 | Mattermost | `MATTERMOST_TOKEN`, `EPICPROD_LIVE_TOKEN` | bots; live publisher |

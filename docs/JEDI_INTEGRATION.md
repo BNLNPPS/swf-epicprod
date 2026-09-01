@@ -585,7 +585,11 @@ fallback** (no silent default). It is **not** `X509_USER_PROXY`
 (`longproxy-for-rucio`), the agent's BNL Rucio metadata and log-fetch credential
 (account `panda`), which does not write JLab output; shipping it would break the
 pattern. The operator points `EVGEN_X509_PROXY` at the `eicprod` proxy; the web
-tier and the MCP server hold no credential.
+tier and the MCP server hold no credential. `EVGEN_X509_PROXY_SOURCE` names the
+production team's proxy drop: the EVGEN registration doer copies a source proxy
+that outlives the private copy over it before use, so the shipped proxy stays
+current as the team renews it
+([EPICPROD_EVGEN_INPUTS.md](EPICPROD_EVGEN_INPUTS.md) § Registration).
 
 ### Commissioning defaults
 

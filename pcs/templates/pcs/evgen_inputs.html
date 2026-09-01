@@ -92,6 +92,23 @@
       </div>
     </div>
   </div>
+  {% if view == 'coverage' %}
+  <div class="card mb-2">
+    <div class="card-body py-2">
+      <div class="mb-1"><strong>Register in Rucio</strong>
+        <span class="text-muted">&mdash; register the files at an EVGEN path as epic:/EVGEN/... datasets at EIC-XRD. Sizes and checksums come from the JLab door; the production operations agent does the work and this page reports each result and refreshes when the inventory has caught up. Tick worklist rows, or give a path.</span></div>
+      <div class="d-flex align-items-center flex-wrap gap-2">
+        <span><strong class="evgen-selected-count">0</strong> selected</span>
+        <button type="button" id="evgen-register-selected" class="btn btn-sm btn-primary" disabled>Register selected in Rucio</button>
+        <input type="text" id="evgen-register-input" class="form-control form-control-sm"
+               style="max-width: 46em; margin-left: 1cm;"
+               placeholder="An EVGEN path not on the worklist: /EVGEN/..., its /volatile path, or its root:// URL">
+        <button type="button" id="evgen-register-path" class="btn btn-sm btn-primary">Register path</button>
+      </div>
+      <ul id="evgen-register-status" class="list-unstyled mb-0 mt-1"></ul>
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 
   {% if view != 'coverage' %}
@@ -199,6 +216,116 @@
       busy(false);
       alert('Could not queue the EVGEN update: ' + err.message);
     }
+  });
+})();
+
+// Register in Rucio — the coverage worklist's action: ticked paths (or one
+// typed path) are queued through /pcs/api/evgen/register/; the prod-ops
+// agent registers each and re-assimilates the inventory, pushing
+// evgen_register_ready per path and evgen_rucio_ready per assimilation.
+// Each path's outcome shows in place; the page reloads once every queued
+// path has reported and the inventory has caught up, unless a path
+// failed, in which case the results stay on screen. The push stream
+// opens only after a registration is queued. See docs/EPICPROD_EVGEN_INPUTS.md.
+(function () {
+  const btnSel = document.getElementById('evgen-register-selected');
+  if (!btnSel) return;
+  const btnPath = document.getElementById('evgen-register-path');
+  const inputEl = document.getElementById('evgen-register-input');
+  const statusEl = document.getElementById('evgen-register-status');
+  const ticks = () => Array.from(document.querySelectorAll('.evgen-tick'));
+  const lines = new Map();      // path -> li
+  const pending = new Set();    // paths queued, awaiting evgen_register_ready
+  let assimilations = 0, failures = 0, es = null;
+  function refresh() {
+    btnSel.disabled = (pending.size > 0) || !ticks().some(t => t.checked);
+    btnPath.disabled = (pending.size > 0);
+  }
+  document.addEventListener('change', function (e) {
+    if (e.target.classList.contains('evgen-tick')) refresh();
+  });
+  document.getElementById('evgen-select-all').addEventListener('click', refresh);
+  document.getElementById('evgen-select-none').addEventListener('click', refresh);
+  function line(path, text, color) {
+    let li = lines.get(path);
+    if (!li) {
+      li = document.createElement('li');
+      lines.set(path, li);
+      statusEl.appendChild(li);
+    }
+    li.textContent = (path ? path + ': ' : '') + text;
+    li.style.color = color || '';
+  }
+  function gb(bytes) { return (bytes / 1e9).toFixed(1) + ' GB'; }
+  function maybeDone() {
+    if (pending.size || assimilations > 0) return;
+    if (es) { es.close(); es = null; }
+    if (!failures) { window.location.reload(); return; }
+    line('', 'Reload the page to refresh the worklist.');
+    refresh();
+  }
+  function listen() {
+    if (es) return;
+    es = new EventSource('{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=evgen_register_ready,evgen_rucio_ready');
+    es.addEventListener('evgen_register_ready', function (ev) {
+      let d = {}; try { d = JSON.parse(ev.data); } catch (_) { return; }
+      if (!pending.has(d.path)) return;
+      pending.delete(d.path);
+      if (d.ok) {
+        assimilations += 1;
+        const dids = (d.datasets || []).map(x => x.did).join(', ');
+        line(d.path, 'registered ' + d.files + ' files (' + gb(d.bytes || 0) + ') as '
+             + dids + '. Refreshing the inventory.', '#2e7d32');
+      } else {
+        failures += 1;
+        line(d.path, 'failed: ' + (d.error || 'unknown error'), '#c62828');
+      }
+      maybeDone();
+    });
+    es.addEventListener('evgen_rucio_ready', function () {
+      if (assimilations > 0) assimilations -= 1;
+      maybeDone();
+    });
+  }
+  function submit(paths) {
+    if (!paths.length) return;
+    btnSel.disabled = btnPath.disabled = true;
+    const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1];
+    fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/evgen/register/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf || ''},
+      body: JSON.stringify({paths: paths}),
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; })
+          .then(function (body) { return {status: r.status, body: body}; });
+    }).then(function (res) {
+      const body = res.body || {};
+      if (res.status !== 202 && res.status !== 400) {
+        throw new Error(body.detail || ('HTTP ' + res.status));
+      }
+      (body.refused || []).forEach(function (x) {
+        line(x.path, 'refused: ' + x.reason, '#c62828');
+      });
+      (body.queued || []).forEach(function (p) {
+        pending.add(p);
+        line(p, 'queued. Listing the directory and taking checksums from the door.');
+      });
+      if (pending.size) listen();
+      refresh();
+    }).catch(function (err) {
+      line('', 'Could not queue the registration: ' + (err.message || err), '#c62828');
+      refresh();
+    });
+  }
+  btnSel.addEventListener('click', function () {
+    submit(ticks().filter(t => t.checked).map(t => t.getAttribute('data-path')));
+  });
+  btnPath.addEventListener('click', function () {
+    const p = inputEl.value.trim();
+    if (p) submit([p]);
+  });
+  inputEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); btnPath.click(); }
   });
 })();
 
