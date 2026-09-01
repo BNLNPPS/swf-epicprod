@@ -105,13 +105,16 @@
   <div class="card mb-2">
     <div class="card-body py-2">
       <div class="mb-1"><strong>Register in Rucio</strong>
-        <span class="text-muted">&mdash; register the files at an EVGEN path as epic:/EVGEN/... datasets at EIC-XRD. Sizes and checksums come from the JLab door; the production operations agent does the work and this page reports each result and refreshes when the inventory has caught up. Tick worklist rows, or give a path.</span></div>
+        <span class="text-muted">&mdash; tick worklist rows and register them as epic:/EVGEN/... datasets at EIC-XRD. Sizes and checksums come from the JLab door; the production operations agent does the work and this page reports each result and refreshes when the inventory has caught up.</span></div>
       <div class="d-flex align-items-center flex-wrap gap-2">
         <span><strong class="evgen-selected-count">0</strong> selected</span>
         <button type="button" id="evgen-register-selected" class="btn btn-sm btn-primary" disabled>Register selected in Rucio</button>
+        <a href="#" id="evgen-register-other-toggle" class="small ms-3">Register a path not on the worklist</a>
+      </div>
+      <div id="evgen-register-other" class="d-flex align-items-center flex-wrap gap-2 mt-1" hidden>
         <input type="text" id="evgen-register-input" class="form-control form-control-sm"
-               style="max-width: 46em; margin-left: 1cm;"
-               placeholder="An EVGEN path not on the worklist: /EVGEN/..., its /volatile path, or its root:// URL">
+               style="max-width: 46em;"
+               placeholder="/EVGEN/... path, its /volatile path, or its root:// URL">
         <button type="button" id="evgen-register-path" class="btn btn-sm btn-primary">Register path</button>
       </div>
       <ul id="evgen-register-status" class="list-unstyled mb-0 mt-1"></ul>
@@ -167,7 +170,7 @@
     from the worklist and its count. Analyses can reach these only by direct
     xrootd path — registering them makes the data findable.</p>
   <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
-    <thead><tr>{% if user.is_authenticated %}<th></th>{% endif %}<th>Priority</th><th>Unregistered EVGEN path</th><th>Direct path</th><th>Example produced dataset</th><th>Obsolete</th></tr></thead>
+    <thead><tr>{% if user.is_authenticated %}<th></th>{% endif %}<th>Priority</th><th>Unregistered EVGEN path</th><th>Direct path</th><th>Example produced dataset</th><th>Obsolete</th>{% if user.is_authenticated %}<th>Register</th>{% endif %}</tr></thead>
     <tbody>
       {% for m in coverage_missing %}
       <tr{% if m.obsolete %} class="text-muted"{% endif %}>
@@ -177,6 +180,7 @@
         <td class="small">{{ m.xrootd_path }} {% copy_btn m.xrootd_path %}</td>
         <td class="small"><a href="{% url 'pcs:rucio_did_detail' scope='epic' name=m.reco_example %}">{{ m.reco_example }}</a></td>
         <td{% if m.obsolete %} class="warning_fill" data-comment="{{ m.mark.comment }}"{% endif %}>{% if m.obsolete %}{{ m.mark.set_by }}<br>{{ m.mark.set_at|date:'Y-m-d' }}{% endif %}</td>
+        {% if user.is_authenticated %}<td>{% if m.obsolete %}<span class="text-muted small">obsolete</span>{% else %}<button type="button" class="btn btn-sm btn-primary evgen-register-row" data-path="{{ m.evgen_path }}" title="Register this path in Rucio">Register</button>{% endif %}</td>{% endif %}
       </tr>
       {% endfor %}
     </tbody>
@@ -246,9 +250,11 @@
   const lines = new Map();      // path -> li
   const pending = new Set();    // paths queued, awaiting evgen_register_ready
   let assimilations = 0, failures = 0, es = null;
+  const rowButtons = () => Array.from(document.querySelectorAll('button.evgen-register-row'));
   function refresh() {
     btnSel.disabled = (pending.size > 0) || !ticks().some(t => t.checked);
     btnPath.disabled = (pending.size > 0);
+    rowButtons().forEach(b => { b.disabled = (pending.size > 0); });
   }
   document.addEventListener('change', function (e) {
     if (e.target.classList.contains('evgen-tick')) refresh();
@@ -329,12 +335,24 @@
   btnSel.addEventListener('click', function () {
     submit(ticks().filter(t => t.checked).map(t => t.getAttribute('data-path')));
   });
+  // One click on a row registers that path.
+  document.addEventListener('click', function (e) {
+    const b = e.target.closest ? e.target.closest('button.evgen-register-row') : null;
+    if (!b || b.disabled) return;
+    submit([b.getAttribute('data-path')]);
+  });
   btnPath.addEventListener('click', function () {
     const p = inputEl.value.trim();
     if (p) submit([p]);
   });
   inputEl.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); btnPath.click(); }
+  });
+  document.getElementById('evgen-register-other-toggle').addEventListener('click', function (e) {
+    e.preventDefault();
+    const other = document.getElementById('evgen-register-other');
+    other.hidden = !other.hidden;
+    if (!other.hidden) inputEl.focus();
   });
 })();
 
