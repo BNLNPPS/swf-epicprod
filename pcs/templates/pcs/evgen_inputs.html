@@ -176,9 +176,9 @@
       <tr{% if m.obsolete %} class="text-muted"{% endif %}>
         {% if user.is_authenticated %}<td><input type="checkbox" class="form-check-input evgen-tick" data-path="{{ m.evgen_path }}"></td>{% endif %}
         {% include "pcs/_evgen_priority_cell.html" with priority=m.priority pmark=m.pmark path=m.evgen_path %}
-        <td><span class="text-muted small">EVGEN path</span> {{ m.evgen_path }}
-          <div class="small"><span class="text-muted">Direct xrootd path</span> {{ m.xrootd_path }} {% copy_btn m.xrootd_path %}</div>
-          <div class="small"><span class="text-muted">Produced from it</span> <a href="{% url 'pcs:rucio_did_detail' scope='epic' name=m.reco_example %}">{{ m.reco_example }}</a></div></td>
+        <td><span class="text-muted small">EVGEN path:</span> {{ m.evgen_path }}
+          <div class="small"><span class="text-muted">Direct xrootd path:</span> {{ m.xrootd_path }} {% copy_btn m.xrootd_path %}</div>
+          <div class="small"><span class="text-muted">Produced from it:</span> <a href="{% url 'pcs:rucio_did_detail' scope='epic' name=m.reco_example %}">{{ m.reco_example }}</a></div></td>
         <td{% if m.obsolete %} class="warning_fill" data-comment="{{ m.mark.comment }}"{% endif %}>{% if m.obsolete %}{{ m.mark.set_by }}<br>{{ m.mark.set_at|date:'Y-m-d' }}{% endif %}</td>
         {% if user.is_authenticated %}<td>{% if m.obsolete %}<span class="text-muted small">obsolete</span>{% else %}<button type="button" class="btn btn-sm btn-primary evgen-register-row" data-path="{{ m.evgen_path }}" title="Register this path in Rucio">Register</button>{% endif %}</td>{% endif %}
       </tr>
