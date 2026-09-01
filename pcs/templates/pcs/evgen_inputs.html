@@ -70,14 +70,19 @@
   {% include "monitor_app/_active_filters.html" with active_filters=active_filters clear_all_url=clear_all_url %}
 
   {% if user.is_authenticated %}
+  <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+    <strong>Selection:</strong>
+    <button type="button" id="evgen-select-all" class="btn btn-sm btn-secondary">Select all</button>
+    <button type="button" id="evgen-select-none" class="btn btn-sm btn-secondary">None</button>
+    <span><strong id="evgen-selected-count">0</strong> selected</span>
+    <span class="text-muted">&mdash; tick rows in the table; the actions below apply to the selection.</span>
+  </div>
   <div class="card mb-2">
     <div class="card-body py-2">
       <div class="mb-1"><strong>Mark obsolete data</strong>
-        <span class="text-muted">&mdash; tick rows and give the reason; the mark records who set it and when, and changes are logged.</span></div>
+        <span class="text-muted">&mdash; give the reason; the mark records who set it and when, and changes are logged.</span></div>
       <div class="d-flex align-items-center flex-wrap gap-2">
-        <button type="button" id="evgen-select-all" class="btn btn-sm btn-secondary">Select all</button>
-        <button type="button" id="evgen-select-none" class="btn btn-sm btn-secondary">None</button>
-        <span><strong id="evgen-selected-count">0</strong> selected</span>
+        <span><strong class="evgen-selected-count">0</strong> selected</span>
         <input type="text" id="evgen-mark-comment" class="form-control form-control-sm"
                style="max-width: 34em; margin-left: 1cm;"
                placeholder="Comment (required): why this data is obsolete">
@@ -105,7 +110,7 @@
   <div class="card mb-2">
     <div class="card-body py-2">
       <div class="mb-1"><strong>Register in Rucio</strong>
-        <span class="text-muted">&mdash; tick worklist rows and register them as epic:/EVGEN/... datasets at EIC-XRD. Sizes and checksums come from the JLab door; the production operations agent does the work and this page reports each result and refreshes when the inventory has caught up.</span></div>
+        <span class="text-muted">&mdash; register the selected worklist rows as epic:/EVGEN/... datasets at EIC-XRD. Sizes and checksums come from the JLab door; the production operations agent does the work and this page reports each result and refreshes when the inventory has caught up.</span></div>
       <div class="d-flex align-items-center flex-wrap gap-2">
         <span><strong class="evgen-selected-count">0</strong> selected</span>
         <button type="button" id="evgen-register-selected" class="btn btn-sm btn-primary" disabled>Register selected in Rucio</button>
