@@ -111,7 +111,7 @@
         <button type="button" id="evgen-register-selected" class="btn btn-sm btn-primary" disabled>Register selected in Rucio</button>
         <a href="#" id="evgen-register-other-toggle" class="small ms-3">Register a path not on the worklist</a>
       </div>
-      <div id="evgen-register-other" class="d-flex align-items-center flex-wrap gap-2 mt-1" hidden>
+      <div id="evgen-register-other" class="d-none align-items-center flex-wrap gap-2 mt-1">
         <input type="text" id="evgen-register-input" class="form-control form-control-sm"
                style="max-width: 46em;"
                placeholder="/EVGEN/... path, its /volatile path, or its root:// URL">
@@ -351,8 +351,11 @@
   document.getElementById('evgen-register-other-toggle').addEventListener('click', function (e) {
     e.preventDefault();
     const other = document.getElementById('evgen-register-other');
-    other.hidden = !other.hidden;
-    if (!other.hidden) inputEl.focus();
+    // Bootstrap's d-flex outranks the hidden attribute, so toggle its classes.
+    const show = other.classList.contains('d-none');
+    other.classList.toggle('d-none', !show);
+    other.classList.toggle('d-flex', show);
+    if (show) inputEl.focus();
   });
 })();
 
