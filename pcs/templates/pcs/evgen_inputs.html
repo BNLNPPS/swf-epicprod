@@ -49,6 +49,15 @@
     <a href="{% url 'pcs:evgen_inputs' %}?view=coverage" {% if view == 'coverage' %}class="active"{% endif %}>Registration coverage{% if coverage_missing_total %} ({{ coverage_missing_total }} missing){% endif %}</a>
   </div>
 
+  <form method="get" class="filter-bar mb-2 d-flex align-items-center flex-wrap gap-2">
+    {% if view == 'coverage' %}<input type="hidden" name="view" value="coverage">{% endif %}
+    {% for f in filters %}{% if f.selected %}<input type="hidden" name="{{ f.key }}" value="{{ f.selected }}">{% endif %}{% endfor %}
+    <strong>Search:</strong>
+    <input type="search" name="q" value="{{ q }}" class="form-control form-control-sm"
+           style="width: 46em;" placeholder="Any part of an EVGEN path, or a pasted door path. Enter applies.">
+    <button type="submit" class="btn btn-sm btn-primary">Search</button>
+    {% if q %}<a href="{{ clear_q_url }}" class="btn btn-sm btn-secondary">Clear</a>{% endif %}
+  </form>
   {% for f in filters %}
   <div class="filter-bar mb-2">
     <strong>{{ f.label }}:</strong>

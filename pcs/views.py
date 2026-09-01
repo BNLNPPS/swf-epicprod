@@ -1801,17 +1801,23 @@ def evgen_inputs(request):
         'complete': (request.GET.get('complete') or '').strip(),
         'validity': (request.GET.get('validity') or '').strip(),
         'priority': (request.GET.get('priority') or '').strip(),
+        'q': (request.GET.get('q') or '').strip(),
     }
     if selected['validity'] not in ('', 'current', 'obsolete'):
         selected['validity'] = ''
     if selected['priority'] not in ('', '1', '2', '3', 'unset'):
         selected['priority'] = ''
+    # Search: any part of the path, case-insensitive. A pasted door path
+    # or root:// URL matches by its /EVGEN/ tail.
+    needle = selected['q'].lower()
+    if needle.find('/evgen/') > 0:
+        needle = needle[needle.find('/evgen/'):]
 
     def _qs(**over):
         params = {}
         if view == 'coverage':
             params['view'] = 'coverage'
-        for key in ('cls', 'matched', 'complete', 'validity', 'priority'):
+        for key in ('cls', 'matched', 'complete', 'validity', 'priority', 'q'):
             value = over.get(key, selected[key])
             if value:
                 params[key] = value
@@ -1862,6 +1868,9 @@ def evgen_inputs(request):
                     if priority_counts.get(v)]})
 
     def _keep(x, is_row):
+        if needle and needle not in (x['path'] if is_row
+                                     else x['evgen_path']).lower():
+            return False
         if selected['priority'] == 'unset' and x['priority']:
             return False
         if selected['priority'] in ('1', '2', '3') \
@@ -1896,10 +1905,13 @@ def evgen_inputs(request):
     active_filters = [
         {'label': f['label'], 'value': f['selected']}
         for f in filters if f['selected']]
+    if selected['q']:
+        active_filters.append({'label': 'Search', 'value': selected['q']})
 
     return render(request, 'pcs/evgen_inputs.html', {
         'rows': rows, 'totals': totals, 'fetched_at': fetched_at,
         'error': error, 'view': view,
+        'q': selected['q'], 'clear_q_url': _qs(q=''),
         'coverage_missing': coverage['missing'],
         'coverage_missing_total': coverage_missing_total,
         'coverage_total': coverage['total'],
