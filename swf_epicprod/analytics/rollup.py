@@ -100,6 +100,17 @@ def _floor(blocks):
             verdict = _worst(verdict, 'attention')
             reasons.append(f'window failure rate {rate:.1%} >= {ffail_attention:.0%} '
                            f'({terminal} terminal jobs in window)')
+        if reasons and rate >= ffail_attention:
+            # The corrected composition of the failed population — the
+            # bell says which kind of broken.
+            comp = window.get('window_failed_composition') or []
+            if comp:
+                parts = ', '.join(f"{c['label']} {c['count']:,}"
+                                  for c in comp[:4])
+                rest = sum(c['count'] for c in comp[4:])
+                if rest:
+                    parts += f', other {rest:,}'
+                reasons[-1] += f'; composition: {parts}'
 
     activity = blocks['action_stream_activity']['data']
     sync_age = activity.get('catalog_sync_age_hours')

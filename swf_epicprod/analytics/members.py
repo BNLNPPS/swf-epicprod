@@ -557,6 +557,19 @@ def action_stream_activity(campaign, window_start, window_end):
     })
 
 
+def _failed_mode_label(comp, code, exitcode):
+    """Deterministic reader-facing label of one failed-job mode: the
+    payload exit reading where the pilot's payload-failure code makes
+    it the honest refinement, else the category label."""
+    from monitor_app.error_corrections import exit_reading
+    from monitor_app.panda.error_labels import category_label
+    if str(comp) == 'pilot' and int(code or 0) == 1305:
+        reading = exit_reading(exitcode)
+        if reading:
+            return reading
+    return category_label(comp, code)
+
+
 def window_activity(campaign, window_start, window_end):
     """The window's own PanDA activity — the daily report's subject.
 
@@ -600,6 +613,31 @@ def window_activity(campaign, window_start, window_end):
                     latest = cursor.fetchone()[0]
                     if latest:
                         job_last_modified.append(latest)
+            # Corrected composition of the window's failed jobs: the
+            # classified error category refined by the payload exit
+            # code where that is the honest reading (the correction
+            # root's vocabulary) — deterministic, for the floor reason.
+            composition = {}
+            if task_ids:
+                from monitor_app.snapper_errors import _classify_sql
+                comp_case, code_case, _ = _classify_sql()
+                with connections['panda'].cursor() as cursor:
+                    for table in ('jobsarchived4', 'jobsactive4'):
+                        cursor.execute(
+                            f'SELECT CASE {comp_case} ELSE \'other\' END, '
+                            f'CASE {code_case} ELSE 0 END, '
+                            f'COALESCE("transexitcode", \'\'), COUNT(*) '
+                            f'FROM "{PANDA_SCHEMA}"."{table}" '
+                            f'WHERE "jeditaskid" IN ({marks}) '
+                            f'AND "jobstatus" = \'failed\' '
+                            f'AND "modificationtime" >= %s '
+                            f'AND "modificationtime" < %s '
+                            f'GROUP BY 1, 2, 3',
+                            task_ids + [window_start, window_end])
+                        for comp, code, exitcode, n in cursor.fetchall():
+                            label = _failed_mode_label(comp, code, exitcode)
+                            composition[label] = (composition.get(label, 0)
+                                                  + int(n))
     except Exception as e:
         return _block('window_activity', window_start, window_end,
                       _unavailable(f'PanDA window query failed: {e}'))
@@ -648,6 +686,10 @@ def window_activity(campaign, window_start, window_end):
         'window_jobs_failed': window_failed,
         'window_failure_rate': (round(window_failed / terminal, 4)
                                 if terminal else None),
+        'window_failed_composition': sorted(
+            ({'label': label, 'count': count}
+             for label, count in composition.items()),
+            key=lambda c: -c['count']),
         'tasks_initiated': initiated,
         'tasks_completed': completed,
         'tasks_newly_failed': failed,
