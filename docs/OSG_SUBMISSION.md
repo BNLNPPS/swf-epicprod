@@ -146,15 +146,22 @@ it; it idles for lack of work rather than lack of slots.
 The compute-usage page (`/compute-usage/`) shows the queue as
 "OSG Pool (BNL_OSG_EPIC_PROD_1)" and, beneath the site table, its
 breakdown by execute site for the selected period: jobs, failures,
-failure rate, core-hours, efficiency, and share, from the worker-node
-host on each job record (`modificationhost`). A job whose host is the
-submit host never reached a worker node and is listed as not
-dispatched; a bare hostname cannot be placed and is listed as
-unresolved. In August 2026 about a third of the finished jobs carried
-bare hostnames; attributing those needs the glidein's site name, which
-lives on the pilot's condor job (`GLIDEIN_Site`) on osgsub01 rather
-than on the PanDA record. The same breakdown is available through the
-`panda_resource_usage` MCP tool with `execute_sites`.
+failure rate, core-hours, efficiency, and share. The execute site is
+the glidein site the pilot records on the job: since the 2026-08-13
+change of the pilot user to `epic`, the pilot's epic module reads
+`GLIDEIN_Site` from the glidein's machine ad (`_CONDOR_MACHINE_AD`) and
+reports it as the job's `destinationsite` (the submit host as
+`sourcesite`). Records that predate the report fall back to the
+worker-node host's domain. A job whose host is the submit host never
+reached a worker node and is listed as not dispatched. In August 2026
+the queue's jobs resolved to 24 named sites, among them UChicago
+(MWT2), ComputeCanada-Fir, UConn, GREX, CNAF, MI-HORUS, FSU, CHTC,
+Alabama-CHPC, FANDM-ITS, Nebraska, Rhodes-HPC, UWM-Mortimer, LIGO-WA,
+and BNL-SDCC. The same breakdown is available through the
+`panda_resource_usage` MCP tool with `execute_sites`. The pilot's
+condor job on osgsub01 also records the site (`OSG_SITE_NAME` in the
+wrapper output, `GLIDEIN_Site` in the schedd history), the source the
+maintainer's `count_error_sites.sh` reads.
 
 ## Levers
 
