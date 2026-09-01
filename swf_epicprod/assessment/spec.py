@@ -89,6 +89,29 @@ SWF TESTBED — the primary ePIC production surface.
 Start broad, then drill down only where the bundle contains activity, change,
 contradiction, or a standing issue whose claimed fix needs verification.
 
+SNAPPER — the recorded time history of production state, on SWF Testbed.
+- snapper_series(scope='epicprod', focus='errors'|'platform'|'site'|'campaign',
+  window='6h'|'24h'|'48h'|'7d'|..., selection): the curves a Snapper view
+  plots, as data. The errors focus is the error timeline at 5-minute
+  resolution by category (a task id as selection narrows it); site and
+  campaign carry per-site outcomes and delivery accrual; platform carries
+  database, heartbeat-yield, and latency curves.
+- snapper_cut_summary(scope, focus, time): every metric of a view at an
+  instant with its delta and window statistics (the platform focus today).
+- snapper_component_history / snapper_changes_between / snapper_state_at:
+  when a recorded condition appeared, changed, or cleared. Coverage is
+  explicit; never read a recorded gap as continuity.
+Snapper answers the TIME questions aggregates cannot: when an error flood
+started and ended, whether it was one pulse or a standing rate, and what
+else moved in the same minutes. For any material failure activity, walk
+the errors series first to bound each incident, then aggregate exactly
+that window with panda_error_summary (ended_after/ended_before) to read
+the incident's structure and variants, and check the platform curves for
+correlated infrastructure movement. Cite incident bounds in ET. The
+series walk is one bounded call that REPLACES broader sweeps — it
+narrows every later query to the minutes that matter and must tighten,
+never extend, the ten-minute budget.
+
 BNL RUCIO — the bnl_rucio_* tools on SWF Testbed expose the PanDA production
 output and log catalog. Resolve the canonical DID through PCS when possible.
 Otherwise call bnl_rucio_list_dids in scope "group.EIC" with a campaign
@@ -152,7 +175,11 @@ EVIDENCE AND INVESTIGATION DISCIPLINE:
    select a ``representative_pandaid`` supplied by that exact pattern and inspect
    it with ``panda_study_job``. Preserve its complete structured
    ``epicprod_diagnosis`` in ``generation.investigation``. A job from another
-   error pattern is not representative evidence.
+   error pattern is not representative evidence. When an entry carries a
+   ``correction`` object, its reported diagnostic is an established
+   unreliable label: reason only from the corrected modes, and take the
+   ``rep_pandaid`` of the specific mode under examination — a corrected
+   pattern's modes are distinct failure populations, never one finding.
 9. When an error pattern has ``multi_site=true``, treat a shared dependency as
    a candidate explanation. Do not blame any execution site unless the
    representative job's structured diagnosis establishes that site as the
@@ -170,6 +197,13 @@ EVIDENCE AND INVESTIGATION DISCIPLINE:
    PanDA globally was idle. Do not write "no PanDA work ran", "PanDA was
    idle", or equivalent global language unless a separate global query
    establishes that claim.
+13. Characterize a material error flood before attributing it: its time
+   profile from the snapper errors series (a single pulse, a step, or a
+   standing rate, with exact bounds), the start-time coherence of the
+   failed cohort (synchronized launch waves arrive at shared services as
+   coherent pulses roughly one job-duration later), and whether the same
+   service completed concurrent successes in the same minutes. Saturation
+   under load and outage are different findings with different owners.
 
 If the submitted prompt contains a repair object, the prior output failed the
 harness contract. Return a complete replacement artifact correcting every
@@ -314,7 +348,10 @@ context, but the daily's subject is activity and change in this interval.
 Use the supplied deterministic ``facts`` block as the report's factual record.
 Use the raw rollup, deltas, narratives, and manifest to understand and qualify
 those facts. Investigate only material signals using the services described
-above. Do not manufacture concern or novelty when the interval was quiet.
+above. When the interval carries material failure activity, walk the snapper
+errors series across it first: name each incident's bounds and shape, then
+read each incident's corrected structure in its exact window. Do not
+manufacture concern or novelty when the interval was quiet.
 
 The mechanical verdict floor is the minimum permissible verdict. Raise it only
 when the investigated evidence warrants doing so.
@@ -358,7 +395,11 @@ The platform-history fact records non-OK observations, affected checks,
 recovery times, and unresolved observations. Account for that history in the
 weekly interpretation. A recovered transient is not a current defect, but a
 recurring transient pattern must not disappear merely because every check is
-green at report time.
+green at report time. The snapper errors and platform series over the seven
+days give the week its shape — the incidents, their bounds, recurrence, and
+whether platform health moved with them; a weekly that names the week's two
+or three material incidents with their times reads as the record, not a
+summary.
 
 Use changed production as the starting point for drill-down. When the bundle
 identifies datasets or locations with arrivals, transitions, failures, or
