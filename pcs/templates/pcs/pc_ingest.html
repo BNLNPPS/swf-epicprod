@@ -12,7 +12,13 @@
   .pcs-ingest-results { max-width: 90rem; margin: 1.5rem auto; }
   #pcs-ingest-table { max-width: 100%; }
   #pcs-ingest-table td { vertical-align: top; }
-  #pcs-ingest-table td.pcs-ingest-path { word-break: break-all; }
+  /* Physics, family, and result carry the reading; job settings are
+     context and must not take their width. Paths wrap at slashes only. */
+  #pcs-ingest-table td.pcs-ingest-path { min-width: 18rem; }
+  #pcs-ingest-table td.pcs-ingest-path .small-muted { word-break: break-word; }
+  #pcs-ingest-table td.pcs-ingest-family { min-width: 16rem; }
+  #pcs-ingest-table td.pcs-ingest-result { min-width: 18rem; word-break: break-word; }
+  #pcs-ingest-table td.pcs-ingest-job { max-width: 16rem; font-size: .875rem; color: #6c757d; }
   #pcs-ingest-table .small-muted { font-size: .875rem; color: #6c757d; }
   #pcs-ingest-counts span { margin-right: 1rem; }
 </style>
@@ -50,7 +56,8 @@
   <table id="pcs-ingest-table" class="table table-striped table-bordered table-sm align-middle w-auto">
     <thead><tr>
       <th>#</th><th>State</th><th>Physics</th><th>Generator</th><th>Sample</th>
-      <th>Campaign settings</th><th>Events</th><th>Family</th><th>Result</th>
+      <th>Campaign</th><th>Events</th><th>Family</th><th>Result</th>
+      <th>Job settings as submitted</th>
       {% if user.is_authenticated %}<th>Accept</th>{% endif %}
     </tr></thead>
     <tbody></tbody>
@@ -119,10 +126,13 @@
     if (c.DETECTOR_VERSION) bits.push(esc(c.DETECTOR_VERSION) + (r.campaign_name ? ' (campaign ' + esc(r.campaign_name) + ')' : ''));
     if (c.DETECTOR_CONFIG) bits.push(esc(c.DETECTOR_CONFIG));
     if (c.JUG_XL_TAG) bits.push('container ' + esc(c.JUG_XL_TAG));
+    return bits.join('<br>');
+  }
+  function jobText(r) {
     const job = r.job || {};
     const jobBits = Object.keys(job).map(k => esc(k) + '=' + esc(job[k]));
     if (r.target_hours) jobBits.push('target hours ' + esc(r.target_hours));
-    return bits.join('<br>') + (jobBits.length ? `<div class="small-muted">${jobBits.join(' ')}</div>` : '');
+    return jobBits.join(' ');
   }
   function eventsText(r) {
     const d = r.definition;
@@ -149,8 +159,9 @@
         + `<td>${esc(r.sample || '')}</td>`
         + `<td>${campaignText(r)}</td>`
         + `<td>${eventsText(r)}</td>`
-        + `<td>${familyText(r)}</td>`
-        + `<td>${resultText(r)}</td>`
+        + `<td class="pcs-ingest-family">${familyText(r)}</td>`
+        + `<td class="pcs-ingest-result">${resultText(r)}</td>`
+        + `<td class="pcs-ingest-job">${jobText(r)}</td>`
         + (SIGNED_IN ? `<td>${acceptCell(r, i)}</td>` : '');
       tbody.appendChild(tr);
     });
