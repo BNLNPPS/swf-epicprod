@@ -1065,6 +1065,12 @@ def evgen_register(request):
         return Response({'detail': 'sign in to register EVGEN data'},
                         status=status.HTTP_403_FORBIDDEN)
     convention = services.evgen_convention_paths_cached()
+    if convention is None:
+        # The known-path map is mid-build on another worker; validating
+        # against nothing would refuse every path, so say so instead.
+        return Response({'detail': 'the EVGEN path map is still being '
+                                   'built; try again in a minute'},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE)
     queued, refused = [], []
     for raw in paths:
         try:

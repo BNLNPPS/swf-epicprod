@@ -124,7 +124,13 @@ first; a dataset no request claims shows as unmatched. The page reads the record
 no Rucio call in the render path — and carries the same "Update EVGEN from
 Rucio" action as the catalog. Its second view, registration coverage,
 lists the EVGEN paths that recorded produced datasets imply but the
-inventory lacks — the registration worklist.
+inventory lacks — the registration worklist. The worklist and the
+convention-path map it reads are cached products
+(`swf-monitor/docs/CACHED_PRODUCTS.md`) that the assimilation rebuilds
+as its last step, nightly and on the Update button, so the page serves
+the current worklist as stored and never builds it in the request
+path. The page states the worklist's build time; an absent product
+reads as building or unavailable, never as an empty worklist.
 
 ### PWG marks
 

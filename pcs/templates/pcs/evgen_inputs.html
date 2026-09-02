@@ -46,7 +46,7 @@
   {# First-class page views as server-routed tabs; the URL carries the view. #}
   <div class="swf-page-tabs">
     <a href="{% url 'pcs:evgen_inputs' %}" {% if view != 'coverage' %}class="active"{% endif %}>Inventory</a>
-    <a href="{% url 'pcs:evgen_inputs' %}?view=coverage" {% if view == 'coverage' %}class="active"{% endif %}>Registration coverage{% if coverage_missing_total %} ({{ coverage_missing_total }} missing){% endif %}</a>
+    <a href="{% url 'pcs:evgen_inputs' %}?view=coverage" {% if view == 'coverage' %}class="active"{% endif %}>Registration coverage{% if coverage_state == 'ready' %} ({{ coverage_missing_total }} missing){% elif coverage_state == 'building' %} (building){% else %} (unavailable){% endif %}</a>
   </div>
 
   <form method="get" class="filter-bar mb-2 d-flex align-items-center flex-wrap gap-2">
@@ -167,13 +167,20 @@
   {% else %}
   {# The worklist of EVGEN inputs produced datasets imply but the inventory lacks. #}
   <h2 class="h5 mt-3">Registration coverage of produced data</h2>
-  {% if coverage_missing %}
+  {% if coverage_state == 'building' %}
+  <p class="text-muted">The registration worklist is being built for the first time;
+    reload in a moment.</p>
+  {% elif coverage_state == 'failed' %}
+  <p class="text-muted">The registration worklist could not be read; the error is
+    in the application log.</p>
+  {% elif coverage_missing %}
   <p class="mb-2">Of <strong>{{ coverage_total }}</strong> EVGEN paths implied by recorded
     produced datasets, <strong>{{ coverage_missing_total }}</strong> are not registered in
     the Rucio inventory above{% if any_filter %} ({{ coverage_missing|length }} shown
     under the current filters){% endif %}; obsolete-marked paths are excluded
     from the worklist and its count. Analyses can reach these only by direct
-    xrootd path — registering them makes the data findable.</p>
+    xrootd path — registering them makes the data findable.
+    {% if coverage_built_text %}<span class="text-muted">Worklist as of {{ coverage_built_text }}.</span>{% endif %}</p>
   <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
     <thead><tr>{% if user.is_authenticated %}<th></th>{% endif %}<th>Priority</th><th>Unregistered EVGEN path<br><span class="fw-normal text-muted">its direct xrootd path, and a dataset produced from it</span></th><th>Obsolete</th>{% if user.is_authenticated %}<th>Register</th>{% endif %}</tr></thead>
     <tbody>
@@ -190,9 +197,14 @@
       {% endfor %}
     </tbody>
   </table>
-  {% else %}
+  {% elif coverage_missing_total %}
+  <p class="text-muted">No unregistered path matches the current filters;
+    {{ coverage_missing_total }} are on the worklist in all.</p>
+  {% elif coverage_total %}
   <p class="text-muted">Every EVGEN path implied by recorded produced datasets
     ({{ coverage_total }}) is registered in the inventory above.</p>
+  {% else %}
+  <p class="text-muted">No recorded produced dataset implies an EVGEN path yet.</p>
   {% endif %}
   {% endif %}
 </div>

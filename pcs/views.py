@@ -1726,44 +1726,27 @@ def evgen_inputs(request):
 
     # Registration coverage of produced data: the convention-side EVGEN
     # path of every recorded RECO/FULL output (the payload's physics-path
-    # law), diffed against this same recorded inventory — a registration
-    # worklist. The task-overrides scan is a long build, so it serves as
-    # a cached product (docs/CACHED_PRODUCTS.md); no Rucio call either
-    # way.
-    from monitor_app.cached_product import get_product
-    from .services import evgen_convention_paths_cached
-
-    def _build_coverage():
-        registered_paths = set()
-        for record in records:
-            did = str(_rucio_evgen_entry(record)['did'] or '')
-            registered_paths.add('/' + did.partition(':')[2].lstrip('/')
-                                 if ':' in did else '/' + did.lstrip('/'))
-        # The convention map is its own cached product on the same
-        # inventory stamp, shared with the registration action, so a
-        # page load warms what the button reads.
-        convention = evgen_convention_paths_cached()
-        missing = []
-        for epath in sorted(convention):
-            if epath in registered_paths:
-                continue
-            info = convention[epath]
-            missing.append({
-                'evgen_path': epath,
-                'xrootd_path': info['xrootd_path'],
-                'reco_example': sorted(info['reco_examples'])[0],
-                'tasks': sorted(info['tasks'])[:3],
-            })
-        return {'missing': missing, 'total': len(convention)}
+    # law), diffed against the recorded inventory — a registration
+    # worklist. Served as stored: a cached product the EVGEN sweep
+    # refreshes as its last step (docs/CACHED_PRODUCTS.md). The page
+    # never builds it, and an absent product is stated as such, never
+    # rendered as an empty worklist.
+    from .services import evgen_coverage_cached
 
     coverage = {'missing': [], 'total': 0}
+    coverage_state = 'ready'
+    coverage_built_at = None
     try:
-        product = get_product(f'evgen_coverage:v1:{fetched_at or "none"}',
-                              _build_coverage, ttl_seconds=3600)
-        coverage = product.get('value') or coverage
+        product = evgen_coverage_cached()
+        if product.get('value') is None:
+            coverage_state = 'building'
+        else:
+            coverage = product['value']
+            coverage_built_at = product.get('built_at')
     except Exception as exc:  # noqa: BLE001
         logging.getLogger(__name__).error(
-            'EVGEN coverage build failed: %s', exc)
+            'EVGEN coverage product read failed: %s', exc)
+        coverage_state = 'failed'
 
     view = 'coverage' if request.GET.get('view') == 'coverage' \
         else 'inventory'
@@ -1915,6 +1898,10 @@ def evgen_inputs(request):
         'coverage_missing': coverage['missing'],
         'coverage_missing_total': coverage_missing_total,
         'coverage_total': coverage['total'],
+        'coverage_state': coverage_state,
+        'coverage_built_text': (
+            coverage_built_at.astimezone(_ET).strftime('%Y-%m-%d %H:%M ET')
+            if coverage_built_at else ''),
         'filters': filters,
         'active_filters': active_filters,
         'clear_all_url': ('?view=coverage' if view == 'coverage'

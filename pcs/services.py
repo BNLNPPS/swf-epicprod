@@ -5044,6 +5044,14 @@ def refresh_evgen_rucio(*, apply=False, snapshot_dir=RUCIO_SNAPSHOT_DIR,
                          'evgen_rucio_checked_at': checked_at}
             camp.save(update_fields=['data', 'updated_at'])
             summary['unmatched_persisted'] = len(unmatched_list)
+        # Last step of the sweep: the registration worklist and the
+        # convention map it reads are cached products; rebuild them now
+        # so the page serves a fresh worklist instantly, never a stale
+        # one and never an empty one (docs/CACHED_PRODUCTS.md).
+        try:
+            summary['coverage'] = refresh_evgen_coverage_products()
+        except Exception as e:                                # noqa: BLE001
+            summary['errors'].append(f'coverage worklist refresh: {e}')
     return summary
 
 
@@ -5503,31 +5511,110 @@ def evgen_convention_paths():
     return convention
 
 
-def evgen_convention_paths_cached():
-    """``evgen_convention_paths`` as a cached product: the task-overrides
-    scan is a long build, so the coverage worklist (page load) and the
-    registration request (button) share one hour-scale cache, keyed on
-    the recorded inventory's stamp so an EVGEN update rebuilds it
-    (docs/CACHED_PRODUCTS.md). Same shape, with the example and task
-    sets as sorted lists."""
-    from monitor_app.cached_product import get_product
-    fetched_at = None
+EVGEN_CONVENTION_PRODUCT_KEY = 'evgen_convention:v2'
+EVGEN_COVERAGE_PRODUCT_KEY = 'evgen_coverage:v2'
+# The EVGEN sweep refreshes both products as its last step (nightly and
+# the Update button), so the TTL is only the safety net for a missed
+# sweep: a day plus margin, after which a page load rebuilds behind the
+# response per the cached-product contract.
+EVGEN_PRODUCT_TTL_SECONDS = 26 * 3600
+
+
+def evgen_inventory_stamp():
+    """``fetched_at`` of the recorded EVGEN Rucio inventory, or None
+    when no snapshot is recorded."""
     try:
         with open(_os.path.join(RUCIO_SNAPSHOT_DIR, EVGEN_RUCIO_SNAPSHOT_NAME)) as f:
-            fetched_at = _json.load(f).get('fetched_at')
+            return _json.load(f).get('fetched_at')
     except (OSError, ValueError):
-        pass
+        return None
+
+
+def evgen_convention_paths_cached(*, refresh=False):
+    """``evgen_convention_paths`` as a cached product under one fixed key
+    (docs/CACHED_PRODUCTS.md): the task-overrides scan is a long build,
+    so the coverage worklist and the registration request share the
+    stored map, refreshed by the EVGEN sweep as its last step. Same
+    shape as the scan, with the example and task sets as sorted lists,
+    plus ``_inventory_stamp`` recording the inventory it was built
+    against. Returns None only when the first-ever fill is in flight on
+    another worker: callers treat None as not ready, never as empty."""
+    from monitor_app.cached_product import get_product
 
     def _build():
-        return {path: {'evgen_path': info['evgen_path'],
-                       'xrootd_path': info['xrootd_path'],
-                       'reco_examples': sorted(info['reco_examples']),
-                       'tasks': sorted(info['tasks'])}
-                for path, info in evgen_convention_paths().items()}
+        value = {path: {'evgen_path': info['evgen_path'],
+                        'xrootd_path': info['xrootd_path'],
+                        'reco_examples': sorted(info['reco_examples']),
+                        'tasks': sorted(info['tasks'])}
+                 for path, info in evgen_convention_paths().items()}
+        value['_inventory_stamp'] = evgen_inventory_stamp()
+        return value
 
-    product = get_product(f'evgen_convention:v1:{fetched_at or "none"}',
-                          _build, ttl_seconds=3600)
-    return product.get('value') or {}
+    product = get_product(EVGEN_CONVENTION_PRODUCT_KEY, _build,
+                          ttl_seconds=EVGEN_PRODUCT_TTL_SECONDS,
+                          refresh=refresh)
+    value = product.get('value')
+    if value is None:
+        return None
+    return {k: v for k, v in value.items() if not k.startswith('_')}
+
+
+def build_evgen_coverage():
+    """The registration worklist: every convention-implied EVGEN path
+    the recorded Rucio inventory lacks, with its direct path, one
+    produced dataset that implies it, and up to three tasks. A build
+    that cannot see the convention map raises, so the product layer
+    stores nothing and the last good worklist keeps serving: an empty
+    worklist is never stored for want of its input."""
+    convention = evgen_convention_paths_cached()
+    if convention is None:
+        raise ServiceError('EVGEN convention map is not built yet; '
+                           'the coverage worklist waits for it')
+    registered_paths = evgen_registered_paths()
+    missing = []
+    for epath in sorted(convention):
+        if epath in registered_paths:
+            continue
+        info = convention[epath]
+        missing.append({
+            'evgen_path': epath,
+            'xrootd_path': info['xrootd_path'],
+            'reco_example': sorted(info['reco_examples'])[0],
+            'tasks': sorted(info['tasks'])[:3],
+        })
+    return {'missing': missing, 'total': len(convention),
+            'inventory_stamp': evgen_inventory_stamp()}
+
+
+def evgen_coverage_cached(*, refresh=False):
+    """The registration worklist as a cached product under one fixed
+    key; the page serves it as stored and never builds in the request
+    path. Returns the ``get_product`` result: ``value`` is None only
+    while the first-ever fill is in flight on another worker."""
+    from monitor_app.cached_product import get_product
+    return get_product(EVGEN_COVERAGE_PRODUCT_KEY, build_evgen_coverage,
+                       ttl_seconds=EVGEN_PRODUCT_TTL_SECONDS,
+                       refresh=refresh)
+
+
+def refresh_evgen_coverage_products():
+    """Rebuild the convention map and then the coverage worklist,
+    synchronously and in that order: the EVGEN sweep's last step, so a
+    fresh worklist exists before anyone loads the page. Returns a
+    summary; raises ServiceError when either build fails."""
+    convention = evgen_convention_paths_cached(refresh=True)
+    if convention is None:
+        raise ServiceError('EVGEN convention map refresh did not land')
+    product = evgen_coverage_cached(refresh=True)
+    value = product.get('value')
+    if value is None or product.get('refreshing'):
+        raise ServiceError('EVGEN coverage worklist refresh did not land '
+                           '(another build held the lock)')
+    return {'convention_paths': len(convention),
+            'coverage_total': value.get('total', 0),
+            'coverage_missing': len(value.get('missing') or []),
+            'built_at': (product['built_at'].isoformat()
+                         if product.get('built_at') else None)}
 
 
 def evgen_registered_paths():
