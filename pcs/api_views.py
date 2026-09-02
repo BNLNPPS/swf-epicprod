@@ -12,7 +12,7 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from monitor_app.middleware import TunnelAuthentication
 from rest_framework.decorators import (action, api_view,
     authentication_classes, permission_classes)
-from rest_framework.permissions import (IsAuthenticated,
+from rest_framework.permissions import (IsAuthenticated, AllowAny,
     IsAuthenticatedOrReadOnly, SAFE_METHODS, BasePermission)
 
 
@@ -1090,6 +1090,88 @@ def evgen_register(request):
     return Response({'ok': bool(queued), 'queued': queued, 'refused': refused},
                     status=(status.HTTP_202_ACCEPTED if queued
                             else status.HTTP_400_BAD_REQUEST))
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([AllowAny])
+def pc_ingest_analyze(request):
+    """Analyze pasted legacy submission lines into physics-configuration
+    rows — the PC ingest page's read step. Body: {"text": "<lines>"}.
+    Reply: {"rows": [...], "counts": {state: n}, "definitions_stamp"}.
+    Each row carries its state (identified / new / near_miss /
+    unresolved / unparsed), the derived physics, generator, sample,
+    the campaign settings the line names, the dataset definition's
+    event count, the family it belongs to, and the reason for any
+    state other than identified or new. Read-only; no sign-in needed.
+    See docs/PCS_INGEST.md."""
+    from .ingest import analyze
+    data = request.data if isinstance(request.data, dict) else {}
+    text = data.get('text')
+    if not isinstance(text, str) or not text.strip():
+        return Response({'detail': 'body must be {"text": "<lines>"}'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    try:
+        return Response(analyze(text))
+    except Exception as e:                                      # noqa: BLE001
+        log_epicprod_action('web', 'pc_ingest_analyze', outcome='error',
+                            username=getattr(request.user, 'username', '') or '',
+                            reason=str(e)[:300])
+        return Response({'detail': f'analysis failed: {e}'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def pc_ingest_accept(request):
+    """Accept ingested lines: compose each line's edition for the campaign
+    it names, minting the physics configuration. Body: {"lines": ["<raw
+    line>", ...], "allow_near_miss": false}. Each line is re-derived
+    server-side; identified lines and, unless allowed, near misses are
+    refused with the reason, so a stale page cannot create a duplicate.
+    Reply: {"results": [row + accepted/refusal/composed_name/pc]}.
+    Signed-in production users only; one action-stream event per call
+    with the accepted count and names. See docs/PCS_INGEST.md."""
+    from .ingest import accept_line
+    data = request.data if isinstance(request.data, dict) else {}
+    lines = data.get('lines')
+    if (not isinstance(lines, list) or not lines
+            or not all(isinstance(l, str) and l.strip() for l in lines)):
+        return Response({'detail': 'body must be {"lines": ["<line>", ...]}'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    username = getattr(request.user, 'username', '') or ''
+    if not username or username == 'swf-remote-proxy':
+        return Response({'detail': 'sign in to accept physics configurations'},
+                        status=status.HTTP_403_FORBIDDEN)
+    allow_near = bool(data.get('allow_near_miss'))
+    results = []
+    for raw in lines:
+        try:
+            results.append(accept_line(raw, created_by=username,
+                                       allow_near_miss=allow_near))
+        except ServiceError as e:
+            results.append({'raw': raw, 'accepted': False,
+                            'refusal': e.detail, 'state': 'unparsed'})
+        except Exception as e:                                  # noqa: BLE001
+            results.append({'raw': raw, 'accepted': False,
+                            'refusal': f'accept failed: {e}', 'state': 'unparsed'})
+    accepted = [r for r in results if r.get('accepted')]
+    log_epicprod_action(
+        'web', 'pc_ingest_accept', subject_type='dataset',
+        subject_key=(accepted[0]['composed_name'] if len(accepted) == 1
+                     else f'{len(accepted)} editions'),
+        username=username, sublevel='high', live_default=True,
+        outcome='ok' if accepted else 'error',
+        reason=('' if accepted else '; '.join(
+            f"{r.get('csv_path') or r.get('raw', '')[:60]}: {r.get('refusal')}"
+            for r in results)[:300]),
+        accepted=len(accepted), refused=len(results) - len(accepted),
+        names=[r['composed_name'] for r in accepted][:20])
+    return Response({'results': results, 'accepted': len(accepted),
+                     'refused': len(results) - len(accepted)})
 
 
 @api_view(['POST'])

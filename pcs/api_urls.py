@@ -8,7 +8,7 @@ from .api_views import (
     validation_v1_index,
     validation_sample_completion, validation_campaign_completion,
     validation_campaign_catalog, validation_results_receive,
-    evgen_mark, evgen_register,
+    evgen_mark, evgen_register, pc_ingest_analyze, pc_ingest_accept,
 )
 
 router = DefaultRouter()
@@ -42,5 +42,7 @@ urlpatterns = [
          name='physics_configs_requestors'),
     path('evgen/marks/', evgen_mark, name='evgen_mark'),
     path('evgen/register/', evgen_register, name='evgen_register'),
+    path('ingest/analyze/', pc_ingest_analyze, name='pc_ingest_analyze'),
+    path('ingest/accept/', pc_ingest_accept, name='pc_ingest_accept'),
     path('', include(router.urls)),
 ]

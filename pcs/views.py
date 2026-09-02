@@ -2126,6 +2126,23 @@ def _find_hits(corpus, q):
             and not any(t in e['blob'] for t in exclude)]
 
 
+def pc_ingest(request):
+    """PC ingest: legacy submission lines pasted into one box, analyzed
+    into physics configurations (identified, new, near miss, unresolved,
+    unparsed) with family context per row, and accepted individually or
+    in bulk. The page holds no logic: analysis and acceptance are the
+    /pcs/api/ingest/ endpoints (pcs.ingest), so the page works alike on
+    the internal face and through the swf-remote proxy. See
+    docs/PCS_INGEST.md.
+    """
+    from .ingest import _definitions_by_path
+    _defs, stamp = _definitions_by_path()
+    return render(request, 'pcs/pc_ingest.html', {
+        'definitions_count': len(_defs),
+        'definitions_stamp': stamp or '',
+    })
+
+
 def find_data(request):
     """Find data: one search field over everything recorded — produced
     Rucio DIDs across all campaigns, the registered EVGEN inventory, and

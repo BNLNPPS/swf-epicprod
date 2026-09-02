@@ -92,6 +92,8 @@ Production operations:
   data gathered onto the catalog.
 - [EPICPROD_EVGEN_INPUTS.md](docs/EPICPROD_EVGEN_INPUTS.md) — EVGEN
   inputs: assimilation, matching, marks, registration.
+- [PCS_INGEST.md](docs/PCS_INGEST.md) — PC ingest: physics
+  configurations from legacy submission lines.
 - [EPICPROD_QUESTIONNAIRE.md](docs/EPICPROD_QUESTIONNAIRE.md) — the
   production request questionnaire.
 - [EPICPROD_VALIDATION.md](docs/EPICPROD_VALIDATION.md) — the validation

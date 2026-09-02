@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% load swf_fmt %}
+
+{% block title %}PC ingest - SWF Monitor{% endblock %}
+
+{% block content %}
+<style>
+  .pcs-ingest-box { max-width: 90rem; margin: 1.5rem auto 0 auto; }
+  #pcs-ingest-text { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                     font-size: 1rem; padding: .6em .8em; min-height: 11rem; }
+  #pcs-ingest-text::placeholder { color: #b3bac2; opacity: 1; }
+  .pcs-ingest-results { max-width: 90rem; margin: 1.5rem auto; }
+  #pcs-ingest-table { max-width: 100%; }
+  #pcs-ingest-table td { vertical-align: top; }
+  #pcs-ingest-table td.pcs-ingest-path { word-break: break-all; }
+  #pcs-ingest-table .small-muted { font-size: .875rem; color: #6c757d; }
+  #pcs-ingest-counts span { margin-right: 1rem; }
+</style>
+
+<div class="container-fluid pcs-ingest-box">
+  <h1 style="font-size:1.5rem">PC ingest</h1>
+  <p style="max-width: 62em">Paste legacy submission lines, one per line, as they were run:
+    the environment settings followed by the submit_csv.sh call. Each line is
+    analyzed into its physics configuration and classified against the catalog:
+    identified when the configuration exists, new when it does not, near miss
+    when a configuration with the same physics differs on generator version,
+    radiation, background, or sample. Nothing is created until a row is accepted.
+    Accepting composes the edition for the campaign the line names, which defines
+    the physics configuration.
+    <span class="text-muted">Dataset definitions inventory: {{ definitions_count }} definitions{% if definitions_stamp %} as of {{ definitions_stamp }}{% endif %}.</span></p>
+
+  <textarea id="pcs-ingest-text" rows="8" placeholder="EBEAM=9 PBEAM=100_Au197 DETECTOR_VERSION=26.07.1 DETECTOR_CONFIG=epic_craterlake JUG_XL_TAG=26.07.1-stable ... scripts/submit_csv.sh osg_csv hepmc3 DIS/eAu/9x100/BeAGLE1.03.02-3.1_DIS_eAu_9x100_q2_1to10.csv 2"></textarea>
+  <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+    <button type="button" id="pcs-ingest-analyze" class="btn btn-sm btn-primary">Analyze</button>
+    <button type="button" id="pcs-ingest-clear" class="btn btn-sm btn-secondary">Clear</button>
+    <span id="pcs-ingest-status" class="text-muted"></span>
+  </div>
+</div>
+
+<div class="container-fluid pcs-ingest-results" id="pcs-ingest-results" hidden>
+  <div class="d-flex align-items-center gap-3 flex-wrap mb-2">
+    <div id="pcs-ingest-counts"></div>
+    {% if user.is_authenticated %}
+    <button type="button" id="pcs-ingest-accept-all" class="btn btn-sm btn-primary" disabled>Accept all new</button>
+    <span class="text-muted">Near misses, unresolved, and unparsed lines are left for review; accept a near miss from its row.</span>
+    {% else %}
+    <span class="text-muted">Sign in to accept configurations.</span>
+    {% endif %}
+  </div>
+  <table id="pcs-ingest-table" class="table table-striped table-bordered table-sm align-middle w-auto">
+    <thead><tr>
+      <th>#</th><th>State</th><th>Physics</th><th>Generator</th><th>Sample</th>
+      <th>Campaign settings</th><th>Events</th><th>Family</th><th>Result</th>
+      {% if user.is_authenticated %}<th>Accept</th>{% endif %}
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  const SIGNED_IN = {{ user.is_authenticated|yesno:'true,false' }};
+  const API = '{{ request.META.SCRIPT_NAME }}/pcs/api/ingest/';
+  const PC_URL = '{{ request.META.SCRIPT_NAME }}/pcs/config/';
+  const textEl = document.getElementById('pcs-ingest-text');
+  const statusEl = document.getElementById('pcs-ingest-status');
+  const resultsEl = document.getElementById('pcs-ingest-results');
+  const countsEl = document.getElementById('pcs-ingest-counts');
+  const tbody = document.querySelector('#pcs-ingest-table tbody');
+  const acceptAll = document.getElementById('pcs-ingest-accept-all');
+  const FILL = {identified: 'registered_fill', new: 'ready_fill', near_miss: 'warning_fill',
+                unresolved: 'holding_fill', unparsed: 'failed_fill', accepted: 'finished_fill'};
+  const LABEL = {identified: 'identified', new: 'new', near_miss: 'near miss',
+                 unresolved: 'unresolved', unparsed: 'unparsed', accepted: 'accepted'};
+  let rows = [];
+
+  function csrf() { return (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || ''; }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function physicsText(r) {
+    const p = r.physics || {};
+    const bits = [];
+    if (p.process) bits.push(p.process);
+    if (p.particle) bits.push(p.particle + (p.gun_energy ? ' ' + p.gun_energy : ''));
+    const e = p.beam_energy_electron, h = p.beam_energy_hadron;
+    if (e && h && e !== 'N/A') bits.push(e + 'x' + h);
+    if (p.beam_species) bits.push(p.beam_species);
+    if (p.q2_range) bits.push(p.q2_range);
+    Object.keys(p).sort().forEach(k => {
+      if (['process','particle','gun_energy','beam_energy_electron','beam_energy_hadron','beam_species','q2_range','notes'].includes(k)) return;
+      if (p[k]) bits.push(k + '=' + p[k]);
+    });
+    if (r.background) { bits.push('background ' + Object.values(r.background).filter(Boolean).join(' ')); }
+    return bits.join(' · ');
+  }
+  function familyText(r) {
+    const f = r.family || [];
+    if (!f.length) return '<span class="small-muted">none defined in this family</span>';
+    const items = f.map(m => `<a href="${PC_URL}${esc(m.label)}/">${esc(m.label)}</a> ${esc(m.axes)}${m.evgen ? ' · ' + esc(m.evgen) : ''}${m.sample ? ' · ' + esc(m.sample) : ''}`);
+    return `${f.length} defined in this family:<div class="small-muted">${items.join('<br>')}</div>`;
+  }
+  function resultText(r) {
+    if (r.state === 'accepted') return `accepted as <a href="${PC_URL}${esc(r.pc)}/">${esc(r.pc)}</a><div class="small-muted">${esc(r.composed_name)}</div>`;
+    if (r.state === 'identified') {
+      let t = `<a href="${PC_URL}${esc(r.pc)}/">${esc(r.pc)}</a>`;
+      t += r.edition ? `<div class="small-muted">edition in ${esc(r.campaign_name)}: ${esc(r.edition)}</div>`
+                     : (r.campaign_name ? `<div class="small-muted">no edition in ${esc(r.campaign_name)} yet</div>` : '');
+      if (r.note) t += `<div class="small-muted">${esc(r.note)}</div>`;
+      return t;
+    }
+    let t = esc(r.reason || (r.state === 'new' ? 'no configuration with this identity' : ''));
+    if (r.refusal) t += `<div class="small-muted">refused: ${esc(r.refusal)}</div>`;
+    if (r.campaign_missing) t += `<div class="small-muted">campaign ${esc(r.campaign_name)} is not defined; accepting will be refused</div>`;
+    if (r.definition_note) t += `<div class="small-muted">${esc(r.definition_note)}</div>`;
+    return t;
+  }
+  function campaignText(r) {
+    const c = r.campaign || {};
+    const bits = [];
+    if (c.DETECTOR_VERSION) bits.push(esc(c.DETECTOR_VERSION) + (r.campaign_name ? ' (campaign ' + esc(r.campaign_name) + ')' : ''));
+    if (c.DETECTOR_CONFIG) bits.push(esc(c.DETECTOR_CONFIG));
+    if (c.JUG_XL_TAG) bits.push('container ' + esc(c.JUG_XL_TAG));
+    const job = r.job || {};
+    const jobBits = Object.keys(job).map(k => esc(k) + '=' + esc(job[k]));
+    if (r.target_hours) jobBits.push('target hours ' + esc(r.target_hours));
+    return bits.join('<br>') + (jobBits.length ? `<div class="small-muted">${jobBits.join(' ')}</div>` : '');
+  }
+  function eventsText(r) {
+    const d = r.definition;
+    if (!d) return '<span class="small-muted">no definition</span>';
+    const n = d.nevents_total;
+    return (n != null ? Number(n).toLocaleString() : '<span class="small-muted">not costed</span>')
+      + (d.n_files != null ? `<div class="small-muted">${esc(d.n_files)} file(s)</div>` : '');
+  }
+  function acceptCell(r, i) {
+    if (!SIGNED_IN) return '';
+    if (r.state === 'new') return `<button type="button" class="btn btn-sm btn-primary pcs-ingest-accept" data-i="${i}">Accept</button>`;
+    if (r.state === 'near_miss') return `<button type="button" class="btn btn-sm btn-primary pcs-ingest-accept" data-i="${i}" data-near="1">Accept as new</button>`;
+    return '';
+  }
+  function render() {
+    tbody.innerHTML = '';
+    rows.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      tr.title = r.raw || '';
+      tr.innerHTML = `<td>${i + 1}</td>`
+        + `<td class="${FILL[r.state] || ''}">${esc(LABEL[r.state] || r.state)}</td>`
+        + `<td class="pcs-ingest-path">${esc(physicsText(r))}<div class="small-muted">${esc(r.evgen_path || r.csv_path || '')}</div></td>`
+        + `<td>${esc(r.evgen_text || (r.evgen ? [r.evgen.generator, r.evgen.generator_version].join(' ') : ''))}</td>`
+        + `<td>${esc(r.sample || '')}</td>`
+        + `<td>${campaignText(r)}</td>`
+        + `<td>${eventsText(r)}</td>`
+        + `<td>${familyText(r)}</td>`
+        + `<td>${resultText(r)}</td>`
+        + (SIGNED_IN ? `<td>${acceptCell(r, i)}</td>` : '');
+      tbody.appendChild(tr);
+    });
+    const counts = {};
+    rows.forEach(r => { counts[r.state] = (counts[r.state] || 0) + 1; });
+    countsEl.innerHTML = `<strong>${rows.length}</strong> line(s): ` + Object.keys(LABEL)
+      .filter(k => counts[k]).map(k => `<span class="${FILL[k]} px-1">${counts[k]} ${LABEL[k]}</span>`).join('');
+    if (acceptAll) acceptAll.disabled = !rows.some(r => r.state === 'new');
+    resultsEl.hidden = false;
+  }
+  async function post(path, body) {
+    const r = await fetch(API + path, {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+    return data;
+  }
+  document.getElementById('pcs-ingest-analyze').addEventListener('click', async function () {
+    const text = textEl.value;
+    if (!text.trim()) { statusEl.textContent = 'Paste at least one line.'; return; }
+    statusEl.textContent = 'Analyzing…';
+    try {
+      const data = await post('analyze/', {text: text});
+      rows = data.rows || [];
+      statusEl.textContent = '';
+      render();
+    } catch (err) {
+      statusEl.textContent = 'Analysis failed: ' + err.message;
+    }
+  });
+  document.getElementById('pcs-ingest-clear').addEventListener('click', function () {
+    textEl.value = ''; rows = []; tbody.innerHTML = ''; resultsEl.hidden = true; statusEl.textContent = '';
+  });
+  async function accept(indices, allowNear) {
+    const lines = indices.map(i => rows[i].raw);
+    statusEl.textContent = `Accepting ${lines.length} line(s)…`;
+    document.querySelectorAll('.pcs-ingest-accept').forEach(b => { b.disabled = true; });
+    try {
+      const data = await post('accept/', {lines: lines, allow_near_miss: allowNear});
+      (data.results || []).forEach((res, k) => {
+        const i = indices[k];
+        if (res.accepted) { rows[i] = Object.assign({}, rows[i], res, {state: 'accepted'}); }
+        else { rows[i] = Object.assign({}, rows[i], {refusal: res.refusal}); }
+      });
+      statusEl.textContent = `${data.accepted} accepted, ${data.refused} refused.`;
+    } catch (err) {
+      statusEl.textContent = 'Accept failed: ' + err.message;
+    }
+    render();
+  }
+  tbody.addEventListener('click', function (e) {
+    const b = e.target.closest('button.pcs-ingest-accept');
+    if (!b) return;
+    accept([parseInt(b.dataset.i, 10)], b.dataset.near === '1');
+  });
+  if (acceptAll) acceptAll.addEventListener('click', function () {
+    const idx = rows.map((r, i) => r.state === 'new' ? i : -1).filter(i => i >= 0);
+    if (idx.length) accept(idx, false);
+  });
+})();
+</script>
+{% endblock %}

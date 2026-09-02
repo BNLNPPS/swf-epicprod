@@ -67,6 +67,7 @@ urlpatterns = [
          name='find_brains_conversation'),
     path('evgen/', views.evgen_inputs, name='evgen_inputs'),
     path('evgen/update/', views.evgen_inputs_update, name='evgen_inputs_update'),
+    path('ingest/', views.pc_ingest, name='pc_ingest'),
     path('datasets/compose/', views.datasets_compose, name='datasets_compose'),
     path('datasets/', views.datasets_list, name='datasets_list'),
     path('datasets/datatable/', views.datasets_datatable_ajax, name='datasets_datatable_ajax'),
