@@ -3248,8 +3248,10 @@ def fetch_jlab_rucio_campaign(campaign_path, *, scope='epic', token=None,
     def _one(name):
         if not isinstance(name, str):
             return None
+        # /meta carries every DID column — length and bytes as before, and
+        # the events count the registration doer sets.
         try:
-            meta = _json.loads(_jlab_rucio_get(f'/dids/{scope}/{name}', token))
+            meta = _json.loads(_jlab_rucio_get(f'/dids/{scope}/{name}/meta', token))
         except Exception as e:                                # noqa: BLE001
             _log.warning('rucio meta %s/%s: %s', scope, name, e)
             meta = {}
@@ -3263,6 +3265,7 @@ def fetch_jlab_rucio_campaign(campaign_path, *, scope='epic', token=None,
             'did':          f'{scope}:{name}',
             'length':       meta.get('length'),
             'bytes':        meta.get('bytes'),
+            'events':       meta.get('events'),
             'rse_replicas': rse_records,
         }
 
@@ -4921,6 +4924,7 @@ def _rucio_evgen_entry(m, checked_at=None):
         'rses':       rses,
         'file_count': files,
         'bytes':      bytes_,
+        'events':     m.get('events'),
         'complete':   complete if rses else False,
     }
     if checked_at:

@@ -106,6 +106,9 @@ Production operations:
   credentials, hosts, and hand-over.
 - [RUCIO_RESILIENCE.md](docs/RUCIO_RESILIENCE.md) — preventing Rucio
   registration losses.
+- [RUCIO_REGISTRATION_CONTRACT.md](docs/RUCIO_REGISTRATION_CONTRACT.md) —
+  what every Rucio registration must carry: the event count on every
+  file, by registration path.
 
 Submission and execution:
 

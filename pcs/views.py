@@ -1687,6 +1687,7 @@ def evgen_inputs(request):
             'did': entry['did'],
             'files': entry['file_count'],
             'bytes': entry['bytes'],
+            'events': entry.get('events'),
             'updated': max(stamps) if stamps else None,
             'rses': ', '.join(r['rse'] for r in entry['rses']),
             'complete': entry['complete'],

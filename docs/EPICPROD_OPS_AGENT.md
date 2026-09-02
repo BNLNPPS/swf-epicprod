@@ -274,7 +274,9 @@ doc does not duplicate them.
   [JEDI_INTEGRATION.md](JEDI_INTEGRATION.md)),
   `rucio_snapshot_update`, `evgen_rucio_update`,
   `evgen_register` (one EVGEN input directory registered in JLab Rucio
-  as `eicprod`, then the inventory re-assimilated;
+  as `eicprod`, then the inventory re-assimilated, then the event counts
+  read through the door and recorded on the DIDs as the second step,
+  `evgen_events`, with one more assimilation;
   [EPICPROD_EVGEN_INPUTS.md](EPICPROD_EVGEN_INPUTS.md) § Registration),
 `catalog_import`, `questionnaire_import`, `questionnaire_automatch`,
 `questionnaire_match_update`, `campaign_progress_refresh`,

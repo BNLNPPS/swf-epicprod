@@ -138,6 +138,7 @@
         <th>EVGEN dataset (epic:)</th>
         <th>Files</th>
         <th>Size</th>
+        <th title="Event count recorded on the Rucio dataset; set at registration, empty for datasets registered before counting">Events</th>
         <th>Updated</th>
         <th>RSEs</th>
         <th>Complete</th>
@@ -153,6 +154,7 @@
         <td>{{ r.did }}</td>
         <td class="text-end" data-order="{{ r.files }}">{{ r.files|intcomma }}</td>
         <td class="text-end" data-order="{{ r.bytes }}">{{ r.bytes|filesizeformat }}</td>
+        <td class="text-end" data-order="{{ r.events|default:0 }}">{% if r.events %}{{ r.events|intcomma }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
         <td class="text-nowrap" data-order="{{ r.updated|date:'Y-m-d H:i'|default:'' }}">{% if r.updated %}{{ r.updated|date:'Y-m-d' }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
         <td>{{ r.rses }}</td>
         <td>{% if r.complete %}yes{% else %}<span class="text-muted">partial</span>{% endif %}</td>
@@ -301,21 +303,38 @@
   }
   function listen() {
     if (es) return;
-    es = new EventSource('{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=evgen_register_ready,evgen_rucio_ready');
+    es = new EventSource('{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=evgen_register_ready,evgen_events_ready,evgen_rucio_ready');
+    const counting = new Set();   // paths registered, awaiting evgen_events_ready
     es.addEventListener('evgen_register_ready', function (ev) {
       let d = {}; try { d = JSON.parse(ev.data); } catch (_) { return; }
       if (!pending.has(d.path)) return;
       pending.delete(d.path);
       if (d.ok) {
-        assimilations += 1;
+        // One assimilation after the registration; when the agent counts
+        // events as a second step, a second assimilation carries the count.
+        assimilations += d.events_pending ? 2 : 1;
+        if (d.events_pending) counting.add(d.path);
         const dids = (d.datasets || []).map(x => x.did).join(', ');
         line(d.path, 'registered ' + d.files + ' files (' + gb(d.bytes || 0) + ') as '
-             + dids + '. Refreshing the inventory.', '#2e7d32');
+             + dids + '. Refreshing the inventory'
+             + (d.events_pending ? ', then counting events.' : '.'), '#2e7d32');
       } else {
         failures += 1;
         line(d.path, 'failed: ' + (d.error || 'unknown error'), '#c62828');
       }
       maybeDone();
+    });
+    es.addEventListener('evgen_events_ready', function (ev) {
+      let d = {}; try { d = JSON.parse(ev.data); } catch (_) { return; }
+      if (!counting.has(d.path)) return;
+      counting.delete(d.path);
+      if (d.ok) {
+        line(d.path, 'events counted: ' + Number(d.events || 0).toLocaleString()
+             + '. Refreshing the inventory.', '#2e7d32');
+      } else {
+        failures += 1;
+        line(d.path, 'event count incomplete: ' + (d.error || 'unknown error'), '#c62828');
+      }
     });
     es.addEventListener('evgen_rucio_ready', function () {
       if (assimilations > 0) assimilations -= 1;

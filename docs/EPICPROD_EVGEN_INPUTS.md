@@ -118,7 +118,9 @@ operator reconciles them by adding or correcting a request, or by registering
 the missing data.
 
 The **EVGEN inputs page** (`/pcs/evgen/`) presents the assimilated inventory:
-every registered EVGEN dataset with its file count, size, last Rucio update,
+every registered EVGEN dataset with its file count, size, event count
+(Rucio's `events` attribute, set at registration; empty for datasets
+registered before counting), last Rucio update,
 RSEs, completeness, and the PCS evgen dataset it resolves to, newest update
 first; a dataset no request claims shows as unmatched. The page reads the recorded snapshot and matched references only —
 no Rucio call in the render path — and carries the same "Update EVGEN from
@@ -201,6 +203,22 @@ production team's reference scripts (`eic/simulation_campaign_hepmc3`,
 On success the agent runs the EVGEN assimilation, so the new dataset
 enters the inventory, matched to its catalog request where one exists,
 and leaves the worklist.
+
+Counting events is the registration's second step, run by the agent
+after the first assimilation (`--events-only` mode of the same doer).
+Each file's event count is the entry count of its HepMC3 tree, read
+through the door from the tree header, so no event bytes move; the
+count is recorded as Rucio's `events` attribute on the file DID.
+Rucio derives the dataset's `events` from its files and refuses a
+direct write on the dataset, so the doer reads the derived total back
+once every file is counted and holds it to the sum. A file that
+cannot be counted is reported by name and leaves its dataset's total
+unverified, never a partial total presented as the whole. The agent pushes
+`evgen_events_ready` with the totals and runs a second assimilation,
+so the inventory and the page carry the count; the action-stream
+record is `evgen_events`. The count on every registered file is a
+standing requirement on every epicprod registration path
+(RUCIO_REGISTRATION_CONTRACT.md).
 
 Every request and every outcome is an action-stream record
 (`evgen_register_request`, `evgen_register`) carrying the path, file
