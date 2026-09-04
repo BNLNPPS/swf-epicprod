@@ -13,7 +13,9 @@ from monitor_app.mcp import mcp
 from monitor_app.mcp.common import _monitor_url
 
 # The label a human reads for each proposal category.
-ACTION_LABELS = {'propagation': 'campaign propagation'}
+ACTION_LABELS = {'propagation': 'campaign propagation',
+                 'campaign_plan': 'campaign plan',
+                 'ping': 'ping', 'ping_fulfil': 'ping fulfilled'}
 
 # SysConfig key: usernames allowed to decide proposals through this MCP
 # surface (the bot relay). Default empty — MCP decides are refused until
@@ -24,15 +26,24 @@ MCP_APPROVERS_KEY = 'ai_proposal_mcp_approvers'
 def _proposal_line(row):
     payload = row.payload or {}
     pre = row.precondition or {}
-    change = f"{pre.get('prev_state', '?')} -> {payload.get('state', '?')}"
-    if payload.get('replaced_by'):
-        change += f" (replaced by {payload['replaced_by']})"
+    if row.action == 'ping':
+        change = (f"enter ping due {payload.get('due', '?')}"
+                  + (f" (owner {payload['owner']})" if payload.get('owner') else ''))
+        subject = payload.get('title') or row.subject_key
+    elif row.action == 'ping_fulfil':
+        change = 'mark fulfilled'
+        subject = payload.get('title') or row.subject_key
+    else:
+        change = f"{pre.get('prev_state', '?')} -> {payload.get('state', '?')}"
+        if payload.get('replaced_by'):
+            change += f" (replaced by {payload['replaced_by']})"
+        subject = row.subject_key
     label = ACTION_LABELS.get(row.action, row.action)
     origin = ', '.join(x for x in (
         row.proposer, row.batch_id,
         row.created_at.strftime('%Y-%m-%d') if row.created_at else '',
     ) if x)
-    return (f"{row.ref}  {label} on {row.subject_key}: {change} — "
+    return (f"{row.ref}  {label} on {subject}: {change} — "
             f"{row.comment} [{origin}]")
 
 
@@ -118,6 +129,9 @@ def _decide_proposal_sync(ref, decision, username, quality):
     if result.get('stale'):
         outcome = (f'{row.ref} was STALE: the record changed since the '
                    f'proposal saw it, so it was withdrawn, not executed.')
+    elif decision == 'approve' and row.action in ('ping', 'ping_fulfil'):
+        outcome = (f'{row.ref} approved by {username} and executed: '
+                   f"{(row.payload or {}).get('title', row.subject_key)}.")
     elif decision == 'approve':
         outcome = (f'{row.ref} approved by {username} and executed: '
                    f'{row.subject_key} '
@@ -194,3 +208,75 @@ async def ai_decide_proposal(ref: str, decision: str,
     """
     return await sync_to_async(_decide_proposal_sync)(
         ref=ref, decision=decision, username=username, quality=quality)
+
+
+def _propose_ping_sync(title, due, comment, proposer, owner, note, url,
+                       lead_days):
+    from ai import services
+    from pcs.services import ServiceError
+    proposer = (proposer or '').strip()
+    if not proposer:
+        return {'success': False,
+                'error': 'proposer (the proposing AI or rule, e.g. '
+                         '"claude-swf-testbed") is required'}
+    try:
+        result = services.propose_pings(
+            [{'title': title, 'due': due, 'comment': comment,
+              'owner': owner or '', 'note': note or '', 'url': url or '',
+              'lead_days': lead_days or None}],
+            proposer=proposer, created_by=f'mcp:{proposer}')
+    except ServiceError as e:
+        return {'success': False, 'error': e.detail}
+    if result.get('invalid'):
+        return {'success': False,
+                'error': f"refused: {'; '.join(result['invalid'])}"}
+    if result.get('denied'):
+        return {'success': False,
+                'error': 'this obligation was denied before and its inputs '
+                         'have not changed; not re-proposed'}
+    if result.get('noop'):
+        outcome = 'an identical proposal is already pending'
+    else:
+        outcome = 'proposed; a person accepts it on the alarm dashboard'
+    return {'success': True, 'outcome': outcome, 'result': result,
+            'monitor_urls': [
+                {'title': 'Pings on the alarm dashboard',
+                 'url': _monitor_url('/alarms/#pings')},
+                {'title': 'AI proposal list', 'url': _monitor_url('/ai/proposals/')},
+            ]}
+
+
+@mcp.tool()
+async def ai_propose_ping(title: str, due: str, comment: str, proposer: str,
+                          owner: str = '', note: str = '', url: str = '',
+                          lead_days: int = 0) -> dict:
+    """
+    Propose a ping: a dated obligation for the alarm system (PINGS.md).
+    Nothing is created until a person accepts the proposal on the alarm
+    dashboard, where the due date can be changed before acceptance.
+
+    Use it when you learn of something that must be done by a date: a
+    certificate or credential expiring, a reply owed, an allocation to
+    request. Do not propose what is already an open ping; the server
+    refuses an identical pending proposal and a previously denied one.
+
+    Args:
+        title: The obligation as one sentence, e.g. "Renew the osgsub01
+            host certificate".
+        due: The due date, YYYY-MM-DD.
+        comment: Why this is proposed, one or two sentences with the
+            evidence (what was read, where).
+        proposer: Who proposes: the AI or rule's own name, e.g.
+            "claude-swf-testbed". Never a human's username.
+        owner: The responsible person or @team (an email or @team token).
+        note: What to do and where; goes into the ping's alarm email.
+        url: Where to look or act.
+        lead_days: Days ahead of the due date the ping raises; 0 means the
+            default (7).
+
+    Returns:
+        outcome text, the propose result, and the dashboard URL.
+    """
+    return await sync_to_async(_propose_ping_sync)(
+        title=title, due=due, comment=comment, proposer=proposer,
+        owner=owner, note=note, url=url, lead_days=lead_days)
