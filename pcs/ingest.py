@@ -577,3 +577,118 @@ def accept_line(raw, *, created_by, allow_near_miss=False):
     row['state'] = 'identified'
     row['edition'] = ds.composed_name
     return row
+
+
+def create_request_line(raw, *, created_by):
+    """Create the dataset request a line describes: the request record
+    anchored on the line's edition in the campaign it names, and the
+    draft task in that campaign, as the CSV import records a catalog
+    row (PCS_DATASET_REQUEST_WORKFLOW.md). Re-derives the line; refuses,
+    with the reason, a line without an edition in its campaign, a
+    configuration that already carries a request, or a task name in
+    use. Idempotent on the CSV path. Returns the row with ``requested``,
+    ``request_id`` and ``task_name``."""
+    from .models import Campaign, Dataset, ProdConfig, ProdRequest, ProdTask
+    from .services import (PLACEHOLDER_PRODCONFIG_NAME, ServiceError,
+                           _ensure_csvimport_anchors, _extract_path_filters,
+                           pc_request_projection, prodtask_apply_request)
+
+    row = resolve_line(parse_line(raw))
+    row['requested'] = False
+    if row['state'] in ('new', 'near_miss'):
+        row['refusal'] = 'accept the line first; a request needs its configuration'
+        return row
+    if row['state'] != 'identified':
+        row['refusal'] = row.get('reason') or row['state']
+        return row
+    if not row.get('edition'):
+        row['refusal'] = (f'no edition in {row["campaign_name"] or "its campaign"}; '
+                          f'accept the line for that campaign first')
+        return row
+    edition = (Dataset.objects.filter(composed_name=row['edition'])
+               .select_related('background_tag', 'campaign')
+               .order_by('block_num', 'pk').first())
+    if edition is None:
+        row['refusal'] = f'edition {row["edition"]} names no dataset'
+        return row
+    existing = pc_request_projection([edition]).get(edition.composed_name) or []
+    if existing:
+        first = existing[0]
+        row['request_id'] = first.pk
+        row['request_existing'] = [
+            {'id': r.pk, 'requestor': r.requestor, 'status': r.status}
+            for r in existing]
+        row['refusal'] = (f'already requested: req#{first.pk}'
+                          + (f' by {first.requestor}' if first.requestor else ''))
+        return row
+    campaign = edition.campaign or Campaign.objects.filter(
+        name=row['campaign_name']).first()
+    if campaign is None:
+        row['refusal'] = f'campaign {row["campaign_name"]} is not defined'
+        return row
+    # The task carries the EVGEN path as its name, the CSV import's own
+    # form (the catalog path minus its volatile prefix).
+    task_name = row['evgen_path'] or f'ingest:{row["csv_path"]}'
+    task = ProdTask.objects.filter(name=task_name).first()
+    if task is not None:
+        row['refusal'] = f'task {task_name} already exists'
+        row['task_name'] = task_name
+        return row
+
+    env = parse_line(raw)['env']
+    definition = row.get('definition') or {}
+    evgen = row.get('evgen') or {}
+    filters = _extract_path_filters(
+        [s for s in (row['evgen_path'] or '').split('/') if s])
+    filters['generator'] = evgen.get('generator') or ''
+    filters['sample'] = row.get('sample') or ''
+    source_row = f'ingest:{row["csv_path"]}'
+    description = f'PC ingest from a legacy submission line ({row["csv_path"]})'
+    with transaction.atomic():
+        req = ProdRequest.objects.filter(source_row=source_row).first()
+        if req is None:
+            req = ProdRequest.objects.create(
+                requestor='',
+                simu_path=row['evgen_path'],
+                gen_config=' '.join(p for p in (
+                    evgen.get('generator'), evgen.get('generator_version')) if p),
+                nevents=definition.get('nevents_total'),
+                background=(edition.background_tag.tag_label
+                            if edition.background_tag_id else ''),
+                description=description,
+                new_request=True, status='new', source_row=source_row,
+                data={
+                    'filters': filters,
+                    'physics_config_anchor': edition.composed_name,
+                    'ingest': {'line': raw.strip(), 'env': env,
+                               'target_hours': row['target_hours'],
+                               'extra_args': row['extra_args'],
+                               'definition': definition,
+                               'created_by': created_by},
+                },
+                created_by=created_by,
+            )
+        # The production configuration is the placeholder until the
+        # production team binds the campaign's, as for CSV-imported
+        # tasks: the line's per-job settings are not a configuration.
+        cfg = ProdConfig.objects.filter(name=PLACEHOLDER_PRODCONFIG_NAME).first()
+        if cfg is None:
+            cfg = _ensure_csvimport_anchors()[4]
+        try:
+            task = ProdTask.objects.create(
+                name=task_name, description=description, status='draft',
+                dataset=edition, prod_config=cfg, campaign=campaign,
+                overrides={'ingest': {
+                    'job': row.get('job') or {},
+                    'target_hours': row['target_hours'],
+                    'extra_args': row['extra_args'],
+                    'csv_path': row['csv_path']}},
+                created_by=created_by,
+            )
+        except Exception as e:                                  # noqa: BLE001
+            raise ServiceError(f'{task_name}: {e}')
+        prodtask_apply_request(task, req)
+    row['requested'] = True
+    row['request_id'] = req.pk
+    row['task_name'] = task.name
+    return row

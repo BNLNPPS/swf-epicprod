@@ -130,7 +130,39 @@ count and names.
 The per-job settings on the line are not applied. Production
 configuration is carried per campaign in PCS, not per task; the line's
 values stay on the row and in the edition's provenance for comparison
-when a request is raised.
+when a request is created.
+
+## Surfaces
+
+## Creating the request
+
+An identified row with an edition in the line's campaign, which an
+accepted row is, carries a second action, "Create request". It records
+what the CSV import records for a catalog row
+(PCS_DATASET_REQUEST_WORKFLOW.md), in one transaction:
+
+- **The request** (`ProdRequest`), anchored on the edition's composed
+  name as every request is, with the definition's measured event count,
+  the EVGEN path as the input location, the generator and version, the
+  physics filters the request pages resolve by, and the line with its
+  environment, target hours and definition cost under
+  `data['ingest']`. Requestor and the triage fields are left to the
+  production team. Idempotent on the CSV path (`source_row =
+  ingest:<csv path>`).
+- **The draft task** (`ProdTask`) in the campaign the line names, named
+  by the EVGEN path, bound to the edition, with the request's fields
+  applied and the line's per-job settings under `overrides['ingest']`
+  for comparison against the campaign's configuration. Its production
+  configuration is the placeholder until the production team binds the
+  campaign's, as for CSV-imported tasks: the line's per-job settings are
+  not a configuration. Readiness and submission happen on the task
+  page; the ingest page submits nothing.
+
+The action is refused, with the reason on the row, for a line that is
+not identified (accept it first), one whose configuration already
+carries a request (the row names the requests), a campaign that is not
+defined, or a task name already in use. Each call is one action-stream
+event (`pc_ingest_request`).
 
 ## Surfaces
 
@@ -139,15 +171,8 @@ when a request is raised.
 | Page | `/pcs/ingest/` |
 | Analyze | `POST /pcs/api/ingest/analyze/`, body `{"text": "<lines>"}` → rows, counts, definitions stamp |
 | Accept | `POST /pcs/api/ingest/accept/`, body `{"lines": ["<line>", ...], "allow_near_miss": false}` → per-line results; signed-in users only |
+| Create request | `POST /pcs/api/ingest/request/`, body `{"lines": ["<line>", ...]}` → per-line results with `request_id` and `task_name`; signed-in users only |
 
-Both endpoints are JSON in and out on the `/pcs/api/` surface, so the
+The endpoints are JSON in and out on the `/pcs/api/` surface, so the
 page works alike on the internal face and through the swf-remote
 proxy (EXTERNAL_ACCESS.md). The implementation is `pcs/ingest.py`.
-
-## Next
-
-Raising the dataset request for an accepted or identified
-configuration in the campaign the line names, a second action on the
-row, follows the request workflow (PCS_DATASET_REQUEST_WORKFLOW.md):
-dataset, production configuration, validation, ready task. The ingest
-page composes no task.

@@ -238,6 +238,7 @@ idempotency, lifecycle rules) is identical on both surfaces.
 | POST   | `/pcs/api/datasets/intake/`                   | Idempotent: given a CSV-manifest location (+ optional tag handles), find-or-create the external EVGEN Dataset, return its DID. |
 | POST   | `/pcs/api/prod-tasks/`                        | Generic create. |
 | POST   | `/pcs/api/prod-tasks/intake/`                 | Idempotent on a request key (e.g. `epic-prod#<issue>` or `csv_path+row_key`): create a draft ProdTask, ensure linked input Dataset(s), persist `public_catalog_*` mapping fields in `overrides`, return the task. |
+| POST   | `/pcs/api/ingest/request/`                    | From a PC-ingest line: the request anchored on the line's edition and the draft task in its campaign, as the CSV import records a catalog row (PCS_INGEST.md § Creating the request). |
 | POST   | `/pcs/api/prod-tasks/<name>/link-input/`      | Link an existing Dataset as input by DID (writes `overrides.input_dataset_did(s)`). Sugar over PATCH. |
 | POST   | `/pcs/api/prod-tasks/<name>/set-status/`      | Lifecycle transition with rule enforcement (e.g. only `ready → submitted`). |
 | POST   | `/pcs/api/prod-tasks/record-submission/?name=`| Record JEDI submission outcome (`panda_task_id`, `status='submitted'`). Rejects if `panda_task_id` already set, or `status != 'ready'`. |

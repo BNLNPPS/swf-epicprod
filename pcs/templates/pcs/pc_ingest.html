@@ -32,7 +32,9 @@
     when a configuration with the same physics differs on generator version,
     radiation, background, or sample. Nothing is created until a row is accepted.
     Accepting composes the edition for the campaign the line names, which defines
-    the physics configuration.
+    the physics configuration. Creating the request records the dataset request
+    on that configuration and the draft task in the campaign; the task is
+    readied and submitted from its own page.
     <span class="text-muted">Dataset definitions inventory: {{ definitions_count }} definitions{% if definitions_stamp %} as of {{ definitions_stamp }}{% endif %}.</span></p>
 
   <textarea id="pcs-ingest-text" rows="8" placeholder="EBEAM=9 PBEAM=100_Au197 DETECTOR_VERSION=26.07.1 DETECTOR_CONFIG=epic_craterlake JUG_XL_TAG=26.07.1-stable ... scripts/submit_csv.sh osg_csv hepmc3 DIS/eAu/9x100/BeAGLE1.03.02-3.1_DIS_eAu_9x100_q2_1to10.csv 2"></textarea>
@@ -48,9 +50,9 @@
     <div id="pcs-ingest-counts"></div>
     {% if user.is_authenticated %}
     <button type="button" id="pcs-ingest-accept-all" class="btn btn-sm btn-primary" disabled>Accept all new</button>
-    <span class="text-muted">Near misses, unresolved, and unparsed lines are left for review; accept a near miss from its row.</span>
+    <span class="text-muted">Near misses, unresolved, and unparsed lines are left for review; accept a near miss from its row. Create the request from an identified row.</span>
     {% else %}
-    <span class="text-muted">Sign in to accept configurations.</span>
+    <span class="text-muted">Sign in to accept configurations and create requests.</span>
     {% endif %}
   </div>
   <table id="pcs-ingest-table" class="table table-striped table-bordered table-sm align-middle w-auto">
@@ -58,7 +60,7 @@
       <th>#</th><th>State</th><th>Physics</th><th>Generator</th><th>Sample</th>
       <th>Campaign</th><th>Events</th><th>Family</th><th>Result</th>
       <th>Job settings as submitted</th>
-      {% if user.is_authenticated %}<th>Accept</th>{% endif %}
+      {% if user.is_authenticated %}<th>Action</th>{% endif %}
     </tr></thead>
     <tbody></tbody>
   </table>
@@ -69,6 +71,7 @@
   const SIGNED_IN = {{ user.is_authenticated|yesno:'true,false' }};
   const API = '{{ request.META.SCRIPT_NAME }}/pcs/api/ingest/';
   const PC_URL = '{{ request.META.SCRIPT_NAME }}/pcs/config/';
+  const TASK_URL = '{{ request.META.SCRIPT_NAME }}/pcs/tasks/';
   const textEl = document.getElementById('pcs-ingest-text');
   const statusEl = document.getElementById('pcs-ingest-status');
   const resultsEl = document.getElementById('pcs-ingest-results');
@@ -105,14 +108,26 @@
     const items = f.map(m => `<a href="${PC_URL}${esc(m.label)}/">${esc(m.label)}</a> ${esc(m.axes)}${m.evgen ? ' · ' + esc(m.evgen) : ''}${m.sample ? ' · ' + esc(m.sample) : ''}`);
     return `${f.length} defined in this family:<div class="small-muted">${items.join('<br>')}</div>`;
   }
+  function requestText(r) {
+    if (r.requested) {
+      return `<div>requested: req#${esc(r.request_id)} · draft task <a href="${TASK_URL}${encodeURIComponent(r.task_name)}/">${esc(r.task_name)}</a></div>`;
+    }
+    let t = '';
+    if (r.request_existing && r.request_existing.length) {
+      t += `<div class="small-muted">requested already: ` + r.request_existing.map(q => `req#${esc(q.id)}${q.requestor ? ' (' + esc(q.requestor) + ')' : ''} ${esc(q.status)}`).join(', ') + `</div>`;
+    } else if (r.refusal) {
+      t += `<div class="small-muted">refused: ${esc(r.refusal)}</div>`;
+    }
+    return t;
+  }
   function resultText(r) {
-    if (r.state === 'accepted') return `accepted as <a href="${PC_URL}${esc(r.pc)}/">${esc(r.pc)}</a><div class="small-muted">${esc(r.composed_name)}</div>`;
+    if (r.state === 'accepted') return `accepted as <a href="${PC_URL}${esc(r.pc)}/">${esc(r.pc)}</a><div class="small-muted">${esc(r.composed_name)}</div>` + requestText(r);
     if (r.state === 'identified') {
       let t = `<a href="${PC_URL}${esc(r.pc)}/">${esc(r.pc)}</a>`;
       t += r.edition ? `<div class="small-muted">edition in ${esc(r.campaign_name)}: ${esc(r.edition)}</div>`
                      : (r.campaign_name ? `<div class="small-muted">no edition in ${esc(r.campaign_name)} yet</div>` : '');
       if (r.note) t += `<div class="small-muted">${esc(r.note)}</div>`;
-      return t;
+      return t + requestText(r);
     }
     let t = esc(r.reason || (r.state === 'new' ? 'no configuration with this identity' : ''));
     if (r.refusal) t += `<div class="small-muted">refused: ${esc(r.refusal)}</div>`;
@@ -145,6 +160,12 @@
     if (!SIGNED_IN) return '';
     if (r.state === 'new') return `<button type="button" class="btn btn-sm btn-primary pcs-ingest-accept" data-i="${i}">Accept</button>`;
     if (r.state === 'near_miss') return `<button type="button" class="btn btn-sm btn-primary pcs-ingest-accept" data-i="${i}" data-near="1">Accept as new</button>`;
+    // A configuration with an edition in the line's campaign can have its
+    // dataset request created: the request record and the draft task.
+    const hasEdition = (r.state === 'identified' && r.edition) || r.state === 'accepted';
+    if (hasEdition && !r.requested && !r.request_id) {
+      return `<button type="button" class="btn btn-sm btn-primary pcs-ingest-request" data-i="${i}">Create request</button>`;
+    }
     return '';
   }
   function render() {
@@ -215,7 +236,29 @@
     }
     render();
   }
+  async function createRequest(indices) {
+    const lines = indices.map(i => rows[i].raw);
+    statusEl.textContent = `Creating ${lines.length} request(s)…`;
+    document.querySelectorAll('.pcs-ingest-request').forEach(b => { b.disabled = true; });
+    try {
+      const data = await post('request/', {lines: lines});
+      (data.results || []).forEach((res, k) => {
+        const i = indices[k];
+        rows[i] = Object.assign({}, rows[i], {
+          requested: !!res.requested, request_id: res.request_id,
+          request_existing: res.request_existing, task_name: res.task_name,
+          refusal: res.requested ? '' : res.refusal,
+        });
+      });
+      statusEl.textContent = `${data.created} request(s) created, ${data.refused} refused.`;
+    } catch (err) {
+      statusEl.textContent = 'Creating the request failed: ' + err.message;
+    }
+    render();
+  }
   tbody.addEventListener('click', function (e) {
+    const req = e.target.closest('button.pcs-ingest-request');
+    if (req) { createRequest([parseInt(req.dataset.i, 10)]); return; }
     const b = e.target.closest('button.pcs-ingest-accept');
     if (!b) return;
     accept([parseInt(b.dataset.i, 10)], b.dataset.near === '1');

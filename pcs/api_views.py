@@ -1178,6 +1178,58 @@ def pc_ingest_accept(request):
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])
 @permission_classes([IsAuthenticated])
+def pc_ingest_request(request):
+    """Create the dataset request for ingested lines: the request record
+    anchored on each line's edition and the draft task in the campaign
+    the line names, as the CSV import records a catalog row. Body:
+    {"lines": ["<raw line>", ...]}. Each line is re-derived server-side;
+    a line without an edition, a configuration already requested, or a
+    task name in use is refused with the reason. Reply: {"results":
+    [row + requested/refusal/request_id/task_name]}. Signed-in
+    production users only; one action-stream event per call. See
+    docs/PCS_INGEST.md."""
+    from .ingest import create_request_line
+    data = request.data if isinstance(request.data, dict) else {}
+    lines = data.get('lines')
+    if (not isinstance(lines, list) or not lines
+            or not all(isinstance(l, str) and l.strip() for l in lines)):
+        return Response({'detail': 'body must be {"lines": ["<line>", ...]}'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    username = getattr(request.user, 'username', '') or ''
+    if not username or username == 'swf-remote-proxy':
+        return Response({'detail': 'sign in to create requests'},
+                        status=status.HTTP_403_FORBIDDEN)
+    results = []
+    for raw in lines:
+        try:
+            results.append(create_request_line(raw, created_by=username))
+        except ServiceError as e:
+            results.append({'raw': raw, 'requested': False,
+                            'refusal': e.detail, 'state': 'unparsed'})
+        except Exception as e:                                  # noqa: BLE001
+            results.append({'raw': raw, 'requested': False,
+                            'refusal': f'request failed: {e}',
+                            'state': 'unparsed'})
+    created = [r for r in results if r.get('requested')]
+    log_epicprod_action(
+        'web', 'pc_ingest_request', subject_type='prod_request',
+        subject_key=(str(created[0]['request_id']) if len(created) == 1
+                     else f'{len(created)} requests'),
+        username=username, sublevel='high', live_default=True,
+        outcome='ok' if created else 'error',
+        reason=('' if created else '; '.join(
+            f"{r.get('csv_path') or r.get('raw', '')[:60]}: {r.get('refusal')}"
+            for r in results)[:300]),
+        created=len(created), refused=len(results) - len(created),
+        tasks=[r['task_name'] for r in created][:20])
+    return Response({'results': results, 'created': len(created),
+                     'refused': len(results) - len(created)})
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def evgen_mark(request):
     """Set a PWG mark on EVGEN paths — the EVGEN inputs page's tick-box
     actions and the per-row priority buttons, for PWG triage of the
