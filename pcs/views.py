@@ -4357,9 +4357,9 @@ def storage_listings(request, listing):
                                 key=lambda kv: (-kv[1]['files'], kv[0])):
         by_rse.append({
             'rse': holder, 'files': block['files'], 'bytes': block['bytes'],
-            'states': ', '.join(f'{s} {n}' for s, n in sorted(
+            'states': ', '.join(f'{s} {n:,}' for s, n in sorted(
                 block['by_state'].items(), key=lambda kv: -kv[1])),
-            'campaigns': ', '.join(f'{c} {n}' for c, n in sorted(
+            'campaigns': ', '.join(f'{c} {n:,}' for c, n in sorted(
                 block['by_campaign'].items(), key=lambda kv: -kv[1])),
             'oldest_text': _stamp_text(block.get('oldest')),
             'oldest_age_text': _age_text(block.get('oldest_age_s')),
