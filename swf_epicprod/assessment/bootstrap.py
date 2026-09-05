@@ -125,7 +125,7 @@ def main():
     parser.add_argument('--effort', default='xhigh')
     # The prompt requires completion within fifteen minutes. The worker's
     # thirty is termination margin, not additional investigation time.
-    parser.add_argument('--timeout-s', type=int, default=1800)
+    parser.add_argument('--timeout-s', type=int, default=spec.WORKER_TIMEOUT_S)
     parser.add_argument('--section', default=spec.DEFAULT_SECTION)
     args = parser.parse_args()
 

@@ -12,6 +12,11 @@ import json
 import re
 
 SCHEMA_VERSION = 5
+# The run's time budget as the EXECUTION BUDGET text states it, and the
+# worker timeout bootstrap sets on the definitions; the prose and these
+# numbers change together.
+BUDGET_S = 15 * 60
+WORKER_TIMEOUT_S = 30 * 60
 VERDICTS = ('ok', 'attention', 'alarm')
 AXES = ('arrivals', 'processing', 'failures', 'dispositions', 'infrastructure')
 ATTRIBUTION_LAYERS = (

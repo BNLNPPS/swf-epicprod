@@ -293,6 +293,7 @@ def _handle_failed_run(args, *, bundle, campaign, kind, slot, floor,
     _log('assessment_enforce', outcome='error', subject_key=campaign,
          sublevel='high', slot=slot, job_id=args.job_id,
          salvaged=salvage_registered, rerun_job_id=rerun_job_id,
+         elapsed_s=elapsed_s,
          crash_evidence_page_id=str(crash_evidence.get('id') or ''),
          severity='alarm' if floor_verdict == 'alarm' else 'warning',
          summary=(f'salvage — floor {floor_verdict.upper()}'
@@ -300,6 +301,24 @@ def _handle_failed_run(args, *, bundle, campaign, kind, slot, floor,
                      else ' · salvage registration failed')),
          reason=f'run {args.status}: {error}')
     return 0
+
+
+def _elapsed_since_trigger(job_id):
+    """Seconds from the run's assessment_triggered record to now: the
+    trigger-to-callback time the budget and the worker timeout live in.
+    The corun callback carries no timing of its own. None when the
+    trigger record is not found."""
+    from django.utils import timezone
+    from monitor_app.models import AppLog
+    triggered = (AppLog.objects.filter(
+        app_name='epicprod',
+        extra_data__action='assessment_triggered',
+        extra_data__job_id=str(job_id))
+        .order_by('-timestamp')
+        .values_list('timestamp', flat=True).first())
+    if triggered is None:
+        return None
+    return round((timezone.now() - triggered).total_seconds(), 1)
 
 
 def _already_retried(prompt_group_id):
@@ -354,6 +373,11 @@ def main():
         elapsed_s = round(float(args.timing), 1) if args.timing else None
     except ValueError:
         elapsed_s = None
+    if elapsed_s is None:
+        try:
+            elapsed_s = _elapsed_since_trigger(args.job_id)
+        except Exception as e:
+            log.warning('elapsed time lookup failed: %s', e)
 
     # The submitted bundle: floor, params, manifest — the harness's half
     # of the run's truth.
@@ -501,9 +525,16 @@ def main():
              reason=f"registration failed: {result.get('error')}")
         return 1
     problems = reporting._collect_problems(bundle, artifact)
+    # A run over its budget is a harness problem: it recurs in the
+    # harness-health aggregation before it becomes a kill.
+    if elapsed_s is not None and elapsed_s > spec.BUDGET_S:
+        problems.append(
+            f'run took {elapsed_s / 60:.1f} min, over the '
+            f'{spec.BUDGET_S // 60}-minute budget')
     _log('assessment_enforce', outcome='ok', subject_key=campaign, slot=slot,
          verdict=verdict, floor_enforced=floor_enforced,
          degraded=bool(bundle.get('degraded')),
+         elapsed_s=elapsed_s,
          problems=[p[:300] for p in problems[:20]],
          problems_count=len(problems),
          corun_page_group_id=result.get('corun_page_group_id') or '')
