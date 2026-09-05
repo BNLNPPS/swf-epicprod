@@ -278,6 +278,16 @@ and stalled datasets, filtered by RSE and campaign, with the file's
 state, bytes and creation time. The ghost list for one RSE is what an
 operator hands to the Rucio administrators for cleanup.
 
+The same listings have a page, Storage exceptions, under the Data
+menu (`/pcs/storage/<listing>/`): the three listings as page tabs with
+their totals, RSE, campaign and state filters carried in the URL with
+the count each choice would show, the ghost account by holding RSE
+above the ghost rows, every dataset linked to its DID page, and the
+whole filtered list downloadable as a CSV or as bare names, the form
+handed to the administrators. The page states which pass the record
+reaches and whether a pass is writing the store. It reads the store
+only.
+
 ## Detection and notice
 
 Planned, after the record and the view: the alarm engine reads the

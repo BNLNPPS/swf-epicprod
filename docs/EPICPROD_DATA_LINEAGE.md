@@ -294,3 +294,9 @@ path makes no Rucio call. The page's second action opens the Brains
 dialog — an interactive conversation with the DISpatcher engine over
 the production toolset (`EPICPROD_LLM_OPERATIONS.md` § Find Data
 Brains Dialog).
+
+The **Storage exceptions page** (`/pcs/storage/<listing>/`, under the
+Data menu) lists what is wrong with placed data in the catalog from the
+storage record's store: ghosts, stuck rules and stalled datasets, by RSE
+and campaign, each dataset linked to its detail page, the filtered list
+downloadable for the Rucio administrators (`STORAGE.md` § Retrieval).

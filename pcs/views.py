@@ -4214,6 +4214,232 @@ def pcs_edition_data(request, name):
     })
 
 
+# ---------------------------------------------------------------------------
+# Storage exceptions: the storage record's listings (docs/STORAGE.md,
+# Retrieval) as a page under Data.
+# ---------------------------------------------------------------------------
+
+_STORAGE_LISTING_TITLES = (
+    ('ghosts', 'Ghosts'),
+    ('stuck_rules', 'Stuck rules'),
+    ('stalled_datasets', 'Stalled datasets'),
+)
+_STORAGE_PAGE_LIMIT = 500
+_STORAGE_CSV_COLUMNS = {
+    'ghosts': ('name', 'dataset', 'campaign', 'root', 'bytes', 'created_at',
+               'age_s', 'holders'),
+    'stuck_rules': ('dataset', 'campaign', 'rse', 'rule_id', 'state',
+                    'rse_expression', 'copies', 'stuck_at', 'stuck_age_s',
+                    'locks_stuck', 'locks_ok', 'locks_replicating',
+                    'created_at', 'expires_at'),
+    'stalled_datasets': ('dataset', 'campaign', 'last_arrival',
+                         'quiet_age_s', 'task_state', 'files', 'bytes'),
+}
+
+
+def _age_text(seconds):
+    """A duration in seconds as the largest two units: 3d 4h, 5h 12m, 42m."""
+    if seconds is None:
+        return ''
+    seconds = int(seconds)
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    if days:
+        return f'{days}d {hours}h'
+    if hours:
+        return f'{hours}h {minutes}m'
+    return f'{minutes}m'
+
+
+def _stamp_text(value):
+    """An ISO stamp from the store as 'YYYY-MM-DD HH:MM'."""
+    return (value or '')[:16].replace('T', ' ')
+
+
+def _storage_url(listing, **params):
+    from urllib.parse import urlencode
+    url = reverse('pcs:storage_listings', kwargs={'listing': listing})
+    query = urlencode({k: v for k, v in params.items() if v not in (None, '', 0)})
+    return f'{url}?{query}' if query else url
+
+
+def storage_listings_home(request):
+    return redirect('pcs:storage_listings', listing='ghosts')
+
+
+def storage_listings(request, listing):
+    """Storage exceptions: the ghost, stuck-rule and stalled-dataset
+    listings from the storage record's store (docs/STORAGE.md,
+    Retrieval), filtered by RSE, campaign and state carried in the URL,
+    with the by-RSE account of the ghosts and the filtered list as a CSV
+    or as bare names for the Rucio administrators. Reads the store only;
+    no Rucio call in the render path.
+    """
+    from swf_epicprod.analytics.storage_listings import (
+        LISTINGS, listing as _listing)
+
+    if listing not in LISTINGS:
+        raise Http404('no such storage listing')
+    q = request.GET
+    rse = q.get('rse') or ''
+    campaign = q.get('campaign') or ''
+    state = q.get('state') or ''
+    try:
+        offset = max(0, int(q.get('offset') or 0))
+    except ValueError:
+        offset = 0
+    if q.get('format') in ('csv', 'names'):
+        return _storage_download(listing, rse, campaign, state, q['format'])
+
+    doc = _listing(listing, rse=rse, campaign=campaign, state=state,
+                   limit=_STORAGE_PAGE_LIMIT, offset=offset)
+    error = doc.get('error') or ''
+    titles = dict(_STORAGE_LISTING_TITLES)
+    tabs = []
+    for key, title in _STORAGE_LISTING_TITLES:
+        total = None if error else _listing(key, limit=1).get('total')
+        tabs.append({'key': key, 'title': title, 'total': total,
+                     'url': _storage_url(key), 'active': key == listing})
+
+    # Filter chips: each row's options are counted over the population
+    # under the other filters, so a chip's count is what selecting it
+    # shows. Stalled datasets carry no RSE or state.
+    filters = []
+    if not error:
+        for_rse = _listing(listing, campaign=campaign, limit=1).get('facets') or {}
+        for_campaign = _listing(listing, rse=rse, state=state, limit=1).get('facets') or {}
+        for_state = _listing(listing, rse=rse, campaign=campaign, limit=1).get('facets') or {}
+        for key, label, selected, counts, others in (
+                ('rse', 'RSE', rse, for_rse.get('rse') or {},
+                 {'campaign': campaign}),
+                ('campaign', 'Campaign', campaign, for_campaign.get('campaign') or {},
+                 {'rse': rse, 'state': state}),
+                ('state', 'State', state, for_state.get('state') or {},
+                 {'rse': rse, 'campaign': campaign})):
+            if not counts and not selected:
+                continue
+            options = [{'value': value, 'count': n,
+                        'url': _storage_url(listing, **dict(others, **{key: value}))}
+                       for value, n in sorted(counts.items(),
+                                              key=lambda kv: (-kv[1], kv[0]))]
+            filters.append({'key': key, 'label': label, 'selected': selected,
+                            'options': options,
+                            'all_url': _storage_url(listing, **others)})
+    active_filters = [
+        {'label': label, 'value': value,
+         'remove_url': _storage_url(listing, **{k: v for k, v in
+                                               (('rse', rse), ('campaign', campaign),
+                                                ('state', state)) if k != key})}
+        for key, label, value in (('rse', 'RSE', rse), ('campaign', 'Campaign', campaign),
+                                  ('state', 'State', state)) if value]
+
+    rows = []
+    for r in doc.get('rows') or []:
+        row = dict(r)
+        row['dataset_url_name'] = (r.get('dataset') or '').lstrip('/')
+        if listing == 'ghosts':
+            row['file'] = r['name'].rsplit('/', 1)[-1]
+            row['holders_text'] = ', '.join(
+                f'{h} {s}' for h, s in sorted((r.get('holders') or {}).items()))
+            row['created_text'] = _stamp_text(r.get('created_at'))
+            row['age_text'] = _age_text(r.get('age_s'))
+        elif listing == 'stuck_rules':
+            row['stuck_text'] = _stamp_text(r.get('stuck_at'))
+            row['age_text'] = _age_text(r.get('stuck_age_s'))
+            row['expires_text'] = _stamp_text(r.get('expires_at'))
+        else:
+            row['last_text'] = _stamp_text(r.get('last_arrival'))
+            row['age_text'] = _age_text(r.get('quiet_age_s'))
+        rows.append(row)
+    by_rse = []
+    for holder, block in sorted((doc.get('by_rse') or {}).items(),
+                                key=lambda kv: (-kv[1]['files'], kv[0])):
+        by_rse.append({
+            'rse': holder, 'files': block['files'], 'bytes': block['bytes'],
+            'states': ', '.join(f'{s} {n}' for s, n in sorted(
+                block['by_state'].items(), key=lambda kv: -kv[1])),
+            'campaigns': ', '.join(f'{c} {n}' for c, n in sorted(
+                block['by_campaign'].items(), key=lambda kv: -kv[1])),
+            'oldest_text': _stamp_text(block.get('oldest')),
+            'oldest_age_text': _age_text(block.get('oldest_age_s')),
+        })
+    total = doc.get('total') or 0
+    shown_from = offset + 1 if rows else 0
+    shown_to = offset + len(rows)
+    as_of = doc.get('as_of') or {}
+    completed = as_of.get('completed_pass') or {}
+    running = as_of.get('running_pass') or {}
+    params = {'rse': rse, 'campaign': campaign, 'state': state}
+    return render(request, 'pcs/storage_listings.html', {
+        'listing': listing,
+        'title': titles[listing],
+        'tabs': tabs,
+        'filters': filters,
+        'active_filters': active_filters,
+        'clear_all_url': _storage_url(listing),
+        'rows': rows,
+        'by_rse': by_rse,
+        'total': total,
+        'shown_from': shown_from,
+        'shown_to': shown_to,
+        'prev_url': (_storage_url(listing, offset=max(0, offset - _STORAGE_PAGE_LIMIT), **params)
+                     if offset > 0 else ''),
+        'next_url': (_storage_url(listing, offset=doc['next_offset'], **params)
+                     if doc.get('next_offset') else ''),
+        'csv_url': _storage_url(listing, format='csv', **params),
+        'names_url': _storage_url(listing, format='names', **params),
+        'completed_pass': completed,
+        'running_pass': running,
+        'population_built_at': doc.get('population_built_at'),
+        'threshold_hours': doc.get('threshold_hours'),
+        'error': error,
+    })
+
+
+def _storage_download(listing, rse, campaign, state, fmt):
+    """The whole filtered listing as a CSV, or as bare DID names one per
+    line (ghosts), the form handed to the Rucio administrators."""
+    import csv
+    import io
+    from django.http import HttpResponse
+    from swf_epicprod.analytics.storage_listings import listing as _listing
+
+    rows, offset = [], 0
+    while True:
+        doc = _listing(listing, rse=rse, campaign=campaign, state=state,
+                       limit=1000, offset=offset)
+        if doc.get('error'):
+            return HttpResponse(doc['error'], status=503,
+                                content_type='text/plain')
+        rows.extend(doc.get('rows') or [])
+        if not doc.get('next_offset'):
+            break
+        offset = doc['next_offset']
+    stem = '-'.join(p for p in ('storage', listing, rse, campaign, state) if p)
+    if fmt == 'names':
+        key = 'name' if listing == 'ghosts' else 'dataset'
+        body = ''.join(f"epic:{r[key]}\n" for r in rows)
+        response = HttpResponse(body, content_type='text/plain; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="{stem}.txt"'
+        return response
+    columns = _STORAGE_CSV_COLUMNS[listing]
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(columns)
+    for r in rows:
+        values = []
+        for c in columns:
+            v = r.get(c)
+            if isinstance(v, dict):
+                v = ';'.join(f'{k}:{x}' for k, x in sorted(v.items()))
+            values.append('' if v is None else v)
+        writer.writerow(values)
+    response = HttpResponse(out.getvalue(), content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{stem}.csv"'
+    return response
+
+
 @_login_required_flash
 def pcs_catalog_promote_current(request):
     """POST handler for the producing tab's 'Make <campaign> current'

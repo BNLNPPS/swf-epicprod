@@ -196,8 +196,19 @@ def _ghosts(db, now, rse, campaign, state, limit, offset, path=DEFAULT_DB):
     for r in selected[offset:offset + limit]:
         age = _seconds_since(r['created_at'], now) if r['created_at'] else None
         rows.append(dict(r, age_s=round(age) if age is not None else None))
-    return len(selected), rows, {'by_rse': by_rse,
+    facets = {'rse': {}, 'campaign': {}, 'state': {}}
+    for r in selected:
+        _count(facets['campaign'], r['campaign'])
+        for holder, hstate in r['holders'].items():
+            _count(facets['rse'], holder)
+            _count(facets['state'], hstate)
+    return len(selected), rows, {'by_rse': by_rse, 'facets': facets,
                                  'population_built_at': built}
+
+
+def _count(counter, key):
+    key = str(key)
+    counter[key] = counter.get(key, 0) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +249,12 @@ def _stuck_rules(db, now, rse, campaign, state, limit, offset, path=None):
                     'expires_at': rule.get('expires_at'),
                 })
     found.sort(key=lambda r: (r['stuck_at'], r['dataset'], r['rse']))
-    return len(found), found[offset:offset + limit], {}
+    facets = {'rse': {}, 'campaign': {}, 'state': {}}
+    for r in found:
+        _count(facets['rse'], r['rse'])
+        _count(facets['campaign'], r['campaign'])
+        _count(facets['state'], r['state'])
+    return len(found), found[offset:offset + limit], {'facets': facets}
 
 
 # ---------------------------------------------------------------------------
@@ -271,8 +287,11 @@ def _stalled_datasets(db, now, rse, campaign, state, limit, offset, path=None):
                       'task_state': task_state,
                       'files': int(length or 0), 'bytes': int(size or 0)})
     found.sort(key=lambda r: (r['last_arrival'] or '', r['dataset']))
+    facets = {'rse': {}, 'campaign': {}, 'state': {}}
+    for r in found:
+        _count(facets['campaign'], r['campaign'])
     return len(found), found[offset:offset + limit], {
-        'threshold_hours': stalled_hours}
+        'threshold_hours': stalled_hours, 'facets': facets}
 
 
 _LISTINGS = {'ghosts': _ghosts, 'stuck_rules': _stuck_rules,
@@ -285,10 +304,11 @@ def listing(kind='ghosts', rse='', campaign='', state='', limit=None,
 
     Returns a document with the listing name, the filters applied, the
     ``as_of`` block (last completed pass, pass in progress), ``total``,
-    ``rows`` oldest first, ``next_offset`` when more rows follow, and for
-    ghosts the ``by_rse`` account of the filtered population. A store
-    that cannot be read returns an ``error`` field in the same envelope;
-    nothing raises into a caller's page.
+    ``rows`` oldest first, ``next_offset`` when more rows follow,
+    ``facets`` (counts of the filtered population by RSE, campaign and
+    state), and for ghosts the ``by_rse`` account of the filtered
+    population. A store that cannot be read returns an ``error`` field in
+    the same envelope; nothing raises into a caller's page.
     """
     kind = str(kind or 'ghosts')
     limit, offset = _clamp(limit, offset)

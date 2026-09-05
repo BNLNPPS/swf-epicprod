@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% load swf_fmt %}
+
+{% block title %}Storage exceptions - {{ title }} - epicprod{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+  <h1>Storage exceptions <small class="fs-6 fw-normal ms-3"><a href="{% url 'pcs:find_data' %}">Find data</a></small></h1>
+  <p>What is wrong with placed production data in JLab Rucio, from the
+  storage record's store: <strong>ghosts</strong>, files registered with no
+  available replica on any RSE; <strong>stuck rules</strong>, replication rules
+  with stuck locks; <strong>stalled datasets</strong>, open datasets of a
+  running task whose arrivals stopped. Filters are carried in the URL; the
+  filtered list downloads as a CSV or as bare names for the Rucio
+  administrators.</p>
+
+  <p class="mb-2">
+    {% if completed_pass %}Record as of pass {{ completed_pass.id }} ({{ completed_pass.mode }}),
+      finished <span data-relative-time="{{ completed_pass.finished }}"></span>.{% else %}No pass has completed yet.{% endif %}
+    {% if running_pass %}A {{ running_pass.mode }} pass is writing the store now, started
+      <span data-relative-time="{{ running_pass.started }}"></span>; rows reflect its crawl so far.{% endif %}
+    {% if population_built_at %}<span class="text-muted">Ghost population read
+      <span data-relative-time="{{ population_built_at }}"></span>.</span>{% endif %}
+  </p>
+
+  {% if error %}<p><strong>{{ error }}</strong></p>{% endif %}
+
+  {# First-class page views as server-routed tabs; the URL carries the view. #}
+  <div class="swf-page-tabs">
+    {% for t in tabs %}
+    <a href="{{ t.url }}" {% if t.active %}class="active"{% endif %}>{{ t.title }}{% if t.total is not None %} ({{ t.total|intcomma }}){% endif %}</a>
+    {% endfor %}
+  </div>
+
+  {% for f in filters %}
+  <div class="filter-bar mb-2">
+    <strong>{{ f.label }}:</strong>
+    <a href="{{ f.all_url }}" class="filter-link {% if not f.selected %}filter-active{% endif %}">All</a>
+    {% for opt in f.options %}
+    <a href="{{ opt.url }}" class="filter-link {% if f.selected == opt.value %}filter-active{% endif %}">{{ opt.value }} ({{ opt.count|intcomma }})</a>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% include "monitor_app/_active_filters.html" with active_filters=active_filters clear_all_url=clear_all_url %}
+
+  {% if listing == 'stalled_datasets' and threshold_hours %}
+  <p class="mb-2">Stalled means no file registered for more than {{ threshold_hours|floatformat:0 }} hours while the dataset is open and its task active.</p>
+  {% endif %}
+
+  {% if listing == 'ghosts' and by_rse %}
+  <h2 class="fs-4 mt-3">Account by holding RSE</h2>
+  <p class="text-muted mb-2">A ghost is counted under each RSE holding a replica of it in a non-available state; <strong>none</strong> holds the files with no replica row at all.</p>
+  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
+    <thead><tr><th>RSE</th><th>Files</th><th>Size</th><th>By state</th><th>By campaign</th><th>Oldest</th><th>Oldest age</th></tr></thead>
+    <tbody>
+    {% for b in by_rse %}
+      <tr>
+        <td><a href="{% url 'pcs:storage_listings' listing='ghosts' %}?rse={{ b.rse|urlencode }}">{{ b.rse }}</a></td>
+        <td class="text-end" data-order="{{ b.files }}">{{ b.files|intcomma }}</td>
+        <td class="text-end" data-order="{{ b.bytes }}">{{ b.bytes|filesizeformat }}</td>
+        <td>{{ b.states }}</td>
+        <td>{{ b.campaigns }}</td>
+        <td class="text-nowrap">{{ b.oldest_text }}</td>
+        <td class="text-nowrap">{{ b.oldest_age_text }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <div class="d-flex align-items-center flex-wrap gap-2 mb-2 mt-3">
+    <span class="fs-5">{{ total|intcomma }} {{ title|lower }}{% if rows %}, showing {{ shown_from|intcomma }} to {{ shown_to|intcomma }}{% endif %}</span>
+    {% if prev_url %}<a href="{{ prev_url }}" class="btn btn-sm btn-secondary">Previous</a>{% endif %}
+    {% if next_url %}<a href="{{ next_url }}" class="btn btn-sm btn-secondary">Next</a>{% endif %}
+    {% if total %}
+    <a href="{{ csv_url }}" class="btn btn-sm btn-secondary ms-3" title="The whole filtered list as a CSV">Download CSV</a>
+    <a href="{{ names_url }}" class="btn btn-sm btn-secondary" title="The whole filtered list as bare DIDs, one per line, the form handed to the Rucio administrators">Download names</a>
+    {% endif %}
+  </div>
+
+  {% if rows %}
+  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
+    {% if listing == 'ghosts' %}
+    <thead><tr><th>Dataset</th><th>File</th><th>Campaign</th><th>Held at</th><th>Size</th><th>Registered</th><th>Age</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td style="overflow-wrap:anywhere;">{% if r.dataset_url_name %}<a href="{% url 'pcs:rucio_did_detail' scope='epic' name=r.dataset_url_name %}">{{ r.dataset }}</a>{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
+        <td style="overflow-wrap:anywhere;">{{ r.file }}</td>
+        <td>{{ r.campaign }}</td>
+        <td>{{ r.holders_text }}</td>
+        <td class="text-end" data-order="{{ r.bytes }}">{{ r.bytes|filesizeformat }}</td>
+        <td class="text-nowrap" data-order="{{ r.created_at }}">{{ r.created_text }}</td>
+        <td class="text-nowrap" data-order="{{ r.age_s|default:0 }}">{{ r.age_text }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    {% elif listing == 'stuck_rules' %}
+    <thead><tr><th>Dataset</th><th>Campaign</th><th>RSE</th><th>Rule state</th><th>Stuck since</th><th>Stuck for</th><th>Locks stuck</th><th>Locks OK</th><th>Locks replicating</th><th>Expires</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td style="overflow-wrap:anywhere;"><a href="{% url 'pcs:rucio_did_detail' scope='epic' name=r.dataset_url_name %}">{{ r.dataset }}</a></td>
+        <td>{{ r.campaign }}</td>
+        <td>{{ r.rse }}</td>
+        <td>{{ r.state }}</td>
+        <td class="text-nowrap" data-order="{{ r.stuck_at }}">{{ r.stuck_text }}</td>
+        <td class="text-nowrap" data-order="{{ r.stuck_age_s|default:0 }}">{{ r.age_text }}</td>
+        <td class="text-end">{{ r.locks_stuck }}</td>
+        <td class="text-end">{{ r.locks_ok }}</td>
+        <td class="text-end">{{ r.locks_replicating }}</td>
+        <td class="text-nowrap" data-order="{{ r.expires_at|default:'' }}">{% if r.expires_text %}{{ r.expires_text }}{% else %}<span class="text-muted">never</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    {% else %}
+    <thead><tr><th>Dataset</th><th>Campaign</th><th>Last arrival</th><th>Quiet for</th><th>Task</th><th>Files</th><th>Size</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td style="overflow-wrap:anywhere;"><a href="{% url 'pcs:rucio_did_detail' scope='epic' name=r.dataset_url_name %}">{{ r.dataset }}</a></td>
+        <td>{{ r.campaign }}</td>
+        <td class="text-nowrap" data-order="{{ r.last_arrival|default:'' }}">{{ r.last_text }}</td>
+        <td class="text-nowrap" data-order="{{ r.quiet_age_s|default:0 }}">{{ r.age_text }}</td>
+        <td>{{ r.task_state }}</td>
+        <td class="text-end" data-order="{{ r.files }}">{{ r.files|intcomma }}</td>
+        <td class="text-end" data-order="{{ r.bytes }}">{{ r.bytes|filesizeformat }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    {% endif %}
+  </table>
+  {% elif not error %}
+  <p class="text-muted">No {{ title|lower }} match.</p>
+  {% endif %}
+</div>
+{% endblock %}
