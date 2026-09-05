@@ -286,7 +286,9 @@ above the ghost rows, every dataset linked to its DID page, and the
 whole filtered list downloadable as a CSV or as bare names, the form
 handed to the administrators. The page states which pass the record
 reaches and whether a pass is writing the store. It reads the store
-only.
+only. The ghost population it serves is a cached product, stamped
+with its build time and rebuilt by the sweep after every pass; the
+page's Update button rebuilds it on demand.
 
 ## Detection and notice
 
@@ -303,11 +305,14 @@ does.
 
 - swf-epicprod: `swf_epicprod/analytics/storage.py` (the pass, the
   store, the projection); `swf_epicprod/analytics/storage_listings.py`
-  (the exception listings from the store, read-only, with the ghost
-  population held per process until the store changes) behind the MCP
-  tool `epicprod_storage` (`swf_epicprod/mcp_tools/storage.py`) and the
-  REST listing `pcs/api/storage/<listing>/` (`pcs/api_views.py`);
-  `scripts/backfill_storage_arrivals.py`.
+  (the exception listings from the store, read-only; the ghost
+  population is the cached product `storage_ghosts:v1` on the
+  swf-monitor mechanism, served stored, rebuilt by the sweep as its
+  last step through `refresh_ghost_product`, with a 90-minute TTL as
+  the safety net) behind the MCP tool `epicprod_storage`
+  (`swf_epicprod/mcp_tools/storage.py`), the REST listing
+  `pcs/api/storage/<listing>/` (`pcs/api_views.py`) and the Storage
+  exceptions page (`pcs/views.py`); `scripts/backfill_storage_arrivals.py`.
 - swf-monitor: `monitor_app/snapper_storage.py` (registration and
   publication, beside the delivery maintainer); the doer
   `scripts/storage-sweep.py` with `--census`, `--full` and the default

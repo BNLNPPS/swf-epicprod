@@ -16,9 +16,7 @@ active, and its newest file older than the stalled threshold.
 import datetime as dt
 import json
 import logging
-import os
 import sqlite3
-import time
 
 from .storage import (DEFAULT_DB, NO_RSE, THRESHOLD_DEFAULTS, _parse_iso,
                       _seconds_since, thresholds)
@@ -87,23 +85,12 @@ def _clamp(limit, offset):
 # per query, seconds now and tens of seconds at the census's size. It is
 # found instead from the replicas side, where the non-available rows are
 # few, plus the one scan for files holding no replica row at all, and
-# held per process until the store file changes and the hold is older
-# than the TTL: a running pass changes the store continuously, so the
-# TTL bounds the rebuild to once per interval.
-GHOST_CACHE_TTL_S = 300
-_GHOST_CACHE = {'version': None, 'built': None, 'built_mono': 0.0,
-                'rows': None}
-
-
-def _store_version(path):
-    """The newest modification time of the store and its WAL file."""
-    stamps = []
-    for candidate in (path, path + '-wal'):
-        try:
-            stamps.append(os.stat(candidate).st_mtime)
-        except OSError:
-            pass
-    return max(stamps) if stamps else None
+# served as a cached product (swf-monitor docs/CACHED_PRODUCTS.md):
+# every request serves the stored population at once, the storage
+# sweep rebuilds it as its last step after each pass, and the TTL is
+# the safety net for a missed sweep.
+GHOST_PRODUCT_KEY = 'storage_ghosts:v1'
+GHOST_PRODUCT_TTL_S = 90 * 60
 
 
 def _file_rows(db, names):
@@ -120,44 +107,74 @@ def _file_rows(db, names):
     return out
 
 
-def _ghost_population(db, path):
-    """Every ghost with its holders, oldest first, from the store or the
-    per-process hold."""
-    version = _store_version(path)
-    cache = _GHOST_CACHE
-    if (cache['rows'] is not None
-            and (version == cache['version']
-                 or time.monotonic() - cache['built_mono'] < GHOST_CACHE_TTL_S)):
-        return cache['rows'], cache['built']
-    holders = {}
-    for name, rse, state in db.execute(
-            "SELECT h.name, h.rse, h.state FROM replicas h"
-            " WHERE h.state <> 'AVAILABLE' AND NOT EXISTS"
-            " (SELECT 1 FROM replicas a WHERE a.name = h.name"
-            "  AND a.state = 'AVAILABLE')"):
-        holders.setdefault(name, {})[rse] = state
-    files = _file_rows(db, list(holders))
-    for name, campaign, root, location, size, created in db.execute(
-            'SELECT f.name, f.campaign, f.root, f.location, f.bytes,'
-            ' f.created_at FROM files f WHERE f.gone_at IS NULL AND NOT EXISTS'
-            ' (SELECT 1 FROM replicas h WHERE h.name = f.name)'):
-        files[name] = (campaign, root, location, size, created)
-        holders[name] = {NO_RSE: NO_RSE}
-    rows = []
-    for name, (campaign, root, location, size, created) in files.items():
-        rows.append({'name': name, 'campaign': campaign, 'root': root,
-                     'dataset': '/' + location if location else None,
-                     'bytes': int(size or 0), 'created_at': created,
-                     'holders': holders[name]})
-    rows.sort(key=lambda r: (r['created_at'] or '', r['name']))
-    built = _now().isoformat(timespec='seconds')
-    cache.update(version=version, built=built, built_mono=time.monotonic(),
-                 rows=rows)
-    return rows, built
+def build_ghost_population(db_path=DEFAULT_DB):
+    """Every ghost with its holders, oldest first, read from the store:
+    the cached product's builder. Raises when the store cannot be read,
+    so an empty product is never stored in place of a real one."""
+    db = _open_readonly(db_path)
+    try:
+        holders = {}
+        for name, rse, state in db.execute(
+                "SELECT h.name, h.rse, h.state FROM replicas h"
+                " WHERE h.state <> 'AVAILABLE' AND NOT EXISTS"
+                " (SELECT 1 FROM replicas a WHERE a.name = h.name"
+                "  AND a.state = 'AVAILABLE')"):
+            holders.setdefault(name, {})[rse] = state
+        files = _file_rows(db, list(holders))
+        for name, campaign, root, location, size, created in db.execute(
+                'SELECT f.name, f.campaign, f.root, f.location, f.bytes,'
+                ' f.created_at FROM files f WHERE f.gone_at IS NULL'
+                ' AND NOT EXISTS'
+                ' (SELECT 1 FROM replicas h WHERE h.name = f.name)'):
+            files[name] = (campaign, root, location, size, created)
+            holders[name] = {NO_RSE: NO_RSE}
+        rows = []
+        for name, (campaign, root, location, size, created) in files.items():
+            rows.append({'name': name, 'campaign': campaign, 'root': root,
+                         'dataset': '/' + location if location else None,
+                         'bytes': int(size or 0), 'created_at': created,
+                         'holders': holders[name]})
+        rows.sort(key=lambda r: (r['created_at'] or '', r['name']))
+        as_of = _as_of(db)
+    finally:
+        db.close()
+    return {'rows': rows, 'as_of': as_of,
+            'built_at': _now().isoformat(timespec='seconds')}
 
 
-def _ghosts(db, now, rse, campaign, state, limit, offset, path=DEFAULT_DB):
-    population, built = _ghost_population(db, path)
+def ghost_product(refresh=False, db_path=DEFAULT_DB):
+    """The ghost population as a cached product: ``{value, built_at,
+    age_seconds, refreshing, built_now}`` per the contract in
+    swf-monitor docs/CACHED_PRODUCTS.md. ``refresh`` rebuilds now."""
+    from functools import partial
+
+    from monitor_app.cached_product import get_product
+
+    return get_product(GHOST_PRODUCT_KEY,
+                       partial(build_ghost_population, db_path),
+                       GHOST_PRODUCT_TTL_S, refresh=refresh)
+
+
+def refresh_ghost_product(db_path=DEFAULT_DB):
+    """Rebuild the ghost product now: the storage sweep's last step after
+    a pass commits. Returns the row count and the build time."""
+    product = ghost_product(refresh=True, db_path=db_path)
+    value = product.get('value') or {}
+    return {'rows': len(value.get('rows') or []),
+            'built_at': _iso_dt(product.get('built_at'))}
+
+
+def _iso_dt(value):
+    return (value.isoformat(timespec='seconds')
+            if hasattr(value, 'isoformat') else value)
+
+
+def _ghosts(db, now, rse, campaign, state, limit, offset, path=DEFAULT_DB,
+            refresh=False, product=None):
+    if product is None:
+        product = ghost_product(refresh=refresh, db_path=path)
+    value = product.get('value') or {}
+    population = value.get('rows') or []
 
     def _keep(r):
         if campaign and r['campaign'] != campaign:
@@ -202,8 +219,12 @@ def _ghosts(db, now, rse, campaign, state, limit, offset, path=DEFAULT_DB):
         for holder, hstate in r['holders'].items():
             _count(facets['rse'], holder)
             _count(facets['state'], hstate)
-    return len(selected), rows, {'by_rse': by_rse, 'facets': facets,
-                                 'population_built_at': built}
+    return len(selected), rows, {
+        'by_rse': by_rse, 'facets': facets,
+        'population_built_at': _iso_dt(product.get('built_at')),
+        'population_age_s': product.get('age_seconds'),
+        'population_refreshing': bool(product.get('refreshing')),
+        'population_as_of': value.get('as_of')}
 
 
 def _count(counter, key):
@@ -215,7 +236,8 @@ def _count(counter, key):
 # Stuck rules
 # ---------------------------------------------------------------------------
 
-def _stuck_rules(db, now, rse, campaign, state, limit, offset, path=None):
+def _stuck_rules(db, now, rse, campaign, state, limit, offset, path=None,
+                 refresh=False, product=None):
     known = [r[0] for r in db.execute('SELECT rse FROM rses')]
     where, params = ['gone_at IS NULL'], []
     if campaign:
@@ -261,7 +283,8 @@ def _stuck_rules(db, now, rse, campaign, state, limit, offset, path=None):
 # Stalled datasets
 # ---------------------------------------------------------------------------
 
-def _stalled_datasets(db, now, rse, campaign, state, limit, offset, path=None):
+def _stalled_datasets(db, now, rse, campaign, state, limit, offset, path=None,
+                      refresh=False, product=None):
     th = thresholds()
     stalled_hours = float(th.get('storage_stalled_hours',
                                  THRESHOLD_DEFAULTS['storage_stalled_hours']))
@@ -299,16 +322,23 @@ _LISTINGS = {'ghosts': _ghosts, 'stuck_rules': _stuck_rules,
 
 
 def listing(kind='ghosts', rse='', campaign='', state='', limit=None,
-            offset=None, db_path=DEFAULT_DB):
+            offset=None, db_path=DEFAULT_DB, refresh=False, product=None):
     """One exception listing from the store.
+
+    A caller making several ghost listings in one request (a page with
+    tabs and filter chips) fetches the product once with
+    ``ghost_product`` and passes it as ``product``, so the product row
+    is read from the database once, not per call.
 
     Returns a document with the listing name, the filters applied, the
     ``as_of`` block (last completed pass, pass in progress), ``total``,
     ``rows`` oldest first, ``next_offset`` when more rows follow,
     ``facets`` (counts of the filtered population by RSE, campaign and
     state), and for ghosts the ``by_rse`` account of the filtered
-    population. A store that cannot be read returns an ``error`` field in
-    the same envelope; nothing raises into a caller's page.
+    population with the cached product's build time, age and refreshing
+    state (``refresh`` rebuilds the product now). A store that cannot be
+    read returns an ``error`` field in the same envelope; nothing raises
+    into a caller's page.
     """
     kind = str(kind or 'ghosts')
     limit, offset = _clamp(limit, offset)
@@ -331,8 +361,14 @@ def listing(kind='ghosts', rse='', campaign='', state='', limit=None,
         envelope['as_of'] = _as_of(db)
         total, rows, extra = _LISTINGS[kind](
             db, now, rse or '', campaign or '', state or '', limit, offset,
-            db_path)
+            db_path, refresh, product)
     except sqlite3.Error as exc:
+        logger.error('storage listing %s failed: %s', kind, exc)
+        envelope['error'] = f'storage listing failed: {exc}'
+        return envelope
+    except Exception as exc:                                  # noqa: BLE001
+        # A product build that failed has already been logged with its
+        # key by the cached-product module; the page states it.
         logger.error('storage listing %s failed: %s', kind, exc)
         envelope['error'] = f'storage listing failed: {exc}'
         return envelope

@@ -20,9 +20,18 @@
       finished <span data-relative-time="{{ completed_pass.finished }}"></span>.{% else %}No pass has completed yet.{% endif %}
     {% if running_pass %}A {{ running_pass.mode }} pass is writing the store now, started
       <span data-relative-time="{{ running_pass.started }}"></span>; rows reflect its crawl so far.{% endif %}
-    {% if population_built_at %}<span class="text-muted">Ghost population read
-      <span data-relative-time="{{ population_built_at }}"></span>.</span>{% endif %}
   </p>
+  {% if listing == 'ghosts' %}
+  <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+    {% if population_built_at %}
+    <span>Ghost population as of <span data-relative-time="{{ population_built_at }}"></span>{% if population_pass %}, pass {{ population_pass }}{% endif %}, rebuilt after every storage pass.</span>
+    {% if population_refreshing %}<span class="text-muted">A rebuild is running behind this page; reload shortly.</span>{% endif %}
+    {% elif population_refreshing %}
+    <span>The ghost population is being built for the first time; reload shortly.</span>
+    {% endif %}
+    <a href="{{ update_url }}" class="btn btn-sm btn-primary swf-update-btn" title="Rebuild the ghost population from the store now and wait for it">Update</a>
+  </div>
+  {% endif %}
 
   {% if error %}<p><strong>{{ error }}</strong></p>{% endif %}
 

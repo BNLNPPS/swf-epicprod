@@ -40,7 +40,9 @@ async def epicprod_storage(listing: str = 'ghosts', rse: str = '',
         'total', 'rows' oldest first, 'next_offset' when more follow, and
         for ghosts 'by_rse': the account of the filtered population by
         holding RSE, with files, bytes, by_state, by_campaign and the
-        oldest entry. A store that cannot be read returns 'error'.
+        oldest entry, plus 'population_built_at': the ghost population
+        is a cached product rebuilt after every storage pass. A store
+        that cannot be read returns 'error'.
     """
     from swf_epicprod.analytics.storage_listings import listing as _listing
 

@@ -4277,7 +4277,7 @@ def storage_listings(request, listing):
     no Rucio call in the render path.
     """
     from swf_epicprod.analytics.storage_listings import (
-        LISTINGS, listing as _listing)
+        LISTINGS, ghost_product, listing as _base_listing)
 
     if listing not in LISTINGS:
         raise Http404('no such storage listing')
@@ -4291,6 +4291,16 @@ def storage_listings(request, listing):
         offset = 0
     if q.get('format') in ('csv', 'names'):
         return _storage_download(listing, rse, campaign, state, q['format'])
+
+    # The Update button passes refresh=1: the ghost population product
+    # rebuilds synchronously, the user chose to wait (CACHED_PRODUCTS.md).
+    # The product is read once here and handed to every listing call the
+    # page makes (tabs, filter chips, rows).
+    refresh = q.get('refresh') == '1'
+    product = ghost_product(refresh=refresh)
+
+    def _listing(kind, **kw):
+        return _base_listing(kind, product=product, **kw)
 
     doc = _listing(listing, rse=rse, campaign=campaign, state=state,
                    limit=_STORAGE_PAGE_LIMIT, offset=offset)
@@ -4392,6 +4402,11 @@ def storage_listings(request, listing):
         'completed_pass': completed,
         'running_pass': running,
         'population_built_at': doc.get('population_built_at'),
+        'population_age_text': _age_text(doc.get('population_age_s')),
+        'population_refreshing': doc.get('population_refreshing'),
+        'population_pass': ((doc.get('population_as_of') or {}).get('completed_pass')
+                            or {}).get('id'),
+        'update_url': _storage_url(listing, refresh=1, **params),
         'threshold_hours': doc.get('threshold_hours'),
         'error': error,
     })
