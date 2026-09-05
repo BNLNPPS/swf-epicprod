@@ -74,8 +74,11 @@ per-job timeouts.
 
 ### The stash
 
-- Location: `BNL_PROD_DISK_1` in the BNL Rucio instance, written with
-  the credential and client the job already carries.
+- Location: a BNL dCache space designated by BNL storage operations and
+  registered as an RSE in the BNL Rucio instance, written with the
+  credential and client the job already carries. `BNL_PROD_DISK_1` is
+  the candidate that needs no new RSE or credential, since jobs already
+  write their logs to it.
 - Naming: the file DID keeps the name the JLab catalog will receive, the
   logical file name under `/RECO/...` or `/FULL/...`, so the move is
   name-preserving and a stash entry names its destination without a
@@ -166,9 +169,10 @@ Served from the registrar's store; no remote call in render.
 At the current 5 TB per day average, a one-day outage stashes 5 TB, a
 wave of thousands of jobs adds a few TB within hours, and continuous
 production for 26.09 raises the rate. The stash needs temporary headroom
-on `BNL_PROD_DISK_1` of the order of 30 TB, several days of production,
-retained for days and released as the registrar drains it. The RSE's
-total capacity should be reported so the fill fraction can be watched.
+of the order of 30 TB, several days of production, retained for days and
+released as the registrar drains it, in whatever space BNL storage
+operations designate. The RSE's total capacity should be reported so the
+fill fraction can be watched.
 
 ## Sequencing
 
@@ -187,10 +191,11 @@ total capacity should be reported so the fill fraction can be watched.
 
 ## Asks and open items
 
-- BNL storage operations: the allocation behind `BNL_PROD_DISK_1` for
-  temporary science-data overflow of the order of 30 TB; third-party
-  copy from the dCache door to the JLab door with the production
-  credentials; the RSE's total-capacity figure.
+- BNL storage operations: the space for the stash, temporary
+  science-data overflow of the order of 30 TB, with `BNL_PROD_DISK_1`
+  as the candidate; third-party copy from its dCache door to the JLab
+  door with the production credentials; the RSE's total-capacity
+  figure.
 - JLab storage and Rucio operations: third-party copy into the JLab
   door; registration of an existing replica by logical file name for
   the `eicprod` account; confirmation that the copy lands on the path
