@@ -92,8 +92,16 @@ DID in batches of a thousand at about a second per batch. The bulk
 metadata call the delivery rebuild already makes supplies DID creation
 time, bytes and the events attribute.
 
-**RSE tier**: usage per RSE (used, total, file count) and the production
-account's usage against its limits.
+**RSE tier**: RSE-wide usage per RSE (used, total, file count) read as
+the public `eicread` account; the production account's limits per RSE,
+readable by any account; and the production account's own used bytes and
+files per RSE, which JLab serves only to the account itself, read as
+`eicprod` through the x509 proxy the agent holds (EVGEN_X509_PROXY), the
+same numbers `rucio account limit list eicprod` reports. The RSE-wide
+usage counts every account; the account usage is what the account is
+charged against its limit. A missing or unusable proxy leaves the
+account usage unset and is recorded as a failed source; the pass carries
+on with the RSE-wide usage.
 
 The pass keeps its own store, a SQLite database beside the file-events
 store: one row per file with its campaign, root, dataset path, bytes,
@@ -143,8 +151,11 @@ any source that failed to read, recorded in place.
 **Per RSE** (bounded map; every JLab RSE retained, 16 at most):
 
 - type, disk or tape;
-- capacity (gauge): used and total bytes, file count, fill fraction
-  where the storage reports a total, and the usage record's time;
+- capacity (gauge): RSE-wide used and total bytes and file count; the
+  production account's own used bytes and files (`account_used`,
+  `account_files`); the account limit; the fill fraction, the account
+  usage over the limit where the account figure is present, else the
+  RSE-wide usage over the limit; and the usage record's time;
 - inventory (gauge): files and bytes by replica state; the same by
   campaign for the target campaigns with the remainder folded into
   `other`; and by root;

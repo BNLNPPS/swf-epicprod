@@ -142,6 +142,7 @@ SCHEMA = (
     'CREATE TABLE IF NOT EXISTS rses ('
     ' rse TEXT PRIMARY KEY, rse_type TEXT, used INTEGER, total INTEGER,'
     ' files INTEGER, usage_at TEXT, account_limit INTEGER,'
+    ' account_used INTEGER, account_files INTEGER,'
     ' last_checked TEXT)',
     'CREATE TABLE IF NOT EXISTS counters ('
     ' key TEXT PRIMARY KEY, value INTEGER NOT NULL)',
@@ -165,7 +166,9 @@ def open_store(path=DEFAULT_DB):
     for table, column, kind in (('files', 'last_pass', 'INTEGER'),
                                 ('datasets', 'last_pass', 'INTEGER'),
                                 ('passes', 'pid', 'INTEGER'),
-                                ('passes', 'host', 'TEXT')):
+                                ('passes', 'host', 'TEXT'),
+                                ('rses', 'account_used', 'INTEGER'),
+                                ('rses', 'account_files', 'INTEGER')):
         present = {row[1] for row in db.execute(f'PRAGMA table_info({table})')}
         if column not in present:
             db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {kind}')
@@ -405,15 +408,51 @@ def thresholds():
 # RSE tier
 # ---------------------------------------------------------------------------
 
+def account_usage_by_rse(catalog):
+    """The production account's used bytes and file count per RSE, read as
+    the eicprod account through the JLab x509 proxy the agent holds
+    (EVGEN_X509_PROXY). The pass's other reads are the public ``eicread``
+    userpass, which JLab refuses account usage; only this figure needs the
+    account credential. Sakib's `rucio account limit list eicprod` reports
+    the same numbers. Returns {rse: {'bytes', 'files'}}; on a missing or
+    unusable proxy it records the reason as a failed source and returns {}
+    so the pass carries on with the RSE-wide usage."""
+    proxy = os.environ.get('EVGEN_X509_PROXY', '')
+    if not proxy or not os.path.exists(proxy):
+        catalog._fail('account usage',
+                      RuntimeError('eicprod proxy (EVGEN_X509_PROXY) not available'))
+        return {}
+    from pcs.services import JLAB_RUCIO_URL
+    account = os.environ.get('EVGEN_RUCIO_ACCOUNT', 'eicprod')
+    host = os.environ.get('JLAB_RUCIO_URL', JLAB_RUCIO_URL)
+    try:
+        from rucio.client import Client
+        # The proxy authenticates through the creds dict; the account read
+        # needs no other credential, and the pass's own env is left alone.
+        client = Client(rucio_host=host, auth_host=host, account=account,
+                        auth_type='x509_proxy', creds={'client_proxy': proxy})
+        out = {}
+        for row in client.get_local_account_usage(account=account):
+            rse = row.get('rse')
+            if rse:
+                out[rse] = {'bytes': int(row.get('bytes') or 0),
+                            'files': int(row.get('files') or 0)}
+        return out
+    except Exception as exc:                                  # noqa: BLE001
+        catalog._fail('account usage', exc)
+        return {}
+
+
 def rse_tier(db, catalog, now):
-    """Upsert every RSE's type, usage and account limit; returns
-    {rse: type}."""
+    """Upsert every RSE's type, RSE-wide usage, account limit, and the
+    production account's used bytes and files per RSE; returns {rse: type}."""
     types = catalog.rses()
     try:
         limits = catalog.account_limits()
     except Exception as exc:                                  # noqa: BLE001
         catalog._fail('account limits', exc)
         limits = {}
+    account_usage = account_usage_by_rse(catalog)
     stamp = _iso(now)
     for rse, rse_type in sorted(types.items()):
         usage = {}
@@ -421,16 +460,20 @@ def rse_tier(db, catalog, now):
             usage = catalog.rse_usage(rse) or {}
         except Exception as exc:                              # noqa: BLE001
             catalog._fail(f'usage {rse}', exc)
+        acct = account_usage.get(rse) or {}
         db.execute(
             'INSERT INTO rses (rse, rse_type, used, total, files, usage_at,'
-            ' account_limit, last_checked) VALUES (?,?,?,?,?,?,?,?)'
+            ' account_limit, account_used, account_files, last_checked)'
+            ' VALUES (?,?,?,?,?,?,?,?,?,?)'
             ' ON CONFLICT(rse) DO UPDATE SET rse_type=excluded.rse_type,'
             ' used=excluded.used, total=excluded.total, files=excluded.files,'
             ' usage_at=excluded.usage_at, account_limit=excluded.account_limit,'
+            ' account_used=excluded.account_used,'
+            ' account_files=excluded.account_files,'
             ' last_checked=excluded.last_checked',
             (rse, rse_type, usage.get('used'), usage.get('total'),
              usage.get('files'), _parse_rucio_time(usage.get('updated_at')),
-             limits.get(rse), stamp))
+             limits.get(rse), acct.get('bytes'), acct.get('files'), stamp))
     db.commit()
     return types
 
@@ -1027,8 +1070,8 @@ def projection(db, now, since, campaigns, pass_info):
     stamp = _iso(now)
 
     rse_rows = list(db.execute(
-        'SELECT rse, rse_type, used, total, files, usage_at, account_limit'
-        ' FROM rses ORDER BY rse'))[:MAX_RSES]
+        'SELECT rse, rse_type, used, total, files, usage_at, account_limit,'
+        ' account_used, account_files FROM rses ORDER BY rse'))[:MAX_RSES]
     tape = {r[0] for r in rse_rows if r[1] == 'TAPE'}
     verdicts = {}
 
@@ -1120,7 +1163,8 @@ def projection(db, now, since, campaigns, pass_info):
                     slot['expiring_30d'] += 1
 
     rses = {}
-    for rse, rse_type, used, total, files, usage_at, limit in rse_rows:
+    for (rse, rse_type, used, total, files, usage_at, limit,
+         account_used, account_files) in rse_rows:
         inventory = _stats_block(db.execute(
             'SELECT r.state, COUNT(*), SUM(f.bytes) FROM replicas r'
             ' JOIN files f ON f.name = r.name WHERE f.gone_at IS NULL'
@@ -1159,7 +1203,16 @@ def projection(db, now, since, campaigns, pass_info):
             'capacity': {
                 'used': used, 'total': total, 'files': files,
                 'limit': limit,
-                'fraction': (round(used / limit, 4)
+                # The production account's own usage per RSE (eicprod), the
+                # figure the account is charged against its limit; the
+                # RSE-wide `used` above counts every account. The fraction
+                # is account_used/limit where the account figure is present,
+                # else the RSE-wide used/limit (STORAGE.md, capacity).
+                'account_used': account_used,
+                'account_files': account_files,
+                'fraction': (round(account_used / limit, 4)
+                             if account_used and limit
+                             else round(used / limit, 4)
                              if used and limit else None),
                 'as_of': usage_at},
             'inventory': {'by_state': inventory,
