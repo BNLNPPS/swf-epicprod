@@ -473,7 +473,7 @@
         return `<div class="pcs-panda-ops pcs-adopt" id="pcs-adopt-${t.id}">
             <span class="pcs-panda-ops-label">PCS Operations</span>
             <button type="button" class="btn btn-secondary btn-sm" data-adopt="${t.id}" disabled aria-disabled="true">Move this task to PCS</button>
-            <span class="pcs-adopt-note text-muted ms-2">Checking what this task needs...</span>
+            <div class="pcs-adopt-note text-muted mt-1">Checking what this task needs...</div>
         </div>`;
     }
     async function loadAdoptReadiness(t) {
@@ -490,12 +490,14 @@
                 btn.removeAttribute('aria-disabled');
                 btn.classList.replace('btn-secondary', 'btn-success');
             }
-            note.className = 'pcs-adopt-note ms-2';
+            note.className = 'pcs-adopt-note mt-1';
             note.textContent = `Records PanDA task ${r.jedi_task_id} as this task's submission and binds ${r.config}; `
                 + `the PanDA operations, Rerun Residual included, then apply here.${currentUser ? '' : ' Sign in to do it.'}`;
         } else {
-            note.className = 'pcs-adopt-note text-warning fw-semibold ms-2';
-            note.textContent = `Blocked: ${(r && (r.blocked || r.detail)) || 'the readiness check returned nothing'}`;
+            // The page's readiness treatment (the Not submit-ready box).
+            note.className = 'pcs-adopt-note mt-2';
+            note.innerHTML = `<div class="alert alert-warning py-2 px-3 mb-0"><strong>Blocked</strong> `
+                + `${htmlEscape((r && (r.blocked || r.detail)) || 'the readiness check returned nothing')}</div>`;
         }
     }
     function pandaOperationsHtml(t) {
