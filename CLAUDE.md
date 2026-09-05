@@ -31,7 +31,7 @@ leaving a permanent stub at its old path): the PCS docs, the
 inputs, questionnaire, validation, narratives, assessments, LLM
 operations, succession), `PANDA_USER_JOBS.md`,
 `JEDI_INTEGRATION.md`, `JEDI_EPIC_PROPOSAL.md`,
-`CAMPAIGN_CONTINUUM.md`, `CAMPAIGN_DELIVERY.md`,
+`CAMPAIGN_CONTINUUM.md`, `CAMPAIGN_DELIVERY.md`, `STORAGE.md`,
 `CONTINUOUS_PRODUCTION.md`, `RUCIO_RESILIENCE.md`,
 `OSG_SUBMISSION.md`, and `COMMISSIONING_RELAXATIONS.md`.
 Platform-service docs (action stream, SSE, external access, MCP,

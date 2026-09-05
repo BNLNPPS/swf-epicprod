@@ -69,6 +69,8 @@ Campaigns:
 - [CAMPAIGN_FAMILY.md](docs/CAMPAIGN_FAMILY.md) — campaign families.
 - [CAMPAIGN_DELIVERY.md](docs/CAMPAIGN_DELIVERY.md) — the delivered-data
   record and its views.
+- [STORAGE.md](docs/STORAGE.md) — the placement record: production
+  data on every RSE, its lifecycle per RSE, and the Storage view.
 - [CONTINUOUS_PRODUCTION.md](docs/CONTINUOUS_PRODUCTION.md) — the ready
   queue, the dispatcher, and the tripwire.
 - [EPICPROD_NARRATIVES.md](docs/EPICPROD_NARRATIVES.md) — campaign
