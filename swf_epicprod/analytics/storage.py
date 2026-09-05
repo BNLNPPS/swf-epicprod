@@ -373,34 +373,40 @@ def dataset_inventory(catalog):
     return out
 
 
-def _task_states(locations):
-    """{location: 'active'|'final'|None} for dataset locations, through
-    the task output records and the PanDA task status."""
+def _task_states(names):
+    """{dataset name: 'active'|'final'|None} for dataset names, through
+    the task output records and the PanDA task status. A task's output
+    DID is scope:name; the match strips the leading slash on both sides
+    and the result is keyed by the name as given."""
     states = {}
-    if not locations:
+    if not names:
         return states
+    by_path = {str(n).strip('/'): n for n in names}
     try:
         from django.db import connections
         from monitor_app.panda.constants import PANDA_SCHEMA
-        from pcs.models import ProdTask
+        from pcs.models import PandaTasks, ProdTask
 
         by_location = {}
         for task in ProdTask.objects.select_related('dataset'):
             for output in task.outputs:
                 did = str(output.get('did') or '')
                 path = did.split(':', 1)[-1].strip('/')
-                if path in locations:
-                    by_location.setdefault(path, set()).add(task.pk)
+                if path in by_path:
+                    by_location.setdefault(by_path[path], set()).add(task.pk)
         task_ids = {pk for pks in by_location.values() for pk in pks}
+        # The JEDI ids are on the PandaTasks association rows, one per
+        # attempt, for PCS-submitted and matched foreign tasks alike.
         jedi_by_task = {}
         if task_ids:
-            for pk, jedi in (ProdTask.objects.filter(pk__in=task_ids)
-                             .values_list('pk', 'panda_task_id')):
-                if jedi:
-                    jedi_by_task[pk] = int(jedi)
+            for pk, jedi in (PandaTasks.objects
+                             .filter(prod_task_id__in=task_ids)
+                             .exclude(jedi_task_id=None)
+                             .values_list('prod_task_id', 'jedi_task_id')):
+                jedi_by_task.setdefault(pk, set()).add(int(jedi))
         status_by_jedi = {}
         if jedi_by_task:
-            ids = sorted(set(jedi_by_task.values()))
+            ids = sorted({j for js in jedi_by_task.values() for j in js})
             placeholders = ', '.join(['%s'] * len(ids))
             with connections['panda'].cursor() as cursor:
                 cursor.execute(
@@ -409,8 +415,8 @@ def _task_states(locations):
                     ids)
                 status_by_jedi = {int(j): str(s) for j, s in cursor.fetchall()}
         for location, pks in by_location.items():
-            statuses = [status_by_jedi.get(jedi_by_task.get(pk))
-                        for pk in pks]
+            statuses = [status_by_jedi.get(j)
+                        for pk in pks for j in jedi_by_task.get(pk, ())]
             statuses = [s for s in statuses if s]
             if not statuses:
                 states[location] = None
@@ -705,6 +711,20 @@ class _Ledger:
             for rse in ([r for r in old_reps] or [NO_RSE]):
                 self._c(f'rse:{rse}:ghosts_cleared')
 
+    def flush(self, db, pass_id):
+        """Write the accrued counters and latencies and start afresh.
+        Called under the store lock in the transaction that commits the
+        rows they were derived from, so the counters and the rows are
+        never apart and an interrupted pass keeps what it observed. The
+        caller commits."""
+        _flush_counters(db, self.counters)
+        db.executemany(
+            'INSERT INTO latencies (pass_id, campaign, kind, seconds)'
+            ' VALUES (?,?,?,?)',
+            [(pass_id, c, k, s) for c, k, s in self.latencies])
+        self.counters = {}
+        self.latencies = []
+
 
 def crawl_location(db, catalog, ledger, now, pass_id, location, dataset,
                    inventory, meta, with_files, lock):
@@ -797,6 +817,7 @@ def crawl_location(db, catalog, ledger, now, pass_id, location, dataset,
             db.executemany(
                 'INSERT INTO replicas (name, rse, state, first_available)'
                 ' VALUES (?,?,?,?)', replica_rows)
+            ledger.flush(db, pass_id)
             db.commit()
     # Gone: the location was listed in full and every listed file was
     # resolved, so a stored file here without this pass's stamp is gone.
@@ -814,6 +835,7 @@ def crawl_location(db, catalog, ledger, now, pass_id, location, dataset,
                                [(stamp, n) for n, _ in gone])
                 db.executemany('DELETE FROM replicas WHERE name = ?',
                                [(n,) for n, _ in gone])
+                ledger.flush(db, pass_id)
                 db.commit()
     return resolved
 
@@ -876,11 +898,8 @@ def crawl(db, catalog, ledger, now, pass_id, entries, inventory,
 
     with ThreadPoolExecutor(max_workers=THREADS) as pool:
         list(pool.map(one, entries))
-    _flush_counters(db, ledger.counters)
-    db.executemany(
-        'INSERT INTO latencies (pass_id, campaign, kind, seconds)'
-        ' VALUES (?,?,?,?)',
-        [(pass_id, c, k, s) for c, k, s in ledger.latencies])
+    # Every location flushed its own; this catches nothing in practice.
+    ledger.flush(db, pass_id)
     db.commit()
     return progress['resolved'], progress['done']
 
@@ -1338,7 +1357,8 @@ def run_pass(mode='incremental', campaigns=None, db_path=DEFAULT_DB,
                  'duration_s': duration,
                  'errors': catalog.errors[:10],
                  'error_count': len(catalog.errors)}
-    data = projection(db, now, since, campaigns, pass_info)
+    data = projection(db, now, since, _shown_campaigns(mode, campaigns),
+                      pass_info)
     finished = dt.datetime.now(dt.timezone.utc)
     db.execute(
         'UPDATE passes SET finished = ?, files_checked = ?,'
@@ -1354,4 +1374,61 @@ def run_pass(mode='incremental', campaigns=None, db_path=DEFAULT_DB,
                'store': db_path}
     log(f'pass {pass_id} done in {duration}s: {resolved} files,'
         f' {crawled} locations, {len(catalog.errors)} errors')
+    return summary, data
+
+
+def _shown_campaigns(mode, campaigns):
+    """The campaigns the projection's per-campaign block covers. A
+    census walks every family, but the block is for the target
+    campaigns, as in every other pass."""
+    campaigns = tuple(campaigns)
+    if mode != 'census':
+        return campaigns
+    try:
+        return target_campaigns() or campaigns
+    except Exception as exc:                                  # noqa: BLE001
+        log(f'ERROR target campaigns: {exc}; projecting the crawl list')
+        return campaigns
+
+
+def project_store(db_path=DEFAULT_DB):
+    """(summary, projection) from the store as it stands, for the last
+    completed pass, without a crawl: the publication step alone, for a
+    pass whose crawl finished and whose publish did not. The projection
+    is dated at that pass's end, so ages and the interval read as the
+    crawl left them."""
+    db = open_store(db_path)
+    row = db.execute(
+        'SELECT id, mode, started, finished, campaigns, files_checked,'
+        ' datasets_checked, errors FROM passes WHERE finished IS NOT NULL'
+        ' ORDER BY id DESC LIMIT 1').fetchone()
+    if row is None:
+        raise RuntimeError('no completed pass in the store: nothing to publish')
+    (pass_id, mode, started, finished, campaigns_json, files_checked,
+     datasets_checked, errors_json) = row
+    campaigns = tuple(json.loads(campaigns_json or '[]'))
+    errors = json.loads(errors_json or '[]')
+    now = _parse_iso(finished)
+    previous = db.execute(
+        'SELECT finished FROM passes WHERE finished IS NOT NULL AND id < ?'
+        ' ORDER BY id DESC LIMIT 1', (pass_id,)).fetchone()
+    since = (_parse_iso(previous[0]) if previous
+             else now - dt.timedelta(hours=24))
+    started_at = _parse_iso(started)
+    duration = (round((now - started_at).total_seconds(), 1)
+                if started_at else None)
+    pass_info = {'pass_id': pass_id, 'mode': mode, 'campaigns': list(campaigns),
+                 'files_checked': files_checked,
+                 'datasets_checked': datasets_checked,
+                 'duration_s': duration,
+                 'errors': errors[:10], 'error_count': len(errors)}
+    data = projection(db, now, since, _shown_campaigns(mode, campaigns),
+                      pass_info)
+    summary = {'pass_id': pass_id, 'mode': mode, 'campaigns': list(campaigns),
+               'files_checked': files_checked,
+               'datasets_checked': datasets_checked,
+               'duration_s': duration, 'errors': len(errors),
+               'serialized_bytes': len(json.dumps(data, separators=(',', ':'))),
+               'store': db_path, 'from_store': True}
+    log(f'projected pass {pass_id} {mode} from the store, as of {finished}')
     return summary, data

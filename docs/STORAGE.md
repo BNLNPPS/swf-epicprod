@@ -65,8 +65,10 @@ so its memory stays at the size of one dataset whatever the size of
 the inventory (about 8.8 million files under the roots). Every row a
 pass touches is stamped with the pass, which makes the gone check a
 query per location and an interrupted pass resumable from where it
-stopped. It reads at three tiers, each from a call the residual-rerun
-and delivery paths already use against JLab Rucio.
+stopped; the counters a location's transitions accrue are written in
+the transaction that commits its rows, so an interruption loses
+nothing observed. It reads at three tiers, each from a call the
+residual-rerun and delivery paths already use against JLab Rucio.
 
 **Dataset tier**, every dataset under the production roots (about 6,400
 today under `/RECO`, `/FULL` and `/EVGEN`): the per-RSE dataset replica
@@ -294,7 +296,9 @@ does.
 - swf-monitor: `monitor_app/snapper_storage.py` (registration and
   publication, beside the delivery maintainer); the doer
   `scripts/storage-sweep.py` with `--census`, `--full` and the default
-  incremental mode, invoked as the `storage_sweep` chain step after the
+  incremental mode, `--resume` for an interrupted pass and
+  `--publish-only` to publish the store's last completed pass without a
+  crawl, invoked as the `storage_sweep` chain step after the
   delivery rebuild and by an hourly cron enqueue of the `storage_sweep`
   message; provider additions in `snapper_providers.py` (curve
   extraction under a `st` prefix family, the families, the focus view,
