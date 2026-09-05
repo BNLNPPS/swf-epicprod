@@ -21,10 +21,15 @@ from .services import standard_prodconfig_image_present, standard_prodconfig_nam
 
 PROPOSER = 'campaign-config'
 EDITION_RE = re.compile(r'^\d\d\.\d\d\.\d+$')
+# Due two days out and raised on entry (the lead covers the whole span): an
+# edition without its configuration cannot be submitted or rerun, so the
+# ping is a live reminder from the moment it exists, never scheduled.
 DUE_DAYS = 2
-LEAD_DAYS = 1
+LEAD_DAYS = 2
 OWNER = '@prodops'
-TITLE_RE = re.compile(r'^Create the (\d\d\.\d\d\.\d+) Standard Production configuration$')
+# Any open ping whose title names the edition's configuration, by hand or by
+# this rule, is this rule's obligation; a longer hand-written title counts.
+TITLE_RE = re.compile(r'^Create the (\d\d\.\d\d\.\d+) Standard Production configuration\b')
 
 
 def ping_title(edition):
@@ -67,8 +72,7 @@ def propose_campaign_configs(*, created_by='', batch_id='', apply=True):
     and propose fulfilment of open pings whose edition now has its
     configuration. Returns the findings and the propose results."""
     from ai.models import Proposal
-    from ai.services import (propose_ping_fulfil, propose_pings,
-                             propose_standard_configs)
+    from ai.services import propose_pings, propose_standard_configs
     from django.utils import timezone
     from monitor_app import alarms_data
 
@@ -98,7 +102,7 @@ def propose_campaign_configs(*, created_by='', batch_id='', apply=True):
             remedy_items.append({'edition': edition, 'ping_title': title,
                                  'comment': comment})
     result = {'findings': findings, 'pings': None, 'remedies': None,
-              'withdrawn': 0, 'fulfil_proposed': []}
+              'withdrawn': 0, 'fulfilled': [], 'errors': []}
     if not apply:
         return result
     if ping_items:
@@ -124,18 +128,21 @@ def propose_campaign_configs(*, created_by='', batch_id='', apply=True):
             row.decided_at = now
             row.save(update_fields=['status', 'decided_at'])
             result['withdrawn'] += 1
-    # Open pings of this rule whose configuration now exists by other means.
+    # Open pings of this rule whose configuration now exists, by the remedy
+    # or by hand: the condition is verified here, so the rule fulfils them
+    # itself, origin the rule (PINGS.md, Lifecycle). No proposal, no click.
     names = set(ProdConfig.objects.values_list('name', flat=True))
     open_pings, _done = alarms_data.list_pings()
     for ping in open_pings:
         match = TITLE_RE.match(ping['title'] or '')
         if not match or standard_prodconfig_name(match.group(1)) not in names:
             continue
-        outcome = propose_ping_fulfil(
-            ping['id'],
-            f'{standard_prodconfig_name(match.group(1))} exists; the '
-            f'obligation is met.',
-            proposer=PROPOSER, batch_id=batch_id, created_by=created_by)
-        if outcome.get('proposed'):
-            result['fulfil_proposed'].append(ping['title'])
+        try:
+            alarms_data.ping_fulfil_execute(
+                ping['id'], changed_by=created_by or PROPOSER,
+                origin={'kind': 'rule', 'proposer': PROPOSER})
+        except alarms_data.PingError as exc:
+            result['errors'].append(f'{ping["title"]}: {exc}')
+            continue
+        result['fulfilled'].append(ping['title'])
     return result
