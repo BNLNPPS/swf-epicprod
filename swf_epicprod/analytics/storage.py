@@ -39,7 +39,10 @@ REPLICA_STATES = ('AVAILABLE', 'COPYING', 'UNAVAILABLE', 'BAD',
 NO_RSE = 'none'
 FILE_BATCH = 1000
 META_CHUNK = 500
-THREADS = 4
+# The crawl: two locations in flight, a pause after every catalog bite,
+# never more than one location's names in hand.
+THREADS = 2
+PAUSE_S = 0.2
 LISTING_HEAD = 50
 MAX_RSES = 16
 MAX_CAMPAIGNS = 8
@@ -96,9 +99,9 @@ SCHEMA = (
     'CREATE TABLE IF NOT EXISTS files ('
     ' name TEXT PRIMARY KEY, campaign TEXT, root TEXT, location TEXT,'
     ' bytes INTEGER, created_at TEXT, events INTEGER, attached INTEGER,'
-    ' first_seen TEXT, last_checked TEXT, gone_at TEXT)',
+    ' first_seen TEXT, last_checked TEXT, last_pass INTEGER, gone_at TEXT)',
     'CREATE INDEX IF NOT EXISTS files_campaign ON files(campaign, gone_at)',
-    'CREATE INDEX IF NOT EXISTS files_location ON files(location)',
+    'CREATE INDEX IF NOT EXISTS files_location ON files(location, last_pass)',
     'CREATE TABLE IF NOT EXISTS replicas ('
     ' name TEXT, rse TEXT, state TEXT, first_available TEXT,'
     ' PRIMARY KEY (name, rse))',
@@ -106,7 +109,8 @@ SCHEMA = (
     'CREATE TABLE IF NOT EXISTS datasets ('
     ' name TEXT PRIMARY KEY, campaign TEXT, root TEXT, is_open INTEGER,'
     ' created_at TEXT, summary TEXT, rules TEXT, length INTEGER,'
-    ' bytes INTEGER, task_state TEXT, last_checked TEXT, gone_at TEXT)',
+    ' bytes INTEGER, task_state TEXT, last_checked TEXT, last_pass INTEGER,'
+    ' gone_at TEXT)',
     'CREATE INDEX IF NOT EXISTS datasets_campaign ON datasets(campaign)',
     'CREATE TABLE IF NOT EXISTS rses ('
     ' rse TEXT PRIMARY KEY, rse_type TEXT, used INTEGER, total INTEGER,'
@@ -130,6 +134,12 @@ def open_store(path=DEFAULT_DB):
     db.execute('PRAGMA journal_mode=WAL')
     for statement in SCHEMA:
         db.execute(statement)
+    # A store created before a column existed gains it in place.
+    for table, column, kind in (('files', 'last_pass', 'INTEGER'),
+                                ('datasets', 'last_pass', 'INTEGER')):
+        present = {row[1] for row in db.execute(f'PRAGMA table_info({table})')}
+        if column not in present:
+            db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {kind}')
     db.commit()
     return db
 
@@ -413,132 +423,120 @@ def _task_states(locations):
     return states
 
 
-def dataset_tier(db, catalog, now, selected, inventory):
-    """Refresh the selected datasets' summary, rules and content;
-    returns {dataset: set(content names)}."""
-    stamp = _iso(now)
-    meta = catalog.bulkmeta(sorted(selected))
-    content = {}
-    lock = threading.Lock()
-
-    def one(name):
-        try:
-            summary = catalog.dataset_summary(name)
-            rules = catalog.dataset_rules(name)
-            names = catalog.dataset_content(name)
-        except Exception as exc:                              # noqa: BLE001
-            catalog._fail(f'dataset {name}', exc)
-            return
-        root, campaign = inventory.get(name, _split(name)[:2])
-        m = meta.get(name) or {}
-        length = max([int(s.get('length') or 0) for s in summary] + [0])
-        size = max([int(s.get('bytes') or 0) for s in summary] + [0])
-        with lock:
-            content[name] = set(names)
-            db.execute(
-                'INSERT INTO datasets (name, campaign, root, is_open,'
-                ' created_at, summary, rules, length, bytes, last_checked,'
-                ' gone_at) VALUES (?,?,?,?,?,?,?,?,?,?,NULL)'
-                ' ON CONFLICT(name) DO UPDATE SET campaign=excluded.campaign,'
-                ' root=excluded.root, is_open=excluded.is_open,'
-                ' created_at=excluded.created_at, summary=excluded.summary,'
-                ' rules=excluded.rules, length=excluded.length,'
-                ' bytes=excluded.bytes, last_checked=excluded.last_checked,'
-                ' gone_at=NULL',
-                (name, campaign, root,
-                 1 if m.get('is_open') else 0,
-                 _parse_rucio_time(m.get('created_at')),
-                 json.dumps(summary, separators=(',', ':')),
-                 json.dumps(rules, separators=(',', ':')),
-                 length, size, stamp))
-
-    with ThreadPoolExecutor(max_workers=THREADS) as pool:
-        list(pool.map(one, sorted(selected)))
-    db.commit()
-    # Task state for the checked datasets, for the stalled reading.
-    task_states = _task_states(set(content))
-    db.executemany('UPDATE datasets SET task_state=? WHERE name=?',
-                   [(state, name) for name, state in task_states.items()])
-    db.commit()
-    return content
+def refresh_dataset(db, catalog, now, pass_id, name, inventory, meta, lock,
+                    with_content=True):
+    """Refresh one dataset's summary, rules and, when the crawl walks
+    its files, its content; returns the set of content names (empty
+    without content), or None when a read failed."""
+    try:
+        summary = catalog.dataset_summary(name)
+        rules = catalog.dataset_rules(name)
+        names = catalog.dataset_content(name) if with_content else []
+    except Exception as exc:                                  # noqa: BLE001
+        catalog._fail(f'dataset {name}', exc)
+        return None
+    root, campaign = inventory.get(name) or _split(name)[:2]
+    m = meta or {}
+    length = max([int(s.get('length') or 0) for s in summary] + [0])
+    size = max([int(s.get('bytes') or 0) for s in summary] + [0])
+    with lock:
+        db.execute(
+            'INSERT INTO datasets (name, campaign, root, is_open,'
+            ' created_at, summary, rules, length, bytes, last_checked,'
+            ' last_pass, gone_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)'
+            ' ON CONFLICT(name) DO UPDATE SET campaign=excluded.campaign,'
+            ' root=excluded.root, is_open=excluded.is_open,'
+            ' created_at=excluded.created_at, summary=excluded.summary,'
+            ' rules=excluded.rules, length=excluded.length,'
+            ' bytes=excluded.bytes, last_checked=excluded.last_checked,'
+            ' last_pass=excluded.last_pass, gone_at=NULL',
+            (name, campaign, root, 1 if m.get('is_open') else 0,
+             _parse_rucio_time(m.get('created_at')),
+             json.dumps(summary, separators=(',', ':')),
+             json.dumps(rules, separators=(',', ':')),
+             length, size, _iso(now), pass_id))
+        db.commit()
+    return set(names)
 
 
-def datasets_to_check(db, mode, inventory, campaigns, touched):
-    """The dataset tier's selection: everything in census and full
-    modes; in incremental mode the datasets touched by new files, plus
-    those whose stored row is open, partially placed on every RSE, or
-    carrying a non-OK rule."""
-    if mode in ('census', 'full'):
-        return set(inventory)
-    selected = {name for name in inventory if name in touched}
+def _locations_incremental(db, catalog, campaigns, since):
+    """Locations an incremental pass crawls: those with files registered
+    since the previous pass, those holding a stored file with a
+    non-available replica or none, and those whose dataset is open,
+    partially placed on every RSE, or carrying a non-OK rule."""
+    created_after = since.astimezone(dt.timezone.utc).strftime(
+        '%Y-%m-%dT%H:%M:%S')
+    locations = set()
+    for root in ROOTS:
+        for name in catalog.search(root + '/*', 'file',
+                                   created_after=created_after):
+            _, _, location = _split(name)
+            if location:
+                locations.add(location)
+    marks = ', '.join(['?'] * len(campaigns))
+    for (location,) in db.execute(
+            'SELECT DISTINCT f.location FROM files f WHERE f.gone_at IS NULL'
+            f' AND f.campaign IN ({marks}) AND NOT EXISTS'
+            ' (SELECT 1 FROM replicas r WHERE r.name = f.name'
+            "  AND r.state = 'AVAILABLE')", list(campaigns)):
+        locations.add(location)
+    for (location,) in db.execute(
+            'SELECT DISTINCT f.location FROM replicas r JOIN files f'
+            ' ON f.name = r.name WHERE f.gone_at IS NULL'
+            f" AND f.campaign IN ({marks}) AND r.state != 'AVAILABLE'",
+            list(campaigns)):
+        locations.add(location)
     for name, is_open, summary, rules in db.execute(
             'SELECT name, is_open, summary, rules FROM datasets'
-            ' WHERE gone_at IS NULL AND campaign IN (%s)'
-            % ', '.join(['?'] * len(campaigns)), list(campaigns)):
-        if name not in inventory:
-            continue
+            f' WHERE gone_at IS NULL AND campaign IN ({marks})',
+            list(campaigns)):
         rows = json.loads(summary or '[]')
-        rule_rows = json.loads(rules or '[]')
         complete_somewhere = any(
             (r.get('length') or 0) > 0
             and (r.get('available_length') or 0) >= (r.get('length') or 0)
             for r in rows)
         if is_open or not complete_somewhere or any(
-                r.get('state') != 'OK' for r in rule_rows):
-            selected.add(name)
-    return selected
+                r.get('state') != 'OK' for r in json.loads(rules or '[]')):
+            locations.add(name.lstrip('/'))
+    return locations
 
 
-# ---------------------------------------------------------------------------
-# File tier
-# ---------------------------------------------------------------------------
-
-def _search_files(catalog, mode, campaigns, since):
-    """The file names to resolve this pass and the campaigns whose
-    inventory was listed exhaustively (a stored file of those absent
-    from the listing is gone)."""
-    names = set()
+def locations_to_crawl(db, catalog, mode, inventory, campaigns, since):
+    """The crawl order as (location, dataset name or None, with_files)
+    entries. A census walks every dataset location with its files; a
+    full pass walks the target campaigns' locations with files and
+    refreshes every other dataset without them; an incremental pass
+    walks its selection with files. Store locations without a dataset
+    row join a census or full pass, so a directory whose dataset was
+    removed is still walked."""
+    by_location = {name.lstrip('/'): name for name in inventory}
+    entries = {}
     if mode == 'census':
-        for root in ROOTS:
-            names.update(catalog.search(root + '/*', 'file'))
-        return names, None
-    if mode == 'full':
-        for root in ROOTS:
-            if root == '/EVGEN':
-                names.update(catalog.search(root + '/*', 'file'))
-                continue
-            for family in campaigns:
-                if family == 'EVGEN':
-                    continue
-                names.update(catalog.search(f'{root}/{family}*', 'file'))
-        return names, set(campaigns) | {'EVGEN'}
-    created_after = since.astimezone(dt.timezone.utc).strftime(
-        '%Y-%m-%dT%H:%M:%S')
-    for root in ROOTS:
-        names.update(catalog.search(root + '/*', 'file',
-                                    created_after=created_after))
-    return names, set()
+        for location, name in by_location.items():
+            entries[location] = (name, True)
+    elif mode == 'full':
+        for location, name in by_location.items():
+            root, campaign = inventory[name]
+            entries[location] = (name, campaign in campaigns
+                                 or root == 'EVGEN')
+    else:
+        for location in _locations_incremental(db, catalog, campaigns, since):
+            entries[location] = (by_location.get(location), True)
+    if mode != 'incremental':
+        query = 'SELECT DISTINCT location FROM files WHERE gone_at IS NULL'
+        params = []
+        if mode == 'full':
+            query += ' AND campaign IN (%s)' % ', '.join(['?'] * len(campaigns))
+            params = list(campaigns)
+        for (location,) in db.execute(query, params):
+            entries.setdefault(location, (None, True))
+    return [(location, dataset, with_files)
+            for location, (dataset, with_files) in sorted(entries.items())]
 
 
-def _standing_names(db, campaigns):
-    """Stored files holding any non-available replica or none at all,
-    in the covered campaigns: the set an incremental pass rechecks."""
-    marks = ', '.join(['?'] * len(campaigns))
-    out = set()
-    for (name,) in db.execute(
-            'SELECT f.name FROM files f WHERE f.gone_at IS NULL'
-            f' AND f.campaign IN ({marks}) AND NOT EXISTS'
-            ' (SELECT 1 FROM replicas r WHERE r.name = f.name'
-            "  AND r.state = 'AVAILABLE')", list(campaigns)):
-        out.add(name)
-    for (name,) in db.execute(
-            'SELECT DISTINCT r.name FROM replicas r JOIN files f'
-            ' ON f.name = r.name WHERE f.gone_at IS NULL'
-            f" AND f.campaign IN ({marks}) AND r.state != 'AVAILABLE'",
-            list(campaigns)):
-        out.add(name)
-    return out
-
+# ---------------------------------------------------------------------------
+# The crawl
+# ---------------------------------------------------------------------------
 
 def _stored(db, names):
     """Stored rows for names: {name: file row dict},
@@ -708,102 +706,106 @@ class _Ledger:
                 self._c(f'rse:{rse}:ghosts_cleared')
 
 
-def file_tier(db, catalog, now, since, mode, campaigns, names, exhaustive,
-              content, tape_rses, pass_id, limit_files=0):
-    """Resolve the named files' replicas, apply transitions against
-    the store, mark files gone under an exhaustive listing, and accrue
-    counters and latencies. Returns the number of files resolved."""
+def crawl_location(db, catalog, ledger, now, pass_id, location, dataset,
+                   inventory, meta, with_files, lock):
+    """One bite of the crawl: refresh the location's dataset, list the
+    location's files, resolve their replicas a batch at a time, apply
+    the transitions, stamp the rows with the pass, and mark the
+    location's unstamped stored files gone. The names in hand are one
+    location's. Returns the number of files resolved."""
     stamp = _iso(now)
-    ordered = sorted(names)
-    if limit_files:
-        ordered = ordered[:int(limit_files)]
-        log(f'capped at {len(ordered)} of {len(names)} files (validation run)')
-    attached = {}
-    for members in content.values():
-        for member in members:
-            attached[member] = 1
-    listed_datasets = {'/' + n.lstrip('/') for n in content}
-    ledger = _Ledger(now, since, tape_rses, _first_rse_by_location(db))
+    content = None
+    if dataset is not None:
+        content = refresh_dataset(db, catalog, now, pass_id, dataset,
+                                  inventory, meta, lock,
+                                  with_content=with_files)
+        time.sleep(PAUSE_S)
+        if content is not None:
+            first_rse = _first_rse_of(meta, catalog, dataset, db, lock)
+            if first_rse:
+                with lock:
+                    ledger.first_rse[location] = first_rse
+    if not with_files:
+        return 0
+    try:
+        names = sorted(catalog.search('/' + location + '/*', 'file'))
+    except Exception as exc:                                  # noqa: BLE001
+        catalog._fail(f'search {location}', exc)
+        return 0
+    time.sleep(PAUSE_S)
+    with lock:
+        stored_files, stored_reps = _stored(db, names)
+    new_names = [n for n in names if n not in stored_files]
+    meta_rows = catalog.bulkmeta(new_names) if new_names else {}
+    complete = True
     resolved = 0
-    for start in range(0, len(ordered), 20000):
-        chunk = ordered[start:start + 20000]
-        stored_files, stored_reps = _stored(db, chunk)
-        new_names = [n for n in chunk if n not in stored_files]
-        meta = catalog.bulkmeta(new_names) if new_names else {}
-        batches = [chunk[i:i + FILE_BATCH]
-                   for i in range(0, len(chunk), FILE_BATCH)]
-        replica_map = {}
-        with ThreadPoolExecutor(max_workers=THREADS) as pool:
-            for result in pool.map(catalog.replicas, batches):
-                replica_map.update(result)
+    for start in range(0, len(names), FILE_BATCH):
+        batch = names[start:start + FILE_BATCH]
+        replica_map = catalog.replicas(batch)
+        time.sleep(PAUSE_S)
         file_rows, replica_rows, drop_names = [], [], []
-        for name in chunk:
-            states = replica_map.get(name)
-            if states is None:
-                continue
-            resolved += 1
-            listed_bytes = states.pop('_bytes', 0)
-            root, campaign, location = _split(name)
-            if root is None:
-                continue
-            old = stored_files.get(name)
-            if old is None:
-                m = meta.get(name) or {}
-                created = _parse_rucio_time(m.get('created_at')) or stamp
-                events = m.get('events')
-                size = int(listed_bytes or m.get('bytes') or 0)
-                rows = ledger.first_sight(
-                    name, campaign, location, created, size, states)
-                first_seen = stamp
-            else:
-                created = old['created_at']
-                events = old['events']
-                size = int(listed_bytes or old['bytes'] or 0)
-                rows = ledger.transition(
-                    name, campaign, location, created, size,
-                    stored_reps.get(name, {}), states)
-                first_seen = old['first_seen'] or stamp
-            dataset = '/' + location
-            if dataset in listed_datasets:
-                is_attached = attached.get(name, 0)
-            else:
-                is_attached = old['attached'] if old else None
-            file_rows.append((name, campaign, root, location, size, created,
-                              events, is_attached, first_seen, stamp))
-            drop_names.append((name,))
-            for rse, (state, first) in rows.items():
-                replica_rows.append((name, rse, state, first))
-        db.executemany(
-            'INSERT INTO files (name, campaign, root, location, bytes,'
-            ' created_at, events, attached, first_seen, last_checked,'
-            ' gone_at) VALUES (?,?,?,?,?,?,?,?,?,?,NULL)'
-            ' ON CONFLICT(name) DO UPDATE SET campaign=excluded.campaign,'
-            ' root=excluded.root, location=excluded.location,'
-            ' bytes=excluded.bytes, created_at=excluded.created_at,'
-            ' events=excluded.events, attached=excluded.attached,'
-            ' last_checked=excluded.last_checked, gone_at=NULL',
-            file_rows)
-        db.executemany('DELETE FROM replicas WHERE name = ?', drop_names)
-        db.executemany(
-            'INSERT INTO replicas (name, rse, state, first_available)'
-            ' VALUES (?,?,?,?)', replica_rows)
-        db.commit()
-        log(f'  files {min(start + 20000, len(ordered))}/{len(ordered)}')
-    # Gone: stored files of exhaustively listed campaigns absent from
-    # the listing. A census lists every root, so every stored file of
-    # every campaign is subject; a full pass only the target campaigns.
-    if exhaustive is None or exhaustive:
-        listed = set(ordered) if not limit_files else None
-        if listed is not None:
-            query = ('SELECT name, bytes, campaign FROM files'
-                     ' WHERE gone_at IS NULL')
-            params = []
-            if exhaustive:
-                query += ' AND campaign IN (%s)' % ', '.join(
-                    ['?'] * len(exhaustive))
-                params = sorted(exhaustive)
-            gone = [(n, b) for n, b, _ in db.execute(query, params)
-                    if n not in listed]
+        with lock:
+            for name in batch:
+                states = replica_map.get(name)
+                if states is None:
+                    complete = False
+                    continue
+                resolved += 1
+                listed_bytes = states.pop('_bytes', 0)
+                root, campaign, loc = _split(name)
+                if root is None:
+                    continue
+                old = stored_files.get(name)
+                if old is None:
+                    m = meta_rows.get(name) or {}
+                    created = _parse_rucio_time(m.get('created_at')) or stamp
+                    events = m.get('events')
+                    size = int(listed_bytes or m.get('bytes') or 0)
+                    rows = ledger.first_sight(
+                        name, campaign, loc, created, size, states)
+                    first_seen = stamp
+                else:
+                    created = old['created_at']
+                    events = old['events']
+                    size = int(listed_bytes or old['bytes'] or 0)
+                    rows = ledger.transition(
+                        name, campaign, loc, created, size,
+                        stored_reps.get(name, {}), states)
+                    first_seen = old['first_seen'] or stamp
+                if content is not None:
+                    is_attached = 1 if name in content else 0
+                else:
+                    is_attached = old['attached'] if old else None
+                file_rows.append((name, campaign, root, loc, size, created,
+                                  events, is_attached, first_seen, stamp,
+                                  pass_id))
+                drop_names.append((name,))
+                for rse, (state, first) in rows.items():
+                    replica_rows.append((name, rse, state, first))
+            db.executemany(
+                'INSERT INTO files (name, campaign, root, location, bytes,'
+                ' created_at, events, attached, first_seen, last_checked,'
+                ' last_pass, gone_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)'
+                ' ON CONFLICT(name) DO UPDATE SET campaign=excluded.campaign,'
+                ' root=excluded.root, location=excluded.location,'
+                ' bytes=excluded.bytes, created_at=excluded.created_at,'
+                ' events=excluded.events, attached=excluded.attached,'
+                ' last_checked=excluded.last_checked,'
+                ' last_pass=excluded.last_pass, gone_at=NULL',
+                file_rows)
+            db.executemany('DELETE FROM replicas WHERE name = ?', drop_names)
+            db.executemany(
+                'INSERT INTO replicas (name, rse, state, first_available)'
+                ' VALUES (?,?,?,?)', replica_rows)
+            db.commit()
+    # Gone: the location was listed in full and every listed file was
+    # resolved, so a stored file here without this pass's stamp is gone.
+    if complete:
+        with lock:
+            gone = list(db.execute(
+                'SELECT name, bytes FROM files WHERE location = ?'
+                ' AND gone_at IS NULL AND (last_pass IS NULL OR last_pass != ?)',
+                (location, pass_id)))
             if gone:
                 _, gone_reps = _stored(db, [n for n, _ in gone])
                 for name, size in gone:
@@ -812,14 +814,75 @@ def file_tier(db, catalog, now, since, mode, campaigns, names, exhaustive,
                                [(stamp, n) for n, _ in gone])
                 db.executemany('DELETE FROM replicas WHERE name = ?',
                                [(n,) for n, _ in gone])
-                log(f'  {len(gone)} files gone')
+                db.commit()
+    return resolved
+
+
+def _first_rse_of(meta, catalog, dataset, db, lock):
+    """The RSE whose replica of the dataset was created first, from the
+    summary just stored; the first-copy attribution for a file first
+    seen with several available replicas."""
+    with lock:
+        row = db.execute('SELECT summary FROM datasets WHERE name = ?',
+                         (dataset,)).fetchone()
+    rows = [r for r in json.loads((row or ('[]',))[0] or '[]')
+            if r.get('created_at')]
+    return min(rows, key=lambda r: r['created_at'])['rse'] if rows else None
+
+
+def crawl(db, catalog, ledger, now, pass_id, entries, inventory,
+          resume=False, limit_files=0):
+    """Walk the crawl entries, THREADS at a time, and accrue the ledger.
+    With ``resume`` the entries already stamped with this pass are
+    skipped. Returns (files resolved, locations crawled)."""
+    lock = threading.Lock()
+    dataset_names = [d for _, d, _ in entries if d]
+    meta = {}
+    for start in range(0, len(dataset_names), META_CHUNK):
+        meta.update(catalog.bulkmeta(dataset_names[start:start + META_CHUNK]))
+    if resume:
+        done_datasets = {n for (n,) in db.execute(
+            'SELECT name FROM datasets WHERE last_pass = ?', (pass_id,))}
+        done_locations = {loc for (loc,) in db.execute(
+            'SELECT DISTINCT location FROM files WHERE last_pass = ?',
+            (pass_id,))}
+        entries = [e for e in entries
+                   if not ((e[1] and e[1] in done_datasets)
+                           or (not e[1] and e[0] in done_locations))]
+        log(f'  resuming: {len(entries)} locations left')
+    total = len(entries)
+    progress = {'resolved': 0, 'done': 0}
+    stop = threading.Event()
+    t0 = time.monotonic()
+
+    def one(entry):
+        if stop.is_set():
+            return
+        location, dataset, with_files = entry
+        n = crawl_location(db, catalog, ledger, now, pass_id, location,
+                           dataset, inventory,
+                           meta.get(dataset) if dataset else None,
+                           with_files, lock)
+        with lock:
+            progress['resolved'] += n
+            progress['done'] += 1
+            done = progress['done']
+            if done % 100 == 0 or done == total:
+                log(f'  crawled {done}/{total} locations,'
+                    f' {progress["resolved"]} files,'
+                    f' {round(time.monotonic() - t0)}s')
+            if limit_files and progress['resolved'] >= limit_files:
+                stop.set()
+
+    with ThreadPoolExecutor(max_workers=THREADS) as pool:
+        list(pool.map(one, entries))
     _flush_counters(db, ledger.counters)
     db.executemany(
         'INSERT INTO latencies (pass_id, campaign, kind, seconds)'
         ' VALUES (?,?,?,?)',
         [(pass_id, c, k, s) for c, k, s in ledger.latencies])
     db.commit()
-    return resolved
+    return progress['resolved'], progress['done']
 
 
 # ---------------------------------------------------------------------------
@@ -1183,20 +1246,19 @@ def projection(db, now, since, campaigns, pass_info):
 # ---------------------------------------------------------------------------
 
 def run_pass(mode='incremental', campaigns=None, db_path=DEFAULT_DB,
-             limit_files=0, limit_datasets=0):
+             limit_files=0, limit_datasets=0, resume_pass=None):
     """Run one pass in the given mode and return (summary, projection).
     A validation run (``limit_files`` or ``limit_datasets``) works on a
     copy of the store so a capped listing never marks files gone in the
-    record."""
+    record. ``resume_pass`` continues an interrupted pass by id,
+    skipping the locations it already stamped."""
     import shutil
     import tempfile
 
     if mode not in ('census', 'full', 'incremental'):
         raise ValueError(f'unknown mode {mode!r}')
     now = dt.datetime.now(dt.timezone.utc)
-    if limit_datasets:
-        limit_files = limit_files or 1
-    if limit_files:
+    if limit_files or limit_datasets:
         # The managed scratch root on /data; /tmp is on the small root
         # volume and the store copy can be hundreds of megabytes.
         scratch = tempfile.mkdtemp(
@@ -1224,10 +1286,18 @@ def run_pass(mode='incremental', campaigns=None, db_path=DEFAULT_DB,
         campaigns = tuple(sorted({c for _, c in inventory.values()}))
     else:
         campaigns = target_campaigns()
-    cursor = db.execute(
-        'INSERT INTO passes (mode, started, campaigns) VALUES (?,?,?)',
-        (mode, _iso(now), json.dumps(list(campaigns))))
-    pass_id = cursor.lastrowid
+    if resume_pass:
+        pass_id = int(resume_pass)
+        row = db.execute('SELECT mode, finished FROM passes WHERE id = ?',
+                         (pass_id,)).fetchone()
+        if row is None or row[0] != mode or row[1]:
+            raise RuntimeError(
+                f'pass {pass_id} is not an unfinished {mode} pass')
+    else:
+        cursor = db.execute(
+            'INSERT INTO passes (mode, started, campaigns) VALUES (?,?,?)',
+            (mode, _iso(now), json.dumps(list(campaigns))))
+        pass_id = cursor.lastrowid
     db.commit()
     log(f'pass {pass_id} {mode}: {len(inventory)} datasets under the roots;'
         f' campaigns {", ".join(campaigns)}')
@@ -1236,36 +1306,35 @@ def run_pass(mode='incremental', campaigns=None, db_path=DEFAULT_DB,
     tape_rses = {rse for rse, t in types.items() if t == 'TAPE'}
     log(f'  RSEs: {", ".join(sorted(types))}; tape: {", ".join(sorted(tape_rses))}')
 
-    names, exhaustive = _search_files(catalog, mode, campaigns, since)
-    if mode == 'incremental':
-        names |= _standing_names(db, campaigns)
-    touched = {'/' + _split(n)[2] for n in names if _split(n)[0]}
-    log(f'  {len(names)} files to resolve')
-
-    selected = datasets_to_check(db, mode, inventory, campaigns, touched)
+    entries = locations_to_crawl(db, catalog, mode, inventory, campaigns, since)
     if limit_datasets:
-        # Validation cap: the covered campaigns' datasets first.
-        covered = sorted(n for n in selected
-                         if inventory.get(n, (None, None))[1] in campaigns)
-        selected = set((covered + sorted(selected - set(covered)))
-                       [:int(limit_datasets)])
-        log(f'capped at {len(selected)} datasets (validation run)')
-    content = dataset_tier(db, catalog, now, selected, inventory)
+        # Validation cap: the covered campaigns' locations first.
+        covered = [e for e in entries if e[1]
+                   and inventory.get(e[1], (None, None))[1] in campaigns]
+        rest = [e for e in entries if e not in covered]
+        entries = (covered + rest)[:int(limit_datasets)]
+        log(f'capped at {len(entries)} locations (validation run)')
+    log(f'  {len(entries)} locations to crawl')
+
+    ledger = _Ledger(now, since, tape_rses, _first_rse_by_location(db))
+    resolved, crawled = crawl(db, catalog, ledger, now, pass_id, entries,
+                              inventory, resume=bool(resume_pass),
+                              limit_files=limit_files)
+    refreshed = {n for (n,) in db.execute(
+        'SELECT name FROM datasets WHERE last_pass = ?', (pass_id,))}
+    task_states = _task_states(refreshed)
+    db.executemany('UPDATE datasets SET task_state = ? WHERE name = ?',
+                   [(state, name) for name, state in task_states.items()])
     gone_datasets = [(n,) for (n,) in db.execute(
         'SELECT name FROM datasets WHERE gone_at IS NULL')
         if n not in inventory]
     if gone_datasets and mode != 'incremental':
         db.executemany('UPDATE datasets SET gone_at = ? WHERE name = ?',
                        [(_iso(now), n) for (n,) in gone_datasets])
-        db.commit()
-    log(f'  {len(content)} datasets refreshed')
-
-    resolved = file_tier(db, catalog, now, since, mode, campaigns, names,
-                         exhaustive, content, tape_rses, pass_id,
-                         limit_files=limit_files)
+    db.commit()
     duration = round(time.monotonic() - t0, 1)
     pass_info = {'pass_id': pass_id, 'mode': mode, 'campaigns': list(campaigns),
-                 'files_checked': resolved, 'datasets_checked': len(content),
+                 'files_checked': resolved, 'datasets_checked': crawled,
                  'duration_s': duration,
                  'errors': catalog.errors[:10],
                  'error_count': len(catalog.errors)}
@@ -1274,15 +1343,15 @@ def run_pass(mode='incremental', campaigns=None, db_path=DEFAULT_DB,
     db.execute(
         'UPDATE passes SET finished = ?, files_checked = ?,'
         ' datasets_checked = ?, errors = ? WHERE id = ?',
-        (_iso(finished), resolved, len(content),
+        (_iso(finished), resolved, crawled,
          json.dumps(catalog.errors), pass_id))
     db.execute('DELETE FROM latencies WHERE pass_id < ?', (pass_id - 3,))
     db.commit()
     summary = {'pass_id': pass_id, 'mode': mode, 'campaigns': list(campaigns),
-               'files_checked': resolved, 'datasets_checked': len(content),
+               'files_checked': resolved, 'datasets_checked': crawled,
                'duration_s': duration, 'errors': len(catalog.errors),
                'serialized_bytes': len(json.dumps(data, separators=(',', ':'))),
                'store': db_path}
     log(f'pass {pass_id} done in {duration}s: {resolved} files,'
-        f' {len(content)} datasets, {len(catalog.errors)} errors')
+        f' {crawled} locations, {len(catalog.errors)} errors')
     return summary, data

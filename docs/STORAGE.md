@@ -58,9 +58,15 @@ reconciliation nightly.
 
 The pass is the owner's maintenance of the projection (DESIGN.md,
 invariants 1 and 4): it reads the catalog, keeps its own per-file and
-per-dataset state, and publishes the bounded component. It runs at
-three tiers, each from a call the residual-rerun and delivery paths
-already use against JLab Rucio.
+per-dataset state, and publishes the bounded component. It is a crawl:
+one dataset location at a time, two in flight, a pause after every
+catalog call, and never more than one location's file names in hand,
+so its memory stays at the size of one dataset whatever the size of
+the inventory (about 8.8 million files under the roots). Every row a
+pass touches is stamped with the pass, which makes the gone check a
+query per location and an interrupted pass resumable from where it
+stopped. It reads at three tiers, each from a call the residual-rerun
+and delivery paths already use against JLab Rucio.
 
 **Dataset tier**, every dataset under the production roots (about 6,400
 today under `/RECO`, `/FULL` and `/EVGEN`): the per-RSE dataset replica
