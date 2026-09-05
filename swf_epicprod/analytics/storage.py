@@ -43,6 +43,8 @@ META_CHUNK = 500
 # never more than one location's names in hand.
 THREADS = 2
 PAUSE_S = 0.2
+# JLab Rucio tokens live one hour; a pass runs for many.
+TOKEN_REFRESH_S = 50 * 60
 LISTING_HEAD = 50
 MAX_RSES = 16
 MAX_CAMPAIGNS = 8
@@ -166,17 +168,50 @@ def counter_values(db):
 # ---------------------------------------------------------------------------
 
 class Catalog:
-    """JLab Rucio reads, on the helpers the catalog services use."""
+    """JLab Rucio reads, on the helpers the catalog services use. The
+    auth token is refreshed before it ages out and once more on a 401,
+    so a pass longer than the token's hour keeps reading."""
 
     def __init__(self):
         from pcs.services import (_jlab_rucio_auth, _jlab_rucio_get,
                                   _jlab_rucio_post, _ndjson)
-        self.token = _jlab_rucio_auth()
-        self._get = _jlab_rucio_get
-        self._post = _jlab_rucio_post
+        self._auth = _jlab_rucio_auth
+        self._get_raw = _jlab_rucio_get
+        self._post_raw = _jlab_rucio_post
         self._ndjson = _ndjson
         self.errors = []
         self._lock = threading.Lock()
+        self._token_lock = threading.Lock()
+        self.token = None
+        self._token_at = 0.0
+        self._refresh_token()
+
+    def _refresh_token(self):
+        with self._token_lock:
+            self.token = self._auth()
+            self._token_at = time.monotonic()
+
+    def _call(self, fn, *args, **kwargs):
+        """One catalog call with a current token. A token older than
+        TOKEN_REFRESH_S is renewed first; a 401 renews it and repeats
+        the call once."""
+        import urllib.error
+        if time.monotonic() - self._token_at > TOKEN_REFRESH_S:
+            self._refresh_token()
+        try:
+            return fn(args[0], self.token, *args[1:], **kwargs)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 401:
+                raise
+            log('token refused (401); renewing and repeating the call')
+            self._refresh_token()
+            return fn(args[0], self.token, *args[1:], **kwargs)
+
+    def _get(self, path, **kwargs):
+        return self._call(self._get_raw, path, **kwargs)
+
+    def _post(self, path, body, **kwargs):
+        return self._call(self._post_raw, path, body, **kwargs)
 
     def _fail(self, what, exc):
         with self._lock:
@@ -190,7 +225,7 @@ class Catalog:
         if created_after:
             params['created_after'] = created_after
         rows = self._ndjson(self._get(
-            f'/dids/{SCOPE}/dids/search', self.token, timeout=300, **params))
+            f'/dids/{SCOPE}/dids/search', timeout=300, **params))
         return [row for row in rows if isinstance(row, str)]
 
     def bulkmeta(self, names):
@@ -199,7 +234,7 @@ class Catalog:
             chunk = names[start:start + META_CHUNK]
             try:
                 rows = self._ndjson(self._post(
-                    '/dids/bulkmeta', self.token,
+                    '/dids/bulkmeta',
                     {'dids': [{'scope': SCOPE, 'name': n} for n in chunk]}))
             except Exception as exc:                          # noqa: BLE001
                 self._fail(f'bulkmeta {len(chunk)} dids', exc)
@@ -218,7 +253,7 @@ class Catalog:
             batch = names[start:start + FILE_BATCH]
             try:
                 rows = self._ndjson(self._post(
-                    '/replicas/list', self.token,
+                    '/replicas/list',
                     {'dids': [{'scope': SCOPE, 'name': n} for n in batch],
                      'all_states': True, 'ignore_availability': True}))
             except Exception as exc:                          # noqa: BLE001
@@ -237,7 +272,7 @@ class Catalog:
 
     def dataset_summary(self, name):
         rows = self._ndjson(self._get(
-            f'/replicas/{SCOPE}/{name}/datasets', self.token))
+            f'/replicas/{SCOPE}/{name}/datasets'))
         return [{'rse': r.get('rse'), 'length': r.get('length'),
                  'available_length': r.get('available_length'),
                  'bytes': r.get('bytes'),
@@ -249,7 +284,7 @@ class Catalog:
 
     def dataset_rules(self, name):
         rows = self._ndjson(self._get(
-            f'/dids/{SCOPE}{name}/rules', self.token))
+            f'/dids/{SCOPE}{name}/rules'))
         return [{'id': r.get('id'), 'state': r.get('state'),
                  'rse_expression': r.get('rse_expression'),
                  'copies': r.get('copies'),
@@ -264,25 +299,24 @@ class Catalog:
 
     def dataset_content(self, name):
         rows = self._ndjson(self._get(
-            f'/dids/{SCOPE}{name}/dids', self.token, timeout=300))
+            f'/dids/{SCOPE}{name}/dids', timeout=300))
         return [r['name'] for r in rows
                 if isinstance(r, dict) and r.get('name')]
 
     def rses(self):
-        rows = self._ndjson(self._get('/rses/', self.token))
+        rows = self._ndjson(self._get('/rses/'))
         return {r['rse']: str(r.get('rse_type') or '')
                 for r in rows if isinstance(r, dict) and r.get('rse')}
 
     def rse_usage(self, rse):
-        rows = self._ndjson(self._get(f'/rses/{rse}/usage', self.token))
+        rows = self._ndjson(self._get(f'/rses/{rse}/usage'))
         for r in rows:
             if isinstance(r, dict) and r.get('source') == 'rucio':
                 return r
         return rows[0] if rows and isinstance(rows[0], dict) else {}
 
     def account_limits(self):
-        text = self._get(f'/accounts/{PRODUCTION_ACCOUNT}/limits/local',
-                         self.token)
+        text = self._get(f'/accounts/{PRODUCTION_ACCOUNT}/limits/local')
         limits = json.loads(text.replace('Infinity', 'null'))
         return {rse: (int(v) if v is not None else None)
                 for rse, v in limits.items()}
