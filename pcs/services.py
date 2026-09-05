@@ -6278,3 +6278,122 @@ def campaign_plan_entries_set(campaign_name, entries, comment, *,
     )
     return {'set': set_labels, 'removed': removed_labels, 'prev': prev,
             'log_id': log_id}
+
+
+# ── standard production configuration per campaign edition ──────────────
+# The executor behind scripts/create_standard_prodconfig.py and the
+# standard_config proposal, the remedy of a campaign-configuration ping
+# (swf-monitor docs/AI_PROPOSALS.md, docs/PINGS.md § Pings with a remedy).
+
+STANDARD_CONFIG_TEMPLATE = '26.03.0 Standard Production'
+STANDARD_CONFIG_RSE = 'BNL-XRD'
+STANDARD_CONFIG_CLONE_FIELDS = (
+    'bg_mixing', 'bg_cross_section', 'bg_evtgen_file',
+    'copy_reco', 'copy_full', 'copy_log', 'use_rucio',
+    'condor_template', 'events_per_task', 'target_hours_per_job',
+    'panda_queue', 'panda_resource_type', 'panda_site',
+    'panda_working_group', 'rucio_replication_rules', 'data',
+)
+EDITION_RE = _re.compile(r'^\d\d\.\d\d\.\d+$')
+
+
+def standard_prodconfig_name(edition):
+    return f'{edition} Standard Production'
+
+
+def standard_prodconfig_values(edition):
+    """The values ``<edition> Standard Production`` takes: the template's
+    production fields with the edition's identity, image and tag.
+    Raises ServiceError when the edition is malformed or the template is
+    missing."""
+    edition = str(edition or '').strip()
+    if not EDITION_RE.match(edition):
+        raise ServiceError(f'not a campaign edition: {edition!r}')
+    template = ProdConfig.objects.filter(name=STANDARD_CONFIG_TEMPLATE).first()
+    if template is None:
+        raise ServiceError(
+            f'template configuration {STANDARD_CONFIG_TEMPLATE!r} not found')
+    values = {field: getattr(template, field)
+              for field in STANDARD_CONFIG_CLONE_FIELDS}
+    values.update(
+        description=(f'Standard {edition} campaign production config. '
+                     f'Signal-only, Rucio output.'),
+        jug_xl_tag=f'{edition}-stable',
+        container_image=('/cvmfs/singularity.opensciencegrid.org/eicweb/'
+                         f'eic_xl:{edition}-stable'),
+        rucio_rse=STANDARD_CONFIG_RSE,
+    )
+    return values
+
+
+def standard_prodconfig_image_present(edition):
+    """Whether the edition's campaign image is published on CVMFS, as
+    seen from this host."""
+    return _os.path.isdir(
+        f'/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:{edition}-stable')
+
+
+def standard_prodconfig_create(edition, *, changed_by, origin=None,
+                               ping_title='', dry_run=False):
+    """Create ``<edition> Standard Production`` from the template.
+
+    One operator action, the identical call the script and an approved
+    proposal make: refuses when the configuration exists, writes it, logs
+    one origin-stamped ``standard_prodconfig_create`` event, and, when
+    ``ping_title`` names an open ping, marks that ping fulfilled with the
+    same origin, so the remedy closes the obligation in one act. With
+    ``dry_run`` nothing is written and the values are the preview.
+    Returns {name, config_id, log_id, ping_fulfilled, values}."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    edition = str(edition or '').strip()
+    name = standard_prodconfig_name(edition)
+    if ProdConfig.objects.filter(name=name).exists():
+        raise ServiceError(f'configuration {name!r} already exists', status=409)
+    values = standard_prodconfig_values(edition)
+    preview = {k: values[k] for k in
+               ('description', 'jug_xl_tag', 'container_image', 'rucio_rse')}
+    preview['template'] = STANDARD_CONFIG_TEMPLATE
+    preview['image_present'] = standard_prodconfig_image_present(edition)
+    if not preview['image_present']:
+        # A configuration naming an absent image would fail every job at
+        # container start; the edition's image is published before its
+        # configuration exists.
+        raise ServiceError(
+            f'container image {values["container_image"]} is not on CVMFS')
+    if dry_run:
+        return {'name': name, 'config_id': None, 'log_id': None,
+                'ping_fulfilled': None, 'values': preview, 'dry_run': True}
+    origin = origin or {}
+    if origin.get('kind') == 'ai_proposal':
+        origin_attrs = {k: v for k, v in {
+            'origin': 'ai_proposal', 'proposer': origin.get('proposer', ''),
+            'proposal_ref': origin.get('ref', ''),
+            'batch_id': origin.get('batch_id', ''),
+            'proposed_at': origin.get('proposed_at', ''),
+        }.items() if v}
+    else:
+        origin_attrs = {'origin': 'manual'}
+    config = ProdConfig.objects.create(name=name, created_by=changed_by or 'pcs',
+                                       **values)
+    log_id = log_epicprod_action(
+        'web', 'standard_prodconfig_create', subject_type='prod_config',
+        subject_key=name, subject_label=name, username=changed_by or '',
+        sublevel='normal', live_default=True, config_id=config.pk,
+        edition=edition, template=STANDARD_CONFIG_TEMPLATE,
+        container_image=values['container_image'], url='/pcs/',
+        **origin_attrs)
+    ping_fulfilled = None
+    if ping_title:
+        from monitor_app import alarms_data
+        ping = alarms_data.open_ping_with_title(ping_title)
+        if ping is not None:
+            try:
+                alarms_data.ping_fulfil_execute(
+                    ping.id, changed_by=changed_by or 'pcs', origin=origin)
+                ping_fulfilled = ping.id
+            except alarms_data.PingError as exc:
+                _log.error('standard_prodconfig_create %s: ping %r not '
+                           'fulfilled: %s', name, ping_title, exc)
+    return {'name': name, 'config_id': config.pk, 'log_id': log_id,
+            'ping_fulfilled': ping_fulfilled, 'values': preview}

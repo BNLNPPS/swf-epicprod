@@ -32,17 +32,11 @@ import django  # noqa: E402
 django.setup()
 
 from pcs.models import ProdConfig, ProdTask  # noqa: E402
+from pcs.services import (  # noqa: E402
+    STANDARD_CONFIG_RSE as RUCIO_RSE, STANDARD_CONFIG_TEMPLATE as TEMPLATE_NAME,
+    ServiceError, standard_prodconfig_create, standard_prodconfig_values)
 
-TEMPLATE_NAME = '26.03.0 Standard Production'
 LEGACY_NAME = '26.02.0 Standard Production'
-RUCIO_RSE = 'BNL-XRD'
-CLONE_FIELDS = (
-    'bg_mixing', 'bg_cross_section', 'bg_evtgen_file',
-    'copy_reco', 'copy_full', 'copy_log', 'use_rucio',
-    'condor_template', 'events_per_task', 'target_hours_per_job',
-    'panda_queue', 'panda_resource_type', 'panda_site',
-    'panda_working_group', 'rucio_replication_rules', 'data',
-)
 
 
 def main():
@@ -58,24 +52,15 @@ def main():
     args = parser.parse_args()
 
     name = f'{args.campaign} Standard Production'
-    template = ProdConfig.objects.filter(name=TEMPLATE_NAME).first()
-    if template is None:
-        print(f'Template config {TEMPLATE_NAME!r} not found.')
+    try:
+        values = standard_prodconfig_values(args.campaign)
+    except ServiceError as exc:
+        print(f'ERROR: {exc}')
         return 1
     existing = ProdConfig.objects.filter(name=name).first()
-    values = {field: getattr(template, field) for field in CLONE_FIELDS}
-    values.update(
-        description=(f'Standard {args.campaign} campaign production '
-                     f'config. Signal-only, Rucio output.'),
-        jug_xl_tag=f'{args.campaign}-stable',
-        container_image=('/cvmfs/singularity.opensciencegrid.org/eicweb/'
-                         f'eic_xl:{args.campaign}-stable'),
-        rucio_rse=RUCIO_RSE,
-        created_by=args.created_by,
-    )
     print(f'{"Exists" if existing else "Create"}: {name!r} '
           f'(template {TEMPLATE_NAME!r}; container '
-          f'eic_xl:{args.campaign}-stable; rucio_rse {RUCIO_RSE})')
+          f'{values["container_image"]}; rucio_rse {RUCIO_RSE})')
 
     legacy = ProdConfig.objects.filter(name=LEGACY_NAME).first()
     rebind_qs = ProdTask.objects.none()
@@ -93,8 +78,16 @@ def main():
         return 0
 
     if existing is None:
-        existing = ProdConfig.objects.create(name=name, **values)
-        print(f'Created config {name!r} (id {existing.pk}).')
+        # The executor the standard_config proposal also runs: one
+        # origin-stamped action-stream event, and the campaign
+        # configuration ping fulfilled when one is open.
+        result = standard_prodconfig_create(
+            args.campaign, changed_by=args.created_by,
+            ping_title=f'Create the {args.campaign} Standard Production '
+                       f'configuration')
+        existing = ProdConfig.objects.get(pk=result['config_id'])
+        print(f'Created config {name!r} (id {existing.pk}); '
+              f'ping fulfilled: {result["ping_fulfilled"] or "none open"}.')
     else:
         print(f'Config {name!r} already exists — left unchanged.')
     if args.rebind and legacy is not None:

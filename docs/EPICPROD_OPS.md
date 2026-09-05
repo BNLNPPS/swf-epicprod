@@ -468,7 +468,9 @@ definitions sweep (the simulation_campaign_datasets inventory, cost
 model, and completeness populations) → questionnaire automatch (LLM
 matching of requests to tasks, EPICPROD_QUESTIONNAIRE.md) →
 questionnaire match cache → progress refresh → file-events measure →
-delivery daily rebuild → storage sweep, the full pass (STORAGE.md), in
+delivery daily rebuild → storage sweep, the full pass (STORAGE.md) →
+campaign configuration proposer (a ping and its remedy for every edition
+without a Standard Production configuration; swf-monitor PINGS.md), in
 order. Each step
 and the chain summary log to the epicprod action stream (Logs page,
 app_name=epicprod) with measured durations; questionnaire import reads its
