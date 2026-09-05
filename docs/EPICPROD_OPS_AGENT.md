@@ -268,7 +268,9 @@ doc does not duplicate them.
   `panda_task_operations` (one bulk request — pause, resume, retry_failures,
   or finish — scalar commands paced one second apart, then per-task
   verification on a shared deadline; retry of an aborted task routes
-  through PanDA reactivation),
+  through PanDA reactivation, and a retry carrying `new_parameters`, the
+  changed memory and wall time from the tasks page, routes every task of
+  the batch through it),
   `panda_sandbox_keepalive` (touch retryable tasks' sandbox tarballs in the
   PanDA server cache; nightly `catalog_sync` chain step —
   [JEDI_INTEGRATION.md](JEDI_INTEGRATION.md)),
