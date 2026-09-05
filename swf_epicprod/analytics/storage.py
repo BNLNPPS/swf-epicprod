@@ -60,6 +60,14 @@ THRESHOLD_DEFAULTS = {
     'storage_stalled_hours': 12,
     'storage_single_copy_warn_days': 7,
 }
+# A pass holds the store while its row has no finish and it started within
+# this bound; an older unfinished row is an abandoned pass (a killed
+# process) and does not block a new one.
+PASS_ABANDONED_S = 12 * 3600
+
+
+class PassInProgress(RuntimeError):
+    """Another pass is writing the store: its row is unfinished and recent."""
 
 _print_lock = threading.Lock()
 
@@ -1323,6 +1331,19 @@ def run_pass(mode='incremental', campaigns=None, db_path=DEFAULT_DB,
         db_path = copy
         log(f'validation run on a copy of the store: {copy}')
     db = open_store(db_path)
+    if not resume_pass and not (limit_files or limit_datasets):
+        # The store's latest pass, whatever its state: an unfinished
+        # older row is history once a later pass has completed.
+        latest = db.execute(
+            'SELECT id, mode, started, finished FROM passes'
+            ' ORDER BY id DESC LIMIT 1').fetchone()
+        if latest and not latest[3]:
+            started_at = _parse_iso(latest[2])
+            age = (now - started_at).total_seconds() if started_at else None
+            if age is not None and age < PASS_ABANDONED_S:
+                raise PassInProgress(
+                    f'pass {latest[0]} ({latest[1]}) started '
+                    f'{round(age / 60)} min ago still holds the store')
     last = db.execute('SELECT finished FROM passes WHERE finished IS NOT NULL'
                       ' ORDER BY id DESC LIMIT 1').fetchone()
     since = _parse_iso(last[0]) if last else None

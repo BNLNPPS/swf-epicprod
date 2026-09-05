@@ -284,7 +284,10 @@ doc does not duplicate them.
 `catalog_sync` (the nightly composite chain, cron 02:47),
 `rucio_arrivals_sweep`, `epic_prod_past_import`, `file_events_measure`,
 `delivery_daily_rebuild` (the delivered-data daily record,
-CAMPAIGN_DELIVERY.md), `sync_epicprod_inventory`, `refresh_system_status`,
+CAMPAIGN_DELIVERY.md), `storage_sweep` (the storage record's pass,
+STORAGE.md: the nightly full pass as a `catalog_sync` chain step, the
+hourly incremental pass by cron enqueue, skipped while another pass holds
+the store), `sync_epicprod_inventory`, `refresh_system_status`,
 `capture_system_snap`, `health_ping`, `shutdown`. All work handlers run their doers on the `run_in_background`
 worker pool and record structured action records — see
 [ACTION_STREAM.md](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/ACTION_STREAM.md).
