@@ -466,8 +466,13 @@ questionnaire match cache → progress refresh, in order. Each step
 and the chain summary log to the epicprod action stream (Logs page,
 app_name=epicprod) with measured durations; questionnaire import reads its
 CSV URL from SysConfig `questionnaire_csv_url` and records `skipped` when
-unset. Manual full run: the same enqueue command with any `--created-by`;
-association backfill: `--extra days=30`.
+unset. The chain summary carries outcome `error` when any step failed and
+names the failed steps; a step's outcome is the action record it logged.
+The first step to fail on a JLab Rucio authentication stall is run once
+more after a wait (`EPICPROD_RUCIO_STALL_RETRY_WAIT`, default 300 s), one
+wait per chain; later steps that still find the catalog unresponsive fail
+without waiting. Manual full run: the same enqueue command with any
+`--created-by`; association backfill: `--extra days=30`.
 
 ### Credential expiry check
 

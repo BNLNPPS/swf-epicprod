@@ -3185,7 +3185,13 @@ def _jlab_rucio_auth(timeout=30):
     req.add_header('X-Rucio-Account',  _os.environ.get('JLAB_RUCIO_ACCOUNT',  JLAB_RUCIO_ACCOUNT))
     req.add_header('X-Rucio-Username', _os.environ.get('JLAB_RUCIO_USERNAME', JLAB_RUCIO_USERNAME))
     req.add_header('X-Rucio-Password', _os.environ.get('JLAB_RUCIO_PASSWORD', JLAB_RUCIO_PASSWORD))
-    resp = _ur.urlopen(req, context=ctx, timeout=timeout)
+    try:
+        resp = _ur.urlopen(req, context=ctx, timeout=timeout)
+    except Exception as e:                                        # noqa: BLE001
+        # Named at the source: every caller's error line then says which
+        # call failed (a read timeout here took out five chain steps on
+        # 2026-09-04 under the bare "The read operation timed out").
+        raise ServiceError(f'JLab Rucio auth failed: {e}') from e
     token = resp.headers['X-Rucio-Auth-Token']
     if not token:
         raise ServiceError('JLab Rucio auth returned no token')
@@ -4515,6 +4521,8 @@ def import_jlab_rucio_current_snapshot(*, campaign_name=None,
 
     try:
         token = _jlab_rucio_auth()
+    except ServiceError:
+        raise
     except Exception as e:                                    # noqa: BLE001
         raise ServiceError(f'JLab Rucio auth failed: {e}')
 
@@ -4970,6 +4978,8 @@ def refresh_evgen_rucio(*, apply=False, snapshot_dir=RUCIO_SNAPSHOT_DIR,
                'samples': []}
     try:
         token = _jlab_rucio_auth()
+    except ServiceError:
+        raise
     except Exception as e:                                     # noqa: BLE001
         raise ServiceError(f'JLab Rucio auth failed: {e}')
     try:
