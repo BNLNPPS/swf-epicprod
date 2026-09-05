@@ -458,6 +458,46 @@
         const nmax = Number(raw);
         return Number.isFinite(nmax) && nmax > 0 ? ` (current nmax: ${nmax})` : '';
     }
+    // A task associated by name match only (an outside submission) is not a
+    // PCS submission until adopted: "Move this task to PCS" records its latest
+    // PanDA try and binds the edition's configuration, or the page names what
+    // blocks it (JEDI_INTEGRATION.md, Residual rerun). Readiness is fetched
+    // when the detail opens; it is database reads only on the server.
+    function adoptApplicable(t) {
+        const rows = Array.isArray(t.panda_tasks) ? t.panda_tasks : [];
+        return !t.panda_task_id && rows.some(pt => pt.jedi_task_id);
+    }
+    function adoptHtml(t) {
+        if (!adoptApplicable(t)) return '';
+        setTimeout(() => loadAdoptReadiness(t), 0);
+        return `<div class="pcs-panda-ops pcs-adopt" id="pcs-adopt-${t.id}">
+            <span class="pcs-panda-ops-label">PCS Operations</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-adopt="${t.id}" disabled aria-disabled="true">Move this task to PCS</button>
+            <span class="pcs-adopt-note text-muted ms-2">Checking what this task needs...</span>
+        </div>`;
+    }
+    async function loadAdoptReadiness(t) {
+        const box = document.getElementById(`pcs-adopt-${t.id}`);
+        if (!box) return;
+        const btn = box.querySelector('[data-adopt]');
+        const note = box.querySelector('.pcs-adopt-note');
+        let r = null;
+        try { r = await (await fetch(taskApiUrl(t, 'adopt-readiness/'))).json(); }
+        catch (e) { r = {blocked: `readiness check failed: ${e}`}; }
+        if (r && r.eligible) {
+            if (currentUser) {
+                btn.disabled = false;
+                btn.removeAttribute('aria-disabled');
+                btn.classList.replace('btn-secondary', 'btn-success');
+            }
+            note.className = 'pcs-adopt-note ms-2';
+            note.textContent = `Records PanDA task ${r.jedi_task_id} as this task's submission and binds ${r.config}; `
+                + `the PanDA operations, Rerun Residual included, then apply here.${currentUser ? '' : ' Sign in to do it.'}`;
+        } else {
+            note.className = 'pcs-adopt-note text-warning fw-semibold ms-2';
+            note.textContent = `Blocked: ${(r && (r.blocked || r.detail)) || 'the readiness check returned nothing'}`;
+        }
+    }
     function pandaOperationsHtml(t) {
         const jediTaskId = currentPandaJediTaskId(t);
         if (!currentUser || !jediTaskId) return '';
@@ -1197,6 +1237,7 @@
         html += proposalHtml(t);
         html += aiAssessmentsHtml(t.ai_content || []);
         html += pandaTasksHtml(t);
+        html += adoptHtml(t);
         html += pandaOperationsHtml(t);
         const pcRequestLinks = (Array.isArray(t.pc_requests) ? t.pc_requests : []).map(r => {
             const detail = [r.requestor, r.nevents ? `${r.nevents} events` : '', r.description]
@@ -1482,6 +1523,33 @@
         }
     });
     let pendingPandaOperation = null;
+    browseContent.addEventListener('click', async e => {
+        const btn = e.target.closest('[data-adopt]');
+        if (!btn || btn.disabled) return;
+        const t = allTasks.find(x => x.id === selectedItemId);
+        if (!t) return;
+        if (!confirm(`Move ${t.name} into PCS? Its latest PanDA task becomes the recorded submission and the edition's Standard Production configuration is bound. Nothing is submitted.`)) return;
+        btn.disabled = true;
+        btn.textContent = 'Moving...';
+        const resp = await fetch(taskApiUrl(t, 'adopt/'), {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+            body: '{}',
+        });
+        const data = await resp.json().catch(() => null);
+        if (!resp.ok) {
+            btn.disabled = false;
+            btn.textContent = 'Move this task to PCS';
+            alert(`Move refused: ${(data && data.detail) || resp.status}`);
+            return;
+        }
+        const updated = updateTaskFromApiData(t.id, data);
+        if (updated && data.prod_config_name) {
+            updated.prod_config_name = data.prod_config_name;
+            updated.prod_config_id = data.prod_config_id;
+        }
+        setTimeout(() => { if (selectedItemId === t.id) showTaskDetail(t.id); }, 300);
+    });
     browseContent.addEventListener('click', async e => {
         const btn = e.target.closest('[data-panda-op]');
         if (!btn) return;

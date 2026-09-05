@@ -721,12 +721,23 @@ task linked from an outside submission by name match is not until made so:
 a PanDA association recorded on the task itself (`panda_task_id`, the
 refusal otherwise reads "no recorded PanDA submission"); a bound production
 configuration in place of the import placeholder, carrying `events_per_job`
-and the campaign's container; and a linked EVGEN input dataset whose
-`metadata['rucio']['matched']` the EVGEN matcher has filled, which requires
-the EVGEN files registered in JLab Rucio (EPICPROD_EVGEN_INPUTS.md
-§ Registration) since the manifest is resolved from the matched DIDs. Only
-the recorded outputs, which the arrivals sweep fills for matched tasks, come
-free.
+and the campaign's container; and the task's dataset matched to its EVGEN
+input in JLab Rucio (`metadata['rucio']['matched']`, written by the EVGEN
+assimilation), which requires the EVGEN files registered there
+(EPICPROD_EVGEN_INPUTS.md § Registration) since the manifest is resolved
+from the matched DIDs. Only the recorded outputs, which the arrivals sweep
+fills for matched tasks, come free.
+
+The compose page carries this as one control on such a task, **Move this
+task to PCS**: it records the task's latest PanDA try as the submission and
+binds the edition's Standard Production configuration, after which the PanDA
+operations, Rerun Residual included, apply to the task. The page states what
+the control will do, or why it is blocked: the edition's configuration
+missing (the campaign configuration ping creates it), or the EVGEN input not
+matched in JLab Rucio, in which case the input is registered on the EVGEN
+coverage view and assimilated with Update from Rucio first. Nothing is
+submitted by the move itself (`pcs.services.prodtask_adopt_legacy`, one
+`prodtask_adopt` event).
 
 ## Infrastructure: What We Know
 

@@ -5385,6 +5385,92 @@ def prodtask_rerun_residual_request(*, task):
     return task
 
 
+# ── moving a name-matched legacy task into PCS ──────────────────────────
+# JEDI_INTEGRATION.md § Residual rerun: a task associated by name match
+# alone is not a PCS submission until it carries a recorded PanDA id, a
+# bound production configuration and a matched EVGEN input. The compose
+# page's "Move this task to PCS" control does the first two and names, on
+# the page, what blocks it when the third is missing.
+
+def prodtask_adopt_readiness(task):
+    """What "Move this task to PCS" would do for ``task``, or why it cannot.
+    Returns {applicable, eligible, blocked, jedi_task_id, config}:
+    ``applicable`` is False for a task that is already a PCS submission or
+    has no PanDA task to adopt. Database reads only, safe in a page."""
+    out = {'applicable': False, 'eligible': False, 'blocked': '',
+           'jedi_task_id': None, 'config': None}
+    if task.panda_task_id is not None:
+        return out
+    latest = (PandaTasks.objects.filter(prod_task=task, jedi_task_id__isnull=False)
+              .order_by('-try_number', '-created_at').first())
+    if latest is None:
+        return out
+    out['applicable'] = True
+    out['jedi_task_id'] = latest.jedi_task_id
+    edition = ''
+    if task.dataset_id:
+        edition = str(task.dataset.detector_version or '').strip()
+    config = None
+    if task.prod_config_id and task.prod_config.name != PLACEHOLDER_PRODCONFIG_NAME:
+        config = task.prod_config
+    elif edition:
+        config = ProdConfig.objects.filter(
+            name=standard_prodconfig_name(edition)).first()
+    if config is None:
+        wanted = standard_prodconfig_name(edition) if edition else 'a Standard Production configuration'
+        out['blocked'] = (f'no production configuration for this task: {wanted} '
+                          f'does not exist. The campaign configuration ping on the '
+                          f'alarm dashboard creates it.')
+        return out
+    out['config'] = config.name
+    if not int((config.data or {}).get('events_per_job') or 0):
+        out['blocked'] = f'configuration {config.name} carries no events_per_job.'
+        return out
+    if not task.inputs:
+        paths = ', '.join(task.evgen_paths or []) or 'the EVGEN input'
+        out['blocked'] = (f'{paths} is not matched in JLab Rucio, so no manifest can '
+                          f'be resolved. Register it on the EVGEN inputs Registration '
+                          f'view, then Update from Rucio; this control unblocks.')
+        return out
+    out['eligible'] = True
+    return out
+
+
+def prodtask_adopt_legacy(*, task, changed_by):
+    """Move a name-matched legacy task into PCS: record its latest PanDA try
+    as the task's submission and bind the edition's Standard Production
+    configuration, so the PanDA operations, Rerun Residual included, apply.
+    Refuses with the readiness reason. Nothing is submitted. One
+    origin-stamped ``prodtask_adopt`` event; returns {task, log_id,
+    jedi_task_id, config}."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    ready = prodtask_adopt_readiness(task)
+    if not ready['applicable']:
+        raise ServiceError('This task is already a PCS submission, or has no '
+                           'PanDA task to adopt.', status=409)
+    if not ready['eligible']:
+        raise ServiceError(ready['blocked'], status=409)
+    config = ProdConfig.objects.get(name=ready['config'])
+    with transaction.atomic():
+        if task.prod_config_id != config.pk:
+            task.prod_config = config
+            task.save(update_fields=['prod_config', 'updated_at'])
+        row = PandaTasks.objects.filter(
+            prod_task=task, jedi_task_id=ready['jedi_task_id']).first()
+        prodtask_record_submission(
+            task=task, jedi_task_id=ready['jedi_task_id'],
+            new_status='submitted', panda_tasks_id=row.pk if row else None)
+    log_id = log_epicprod_action(
+        'web', 'prodtask_adopt', subject_type='prod_task',
+        subject_key=task.name, subject_label=task.name,
+        username=changed_by or '', sublevel='normal', live_default=True,
+        jedi_task_id=ready['jedi_task_id'], prod_config=config.name,
+        url=f'/pcs/tasks/compose/?selected={task.name}')
+    return {'task': task, 'log_id': log_id,
+            'jedi_task_id': ready['jedi_task_id'], 'config': config.name}
+
+
 def prodtask_record_submission_failure(*, task, panda_tasks_id, reason):
     """Mark a preallocated PandaTasks attempt that failed before JEDI id return."""
     if not panda_tasks_id:

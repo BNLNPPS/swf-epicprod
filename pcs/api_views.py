@@ -590,6 +590,32 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
             return Response({'detail': e.detail}, status=e.status)
         return Response(self.get_serializer(task).data, status=status.HTTP_202_ACCEPTED)
 
+    @action(detail=True, methods=['get'], url_path='adopt-readiness')
+    def adopt_readiness(self, request, name=None):
+        """What "Move this task to PCS" would do for a name-matched legacy
+        task, or the reason it is blocked (JEDI_INTEGRATION.md § Residual
+        rerun). Database reads only."""
+        task = self.get_object()
+        return Response(services.prodtask_adopt_readiness(task))
+
+    @action(detail=True, methods=['post'], url_path='adopt')
+    def adopt(self, request, name=None):
+        """Move a name-matched legacy task into PCS: record its latest PanDA
+        try as the task's submission and bind the edition's Standard
+        Production configuration, so the retry family applies. Refuses with
+        the readiness reason; nothing is submitted."""
+        task = self.get_object()
+        try:
+            result = services.prodtask_adopt_legacy(
+                task=task,
+                changed_by=getattr(request.user, 'username', '') or 'operator')
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        data = dict(self.get_serializer(task).data)
+        data['prod_config_id'] = task.prod_config_id
+        data['prod_config_name'] = result['config']
+        return Response(data)
+
     @action(detail=False, methods=['post'], url_path='rucio-snapshot-update')
     def rucio_snapshot_update(self, request):
         """Request a JLab Rucio snapshot refresh for the current campaign — the
