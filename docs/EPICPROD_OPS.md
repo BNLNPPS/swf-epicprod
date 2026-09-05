@@ -367,7 +367,10 @@ The agent is a systemd service like the `swf-*-bot` units — reference unit
 `Restart=always`, `RestartSec=15`, burst-capped (`StartLimitBurst=5` per
 `StartLimitIntervalSec=120`), `enable`d for boot. A persistent agent that keeps
 exiting is sick whatever its exit code, so the burst cap lets it land in `failed`
-(visible) instead of flapping forever. It runs from the deploy tree
+(visible) instead of flapping forever. `KillMode=mixed` confines a stop signal
+to the agent process, so its doer subprocesses are never signalled directly and
+finish under the agent's drain (below); `TimeoutStopSec=3900` gives the drain the
+longest doer timeout (the storage sweep, 3600 s) plus a margin. It runs from the deploy tree
 (`/opt/swf-monitor/current`) off `production.env`, which supplies everything it
 needs — `REQUESTS_CA_BUNDLE` (the combined BNL+public bundle, for the doer's Rucio
 REST), `X509_USER_PROXY`, and the `ACTIVEMQ_*` / `SWF_*` vars. `SWF_MONITOR_URL`
@@ -383,20 +386,23 @@ web view share. Bring it back manually with `sudo systemctl restart
 epicprod-ops-agent`. Being a `BaseAgent` it registers and heartbeats to the
 monitor and logs to the monitor DB, so it appears in the agent list.
 
-**Deploys and restarts** — the deploy script does *not* restart this unit (it
-reloads Apache and the ASGI/bot workers only). What the deploy changed decides
-whether that matters. The agent dispatches its doer scripts (`submit-evgen-task.py`
-→ `evgen_panda_submit.py`, `cache-payload-log.py`, `rucio-snapshot-update.py`,
-`pcs-catalog-import.py`, …) as fresh subprocesses by absolute path into the deploy
-tree, and a branch deploy replaces that constant `branch-<branch>` release path in
-place — so a change to a **doer script** is live on the next dispatch with **no
-restart**. A change to the **agent module itself** (`agents/epicprod_ops_agent.py` —
-handlers, routing, the script-path constants, timeouts) or to its startup inputs
-(`prodops.toml`, `production.env`) is read into memory at startup and is **not**
-picked up until `sudo systemctl restart epicprod-ops-agent`. The running process
-also pins its cwd to the release inode it started from (deploys delete+recreate that
-dir, so `cwd` reads `(deleted)`); absolute-path dispatch is unaffected, but a
-periodic clean restart avoids any relative-path surprise.
+**Deploys and restarts** — a stop never kills work in flight. On SIGTERM the
+agent drains: it keeps consuming and working until no background task is in
+flight, then unsubscribes from the queue (what arrives next waits for the
+successor), closes the pool, reports EXITED and exits; a second SIGTERM during
+the drain changes nothing. The deploy script moves the agent to the new release
+on every deploy without killing work: an idle agent (`READY` in the agent
+registry at `/api/systemagents/`) is restarted at once; a working agent, or one
+whose state cannot be read, is signalled alone to step down (`systemctl kill
+--kill-who=main`), drains, and is started again by systemd (`Restart=always`)
+from the new release, while the previous release stays on disk (the deploy keeps
+five). The agent dispatches its doer scripts (`submit-evgen-task.py` →
+`evgen_panda_submit.py`, `cache-payload-log.py`, `storage-sweep.py`, …) as fresh
+subprocesses by absolute path into the release it started from, so doer changes,
+like changes to the agent module itself (`agents/epicprod_ops_agent.py`) and its
+startup inputs (`prodops.toml`, `production.env`), reach the agent at that
+restart. A hand restart is `sudo systemctl restart epicprod-ops-agent`; it drains
+the same way, bounded by the unit's stop timeout.
 
 **Deliberate stop** — two back doors, neither counted as a failure: `sudo
 systemctl stop epicprod-ops-agent` (host-level; SIGTERM unwinds BaseAgent's

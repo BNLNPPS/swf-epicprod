@@ -65,9 +65,13 @@ so its memory stays at the size of one dataset whatever the size of
 the inventory (about 8.8 million files under the roots). Every row a
 pass touches is stamped with the pass, which makes the gone check a
 query per location and an interrupted pass resumable from where it
-stopped; the counters a location's transitions accrue are written in
-the transaction that commits its rows, so an interruption loses
-nothing observed. It reads at three tiers, each from a call the
+stopped. A pass holds the store only while the process that opened it
+is alive, so a pass killed with its process never blocks the next one,
+which notes the abandonment and redoes the interval; a signalled pass
+records the interruption on its row. The counters a location's
+transitions accrue are written in the transaction that commits its
+rows, so an interruption loses nothing observed. It reads at three
+tiers, each from a call the
 residual-rerun and delivery paths already use against JLab Rucio.
 
 **Dataset tier**, every dataset under the production roots (about 6,400

@@ -23,6 +23,7 @@ creation time, an upper bound.
 import datetime as dt
 import json
 import os
+import socket
 import sqlite3
 import statistics
 import threading
@@ -60,14 +61,30 @@ THRESHOLD_DEFAULTS = {
     'storage_stalled_hours': 12,
     'storage_single_copy_warn_days': 7,
 }
-# A pass holds the store while its row has no finish and it started within
-# this bound; an older unfinished row is an abandoned pass (a killed
-# process) and does not block a new one.
-PASS_ABANDONED_S = 12 * 3600
-
-
 class PassInProgress(RuntimeError):
-    """Another pass is writing the store: its row is unfinished and recent."""
+    """Another pass is writing the store: its row is unfinished and the
+    process that opened it is alive on this host."""
+
+
+def _pass_alive(pid, host):
+    """Whether the process that opened a pass row is still running here.
+    A row without a pid (an older store), a pid that is gone, or a pid now
+    held by some other program is a dead pass: it never blocks."""
+    if not pid:
+        return False
+    if host and host != socket.gethostname():
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        with open(f'/proc/{int(pid)}/cmdline', 'rb') as handle:
+            return b'storage' in handle.read()
+    except OSError:
+        return True
 
 _print_lock = threading.Lock()
 
@@ -131,7 +148,7 @@ SCHEMA = (
     'CREATE TABLE IF NOT EXISTS passes ('
     ' id INTEGER PRIMARY KEY AUTOINCREMENT, mode TEXT, started TEXT,'
     ' finished TEXT, campaigns TEXT, files_checked INTEGER,'
-    ' datasets_checked INTEGER, errors TEXT)',
+    ' datasets_checked INTEGER, errors TEXT, pid INTEGER, host TEXT)',
     'CREATE TABLE IF NOT EXISTS latencies ('
     ' pass_id INTEGER, campaign TEXT, kind TEXT, seconds REAL)',
     'CREATE INDEX IF NOT EXISTS latencies_pass ON latencies(pass_id)',
@@ -146,12 +163,30 @@ def open_store(path=DEFAULT_DB):
         db.execute(statement)
     # A store created before a column existed gains it in place.
     for table, column, kind in (('files', 'last_pass', 'INTEGER'),
-                                ('datasets', 'last_pass', 'INTEGER')):
+                                ('datasets', 'last_pass', 'INTEGER'),
+                                ('passes', 'pid', 'INTEGER'),
+                                ('passes', 'host', 'TEXT')):
         present = {row[1] for row in db.execute(f'PRAGMA table_info({table})')}
         if column not in present:
             db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {kind}')
     db.commit()
     return db
+
+
+def mark_pass_interrupted(reason, db_path=DEFAULT_DB):
+    """Record on this process's unfinished pass row that it was interrupted
+    (a signal to the doer). ``finished`` stays empty, so the next pass
+    redoes the interval, and the row no longer blocks once this process is
+    gone. Returns the pass id, or None when this process holds no pass."""
+    db = open_store(db_path)
+    row = db.execute('SELECT id FROM passes WHERE finished IS NULL AND pid = ?'
+                     ' ORDER BY id DESC LIMIT 1', (os.getpid(),)).fetchone()
+    if row is None:
+        return None
+    db.execute('UPDATE passes SET errors = ? WHERE id = ?',
+               (json.dumps([f'interrupted: {reason}']), row[0]))
+    db.commit()
+    return row[0]
 
 
 def _bump(counters, key, n=1):
@@ -1332,18 +1367,21 @@ def run_pass(mode='incremental', campaigns=None, db_path=DEFAULT_DB,
         log(f'validation run on a copy of the store: {copy}')
     db = open_store(db_path)
     if not resume_pass and not (limit_files or limit_datasets):
-        # The store's latest pass, whatever its state: an unfinished
-        # older row is history once a later pass has completed.
+        # The store's latest pass, whatever its state: an unfinished row
+        # holds the store only while the process that opened it is alive.
+        # A pass killed with its process is abandoned and never blocks; the
+        # next pass redoes its interval, since ``since`` is the last
+        # completed pass.
         latest = db.execute(
-            'SELECT id, mode, started, finished FROM passes'
+            'SELECT id, mode, started, finished, pid, host FROM passes'
             ' ORDER BY id DESC LIMIT 1').fetchone()
         if latest and not latest[3]:
-            started_at = _parse_iso(latest[2])
-            age = (now - started_at).total_seconds() if started_at else None
-            if age is not None and age < PASS_ABANDONED_S:
+            if _pass_alive(latest[4], latest[5]):
                 raise PassInProgress(
-                    f'pass {latest[0]} ({latest[1]}) started '
-                    f'{round(age / 60)} min ago still holds the store')
+                    f'pass {latest[0]} ({latest[1]}, pid {latest[4]}) started '
+                    f'{latest[2]} still holds the store')
+            log(f'pass {latest[0]} ({latest[1]}) started {latest[2]} was left '
+                f'unfinished by a dead process (pid {latest[4]}): abandoned')
     last = db.execute('SELECT finished FROM passes WHERE finished IS NOT NULL'
                       ' ORDER BY id DESC LIMIT 1').fetchone()
     since = _parse_iso(last[0]) if last else None
@@ -1367,10 +1405,14 @@ def run_pass(mode='incremental', campaigns=None, db_path=DEFAULT_DB,
         if row is None or row[0] != mode or row[1]:
             raise RuntimeError(
                 f'pass {pass_id} is not an unfinished {mode} pass')
+        db.execute('UPDATE passes SET pid = ?, host = ? WHERE id = ?',
+                   (os.getpid(), socket.gethostname(), pass_id))
     else:
         cursor = db.execute(
-            'INSERT INTO passes (mode, started, campaigns) VALUES (?,?,?)',
-            (mode, _iso(now), json.dumps(list(campaigns))))
+            'INSERT INTO passes (mode, started, campaigns, pid, host)'
+            ' VALUES (?,?,?,?,?)',
+            (mode, _iso(now), json.dumps(list(campaigns)), os.getpid(),
+             socket.gethostname()))
         pass_id = cursor.lastrowid
     db.commit()
     log(f'pass {pass_id} {mode}: {len(inventory)} datasets under the roots;'
