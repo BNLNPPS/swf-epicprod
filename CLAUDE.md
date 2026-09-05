@@ -33,7 +33,8 @@ operations, succession), `PANDA_USER_JOBS.md`,
 `JEDI_INTEGRATION.md`, `JEDI_EPIC_PROPOSAL.md`,
 `CAMPAIGN_CONTINUUM.md`, `CAMPAIGN_DELIVERY.md`, `STORAGE.md`,
 `CONTINUOUS_PRODUCTION.md`, `EPICPROD_PAYLOAD.md`, `RUCIO_RESILIENCE.md`,
-`OSG_SUBMISSION.md`, and `COMMISSIONING_RELAXATIONS.md`.
+`RUCIO_FAILOVER_STASH.md`, `OSG_SUBMISSION.md`, and
+`COMMISSIONING_RELAXATIONS.md`.
 Platform-service docs (action stream, SSE, external access, MCP,
 deployment) remain in `swf-monitor/docs/`.
 

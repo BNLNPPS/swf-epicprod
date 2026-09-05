@@ -103,7 +103,8 @@ In order, each a committed step on the clone:
    success on good physics plus completed upload; an ops-agent
    registrar completes pending registrations in batches at bounded
    concurrency; the BNL interim stash when the upload path itself
-   fails. A registration failure then costs no completed compute.
+   fails (RUCIO_FAILOVER_STASH.md). A registration failure then costs
+   no completed compute.
 3. **Payload reporting.** `jobReport.json` becomes the payload's
    report: events requested and produced per stage, wall and CPU per
    stage from the prmon summaries, peak memory, output sizes, the
@@ -168,6 +169,6 @@ land in this tree; the condor submission path keeps its own copy.
 - Container: confirmation of the Rucio client, jsonschema and uproot
   in the campaign image, or vendoring in the sandbox.
 - Storage operations: the BNL interim stash allocation
-  (RUCIO_RESILIENCE.md).
+  (RUCIO_FAILOVER_STASH.md).
 - Credentials unchanged: the `eicprod` proxy shipped in the sandbox
   registers the outputs, as today.

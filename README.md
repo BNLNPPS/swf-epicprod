@@ -111,6 +111,9 @@ Production operations:
   cloned from the production team's run script and evolved here.
 - [RUCIO_RESILIENCE.md](docs/RUCIO_RESILIENCE.md) — preventing Rucio
   registration losses.
+- [RUCIO_FAILOVER_STASH.md](docs/RUCIO_FAILOVER_STASH.md) — the failover
+  stash: outputs staged at BNL while JLab is unreachable, moved and
+  registered at JLab by the registrar.
 - [RUCIO_REGISTRATION_CONTRACT.md](docs/RUCIO_REGISTRATION_CONTRACT.md) —
   what every Rucio registration must carry: the event count on every
   file, by registration path.
