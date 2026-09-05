@@ -51,8 +51,10 @@ Registration begins with the questions the record must answer
   without the event count the registration contract requires; and
   whether those populations shrink between campaigns or grow.
 
-The useful resolution is hourly for the live record, with a full
-reconciliation nightly.
+The live record refreshes every four hours, with a full reconciliation
+nightly. Nothing it watches changes by the hour, uploads trickle,
+rules progress over hours to days, ghosts sit until an administrator
+acts, and the pass is paced to cost the catalog little.
 
 ## The pass
 
@@ -120,10 +122,17 @@ Three modes:
   complete inventory and the initial ghost population;
 - **full**, nightly as a `catalog_sync` chain step, over the dataset
   tier for every dataset and the file tier for the target campaigns;
-- **incremental**, hourly, over files registered since the previous
-  pass (the arrivals sweep's created-after search) and every file whose
-  previous row held a non-available replica, plus the dataset tier for
-  datasets touched by either.
+- **incremental**, every four hours, by file name and never by listing
+  a location: the files registered since the previous pass (the
+  created-after search names them) and the target campaigns' stored
+  files holding a non-available replica on a disk RSE, the transient
+  states a few hours can change; tape replicas unavailable as their
+  steady state, and marking files gone, are left to the nightly full
+  pass. Every open, partially placed, or non-OK-ruled dataset of the
+  target campaigns has its summary, rules and locks refreshed without a
+  file listing, two light calls per dataset, so rule progress reads
+  each pass. The crawl is single-threaded with a two-second pause after
+  every catalog call, well under one call a second.
 
 The job join: every production job records its manifest row as a
 pseudo-input file named by the sequence number, and an output file's
@@ -343,8 +352,8 @@ does.
   incremental mode, `--resume` for an interrupted pass and
   `--publish-only` to publish the store's last completed pass without a
   crawl, invoked as the `storage_sweep` chain step after the
-  delivery rebuild and by an hourly cron enqueue of the `storage_sweep`
-  message; provider additions in `snapper_providers.py` (curve
+  delivery rebuild and by a cron enqueue of the `storage_sweep` message
+  every four hours; provider additions in `snapper_providers.py` (curve
   extraction under a `st` prefix family, the families, the focus view,
   the card); the card kind in `_snapper_cards.html`; the tool registry
   entries for `epicprod_storage`; the SysConfig keys `storage_copying_stuck_hours`,
@@ -354,8 +363,8 @@ does.
 - The series cache version bumps with the new curve vocabulary; the
   focus series cache takes the live 90-second class.
 - Order of delivery, each stage usable on its own: the census and the
-  store; the component and its publication on the chain and the hourly
-  cron; the view with its cut card; the retrieval tool; the arrivals
+  store; the component and its publication on the chain and the
+  four-hourly cron; the view with its cut card; the retrieval tool; the arrivals
   backfill; detection.
 
 ## Related

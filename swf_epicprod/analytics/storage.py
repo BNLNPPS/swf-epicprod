@@ -6,9 +6,10 @@ Three tiers per pass: RSE usage and account limits; every covered
 dataset's per-RSE replica summary, rules and content; every covered
 file's replica states in all states. Three modes: ``census`` (every
 file under the production roots, once), ``full`` (nightly: every
-dataset, the target campaigns' files), ``incremental`` (hourly: files
-registered since the previous pass and files holding a non-available
-replica). Transitions are derived by comparing a file's replicas with
+dataset, the target campaigns' files), ``incremental`` (every four
+hours: the files registered since the previous pass and the target
+campaigns' files holding a non-available replica on a disk RSE,
+refreshed by name). Transitions are derived by comparing a file's replicas with
 its stored rows, so arrivals, completed transfers, deletions and ghost
 appearance and clearance accrue as monotonic counters that every
 consumer differences. ``projection()`` builds the bounded component
@@ -40,10 +41,13 @@ REPLICA_STATES = ('AVAILABLE', 'COPYING', 'UNAVAILABLE', 'BAD',
 NO_RSE = 'none'
 FILE_BATCH = 1000
 META_CHUNK = 500
-# The crawl: two locations in flight, a pause after every catalog bite,
-# never more than one location's names in hand.
-THREADS = 2
-PAUSE_S = 0.2
+# The crawl: one location in flight, a two-second pause after every
+# catalog bite, never more than one location's names in hand. The pass
+# is paced well under one call a second: the catalog is a shared
+# production service, and nothing this record watches changes by the
+# hour.
+THREADS = 1
+PAUSE_S = 2.0
 # JLab Rucio tokens live one hour; a pass runs for many.
 TOKEN_REFRESH_S = 50 * 60
 LISTING_HEAD = 50
@@ -586,32 +590,43 @@ def refresh_dataset(db, catalog, now, pass_id, name, inventory, meta, lock,
 
 
 def _locations_incremental(db, catalog, campaigns, since):
-    """Locations an incremental pass crawls: those with files registered
-    since the previous pass, those holding a stored file with a
-    non-available replica or none, and those whose dataset is open,
-    partially placed on every RSE, or carrying a non-OK rule."""
+    """What an incremental pass touches, as {location: (with_files,
+    names)}. Files are refreshed by name, never by listing a location:
+    the files registered since the previous pass (the catalog's
+    created-after search names them) and the stored files of the target
+    campaigns holding a replica that is not available on a disk RSE, the
+    transient states a few hours can change (copying uploads and
+    transfers, replicas declared bad or unavailable). Tape replicas that
+    are unavailable as their steady state are left to the nightly full
+    pass, as is marking files gone. Every dataset of the target
+    campaigns that is open, partially placed, or carrying a non-OK rule
+    has its summary, rules and locks refreshed without a file listing,
+    two light calls per dataset, so rule progress reads each pass."""
     created_after = since.astimezone(dt.timezone.utc).strftime(
         '%Y-%m-%dT%H:%M:%S')
-    locations = set()
+    names_by_location = {}
+    # Files registered since the previous pass, named by the search.
     for root in ROOTS:
         for name in catalog.search(root + '/*', 'file',
                                    created_after=created_after):
             _, _, location = _split(name)
             if location:
-                locations.add(location)
+                names_by_location.setdefault(location, set()).add(name)
+    # Stored files with a non-available replica on a disk RSE.
+    tape = sorted(r for (r,) in db.execute(
+        "SELECT rse FROM rses WHERE rse_type = 'TAPE'"))
     marks = ', '.join(['?'] * len(campaigns))
-    for (location,) in db.execute(
-            'SELECT DISTINCT f.location FROM files f WHERE f.gone_at IS NULL'
-            f' AND f.campaign IN ({marks}) AND NOT EXISTS'
-            ' (SELECT 1 FROM replicas r WHERE r.name = f.name'
-            "  AND r.state = 'AVAILABLE')", list(campaigns)):
-        locations.add(location)
-    for (location,) in db.execute(
-            'SELECT DISTINCT f.location FROM replicas r JOIN files f'
-            ' ON f.name = r.name WHERE f.gone_at IS NULL'
-            f" AND f.campaign IN ({marks}) AND r.state != 'AVAILABLE'",
-            list(campaigns)):
-        locations.add(location)
+    params = list(campaigns)
+    sql = ('SELECT DISTINCT f.name, f.location FROM replicas r JOIN files f'
+           ' ON f.name = r.name WHERE f.gone_at IS NULL'
+           f" AND f.campaign IN ({marks}) AND r.state != 'AVAILABLE'")
+    if tape:
+        sql += ' AND r.rse NOT IN (%s)' % ', '.join(['?'] * len(tape))
+        params += tape
+    for name, location in db.execute(sql, params):
+        names_by_location.setdefault(location, set()).add(name)
+    out = {location: (True, names)
+           for location, names in names_by_location.items() if names}
     for name, is_open, summary, rules in db.execute(
             'SELECT name, is_open, summary, rules FROM datasets'
             f' WHERE gone_at IS NULL AND campaign IN ({marks})',
@@ -623,8 +638,8 @@ def _locations_incremental(db, catalog, campaigns, since):
             for r in rows)
         if is_open or not complete_somewhere or any(
                 r.get('state') != 'OK' for r in json.loads(rules or '[]')):
-            locations.add(name.lstrip('/'))
-    return locations
+            out.setdefault(name.lstrip('/'), (False, None))
+    return out
 
 
 def locations_to_crawl(db, catalog, mode, inventory, campaigns, since):
@@ -639,15 +654,16 @@ def locations_to_crawl(db, catalog, mode, inventory, campaigns, since):
     entries = {}
     if mode == 'census':
         for location, name in by_location.items():
-            entries[location] = (name, True)
+            entries[location] = (name, True, None)
     elif mode == 'full':
         for location, name in by_location.items():
             root, campaign = inventory[name]
             entries[location] = (name, campaign in campaigns
-                                 or root == 'EVGEN')
+                                 or root == 'EVGEN', None)
     else:
-        for location in _locations_incremental(db, catalog, campaigns, since):
-            entries[location] = (by_location.get(location), True)
+        selection = _locations_incremental(db, catalog, campaigns, since)
+        for location, (with_files, names) in selection.items():
+            entries[location] = (by_location.get(location), with_files, names)
     if mode != 'incremental':
         query = 'SELECT DISTINCT location FROM files WHERE gone_at IS NULL'
         params = []
@@ -655,9 +671,9 @@ def locations_to_crawl(db, catalog, mode, inventory, campaigns, since):
             query += ' AND campaign IN (%s)' % ', '.join(['?'] * len(campaigns))
             params = list(campaigns)
         for (location,) in db.execute(query, params):
-            entries.setdefault(location, (None, True))
-    return [(location, dataset, with_files)
-            for location, (dataset, with_files) in sorted(entries.items())]
+            entries.setdefault(location, (None, True, None))
+    return [(location, dataset, with_files, names)
+            for location, (dataset, with_files, names) in sorted(entries.items())]
 
 
 # ---------------------------------------------------------------------------
@@ -847,18 +863,23 @@ class _Ledger:
 
 
 def crawl_location(db, catalog, ledger, now, pass_id, location, dataset,
-                   inventory, meta, with_files, lock):
+                   inventory, meta, with_files, lock, names=None):
     """One bite of the crawl: refresh the location's dataset, list the
     location's files, resolve their replicas a batch at a time, apply
     the transitions, stamp the rows with the pass, and mark the
     location's unstamped stored files gone. The names in hand are one
-    location's. Returns the number of files resolved."""
+    location's. With ``names`` given, the refresh is partial: only those
+    files are resolved, no listing is made, the dataset content is not
+    read, and nothing is marked gone (the incremental pass's named
+    refresh of new and transient files). Returns the number of files
+    resolved."""
     stamp = _iso(now)
+    partial = names is not None
     content = None
     if dataset is not None:
         content = refresh_dataset(db, catalog, now, pass_id, dataset,
                                   inventory, meta, lock,
-                                  with_content=with_files)
+                                  with_content=with_files and not partial)
         time.sleep(PAUSE_S)
         if content is not None:
             first_rse = _first_rse_of(meta, catalog, dataset, db, lock)
@@ -867,12 +888,15 @@ def crawl_location(db, catalog, ledger, now, pass_id, location, dataset,
                     ledger.first_rse[location] = first_rse
     if not with_files:
         return 0
-    try:
-        names = sorted(catalog.search('/' + location + '/*', 'file'))
-    except Exception as exc:                                  # noqa: BLE001
-        catalog._fail(f'search {location}', exc)
-        return 0
-    time.sleep(PAUSE_S)
+    if partial:
+        names = sorted(names)
+    else:
+        try:
+            names = sorted(catalog.search('/' + location + '/*', 'file'))
+        except Exception as exc:                              # noqa: BLE001
+            catalog._fail(f'search {location}', exc)
+            return 0
+        time.sleep(PAUSE_S)
     with lock:
         stored_files, stored_reps = _stored(db, names)
     new_names = [n for n in names if n not in stored_files]
@@ -912,7 +936,7 @@ def crawl_location(db, catalog, ledger, now, pass_id, location, dataset,
                         name, campaign, loc, created, size,
                         stored_reps.get(name, {}), states)
                     first_seen = old['first_seen'] or stamp
-                if content is not None:
+                if content is not None and not partial:
                     is_attached = 1 if name in content else 0
                 else:
                     is_attached = old['attached'] if old else None
@@ -941,7 +965,9 @@ def crawl_location(db, catalog, ledger, now, pass_id, location, dataset,
             db.commit()
     # Gone: the location was listed in full and every listed file was
     # resolved, so a stored file here without this pass's stamp is gone.
-    if complete:
+    # A partial refresh listed nothing in full and marks nothing gone;
+    # the nightly full pass does.
+    if complete and not partial:
         with lock:
             gone = list(db.execute(
                 'SELECT name, bytes FROM files WHERE location = ?'
@@ -978,7 +1004,7 @@ def crawl(db, catalog, ledger, now, pass_id, entries, inventory,
     With ``resume`` the entries already stamped with this pass are
     skipped. Returns (files resolved, locations crawled)."""
     lock = threading.Lock()
-    dataset_names = [d for _, d, _ in entries if d]
+    dataset_names = [d for _, d, _, _ in entries if d]
     meta = {}
     for start in range(0, len(dataset_names), META_CHUNK):
         meta.update(catalog.bulkmeta(dataset_names[start:start + META_CHUNK]))
@@ -1000,11 +1026,11 @@ def crawl(db, catalog, ledger, now, pass_id, entries, inventory,
     def one(entry):
         if stop.is_set():
             return
-        location, dataset, with_files = entry
+        location, dataset, with_files, names = entry
         n = crawl_location(db, catalog, ledger, now, pass_id, location,
                            dataset, inventory,
                            meta.get(dataset) if dataset else None,
-                           with_files, lock)
+                           with_files, lock, names=names)
         with lock:
             progress['resolved'] += n
             progress['done'] += 1

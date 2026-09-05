@@ -288,8 +288,8 @@ doc does not duplicate them.
 `delivery_daily_rebuild` (the delivered-data daily record,
 CAMPAIGN_DELIVERY.md), `storage_sweep` (the storage record's pass,
 STORAGE.md: the nightly full pass as a `catalog_sync` chain step, the
-hourly incremental pass by cron enqueue, skipped while another pass holds
-the store), `campaign_config_propose` (the campaign configuration
+four-hourly incremental pass by cron enqueue, skipped while another pass
+holds the store), `campaign_config_propose` (the campaign configuration
 proposer: a ping and its remedy for every edition without a Standard
 Production configuration, through the AI proposal subsystem; swf-monitor
 PINGS.md § Pings with a remedy), `sync_epicprod_inventory`,

@@ -460,12 +460,12 @@ A `wenauseic` cron enqueues `catalog_sync` for the ops agent nightly at 02:47:
 
 ```
 47 2 * * * bash -lc 'source ~/.env && /opt/swf-monitor/current/.venv/bin/python /opt/swf-monitor/current/scripts/enqueue-ops-message.py catalog_sync --created-by nightly_cron' >> /opt/swf-monitor/shared/logs/catalog-sync-cron.log 2>&1
-13 * * * * bash -lc 'source ~/.env && /opt/swf-monitor/current/.venv/bin/python /opt/swf-monitor/current/scripts/enqueue-ops-message.py storage_sweep --created-by hourly_cron' >> /opt/swf-monitor/shared/logs/storage-sweep-cron.log 2>&1
+13 */4 * * * bash -lc 'source ~/.env && /opt/swf-monitor/current/.venv/bin/python /opt/swf-monitor/current/scripts/enqueue-ops-message.py storage_sweep --created-by four_hourly_cron' >> /opt/swf-monitor/shared/logs/storage-sweep-cron.log 2>&1
 ```
 
-The second line is the storage record's hourly incremental pass
-(STORAGE.md); the agent runs one storage pass at a time, and the doer
-records `skipped` when another pass holds the store.
+The second line is the storage record's incremental pass, every four
+hours (STORAGE.md); the agent runs one storage pass at a time, and the
+doer records `skipped` when another pass holds the store.
 
 The chain runs credential expiry check → csv import → questionnaire
 import → association sweep with auto-intake of direct group.EIC
