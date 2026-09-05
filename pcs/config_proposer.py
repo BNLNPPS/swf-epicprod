@@ -89,10 +89,11 @@ def propose_campaign_configs(*, created_by='', batch_id='', apply=True):
         ping_items.append({
             'title': title, 'due': due, 'lead_days': LEAD_DAYS,
             'owner': OWNER, 'url': '/pcs/', 'comment': comment,
-            'note': (f'Approve the remedy beside this ping to create '
+            'note': (f'Approve to create '
                      f'{standard_prodconfig_name(edition)} from the '
-                     f'template, or run scripts/create_standard_prodconfig.py '
-                     f'--campaign {edition} --apply.')})
+                     f'template and record this obligation met, or run '
+                     f'scripts/create_standard_prodconfig.py --campaign '
+                     f'{edition} --apply by hand.')})
         if image_present:
             remedy_items.append({'edition': edition, 'ping_title': title,
                                  'comment': comment})

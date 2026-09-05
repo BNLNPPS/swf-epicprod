@@ -6376,13 +6376,8 @@ def standard_prodconfig_create(edition, *, changed_by, origin=None,
         origin_attrs = {'origin': 'manual'}
     config = ProdConfig.objects.create(name=name, created_by=changed_by or 'pcs',
                                        **values)
-    log_id = log_epicprod_action(
-        'web', 'standard_prodconfig_create', subject_type='prod_config',
-        subject_key=name, subject_label=name, username=changed_by or '',
-        sublevel='normal', live_default=True, config_id=config.pk,
-        edition=edition, template=STANDARD_CONFIG_TEMPLATE,
-        container_image=values['container_image'], url='/pcs/',
-        **origin_attrs)
+    # The linked ping is fulfilled before the event is written, so the
+    # event carries what this act fulfilled.
     ping_fulfilled = None
     if ping_title:
         from monitor_app import alarms_data
@@ -6395,5 +6390,13 @@ def standard_prodconfig_create(edition, *, changed_by, origin=None,
             except alarms_data.PingError as exc:
                 _log.error('standard_prodconfig_create %s: ping %r not '
                            'fulfilled: %s', name, ping_title, exc)
+    log_id = log_epicprod_action(
+        'web', 'standard_prodconfig_create', subject_type='prod_config',
+        subject_key=name, subject_label=name, username=changed_by or '',
+        sublevel='normal', live_default=True, config_id=config.pk,
+        edition=edition, template=STANDARD_CONFIG_TEMPLATE,
+        container_image=values['container_image'], url='/pcs/',
+        ping_title=ping_title, ping_fulfilled=str(ping_fulfilled or ''),
+        **origin_attrs)
     return {'name': name, 'config_id': config.pk, 'log_id': log_id,
             'ping_fulfilled': ping_fulfilled, 'values': preview}
