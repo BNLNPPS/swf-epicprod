@@ -7,7 +7,7 @@ JobDefinition, then prints the environment values the trigger and
 enforcement need. No human hands on corun configuration.
 
     python -m swf_epicprod.assessment.bootstrap [--model gpt-5.6-sol]
-        [--effort xhigh] [--timeout-s 900]
+        [--effort xhigh] [--timeout-s 1800]
 
 Environment: CORUN_API_URL, CORUN_API_TOKEN.
 """
@@ -123,9 +123,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--model', default='gpt-5.6-sol')
     parser.add_argument('--effort', default='xhigh')
-    # The prompt requires completion within ten minutes. The worker gets five
-    # minutes of termination margin, not additional investigation time.
-    parser.add_argument('--timeout-s', type=int, default=900)
+    # The prompt requires completion within fifteen minutes. The worker's
+    # thirty is termination margin, not additional investigation time.
+    parser.add_argument('--timeout-s', type=int, default=1800)
     parser.add_argument('--section', default=spec.DEFAULT_SECTION)
     args = parser.parse_args()
 

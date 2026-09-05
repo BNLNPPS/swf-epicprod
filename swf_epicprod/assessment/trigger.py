@@ -167,8 +167,11 @@ def submit_run(campaign, kind, window_days, *, dry_run=False,
     # Persist first, then attach the hidden Page locator to the evidence sent
     # to the model and final renderer.
     date = evidence['generated_at'][:10]
+    # submitted_at is the run's start for the model's time budget (spec:
+    # EXECUTION BUDGET); the job normally starts within seconds of it.
     content = json.dumps({
         'slot': spec.slot(campaign, kind, date),
+        'submitted_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
         'bundle': evidence,
     })
     definition = _definition_for(kind)

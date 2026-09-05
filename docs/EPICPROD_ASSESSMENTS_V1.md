@@ -322,10 +322,14 @@ already deployed); receives completion through the existing subscription →
 swf-monitor callback → Mattermost relay, unchanged; reads result pages,
 run records, and prompt history over REST. Model settings epicprod sets in
 the definition it creates: Codex Sol (`gpt-5.6-sol`) at `xhigh` reasoning
-effort; a 900-second (15-minute) worker timeout. The system prompt requires
-the assessor to calibrate its work and submit a complete report within ten
-minutes, leaving five minutes only as termination margin (operator directive
-2026-07-13).
+effort; an 1800-second (30-minute) worker timeout. The system prompt requires
+the assessor to calibrate its work and submit a complete report within
+fifteen minutes, the remaining fifteen being termination margin only
+(operator directives 2026-07-13 and 2026-09-05). The submission carries
+its `submitted_at` time so the assessor can measure its elapsed time
+against the budget; the model is given no other clock. The budget was ten
+minutes under a 900-second timeout until 2026-09-05, when runs of thirteen
+to fifteen minutes had twice reached the kill.
 
 ### Artifact schema (v5, `schema_version: 5`)
 
