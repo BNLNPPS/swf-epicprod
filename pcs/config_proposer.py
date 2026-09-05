@@ -139,7 +139,7 @@ def propose_campaign_configs(*, created_by='', batch_id='', apply=True):
             continue
         try:
             alarms_data.ping_fulfil_execute(
-                ping['id'], changed_by=created_by or PROPOSER,
+                ping['id'], changed_by=PROPOSER,
                 origin={'kind': 'rule', 'proposer': PROPOSER})
         except alarms_data.PingError as exc:
             result['errors'].append(f'{ping["title"]}: {exc}')
