@@ -269,8 +269,8 @@ doc does not duplicate them.
   or finish — scalar commands paced one second apart, then per-task
   verification on a shared deadline; retry of an aborted task routes
   through PanDA reactivation, and a retry carrying `new_parameters`, the
-  changed memory and wall time from the tasks page, routes every task of
-  the batch through it),
+  changed memory, wall time and target queue from the tasks page, routes
+  every task of the batch through it),
   `panda_sandbox_keepalive` (touch retryable tasks' sandbox tarballs in the
   PanDA server cache; nightly `catalog_sync` chain step —
   [JEDI_INTEGRATION.md](JEDI_INTEGRATION.md)),
