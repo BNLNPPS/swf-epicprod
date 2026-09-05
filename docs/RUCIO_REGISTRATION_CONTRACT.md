@@ -34,7 +34,7 @@ Status by registration path:
 |---|---|---|---|
 | EVGEN registration doer (`register-evgen-rucio.py`, the "Register in Rucio" action) | EVGEN input files and datasets in JLab Rucio | yes, as the registration's second step; verified against the derived dataset total | in place 2026-09-02 (EPICPROD_EVGEN_INPUTS.md § Registration) |
 | EVGEN datasets registered before 2026-09-02 | — | no | backfill pending: the same doer mode over every registered EVGEN dataset without a count |
-| Produced FULL and RECO, registered by the campaign payload (`simulation_campaign_hepmc3/scripts/register_to_rucio.py` via `run.sh`, under the epicprod runner) | output files and datasets in JLab Rucio, with dataset tag metadata (software release, geometry, data level, beam parameters) | no | open: the per-file `events` write belongs in the job's registration step, where the count is known; to be integrated with the run-script changes planned in RUCIO_RESILIENCE.md |
+| Produced FULL and RECO, registered by the campaign payload (`simulation_campaign_hepmc3/scripts/register_to_rucio.py` via `run.sh`, under the epicprod runner) | output files and datasets in JLab Rucio, with dataset tag metadata (software release, geometry, data level, beam parameters) | no | open: the per-file `events` write belongs in the job's registration step, where the count is known; it is the first evolution step of the epicprod payload (EPICPROD_PAYLOAD.md), once the payload is this tree's |
 
 ## Enforcement
 

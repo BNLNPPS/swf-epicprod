@@ -21,4 +21,4 @@ This flattens the pulse and likely prevents recurrence at current scale. It does
 
 BNL storage operations are asked to confirm the allocation behind BNL_PROD_DISK_1 supports science-scale temporary overflow. Site-side buffering is the last option when no wide-area path works.
 
-These run script changes will go into the epicprod submit runner. Coordination is needed with Sakib's planned run.sh changes which need to be integrated into the epicprod runner for Sep use.
+These run script changes land in the epicprod payload, the production team's run script cloned into this tree and evolved here (EPICPROD_PAYLOAD.md); the September run-script changes planned by the production team land there too.

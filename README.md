@@ -106,6 +106,9 @@ Production operations:
   operations over epicprod.
 - [EPICPROD_SUCCESSION.md](docs/EPICPROD_SUCCESSION.md) — succession:
   credentials, hosts, and hand-over.
+- [EPICPROD_PAYLOAD.md](docs/EPICPROD_PAYLOAD.md) — the epicprod
+  payload: the in-job runner and payload implemented end to end,
+  cloned from the production team's run script and evolved here.
 - [RUCIO_RESILIENCE.md](docs/RUCIO_RESILIENCE.md) — preventing Rucio
   registration losses.
 - [RUCIO_REGISTRATION_CONTRACT.md](docs/RUCIO_REGISTRATION_CONTRACT.md) —
