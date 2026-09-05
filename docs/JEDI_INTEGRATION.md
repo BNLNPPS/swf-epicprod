@@ -225,13 +225,28 @@ preserves the convention: file names derive from the job's stable work-unit
 handle, the `${SEQNUMBER}` pseudo-input serial, which a retried job reuses.
 
 A within-task job retry therefore regenerates the same file DID as its
-predecessor. Registration handles this by checking the DID before upload: a
-registered file with an available replica was delivered by the previous
-attempt, and the job exits successfully without uploading; a file present on
-storage without registration is removed and replaced. Uniqueness across full
-submissions comes from the `.tryN` namespace
-([Output dataset](#output-dataset-rucio-did)); attempt identifiers such as the
-PanDA job id do not appear in file names.
+predecessor. The payload in use today (`register_to_rucio.py`) makes no check
+before upload: when the upload fails it marks any COPYING replica of the
+file at the target RSE unavailable and tombstones it, and nothing else. A
+file DID that is registered but has no available replica anywhere, a ghost,
+is neither delivered nor cleaned, and every later attempt at the same name
+fails against it with a duplicate-DID error whichever PanDA task runs it.
+The check before upload, under which a registered file with an available
+replica counts as delivered and the job exits successfully without
+uploading, while a file present on storage without registration is removed
+and replaced, is a step of the epicprod payload (EPICPROD_PAYLOAD.md).
+
+Uniqueness across full submissions comes from the `.tryN` namespace
+([Output dataset](#output-dataset-rucio-did)), and it reaches the
+payload-managed paths through the environment: for a try after the first,
+`build_evgen_task_params` sets `TAG_PREFIX` to `tryN`
+(`pcs/commands.py`, `_add_try_env`; joined below any background prefix), and
+`run.sh` places it in the output path,
+`RECO/<ver>/<config>/tryN/<input dir below EVGEN>/<stem>.<chunk>...`. Every
+output DID of a `.tryN` submission is therefore new, ghosts of earlier tries
+included, without any change to file names. A submission outside PCS
+carries no such prefix and writes the first-try paths on every resubmission.
+Attempt identifiers such as the PanDA job id do not appear in file names.
 
 ## Example: taskParamMap Built from PCS
 
@@ -700,6 +715,18 @@ disabled at zero residual or when the delivered set cannot be established
 one-task canary reviewed before general use. Out of scope: PanDA/JEDI
 changes, cross-try Rucio deduplication (try namespaces are distinct), and
 any automatic residual submission — the action is operator-clicked.
+
+The action needs the task to be a PCS submission in every respect, which a
+task linked from an outside submission by name match is not until made so:
+a PanDA association recorded on the task itself (`panda_task_id`, the
+refusal otherwise reads "no recorded PanDA submission"); a bound production
+configuration in place of the import placeholder, carrying `events_per_job`
+and the campaign's container; and a linked EVGEN input dataset whose
+`metadata['rucio']['matched']` the EVGEN matcher has filled, which requires
+the EVGEN files registered in JLab Rucio (EPICPROD_EVGEN_INPUTS.md
+§ Registration) since the manifest is resolved from the matched DIDs. Only
+the recorded outputs, which the arrivals sweep fills for matched tasks, come
+free.
 
 ## Infrastructure: What We Know
 
