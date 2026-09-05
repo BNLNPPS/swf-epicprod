@@ -205,12 +205,21 @@ source time advanced, so intervals tile and quiet hours write no snap.
 ### Backfill
 
 Arrivals reconstruct: Rucio keeps every DID's creation time and every
-dataset replica's creation time per RSE. A backfill script writes
-`backfill-storage-v1` snaps on a daily grid carrying the arrived
-counters per RSE and campaign with the census's absolute origin, on
-the PanDA counter precedent, attributing a file's first copy to its
-sole RSE or to the RSE whose dataset replica was created first.
-Transfers, deletions, ghost appearance and clearance, ages and
+dataset replica's creation time per RSE, and the census copied both
+into the store. The backfill script
+(`scripts/backfill_storage_arrivals.py`, dry-run default) reads the
+store and writes `backfill-storage-v1` snaps on a daily grid at
+Eastern midnight, thirty days by default, carrying the arrived counters
+per RSE (arrived, first copies, replicas) and per target campaign
+(arrived, archived) with the census's absolute origin, on the PanDA
+counter precedent. It attributes a file's first copy by the pass's own
+rule, its sole RSE or else the RSE whose dataset replica was created
+first, at the file's creation time; each further replica at the later
+of the file's creation and that dataset replica's creation; the
+archive at the first tape replica. Its dry run prints the seam, the
+reconstructed totals at the last instant against the census counters,
+which differ by the files that arrived between that midnight and the
+census. Transfers, deletions, ghost appearance and clearance, ages and
 latencies do not reconstruct; those families begin at the census, and
 the view states the record's start.
 
