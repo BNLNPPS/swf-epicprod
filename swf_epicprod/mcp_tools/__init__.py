@@ -9,6 +9,7 @@ runtime is platform).
 
 from .status import epicprod_campaign_status
 from .actions import epicprod_list_actions
+from .storage import epicprod_storage
 from .proposals import (
     ai_list_proposals,
     ai_decide_proposal,
@@ -35,6 +36,7 @@ from swf_epicprod import ai_subjects  # noqa: F401  (registration side effect)
 __all__ = [
     'epicprod_campaign_status',
     'epicprod_list_actions',
+    'epicprod_storage',
     'ai_list_proposals',
     'ai_decide_proposal',
     'pcs_list_tags',

@@ -292,7 +292,12 @@ does.
 ## Implementation notes
 
 - swf-epicprod: `swf_epicprod/analytics/storage.py` (the pass, the
-  store, the projection); `scripts/backfill_storage_arrivals.py`.
+  store, the projection); `swf_epicprod/analytics/storage_listings.py`
+  (the exception listings from the store, read-only, with the ghost
+  population held per process until the store changes) behind the MCP
+  tool `epicprod_storage` (`swf_epicprod/mcp_tools/storage.py`) and the
+  REST listing `pcs/api/storage/<listing>/` (`pcs/api_views.py`);
+  `scripts/backfill_storage_arrivals.py`.
 - swf-monitor: `monitor_app/snapper_storage.py` (registration and
   publication, beside the delivery maintainer); the doer
   `scripts/storage-sweep.py` with `--census`, `--full` and the default
@@ -302,8 +307,8 @@ does.
   delivery rebuild and by an hourly cron enqueue of the `storage_sweep`
   message; provider additions in `snapper_providers.py` (curve
   extraction under a `st` prefix family, the families, the focus view,
-  the card); the card kind in `_snapper_cards.html`; the MCP tool and
-  REST view; the SysConfig keys `storage_copying_stuck_hours`,
+  the card); the card kind in `_snapper_cards.html`; the tool registry
+  entries for `epicprod_storage`; the SysConfig keys `storage_copying_stuck_hours`,
   `storage_stalled_hours`, `storage_single_copy_warn_days`.
 - Store: `/data/wenauseic/swf-delivery/storage.sqlite`, beside the
   file-events store.

@@ -877,6 +877,36 @@ def campaigns_status(request):
     return Response(result)
 
 
+@api_view(['GET'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticatedOrReadOnly])
+def storage_listing(request, listing):
+    """One exception listing from the storage record's store
+    (docs/STORAGE.md, Retrieval): ghosts, stuck_rules or
+    stalled_datasets, the REST face of the epicprod_storage MCP tool.
+    Read-only.
+
+    Query params:
+        rse       — restrict to one holding RSE; 'none' for ghosts with
+                    no replica row at all.
+        campaign  — restrict to one campaign family.
+        state     — restrict ghosts to one replica state, stuck rules
+                    to one rule state.
+        limit     — rows per page, 1 to 1000 (default 100).
+        offset    — page start.
+    """
+    from swf_epicprod.analytics.storage_listings import listing as _listing
+
+    q = request.query_params
+    result = _listing(listing, rse=q.get('rse') or '',
+                      campaign=q.get('campaign') or '',
+                      state=q.get('state') or '',
+                      limit=q.get('limit'), offset=q.get('offset'))
+    status = 400 if result.get('error') and 'unknown listing' in result['error'] else 200
+    return Response(result, status=status)
+
+
 # ---------------------------------------------------------------------------
 # Validation interface v1 (EPICPROD_VALIDATION.md § REST interface)
 # ---------------------------------------------------------------------------
