@@ -1,0 +1,33 @@
+{% comment %}
+One override value, rendered as structure rather than as a Python repr.
+
+A task's overrides carry dicts, lists of dicts, and scalars. Printing the
+raw value put `{'did': 'epic:/RECO/...', 'owner': ...}` in front of the
+reader. A dict renders as a key/value table and a list of dicts as its
+items, recursing through this template, so the reader sees the shape.
+
+`depth` bounds the recursion: past it the value prints as text, so a
+pathological structure cannot run the page away.
+{% endcomment %}
+{% if depth > 2 %}
+    {{ value }}
+{% elif value.items %}
+    <table class="table table-sm align-middle mb-0">
+        {% for k, v in value.items %}
+        <tr>
+            <td style="width:30%" class="text-muted">{{ k }}</td>
+            <td style="word-break:break-word;">{% include "pcs/_override_value.html" with value=v depth=depth|add:1 %}</td>
+        </tr>
+        {% endfor %}
+    </table>
+{% elif value.0.items %}
+    {% for item in value %}
+    <div class="{% if not forloop.first %}mt-2{% endif %}">
+        {% include "pcs/_override_value.html" with value=item depth=depth|add:1 %}
+    </div>
+    {% endfor %}
+{% elif value %}
+    {{ value }}
+{% else %}
+    <span class="text-muted">-</span>
+{% endif %}

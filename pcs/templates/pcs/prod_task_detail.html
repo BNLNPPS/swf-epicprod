@@ -192,13 +192,7 @@
                 <tr>
                     <td style="width:22%"><strong>{{ key }}</strong></td>
                     <td style="word-break:break-word;">
-                        {% if value.items %}
-                        <table class="table table-sm mb-0">
-                            {% for k2, v2 in value.items %}
-                            <tr><td style="width:30%" class="text-muted">{{ k2 }}</td><td>{{ v2|default_if_none:"-" }}</td></tr>
-                            {% endfor %}
-                        </table>
-                        {% elif value %}{{ value }}{% else %}<span class="text-muted">-</span>{% endif %}
+                        {% include "pcs/_override_value.html" with value=value depth=0 %}
                     </td>
                 </tr>
                 {% endfor %}
