@@ -541,9 +541,10 @@ per manifest row.
   runs the kernel under the panda-client environment, and records the jediTaskID
   back via `record-submission`.
 - **`scripts/evgen_job_dispatcher.py`** — shipped in the sandbox. In-job it reads
-  the manifest row for its `${SEQNUMBER}` and invokes the payload
-  (`/opt/campaigns/hepmc3/scripts/run.sh`), which sources `environment*.sh` from
-  the unpacked sandbox.
+  the manifest row for its `${SEQNUMBER}` and invokes the epicprod payload
+  shipped beside it (`payload/run.sh`, EPICPROD_PAYLOAD.md), which sources
+  `environment*.sh` from the unpacked sandbox; the container's copy of the
+  production team's scripts is not referenced.
 - **`agents/epicprod_ops_agent.py`** — the `submit_evgen_task` handler and doer,
   deduped per task, emitting the same `prodtask_submitted` /
   `prodtask_submit_failed` / `prodtask_submit_unrecorded` SSE events as the prun

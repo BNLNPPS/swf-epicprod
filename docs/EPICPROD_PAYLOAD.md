@@ -19,16 +19,17 @@ will change substantially, beginning with the registration step
 reporting continuous production depends on (CONTINUOUS_PRODUCTION.md
 § Payload metrics).
 
-## The path today
+## The path
 
 The client-API EVGEN submission (JEDI_INTEGRATION.md § Client-API
 EVGEN submission) ships a sandbox holding the manifest, an
 `environment-<csv>.sh`, the JLab `eicprod` proxy, staged background
-files, and the in-job dispatcher `evgen_job_dispatcher.py`. The
-dispatcher reads its manifest row and hands it to
-`/opt/campaigns/hepmc3/scripts/run.sh`, the payload checked out in
-the container image. Everything from that point is the container's
-copy of the production team's scripts:
+files, the in-job dispatcher `evgen_job_dispatcher.py`, and, since
+stage 0 (2026-09-06), the epicprod payload as `payload/`. The
+dispatcher reads its manifest row and hands it to `payload/run.sh` in
+the sandbox; the container's own copy of the production team's
+scripts at `/opt/campaigns/hepmc3/scripts/` is no longer referenced.
+The stages of run.sh, as cloned:
 
 | Stage | What run.sh does | Depends on |
 |---|---|---|
@@ -61,35 +62,55 @@ Consequences of this split:
 
 ## The payload package
 
-The payload lives in this repository under `payload/`: `run.sh`,
-`register_to_rucio.py`, `validate_rootfile.py`,
-`parse_podio_metadata.py`, `shared_utils.py`, `rucio.cfg`, with a
-`VERSION` file. The submit doer ships the directory in the sandbox
-beside the dispatcher, from the release the deploy freezes, the way
-the canary probe ships its kit (`site-canary`
+The payload lives in this repository inside the package, as
+`swf_epicprod/payload/`: `run.sh`, `register_to_rucio.py`,
+`validate_rootfile.py`, `parse_podio_metadata.py`, `shared_utils.py`,
+`rucio.cfg`, `check_output.py`, with a `VERSION` file naming the
+payload version and the upstream commit it was cloned from. Package
+data, so the deploy's non-editable freeze of swf-epicprod carries it
+and the submit doer finds it in the interpreter it runs under; the doer
+copies the directory whole into the sandbox as `payload/`, from the
+release, the way the canary probe ships its kit (`site-canary`
 `probe_kit/build-sandbox.sh`): a submission carries a committed payload
-version rather than a working tree. The dispatcher's entry point becomes
-`payload/run.sh` in the sandbox; the container path is no longer
-referenced. The payload version is written into `jobReport.json` and
-recorded on the task's `PandaTasks` row, so every job and task states
-what payload ran it.
+version rather than a working tree. The dispatcher's entry point is
+`payload/run.sh` in the sandbox; the container path is not referenced.
+The payload version is written into `jobReport.json` on every job and
+recorded on the task's `PandaTasks` row (`metadata.payload_version`),
+so every job and task states what payload ran it.
 
 ### Stage 0: the clone
 
 The first commit is a byte-identical copy of the six files from
-`eic/simulation_campaign_hepmc3` at a named commit, with one change,
-the dispatcher's entry point. Acceptance: one manifest row run through
-the container's payload and through the sandbox payload on the same
-queue produces FULL and RECO files that agree in event count, podio
-metadata and validation, and identical registration records apart
-from the DID try namespace. This is the canary payload run of the
-submission ladder (CONTINUOUS_PRODUCTION.md § The submission ladder,
-rung 2) applied to the payload itself.
+`eic/simulation_campaign_hepmc3` at commit 3244c0a, with one change,
+the dispatcher's entry point (2026-09-06). Acceptance: one manifest row
+run through the container's payload and through the sandbox payload on
+the same queue produces FULL and RECO files that agree in event count,
+podio metadata and validation, and identical registration records
+apart from the DID try namespace. This is the canary payload run of
+the submission ladder (CONTINUOUS_PRODUCTION.md § The submission
+ladder, rung 2) applied to the payload itself; it is the gate before
+the payload serves a campaign task.
 
 ## Evolution
 
 In order, each a committed step on the clone:
 
+0. **The delivered-output check** (2026-09-06, the first change the
+   clone carries). Before any work, `run.sh` asks the catalog about
+   this job's RECO output name (`check_output.py`, one replica read
+   with the job's credential). Registered with an available replica:
+   an earlier attempt of this job delivered it, and the job exits
+   success in seconds. Registered with no available replica: a failed
+   earlier attempt holds the name, which cannot be regenerated under
+   it, and the job exits 79 in seconds; the residual rerun as a new
+   try is the route. Not registered: proceed. At registration, a DID
+   already registered with an available replica is likewise delivery,
+   not failure. Why: a job whose payload uploads and registers, then
+   dies with its batch slot, is counted failed by PanDA and retried;
+   each retry re-runs the simulation and fails at registration on the
+   existing DID, because the output is not bit-reproducible. Task
+   39054 lost 6,400 retries this way, thousands of Perlmutter node
+   hours, for a dataset that was already complete.
 1. **Event counts at registration.** After a successful upload, the
    `events` tree entry count of each ROOT output is written to its
    file DID, so Rucio derives the dataset total. A count that cannot
@@ -149,9 +170,10 @@ land in this tree; the condor submission path keeps its own copy.
 
 ## Sequencing
 
-1. Stage 0: the clone under `payload/`, shipped in the sandbox from
-   the release, entry point switched, version recorded on job and
-   task; canary payload run compared with the container payload.
+1. Stage 0: the clone under `swf_epicprod/payload/`, shipped in the
+   sandbox from the release, entry point switched, version recorded on
+   job and task, and the delivered-output check (done 2026-09-06);
+   canary payload run compared with the container payload (pending).
 2. Event counts at registration; verified against a registered
    dataset's derived total.
 3. Payload reporting in `jobReport.json`, read on the task and job

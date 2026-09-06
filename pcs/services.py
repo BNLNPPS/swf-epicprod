@@ -5120,13 +5120,14 @@ def rename_pcs_current_campaign(new_name, *, created_by='operator'):
 
 def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
                                panda_tasks_id=None, task_name=None,
-                               residual=None):
+                               residual=None, payload_version=None):
     """
     Record outcome of a JEDI submission.
 
     ``ProdTask.panda_task_id`` is the current/preferred pointer. Full PanDA/JEDI
     history lives in PandaTasks, so recording a different id is a new association,
-    not an overwrite error.
+    not an overwrite error. ``payload_version`` is the epicprod payload the
+    submission shipped (EPICPROD_PAYLOAD.md), kept on the PandaTasks row.
     """
     try:
         incoming = int(jedi_task_id)
@@ -5196,12 +5197,14 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
                 status=409,
             )
         row.jedi_task_id = incoming
+        meta = dict(row.metadata or {})
         if residual:
             # Residual .tryN coverage (JEDI_INTEGRATION.md § Residual
             # rerun): what fraction of the manifest this attempt covers.
-            meta = dict(row.metadata or {})
             meta['residual'] = residual
-            row.metadata = meta
+        if payload_version:
+            meta['payload_version'] = str(payload_version)
+        row.metadata = meta
         if not row.out_ds:
             row.out_ds = row.task_name
         if not row.log_ds:
@@ -5210,7 +5213,7 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
             row.association_source = 'record_submission'
         row.save(update_fields=[
             'jedi_task_id', 'out_ds', 'log_ds', 'association_source',
-            'updated_at',
+            'metadata', 'updated_at',
         ])
         locked.panda_task_id = incoming
         locked.status = new_status

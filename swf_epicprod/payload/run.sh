@@ -154,7 +154,28 @@ mkdir -p ${FULL_TEMP}
 #
 RECO_DIR=RECO/${TAG}
 RECO_TEMP=${TMPDIR}/${RECO_DIR}
-mkdir -p ${RECO_TEMP} 
+mkdir -p ${RECO_TEMP}
+
+# Before any work, ask the catalog of record about this job's output. A
+# retry of a job whose earlier attempt already delivered the RECO file has
+# nothing to do and exits success here, in seconds, instead of repeating
+# the simulation and failing at registration on the existing DID. An
+# output name held by a failed earlier attempt (registered, no available
+# replica) cannot be regenerated under this name: it stops here with its
+# own exit code, and the residual rerun as a new try is the route
+# (epicprod payload: swf-epicprod docs/EPICPROD_PAYLOAD.md).
+RECO_DID=/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root
+OUTPUT_STATE=$(python $SCRIPT_DIR/check_output.py epic ${RECO_DID} || echo UNKNOWN)
+case "${OUTPUT_STATE}" in
+  AVAILABLE)
+    echo "Output ${RECO_DID} is registered with an available replica: delivered by an earlier attempt of this job; nothing to do."
+    exit 0 ;;
+  HELD)
+    echo "ERROR: output name ${RECO_DID} is held by a failed earlier attempt (registered, no available replica) and cannot be regenerated under this name; rerun the residual as a new try."
+    exit 79 ;;
+  *)
+    echo "Output ${RECO_DID} not registered (${OUTPUT_STATE}); proceeding." ;;
+esac
 
 # Integration window (ns) used with bg freq (kHz) to compute per-event skip
 INTEGRATION_WINDOW=${INTEGRATION_WINDOW:-2000}

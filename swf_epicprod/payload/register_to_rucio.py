@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import sys
 import json
 import logging
 from typing import Dict, Any
@@ -351,9 +352,25 @@ if __name__ == "__main__":
         logger.info("Upload completed successfully!")
     except Exception as e:
         logger.error(f"Upload failed: {e}")
-        
+
         dids = [{'scope': scope, 'name': did_name} for did_name in did_names]
-        
+
+        # A DID already registered with an available replica anywhere is the
+        # output of an earlier attempt of this job that delivered before the
+        # job was counted failed. That is delivery, not a failure: the file
+        # passed the same validation before its registration, and a retry's
+        # bytes differ only because the simulation is not reproducible. Exit
+        # success rather than fail the job on the conflict (epicprod payload,
+        # swf-epicprod docs/EPICPROD_PAYLOAD.md).
+        delivered = [
+            rep['name'] for rep in client.list_replicas(dids, all_states=True)
+            if 'AVAILABLE' in (rep.get('states') or {}).values()]
+        if delivered and len(delivered) == len(dids):
+            logger.warning(
+                "Output already registered with an available replica, "
+                "delivered by an earlier attempt: %s", delivered)
+            sys.exit(0)
+
         # Get replicas for all DIDs in the rse
         replicas = client.list_replicas(
             dids,
