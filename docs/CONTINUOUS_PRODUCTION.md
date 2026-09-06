@@ -47,8 +47,10 @@ Readiness gates, per task:
 
 **Input-side automation is on the critical path: a ready queue starves
 at the source while EVGEN registration is manual. The registration
-action is designed and awaits the JLab credential (door read plus
-Rucio write) — a standing ask.**
+action is built (`pcs/api/evgen/register/`, run by the ops agent) and
+the agent holds the JLab credential it needs, door read plus Rucio
+write. What remains is to run it over the registration coverage
+worklist; it has not yet run for real.**
 
 ## Campaign assembly — the future plan
 
@@ -203,11 +205,15 @@ and its canary cadence tightens at window end to confirm recovery.
 
 ## Payload metrics
 
-The metatable self-report channel exists and is empty. Once tasks and
-jobs are PCS-submitted, the payload is production's own: event and CPU
-reporting from the payload is implemented by production, coordinated
-with the payload owners. Scouts, job sizing, honest efficiency, and
-drain detection all depend on it.
+The payload is production's own and reports for itself
+([EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md)): every stage runs under
+prmon, and the per-stage CPU, memory and event counts are written to
+`payload-report.json` and carried into `jobReport.json`, which the
+pilot ships as job metadata; a compact digest rides the job metrics
+string. PanDA keeps metadata for finished jobs only, so a job that
+dies reports out of band ([JOB_REPORTING.md](JOB_REPORTING.md)).
+Scouts, job sizing, honest efficiency, and drain detection all depend
+on this reporting.
 
 ## Demand-side evidence
 
@@ -231,7 +237,7 @@ pressure front can reach.
 1. 26.09 assembly on PCS intake: required event counts and priorities;
    targets set at assembly; system-recommended task drafts approved
    through the proposal surface; priority→taskPriority mapping.
-2. EVGEN registration action live (JLab credential); inputs registered
+2. EVGEN registration run over the coverage worklist; inputs registered
    ahead of need.
 3. Readiness checks promote draft → ready; the queue fills.
 4. Dispatcher v1: keep-N pending, priority-ordered, site-canary-gated,
@@ -247,9 +253,8 @@ pressure front can reach.
 
 ## Asks and open items
 
-- JLab credential for EVGEN registration (standing ask).
-- Payload event/CPU reporting (production implements; coordinated with
-  the payload owners).
+- The EVGEN registration action run over the coverage worklist (the
+  credential is in place; the action has not yet run for real).
 - corePower for the GREX queue; harvester refill and ceiling; the
   pull-mode trial (PanDA operations).
 - Later: a non-interactive service credential for the dispatcher.

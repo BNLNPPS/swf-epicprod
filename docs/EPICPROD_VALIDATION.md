@@ -125,13 +125,14 @@ toward the sample, its delivered event count drops below the target, and the
 campaign continues or resumes production to restore the event count target,
 once an ops person has approved the continuation. 
 
-## REST interface (proposed)
+## REST interface
 
 The two loop interfaces are REST endpoints hosted by Hydra under a common
-`/api/v1` base, authenticated by bearer token. epicprod provides three
-counterparts: a completion read so validation can also pull, the campaign
-catalog document, and a result notification endpoint Hydra transmits
-finished results to.
+`/api/v1` base, authenticated by bearer token; the Hydra side remains
+proposed. epicprod provides three counterparts, live since 2026-08-11
+under `/pcs/api/v1/`: a completion read so validation can also pull, the
+campaign catalog document, and a result notification endpoint Hydra
+transmits finished results to.
 
 `{sample}` takes the PCS composed name, the logical identity of the produced
 dataset — for example `group.EIC.26.07.1.epic_craterlake.p2339.e1.s1.r1` —

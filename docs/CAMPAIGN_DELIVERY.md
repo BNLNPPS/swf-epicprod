@@ -2,11 +2,14 @@
 
 The crucial campaign deliverable is available data: events delivered
 and accessible, stated in physics-configuration terms, absolute and as
-a fraction of what the campaign is set up to produce. Today the
-epicprod Snapper scope records the production machinery (jobs, tasks)
-and nothing records the deliverable. This plan defines the
-delivered-data record, its historical backfill, the PCS extensions it
-requires, and the surfaces it feeds.
+a fraction of what the campaign is set up to produce. The epicprod
+Snapper scope records the production machinery (jobs, tasks); this
+document defines the delivered-data record beside it, its historical
+backfill, the PCS extensions it requires, and the surfaces it feeds.
+The record is in production: daily snaps under capture policy
+`delivery-daily-v1` in the epicprod scope, rebuilt nightly by the
+`delivery_daily_rebuild` step of the catalog_sync chain, covering every
+complete ET day from 2026-06-11.
 
 ## Metrics
 

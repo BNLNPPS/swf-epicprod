@@ -451,11 +451,12 @@ copies. Their stable professional contract is:
 
 ## Sequencing
 
-During tuning, scheduled daily and weekly crons remain disabled. Manual runs
-use the normal assessment path and register in the official AI assessment
-series. Schema v3 separates deterministic facts from model judgment.
-Scheduling is restored only after the corresponding report form
-passes human review.
+Both scheduled crons are installed and running — the daily at 03:45 and the
+weekly Mondays at 06:00, the cron lines given with the harness above.
+They were disabled 2026-07-12 after the first outputs failed review and were
+restored under step 4 below. Manual runs use the normal assessment path and
+register in the official AI assessment series. The artifact schema separates
+deterministic facts from model judgment.
 
 1. **Production side, first pass** — analytics members, rollup + floor, MCP
    tool + REST, `campaign` subject, trigger script. Two deploy cycles
@@ -471,9 +472,10 @@ passes human review.
 3. **End-to-end dry run** — manual trigger against the producing campaign;
    inspect the artifact, tune the floor thresholds and template.
 4. **Scheduling gated on acceptance** — both cron lines were disabled
-   2026-07-12 after the first outputs failed review. Restore daily only after
-   an accepted daily report; restore weekly only after the daily form is
-   stable and a weekly report is accepted.
+   2026-07-12 after the first outputs failed review, the daily to be restored
+   only after an accepted daily report and the weekly only after the daily
+   form was stable and a weekly report accepted. Both now run on the schedule
+   above.
 
 The decision points held by the operator: floor thresholds and template
 wording after the dry run (step 3), and the go for the crons (step 4).
