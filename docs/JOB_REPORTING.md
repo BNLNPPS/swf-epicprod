@@ -154,17 +154,24 @@ ePIC production job, is discarded rather than filed.
 
 ## Open items
 
-- Whether NERSC Perlmutter compute nodes reach object storage outbound.
-  Perlmutter jobs register to the JLab catalog today, so an outbound
-  path exists, but whether it is the compute node's own or is relayed
-  is not established. If relayed, the route the pilot's heartbeats take
-  is the candidate. A payload canary at that queue answers it.
-- If Perlmutter cannot reach it, whether NERSC runs object storage of
-  its own. A site-local endpoint is worse than one endpoint everywhere,
-  since the sweep then has more than one place to look, but better than
-  losing that site's reporting. The payload takes its endpoint from the
-  job environment, so a per-site endpoint is configuration rather than
-  code.
+- PanDA's fine-grained processing is not expected to help: its
+  granularity distributes work inward rather than carrying reports
+  outward. Worth confirming before it is dismissed.
+
+## Reach, measured
+
+One endpoint serves every site class ePIC runs on, so no per-site
+arrangement is needed. Payload canaries on 2026-09-06 wrote reports
+from an OSG pool node at UWM-Mortimer, from the Manitoba GREX cluster,
+and from a NERSC Perlmutter compute node, which wrote its first report
+twenty-one seconds after the job started. The Perlmutter case was the
+one in doubt, since a compute node there reaches nothing of ours and
+its outbound path was not established; it needs no relay through the
+pilot's heartbeat route and no site-local store.
+
+The payload takes its endpoint from the job environment, so if a future
+site does block the store, a per-site endpoint is configuration rather
+than code, at the cost of the sweep having more than one place to look.
 - PanDA's fine-grained processing is not expected to help: its
   granularity distributes work inward rather than carrying reports
   outward. Worth confirming before it is dismissed.
