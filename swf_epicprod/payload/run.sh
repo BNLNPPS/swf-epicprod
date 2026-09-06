@@ -171,6 +171,7 @@ mkdir -p ${RECO_TEMP}
 # by the run, with a lifetime on everything registered; no log upload to
 # JLab, the PanDA log dataset carries the logs. The production layout is
 # not reproduced, and no production record reads /TEST.
+LIFETIME_ARGS=()
 if [[ -n "${CANARY_OUTPUT_DATASET:-}" ]]; then
   FULL_DIR=${CANARY_OUTPUT_DATASET}
   FULL_TEMP=${TMPDIR}/${FULL_DIR}
@@ -178,6 +179,11 @@ if [[ -n "${CANARY_OUTPUT_DATASET:-}" ]]; then
   RECO_TEMP=${TMPDIR}/${RECO_DIR}
   mkdir -p ${FULL_TEMP} ${RECO_TEMP}
   COPYLOG=false
+  # An array, not an unquoted expansion: IFS above holds no space, so
+  # "--lifetime N" would reach the registration script as one word.
+  if [[ -n "${CANARY_LIFETIME_S:-}" ]]; then
+    LIFETIME_ARGS=(--lifetime "${CANARY_LIFETIME_S}")
+  fi
   echo "canary payload run: outputs to epic:/${CANARY_OUTPUT_DATASET}, lifetime ${CANARY_LIFETIME_S:-unset} s, no log upload"
 fi
 
@@ -418,7 +424,7 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
     stage registration start FULL
-    python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${CANARY_LIFETIME_S:+--lifetime ${CANARY_LIFETIME_S}} || { echo "ERROR: Rucio registration failed for FULL file."; stage registration fail FULL; exit 78; }
+    python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for FULL file."; stage registration fail FULL; exit 78; }
     stage registration ok "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
   else
     echo "=== DEBUG: Attempting to copy FULL files to xrootd ==="
@@ -450,7 +456,7 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
     stage registration start RECO
-    python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${CANARY_LIFETIME_S:+--lifetime ${CANARY_LIFETIME_S}} || { echo "ERROR: Rucio registration failed for RECO file."; stage registration fail RECO; exit 78; }
+    python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for RECO file."; stage registration fail RECO; exit 78; }
     stage registration ok "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
   else
     echo "=== DEBUG: Attempting to copy RECO files to xrootd ==="
