@@ -1359,3 +1359,82 @@ def evgen_mark(request):
         priority=priority, count=len(paths), paths=paths[:20])
     return Response({'ok': True, 'updated': len(paths),
                      'priority': priority})
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def delivered_outputs_receive(request):
+    """Record what a task's jobs delivered, from the payload's own
+    reports (RUCIO_RESILIENCE.md, Measure 3).
+
+    Body: {"jedi_task_id": N, "outputs": [{"pandaid": N, "did":
+    "/RECO/...", "kind": "RECO", "segment": "...", "events": N,
+    "bytes": N, "status": "delivered"|"pending"|"diverted"|"lost",
+    "reason": "...", "registered_did": "...", "reported_at": iso}]}.
+
+    A row is one produced file, keyed by task and DID, so re-sending a
+    report updates rather than duplicates and the ingest is safe to
+    re-run. The task is resolved from the JEDI task id through its PCS
+    attempt record; outputs of a task PCS does not own are refused
+    rather than stored against a guess.
+    """
+    from .models import DeliveredOutput, PandaTasks
+
+    data = request.data if isinstance(request.data, dict) else {}
+    outputs = data.get('outputs')
+    usage = ('body must be {"jedi_task_id": N, "outputs": [{"pandaid", '
+             '"did", "kind", ...}]}')
+    try:
+        jedi_task_id = int(data.get('jedi_task_id'))
+    except (TypeError, ValueError):
+        return Response({'detail': usage}, status=status.HTTP_400_BAD_REQUEST)
+    if not isinstance(outputs, list) or not outputs:
+        return Response({'detail': usage}, status=status.HTTP_400_BAD_REQUEST)
+    attempt = (PandaTasks.objects
+               .filter(jedi_task_id=jedi_task_id)
+               .select_related('prod_task').first())
+    if attempt is None:
+        return Response(
+            {'detail': f'no PCS task carries JEDI task {jedi_task_id}'},
+            status=status.HTTP_404_NOT_FOUND)
+    kinds = {choice for choice, _ in DeliveredOutput.KIND_CHOICES}
+    states = {choice for choice, _ in DeliveredOutput.STATUS_CHOICES}
+    written, refused = 0, []
+    for row in outputs:
+        if not isinstance(row, dict):
+            refused.append('not an object')
+            continue
+        did = str(row.get('did') or '').strip()
+        kind = str(row.get('kind') or '').strip().upper()
+        state = str(row.get('status') or 'delivered').strip()
+        if not did or kind not in kinds or state not in states:
+            refused.append(did or 'missing did')
+            continue
+        try:
+            pandaid = int(row.get('pandaid'))
+        except (TypeError, ValueError):
+            refused.append(did)
+            continue
+        DeliveredOutput.objects.update_or_create(
+            prod_task=attempt.prod_task, did=did,
+            defaults={
+                'panda_task': attempt,
+                'pandaid': pandaid,
+                'scope': str(row.get('scope') or 'epic'),
+                'kind': kind,
+                'segment': str(row.get('segment') or '')[:200],
+                'events': row.get('events'),
+                'bytes': row.get('bytes'),
+                'status': state,
+                'reason': str(row.get('reason') or ''),
+                'registered_did': str(row.get('registered_did') or '')[:500],
+                'reported_at': row.get('reported_at') or None,
+            })
+        written += 1
+    body = {'task': attempt.prod_task.composed_name, 'written': written}
+    if refused:
+        # Never silent: a row we could not store is named in the reply.
+        body['refused'] = refused
+    return Response(body, status=status.HTTP_200_OK)

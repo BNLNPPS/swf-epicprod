@@ -1198,3 +1198,76 @@ def _allocate_simple_tag(state_key):
         obj.state_data[state_key] = current + 1
         obj.save()
         return current
+
+
+class DeliveredOutput(models.Model):
+    """One produced output file of one production task, as the job that
+    made it reported it (RUCIO_RESILIENCE.md, Measure 3).
+
+    This is the authoritative record of what a task produced: the
+    catalog holds the bytes, this holds the truth. Each row is one file
+    — a job produces up to two, FULL from simulation and RECO from
+    reconstruction, from one segment of work — so a duplicate or a
+    diverted registration is another row rather than a case that fits
+    nowhere, and a work unit's state is derived by grouping on
+    ``segment`` rather than stored where it could drift from the files
+    it describes.
+
+    The rows arrive from the payload's own report, which carries per
+    output the file, its size, its event count and the registration
+    outcome, and which leaves the job on every heartbeat whatever its
+    exit. Rows in ``pending`` are the registrar's worklist; rows in
+    ``delivered`` are what content validation reconciles against the
+    Rucio dataset (EPICPROD_VALIDATION.md).
+    """
+    STATUS_CHOICES = [
+        ('delivered', 'Delivered'),      # registered, in the catalog
+        ('pending', 'Pending'),          # uploaded, registration owed
+        ('diverted', 'Diverted'),        # registered under a derived name
+        ('lost', 'Lost'),                # the job died before delivering
+    ]
+    KIND_CHOICES = [('FULL', 'FULL'), ('RECO', 'RECO')]
+
+    prod_task = models.ForeignKey(
+        ProdTask, on_delete=models.CASCADE, related_name='delivered_outputs',
+    )
+    # The physical attempt that produced it; a task may have several.
+    panda_task = models.ForeignKey(
+        PandaTasks, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='delivered_outputs',
+    )
+    pandaid = models.BigIntegerField(db_index=True)
+    did = models.CharField(max_length=500)
+    scope = models.CharField(max_length=100, default='epic')
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES)
+    # The unit of work both outputs belong to, from the output name; a
+    # unit is delivered when its outputs are.
+    segment = models.CharField(max_length=200, blank=True, default='',
+                               db_index=True)
+    events = models.BigIntegerField(null=True, blank=True)
+    bytes = models.BigIntegerField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES,
+                              default='delivered', db_index=True)
+    # Why a row is pending or diverted, in the job's own words, and the
+    # name actually registered when it differs from ``did``.
+    reason = models.TextField(blank=True, default='')
+    registered_did = models.CharField(max_length=500, blank=True, default='')
+    reported_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'pcs_delivered_output'
+        ordering = ['prod_task', 'segment', 'kind']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['prod_task', 'did'],
+                name='pcs_delivered_output_unique_did',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['status', 'prod_task']),
+        ]
+
+    def __str__(self):
+        return f"{self.did} ({self.status})"
