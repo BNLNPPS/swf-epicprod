@@ -58,7 +58,8 @@ def next_trial_number(dataset):
 
 @transaction.atomic
 def compose_trial(source_task, events=DEFAULT_TRIAL_EVENTS, site='',
-                  created_by='', trial_number=None):
+                  created_by='', trial_number=None, prod_config=None,
+                  input_did=''):
     """Mint a trial of ``source_task``'s configuration and return its task.
 
     The trial is a new Dataset and ProdTask carrying the source's tags
@@ -72,6 +73,16 @@ def compose_trial(source_task, events=DEFAULT_TRIAL_EVENTS, site='',
             f'{source_task.name} has no dataset to model a trial on')
     number = int(trial_number or next_trial_number(source))
     events = int(events or DEFAULT_TRIAL_EVENTS)
+
+    # A task's inputs are read from its dataset's matched Rucio entries
+    # (ProdTask.inputs, EPICPROD_EVGEN_INPUTS.md), so a trial takes the
+    # source's matched inputs, or the one named here when the source has
+    # none — which is the case for a configuration PCS adopted from PanDA
+    # rather than composed. The assimilation refreshes the detail later.
+    matched = list((((source.metadata or {}).get('rucio') or {})
+                    .get('matched') or []))
+    if not matched and input_did:
+        matched = [{'did': input_did, 'stage': 'evgen'}]
 
     edition = Dataset(
         scope=source.scope,
@@ -92,6 +103,7 @@ def compose_trial(source_task, events=DEFAULT_TRIAL_EVENTS, site='',
             'trial_output_root': TRIAL_OUTPUT_ROOT,
             'trial_lifetime_days': TRIAL_LIFETIME_DAYS,
             'source': {'kind': 'trial', 'location': source.composed_name},
+            **({'rucio': {'matched': matched}} if matched else {}),
         },
         created_by=created_by or 'trial',
     )
@@ -103,15 +115,14 @@ def compose_trial(source_task, events=DEFAULT_TRIAL_EVENTS, site='',
     edition.did = f'{edition.scope}:{name}.b1'
     edition.save()
 
+    # inputs and input_source_location are derived properties, not
+    # fields: a task's input is its dataset's matched entries, set above.
     task = ProdTask(
         name=name, status='draft', dataset=edition,
         campaign=source_task.campaign,
-        prod_config=source_task.prod_config,
+        prod_config=prod_config or source_task.prod_config,
         request=source_task.request,
         requestor=source_task.requestor,
-        inputs=getattr(source_task, 'inputs', '') or '',
-        input_source_location=getattr(
-            source_task, 'input_source_location', '') or '',
         overrides=dict(source_task.overrides or {}),
         created_by=created_by or 'trial',
     )
