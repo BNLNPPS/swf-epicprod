@@ -750,4 +750,29 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False):
         'csvRows': csv_rows,
         'env': env,
         'residual': residual_coverage,
+        # A trial submits as a trial because it is one: its settings ride
+        # on the spec so no caller has to remember a flag, and the Submit
+        # button on a trial task does the right thing unchanged
+        # (docs/PCS.md, Trials).
+        **_trial_spec(ds),
     }
+
+
+def _trial_spec(ds):
+    """The trial settings of a trial's dataset, or nothing at all.
+
+    The trial number and its settings live in the dataset's metadata and
+    the composed name is derived from them, so this reads the record
+    rather than parsing the name.
+    """
+    md = (ds.metadata or {}) if ds is not None else {}
+    number = md.get('trial')
+    if not number:
+        return {}
+    return {'trial': {
+        'number': int(number),
+        'events': int(md.get('trial_events') or 100),
+        'outputRoot': str(md.get('trial_output_root') or 'TEST/trial'),
+        'lifetimeDays': int(md.get('trial_lifetime_days') or 14),
+        'site': str(md.get('trial_site') or ''),
+    }}
