@@ -5582,7 +5582,7 @@ def prod_task_compose_task_detail(request, name):
     spec and cached condor/panda commands, which the light initial payload omits.
     The compose JS merges this into the task entry the first time it is opened
     (never clobbering). GET JSON; read-only — does not regenerate/save commands."""
-    from .commands import build_evgen_task_params
+    from .commands import build_evgen_task_params, EVGEN_DEFAULT_SITE
     from .services import resolve_prodtask
     try:
         task = resolve_prodtask(name, ProdTask.objects.select_related(
@@ -5614,7 +5614,8 @@ def prod_task_compose_task_detail(request, name):
         # It is shown at the moment of firing and editable there, because the
         # site is part of what a trial establishes: one run at OSG says
         # nothing about whether another destination accepts the writes.
-        'trial_site': (task.get_effective_config().get('panda_site') or ''),
+        'trial_site': (task.get_effective_config().get('panda_site')
+                       or EVGEN_DEFAULT_SITE),
     })
 
 

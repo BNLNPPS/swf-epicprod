@@ -13,6 +13,11 @@ Reference repos:
 import re
 import shlex
 
+# Where an EVGEN task goes when its configuration names no site. Named here
+# rather than written inline at the point of use so the page can show the
+# reader the site a task would actually run at, and offer to change it.
+EVGEN_DEFAULT_SITE = 'BNL_OSG_PanDA_1'
+
 
 def _bg_param(task, key):
     """Background execution params prefer the k tag, with EvGen as fallback."""
@@ -730,7 +735,7 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False):
         'vo': data.get('vo', 'epic'),
         'userName': task.created_by,
         'workingGroup': cfg.get('panda_working_group') or 'EIC',
-        'site': cfg.get('panda_site') or 'BNL_OSG_PanDA_1',
+        'site': cfg.get('panda_site') or EVGEN_DEFAULT_SITE,
         'prodSourceLabel': data.get('prod_source_label', 'test'),
         'taskType': data.get('task_type', 'prod'),
         'processingType': data.get('processing_type', 'epicproduction'),
