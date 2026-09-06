@@ -15,3 +15,6 @@ include = ["swf_epicprod*", "pcs*"]
 
 [tool.setuptools.package-data]
 "*" = ["templates/**/*.html", "static/**/*"]
+# The epicprod payload ships with the package, so the frozen release carries
+# the exact payload a submission puts in its sandbox (docs/EPICPROD_PAYLOAD.md).
+"swf_epicprod" = ["payload/*"]
