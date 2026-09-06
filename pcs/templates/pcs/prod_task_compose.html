@@ -601,6 +601,7 @@
                 // carried across or the action never enables.
                 if (d.trial_blocked !== undefined) t.trial_blocked = d.trial_blocked;
                 if (d.trial_config !== undefined) t.trial_config = d.trial_config;
+                if (d.trial_site !== undefined) t.trial_site = d.trial_site;
                 t._hydrated = true;
             }
         } catch (e) { /* leave light */ }
@@ -1562,12 +1563,20 @@
         const t = allTasks.find(x => x.id === selectedItemId);
         if (!t) return;
         const under = t.trial_config ? ` under ${t.trial_config}` : '';
-        if (!confirm(`Trial "${taskComposedName(t)}"${under}?\n\n`
-                     + `A trial is a small, real run of this configuration through `
-                     + `the production path: 100 events of the real input, outputs `
-                     + `under TEST/trial with a two-week lifetime, counting toward `
-                     + `no physics. It is composed as its own task; nothing is `
-                     + `submitted yet.`)) return;
+        // The site is shown filled and editable here rather than defaulted out
+        // of sight: a trial qualifies a path, and the destination is half of
+        // what it qualifies.
+        const site = prompt(
+            `Trial "${taskComposedName(t)}"${under}.\n\n`
+            + `A trial is a small, real run of this configuration through the `
+            + `production path: 100 events of the real input, outputs under `
+            + `TEST/trial with a two-week lifetime, counting toward no physics. `
+            + `It is composed as its own task; nothing is submitted yet.\n\n`
+            + `Site to qualify — the trial establishes this configuration `
+            + `against this destination, so change it if that is not the one `
+            + `you mean to prove:`,
+            t.trial_site || '');
+        if (site === null) return;
         btnTrialTask.disabled = true;
         const was = btnTrialTask.textContent;
         btnTrialTask.textContent = 'Composing…';
@@ -1575,7 +1584,7 @@
             const resp = await fetch(taskApiUrl(t, 'trial/'),
                 {method: 'POST', headers: {'Content-Type': 'application/json',
                                            'X-CSRFToken': csrfToken},
-                 body: '{}'});
+                 body: JSON.stringify({site: site.trim()})});
             if (resp.ok) {
                 const d = await resp.json();
                 window.location = d.url;      // land on the trial, selected

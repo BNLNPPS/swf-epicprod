@@ -5610,6 +5610,11 @@ def prod_task_compose_task_detail(request, name):
         'ai_content': ai_content_summary(task.overrides or {}),
         'trial_blocked': trial_blocked,
         'trial_config': trial_config.name if trial_config else '',
+        # The site a trial would run at, filled like any other unset value.
+        # It is shown at the moment of firing and editable there, because the
+        # site is part of what a trial establishes: one run at OSG says
+        # nothing about whether another destination accepts the writes.
+        'trial_site': (task.get_effective_config().get('panda_site') or ''),
     })
 
 
