@@ -186,3 +186,8 @@ gateway.
   it.
 - [NPPS0_WORKER.md](NPPS0_WORKER.md) — the perimeter-external worker
   this storage was first built for.
+- [ERROR_ATTRIBUTION.md](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/ERROR_ATTRIBUTION.md)
+  — how a failed job is read once its evidence is in hand: which
+  labels are unreliable, the grades of evidence that correct them, and
+  why the failed-job record path is the exit fields rather than the
+  metadata this channel exists to replace.

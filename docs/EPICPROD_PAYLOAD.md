@@ -189,6 +189,29 @@ is designed and not yet built.
 Two consumers remain to be connected: the task page, and the scout
 gate. The job page reads the report today.
 
+## Exit codes
+
+The payload says how it failed through its exit code, which PanDA
+stores on every failed job as `transexitcode`. That makes the code a
+population-wide channel: a failure mode is countable across a whole
+task or site without reading a single log, and it is one of the
+evidence grades used to correct unreliable pilot labels
+([ERROR_ATTRIBUTION.md](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/ERROR_ATTRIBUTION.md)).
+Every distinct failure path in the payload has a code here, and a new
+path adds one rather than exiting 1.
+
+| Code | Meaning |
+|---|---|
+| 0 | The work completed, or an earlier attempt of this job had already delivered its output and this one had nothing to do. |
+| 65 | An output file failed ROOT validation and was not uploaded. |
+| 66 | The podio metadata was not produced as JSON, so nothing could be registered with it. |
+| 78 | Registration in the catalog of record failed after the output was produced. |
+| 79 | The output name is held by a failed earlier attempt of this job and cannot be regenerated under it; the residual rerun as a new try is the route. |
+
+Codes 65, 78 and 79 also appear in the run script's stage log and in
+the payload report, so a job that dies before its report is sent is
+still classified by its code alone.
+
 ## Evolution
 
 In order, each a committed step on the clone:

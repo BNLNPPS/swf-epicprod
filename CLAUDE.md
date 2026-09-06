@@ -36,7 +36,16 @@ operations, succession), `PANDA_USER_JOBS.md`,
 `RUCIO_FAILOVER_STASH.md`, `OSG_SUBMISSION.md`, `JOB_REPORTING.md`,
 and `COMMISSIONING_RELAXATIONS.md`.
 Platform-service docs (action stream, SSE, external access, MCP,
-deployment) remain in `swf-monitor/docs/`.
+deployment) remain in `swf-monitor/docs/`. Two of them are required
+reading for production work despite living there, because production
+failures are diagnosed through them:
+[`ERROR_ATTRIBUTION.md`](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/ERROR_ATTRIBUTION.md)
+— which PanDA error labels are unreliable and what corrects them, the
+evidence grades, and the representative-job dig — and
+[`SNAPPER_ERRORS.md`](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/SNAPPER_ERRORS.md)
+— the error-state record those corrections are read through. A
+question of the form "why are these jobs failing" is answered from
+there before the production docs.
 
 ## The pcs application
 
