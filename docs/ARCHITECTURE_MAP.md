@@ -77,7 +77,7 @@ installed swf-epicprod applications, which run inside it.
 | Component | Contents | Current location | Interface |
 |---|---|---|---|
 | Production documentation | `EPICPROD_*.md`, `PCS*.md`, `JEDI_INTEGRATION.md`, `COMMISSIONING_RELAXATIONS.md`, related design docs | `swf-monitor/docs/` | n/a |
-| PCS | tags, datasets, campaigns, requests, tasks, configs; catalog, compose views, request composer; instancing, physics-configuration resolution, name tokens; `/pcs/api/` | `src/pcs/` | web/REST/MCP |
+| PCS | tags, datasets, campaigns, requests, tasks, configs; catalog, compose views, request composer; instancing, physics-configuration resolution, name tokens; `/pcs/api/` | `pcs/` | web/REST/MCP |
 | Production AI content (thin) | production proposal types and decision surfaces, campaign assessment subjects and configuration | `src/ai/` | web/REST/MCP |
 | PanDA production layer (thin) | production job/file inventory, campaign-task associations, production diagnosis, DISpatcher production assistant, corun-ai callback | `src/monitor_app/panda/`, views and models in `monitor_app` | web/REST/MCP |
 | Production operations agent (instance) | `epicprod_ops_agent` and its doer scripts (submission, payload log, Rucio sweeps, catalog imports, cleaner-killer, enqueue) — the agent pattern itself is platform (`swf-common-lib`), with the testbed agents its precursor instances | `agents/`, `scripts/` | bus/REST |

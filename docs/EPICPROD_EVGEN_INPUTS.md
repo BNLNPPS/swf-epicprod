@@ -47,7 +47,7 @@ respect whichever axes a request actually states.
 
 ## Assimilation
 
-`refresh_evgen_rucio` (`src/pcs/services.py`) fetches `epic:/EVGEN/*` once into a
+`refresh_evgen_rucio` (`pcs/services.py`) fetches `epic:/EVGEN/*` once into a
 snapshot, resolves each PCS evgen `Dataset` to the Rucio dataset(s) it matches,
 and writes the resolved references onto `Dataset.metadata['rucio']`. Re-running
 picks up a grown Rucio listing the same way — assimilation is idempotent and

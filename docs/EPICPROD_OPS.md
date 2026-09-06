@@ -1,6 +1,6 @@
 # ePIC Production Operations
 
-This is operations documentation for submitting, monitoring, retrieving logs, etc. for official ePIC production using BNL PanDA on `pandaserver02.sdcc.bnl.gov`. This is the
+This is operations documentation for submitting, monitoring, retrieving logs, etc. for official ePIC production using BNL PanDA. The PanDA server and JEDI run on `pandaserver01.sdcc.bnl.gov`; the operations described here are run from `pandaserver02.sdcc.bnl.gov`, which hosts swf-monitor, the production ops agent, and the operator's panda-client. This is the
 operations counterpart to the design docs: [PCS.md](PCS.md) (configuration),
 [JEDI_INTEGRATION.md](JEDI_INTEGRATION.md) (PCS→JEDI submission design),
 [EPICPROD_TASK_CATALOG.md](EPICPROD_TASK_CATALOG.md) (the task catalog),
@@ -113,18 +113,19 @@ physical PanDA submission its own concrete task and output names.
 
 The campaign task compose page shows the associated PanDA tasks in a `PanDA
 Tasks` table. When a campaign task has an associated JEDI task, the page exposes
-three operations:
+four operations:
 
 | Operation | When used | Effect |
 |---|---|---|
 | **Add Another Retry** | The PanDA task is still active and failures have exhausted the current attempt limit. | Queues `panda_api.increase_attempt_nr(jediTaskID, 1)` through the prod-ops agent. This increases the allowed attempts on the existing task; the UI shows the current job-level `nmax` when PanDA exposes it. |
-| **Restart And Retry Failures** | The PanDA task is finished or otherwise retryable in PanDA, and only failed work should be retried. | Queues `panda_api.retry_task(jediTaskID, new_parameters={})` through the prod-ops agent. PanDA retries failed work within the existing task. |
+| **Restart Finished Task And Retry Failures** | The PanDA task is finished or otherwise retryable in PanDA, and only failed work should be retried. | Queues `panda_api.retry_task(jediTaskID, new_parameters={})` through the prod-ops agent. PanDA retries failed work within the existing task. |
 | **Rerun Entire Task** | The full task should be submitted again as a new concrete production attempt. | Allocates the next `PandaTasks` row, appends `.tryN` to the physical PanDA task and output names, and submits a new task. This reruns all work. |
+| **Rerun Residual** | Only the work units with no delivered output should be run again. | Allocates the next `PandaTasks` row the same way and submits only the manifest rows with no registered RECO output carrying an available replica, so ghosts fall in the residual. A preview of the coverage confirms first (JEDI_INTEGRATION.md, Residual rerun). |
 
 The first two operations are native PanDA operations on an existing JEDI task.
-They do not create a new Rucio output namespace. The third operation is a new PCS
-submission attempt and therefore creates a new physical PanDA task name and Rucio
-namespace. Recorded submission fields are production provenance and are not
+They do not create a new Rucio output namespace. The two rerun operations are new
+PCS submission attempts and therefore create a new physical PanDA task name and
+Rucio namespace. Recorded submission fields are production provenance and are not
 cleared by operator actions.
 
 PanDA tasks submitted outside PCS can still be associated: when a PanDA task page
@@ -467,17 +468,21 @@ The second line is the storage record's incremental pass, every four
 hours (STORAGE.md); the agent runs one storage pass at a time, and the
 doer records `skipped` when another pass holds the store.
 
-The chain runs credential expiry check → csv import → questionnaire
-import → association sweep with auto-intake of direct group.EIC
-submissions → Rucio output snapshot → EVGEN assimilation → dataset
-definitions sweep (the simulation_campaign_datasets inventory, cost
-model, and completeness populations) → questionnaire automatch (LLM
-matching of requests to tasks, EPICPROD_QUESTIONNAIRE.md) →
-questionnaire match cache → progress refresh → file-events measure →
-delivery daily rebuild → storage sweep, the full pass (STORAGE.md) →
-campaign configuration proposer (a ping and its remedy for every edition
-without a Standard Production configuration; swf-monitor PINGS.md), in
-order. Each step
+The chain runs credential expiry check → PanDA sandbox keepalive (touches
+the sandbox tarball of every task worth keeping retryable, against the
+server's seven-day cache purge) → csv import → epic-prod past import →
+questionnaire import → association sweep with auto-intake of direct
+group.EIC submissions → Rucio output snapshot → Rucio arrivals sweep →
+EVGEN assimilation → dataset definitions sweep (the
+simulation_campaign_datasets inventory, cost model, and completeness
+populations) → questionnaire match cache → progress refresh →
+file-events measure → delivery daily rebuild → storage sweep, the full
+pass (STORAGE.md) → campaign configuration proposer (a ping and its
+remedy for every edition without a Standard Production configuration;
+swf-monitor PINGS.md), in order. The questionnaire automatch (LLM
+matching of requests to tasks, EPICPROD_QUESTIONNAIRE.md) was retired
+from the nightly 2026-08-19, when request intake moved to the internal
+request form; its handler remains directly invokable. Each step
 and the chain summary log to the epicprod action stream (Logs page,
 app_name=epicprod) with measured durations; questionnaire import reads its
 CSV URL from SysConfig `questionnaire_csv_url` and records `skipped` when

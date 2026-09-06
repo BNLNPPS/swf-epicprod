@@ -63,8 +63,9 @@ streams, shares reorder jobs only within each class.
 - `doma_panda.jobs_share_stats` exists, is populated, and is fresh:
   the usage-aggregation machinery the targets depend on is already
   running.
-- Of the 21 EIC queues, all are `type: production` except the two
-  Perlmutter GPU queues, which are `type: unified`.
+- Of the 21 EIC queues, sixteen are `type: production` and five are
+  `type: unified`: BNL_NPPS_GPU, BNL_OSG_PanDA_1, BNL_PanDA_1, E1_BNL,
+  and E1_JLAB.
 - `UM_GREX_PanDA_1` carries `corePower` 0.0, which would corrupt the
   HS06 targets; all other queues carry a nonzero value.
 - The monitor's PanDA database account (`panda`) holds insert, update,

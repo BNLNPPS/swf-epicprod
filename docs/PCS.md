@@ -258,7 +258,7 @@ logical.try2        -> second PanDA attempt
 logical.try2.b1     -> block 1 of the second attempt
 ```
 
-Interpretation strips registered terminal suffixes from right to left. Thus `logical.b1` and `logical.try2.b1` both resolve back to logical identity `logical`, with parsed block/attempt metadata. The implementation lives in `src/pcs/name_tokens.py`; new dynamic suffixes belong there first, then in this section, so name parsing does not fragment across services.
+Interpretation strips registered terminal suffixes from right to left. Thus `logical.b1` and `logical.try2.b1` both resolve back to logical identity `logical`, with parsed block/attempt metadata. The implementation lives in `pcs/name_tokens.py`; new dynamic suffixes belong there first, then in this section, so name parsing does not fragment across services.
 
 ### Sample Variants
 

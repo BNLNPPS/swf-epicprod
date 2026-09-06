@@ -159,7 +159,7 @@ dataset names. `tryN` is a reserved final token and may not be used as a sample
 name segment. If a Rucio block suffix is present, the canonical physical form is
 `logical.try2.b1`; parsing strips terminal suffixes from the right so both
 `logical.b1` and `logical.try2.b1` resolve to the same logical PCS identity.
-The suffix rules are defined centrally in `src/pcs/name_tokens.py` and
+The suffix rules are defined centrally in `pcs/name_tokens.py` and
 documented in [PCS.md](PCS.md#composed-name-suffixes).
 
 `{detector_version}` is the version of the detector/software conditions for the
@@ -743,7 +743,7 @@ submitted by the move itself (`pcs.services.prodtask_adopt_legacy`, one
 ## Infrastructure: What We Know
 
 - **VO**: `eic`
-- **Queues**: 13 EIC queues online (BNL_EPIC_PROD_1, BNL_OSG_EPIC_PROD_1, NERSC_Perlmutter_epic, E1_BNL, E1_JLAB, etc.). All support Apptainer containers.
+- **Queues**: 21 EIC queues, all online and ACTIVE (BNL_EPIC_PROD_1, BNL_OSG_EPIC_PROD_1, NERSC_Perlmutter_epic, E1_BNL, E1_JLAB, UM_GREX_PanDA_1, etc.). All support Apptainer containers.
 - **Auth**: OIDC with `PANDA_AUTH=oidc`. The credentialed doers set
   `PANDA_AUTH_VO=EIC.production`, which is what carries the production role;
   see [Production role and server-side task defaults](#production-role-and-server-side-task-defaults)
@@ -786,6 +786,6 @@ Branch **`feature-add-panda-wrapper`** — Sakib Rahman's working EVGEN producti
 - [`scripts/submit_panda.py`](https://github.com/eic/job_submission_condor/blob/feature-add-panda-wrapper/scripts/submit_panda.py)
 
 ### PCS Source Code (swf-monitor)
-- `src/pcs/models.py` — ProdTask, ProdConfig, Dataset, tag models
-- `src/pcs/commands.py` — task parameter generation for PCS submission artifacts
+- `pcs/models.py` — ProdTask, ProdConfig, Dataset, tag models
+- `pcs/commands.py` — task parameter generation for PCS submission artifacts
 - `docs/PCS.md` — PCS documentation
