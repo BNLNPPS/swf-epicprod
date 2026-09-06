@@ -58,9 +58,11 @@ Consequences of this split:
   exit code and message only; events processed, stage timings and
   CPU, the basis for scouts and honest efficiency, were not reported.
   The payload report below carries them.
-- The payload's behavior is bound to the image build: a payload change
-  needs a container rebuild, and a task's payload version is not
-  recorded anywhere epicprod reads.
+- As cloned, the payload's behavior was bound to the image build: a
+  change needed a container rebuild, and a task's payload version was
+  recorded nowhere epicprod reads. The payload now ships in the
+  submission sandbox from the release, and its version is on the job
+  report and the task's association row.
 
 ## The payload package
 
@@ -154,16 +156,19 @@ verdict's events check reads the reconstructed count.
 ### Reporting from a job that fails
 
 A job that fails reports none of this. The PanDA server keeps job
-metadata for finished jobs only: over the thirty days to 2026-09-06,
-365,477 failed jobs carried metadata not once, and the log tarball is
+metadata for finished jobs only. Over the thirty days to 2026-09-06,
+363,621 failed jobs carried metadata not once, and the log tarball is
 no fallback, its dataset being marked failed for every one of them. The
 jobs whose account is most wanted are the jobs whose account is
 discarded.
 
 What the server does keep, whatever state a job ends in, is the job
 metrics string, and the pilot rebuilds and sends it on every heartbeat:
-in the same period it was present on 10,883 of 11,028 failed jobs, and
-on 33,245 of the 45,822 killed with their worker. So the payload
+over the same thirty days it was present on 209,575 of those failed
+jobs, and on 33,245 of the 45,821 killed with their worker. In the
+quieter last seven days of that window it was present on 10,883 of
+10,932, so the shortfall is concentrated in the storms, where a job can
+die before it sends anything at all. So the payload
 refreshes its report as each stage ends and declares in it a compact
 digest: the stage reached and its outcome, the trail of stages behind
 it, the events done, the registration state, the payload version, and
@@ -180,11 +185,10 @@ ordinary length speaks once or twice in its life, and a single message
 has to say the whole path. A job that dies inside its first heartbeat
 period still says nothing.
 
-The digest is small by design and is not the report. Delivering the
-whole report from a job that fails, at a resolution we choose rather
-than the heartbeat's, needs the job to send it to us directly while it
-runs, on the canary's collection ladder (site-canary DESIGN.md); that
-is designed and not yet built.
+The digest is small by design and is not the report. The whole report
+reaches the production system by the job writing it to object storage
+as it runs, which is [JOB_REPORTING.md](JOB_REPORTING.md): every stage
+end, under a hard per-job cap, from every site class ePIC runs on.
 
 Two consumers remain to be connected: the task page, and the scout
 gate. The job page reads the report today.
@@ -255,7 +259,8 @@ In order, each a committed step on the clone:
    The pilot lifts it into the job record (pilot 3.14.1.31 and later).
    The job record's own event count is set from the report by a change
    to the pilot's ePIC plugin, without which no ePIC job records
-   events at all. The task and job pages reading the report follow.
+   events at all. The job and task pages read the report; the scout
+   gate follows.
 4. **PanDA-only shape.** The condor branches go: the bearer-token
    discovery, the `xrdcp` fallbacks, the ad dumps. The environment is
    the one file the doer writes, read by name; exits carry reasons in
@@ -302,7 +307,9 @@ land in this tree; the condor submission path keeps its own copy.
    derived total (done 2026-09-06).
 3. Payload reporting in `jobReport.json`, every stage measured (done
    2026-09-06); the job record's event count through the pilot plugin,
-   the task and job pages, and the scout gate reading it (pending).
+   the job and task pages reading it (done 2026-09-06); the job
+   record's event count through the pilot plugin, and the scout gate
+   reading it (pending).
 4. Registration resilience, Measure 1 then Measure 2, with the
    registrar under the ops agent and the pending-registration view.
 5. PanDA-only shape.

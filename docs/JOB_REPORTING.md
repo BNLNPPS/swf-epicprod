@@ -31,7 +31,7 @@ production record belongs where the production database is.
 ## Why
 
 PanDA keeps job metadata for finished jobs only: in the thirty days to
-2026-09-06, 365,477 failed ePIC jobs carried metadata not once, and the
+2026-09-06, 363,621 failed jobs carried metadata not once, and the
 log dataset is marked failed for every one of them. The payload's
 digest rides the job metrics string, which does survive, but the
 heartbeat is 1800 seconds and a job dying inside its first period says
@@ -151,6 +151,39 @@ semi-public. What bounds a leak is the scope, the expiry, and the fact
 that anything read back is validated against PanDA before it is
 believed: a message naming a job that does not exist, or that is not an
 ePIC production job, is discarded rather than filed.
+
+## PanDA's real-time logging
+
+PanDA can stream a job's logs while it runs, and it is configured for
+the ePIC queues, but it does not serve this purpose and could not be
+used as it stands.
+
+What it does: the pilot opens configured log files, by default the
+payload's stdout, reads the new lines every five seconds, and ships
+each line as one record to an external collector, with the job identity
+and a timestamp attached. Backends are fluentd, Google Cloud Logging,
+Loki, or logstash over HTTPS with basic authentication and a local
+spool that survives a transient outage. A line that parses as JSON is
+merged into the record as fields rather than as text. It is off unless
+a job is marked for debugging, which is what keeps it from drowning a
+collector in normal running; volume otherwise is the payload's
+verbosity times the job count.
+
+Three properties are attractive: five-second latency where the
+heartbeat digest has thirty minutes, a retry spool where this design
+has one attempt, and structured fields for a payload that emits JSON
+lines. The file list is configurable, so it need not carry a payload's
+ordinary output at all.
+
+Why it is not the channel. The ePIC queues point it at a collector on
+a private address inside the facility network, unreachable from the
+worker nodes where ePIC jobs run: as configured, only a job running
+inside the facility could stream anything. Using it would also require
+the debug gate lifted and a collector operated, which is the service
+this design exists without. The transport is worth revisiting if a
+reachable collector ever exists, and the mismatch is worth reporting to
+PanDA operations, since the configuration implies a facility that
+cannot work for the sites ePIC actually uses.
 
 ## Open items
 
