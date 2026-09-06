@@ -144,6 +144,9 @@ Submission and execution:
 - [WINDOWS_WORKER.md](docs/WINDOWS_WORKER.md) — the Windows worker.
 - [DEVCLOUD_STAGEOUT.md](docs/DEVCLOUD_STAGEOUT.md) — the devcloud
   stage-out endpoint.
+- [JOB_REPORTING.md](docs/JOB_REPORTING.md) — how a job's own account
+  of itself reaches the production system, including from a job that
+  fails.
 - [DEVCLOUD_SUCCESSION.md](docs/DEVCLOUD_SUCCESSION.md) —
   epic-devcloud.org succession.
 
