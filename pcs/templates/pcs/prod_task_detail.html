@@ -4,12 +4,6 @@
 {% block title %}{{ task.composed_name }} - Prod Task - PCS{% endblock %}
 
 {% block content %}
-<style>
-.btn.pcs-reset-submit-btn { background: #f6c343; border-color: #9a6500; color: #1f1600; }
-.btn.pcs-reset-submit-btn:hover,
-.btn.pcs-reset-submit-btn:focus { background: #9a4f00; border-color: #6f3600; color: #fff; }
-.btn.pcs-reset-submit-btn:active { background: #763700; border-color: #512500; color: #fff; }
-</style>
 <div class="container-fluid mt-4">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
@@ -24,8 +18,8 @@
             <h2>{{ task.composed_name }}</h2>
             <p class="text-muted">
                 <span class="badge bg-{% if task.status == 'draft' %}secondary{% elif task.status == 'ready' %}primary{% elif task.status == 'submitted' %}info{% elif task.status == 'completed' %}success{% elif task.status == 'past_output' %}dark{% elif task.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ task.status }}</span>
-                Created by {{ task.created_by }} on {{ task.created_at|date:"Y-m-d H:i" }}
-                {% if task.updated_at != task.created_at %} | Updated {{ task.updated_at|date:"Y-m-d H:i" }}{% endif %}
+                Created by {{ task.created_by }} on {{ task.created_at|fmt_dt }}
+                {% if task.updated_at != task.created_at %} | Updated <span data-relative-time="{{ task.updated_at|date:'c' }}">{{ task.updated_at|fmt_dt }}</span>{% endif %}
             </p>
         </div>
         <div>
@@ -37,9 +31,9 @@
             {% endif %}
             {% endif %}
             {% if task.panda_task_id %}
-            <a href="{% url 'monitor_app:panda_task_detail' task.panda_task_id %}" class="btn btn-info btn-sm">PanDA Task {{ task.panda_task_id }}</a>
+            <a href="{% url 'monitor_app:panda_task_detail' task.panda_task_id %}" class="btn btn-secondary btn-sm">PanDA Task {{ task.panda_task_id }}</a>
             {% if can_reset_submission %}
-            <button class="btn pcs-reset-submit-btn btn-sm" id="btn-reset-submission">Reset submission</button>
+            <button class="btn btn-danger btn-sm" id="btn-reset-submission">Reset submission</button>
             {% endif %}
             {% elif can_submit %}
             <button type="button" class="btn btn-success btn-sm" id="btn-submit-task">Submit to PanDA</button>
@@ -58,7 +52,7 @@
             <div class="card h-100">
                 <div class="card-body">
                     <h5 class="card-title">Dataset</h5>
-                    <table class="table table-sm table-bordered mb-0">
+                    <table class="table table-striped table-bordered table-sm align-middle mb-0">
                         <tr><td style="width:40%"><strong>Name (tag-based)</strong></td><td><a href="{% url 'pcs:datasets_compose' %}?selected={{ task.dataset.dataset_name|urlencode }}">{{ task.dataset.composed_name }}</a></td></tr>
                         {% if not task.dataset.has_internal_name %}<tr><td><strong>DID</strong></td><td style="word-break:break-all;">{{ task.dataset.did }}</td></tr>{% endif %}
                         {% if task.dataset.source_location %}<tr><td><strong>Source path</strong></td><td style="word-break:break-all;">{{ task.dataset.source_location }}</td></tr>{% endif %}
@@ -72,7 +66,7 @@
             <div class="card h-100">
                 <div class="card-body">
                     <h5 class="card-title">Production Config</h5>
-                    <table class="table table-sm table-bordered mb-0">
+                    <table class="table table-striped table-bordered table-sm align-middle mb-0">
                         <tr><td style="width:40%"><strong>Name</strong></td><td><a href="{% url 'pcs:prod_config_detail' pk=task.prod_config.pk %}">{{ task.prod_config.name }}</a></td></tr>
                         <tr><td><strong>JUG_XL Tag</strong></td><td>{{ task.prod_config.jug_xl_tag|default:"-" }}</td></tr>
                         <tr><td><strong>Container</strong></td><td style="word-break:break-all;">{{ task.prod_config.container_image|default:"-" }}</td></tr>
@@ -86,7 +80,7 @@
     <div class="card mb-3">
         <div class="card-body">
             <h5 class="card-title">Tags</h5>
-            <table class="table table-sm table-bordered">
+            <table class="table table-striped table-bordered table-sm align-middle swf-sortable">
                 <thead><tr><th>Type</th><th>Tag</th><th>Description</th><th>Key Parameters</th></tr></thead>
                 <tbody>
                     <tr>
@@ -124,7 +118,7 @@
             <h5 class="card-title">Dataset Roles</h5>
             {% if task.output_dataset_overrides %}
             <h6 class="mt-2">Output Overrides</h6>
-            <table class="table table-sm table-bordered mb-3">
+            <table class="table table-striped table-bordered table-sm align-middle mb-3">
                 <thead><tr><th style="width:35%">Name</th><th>DID</th><th>Source</th></tr></thead>
                 <tbody>
                     {% for ds in task.output_dataset_overrides %}
@@ -139,7 +133,7 @@
             {% endif %}
             {% if task.input_datasets %}
             <h6 class="mt-2">Input</h6>
-            <table class="table table-sm table-bordered mb-3">
+            <table class="table table-striped table-bordered table-sm align-middle mb-3">
                 <thead><tr><th style="width:35%">Name</th><th>DID</th><th>Source</th></tr></thead>
                 <tbody>
                     {% for ds in task.input_datasets %}
@@ -154,7 +148,7 @@
             {% endif %}
             {% if task.intermediate_datasets %}
             <h6 class="mt-2">Intermediate</h6>
-            <table class="table table-sm table-bordered mb-3">
+            <table class="table table-striped table-bordered table-sm align-middle mb-3">
                 <thead><tr><th style="width:35%">Name</th><th>DID</th><th>Source</th></tr></thead>
                 <tbody>
                     {% for ds in task.intermediate_datasets %}
@@ -169,7 +163,7 @@
             {% endif %}
             {% if task.input_source_location and not task.input_datasets %}
             <h6 class="mt-2">Input Source (legacy)</h6>
-            <table class="table table-sm table-bordered mb-0">
+            <table class="table table-striped table-bordered table-sm align-middle mb-0">
                 <tr><td style="width:30%"><strong>Kind</strong></td><td>{{ task.input_source_kind }}</td></tr>
                 <tr><td><strong>Location</strong></td><td style="word-break:break-all;">{{ task.input_source_location }}</td></tr>
             </table>
@@ -182,7 +176,7 @@
     <div class="card mb-3">
         <div class="card-body">
             <h5 class="card-title">Submission (legacy)</h5>
-            <table class="table table-sm table-bordered">
+            <table class="table table-striped table-bordered table-sm align-middle">
                 <tr><td style="width:30%"><strong>CSV File</strong></td><td style="word-break:break-all;">{{ task.csv_file }}</td></tr>
             </table>
         </div>
@@ -193,7 +187,7 @@
     <div class="card mb-3">
         <div class="card-body">
             <h5 class="card-title">Overrides</h5>
-            <table class="table table-sm table-bordered mb-0">
+            <table class="table table-striped table-bordered table-sm align-middle mb-0">
                 {% for key, value in task.overrides.items %}
                 <tr>
                     <td style="width:22%"><strong>{{ key }}</strong></td>
@@ -261,13 +255,13 @@
     <div class="card mb-3">
         <div class="card-body">
             <h5 class="card-title">Tracking</h5>
-            <table class="table table-sm table-bordered">
+            <table class="table table-striped table-bordered table-sm align-middle">
                 {% if task.panda_task_id %}<tr><td><strong>PanDA Task ID</strong></td><td>{{ task.panda_task_id }}</td></tr>{% endif %}
                 {% if task.condor_cluster_id %}<tr><td><strong>Condor Cluster ID</strong></td><td>{{ task.condor_cluster_id }}</td></tr>{% endif %}
             </table>
             {% if panda_tasks %}
             <h6>PanDA Tasks</h6>
-            <table class="table table-sm table-bordered mb-0">
+            <table class="table table-striped table-bordered table-sm align-middle swf-sortable mb-0">
                 <thead>
                     <tr>
                         <th>Try</th><th>JEDI task</th><th>Status</th><th>PanDA task name</th>
@@ -279,7 +273,7 @@
                     <tr>
                         <td>try{{ pt.try_number }}{% if pt.current %} <span class="badge bg-info">current</span>{% endif %}</td>
                         <td>{% if pt.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' pt.jedi_task_id %}">{{ pt.jedi_task_id }}</a>{% else %}-{% endif %}</td>
-                        <td>{{ pt.status_snapshot|default:"-" }}</td>
+                        <td>{% if pt.status_snapshot %}{{ pt.status_snapshot|task_badge }}{% else %}-{% endif %}</td>
                         <td style="word-break:break-all;">{{ pt.task_name }}</td>
                         <td style="word-break:break-all;">
                             {% if pt.out_ds %}<div><strong>out:</strong> {{ pt.out_ds }}</div>{% endif %}
