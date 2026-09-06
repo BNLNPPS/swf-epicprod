@@ -10,12 +10,19 @@ the sweep, reaching outward to read and delete the objects it files.
 
 The division follows the credentials in both directions. Account
 operations belong where the account is. Every write to the production
-record stays inside the facility, and so does the sweep, because the
-sweep is the step that needs to know things only the inside knows:
-which jobs failed, what the payload's digest says about them, and
-whether a job id names a real ePIC production job at all. Traffic runs
-outward at every stage — the payload writes out, the sweep reads out —
-and nothing reaches in.
+record stays inside the facility, and so does the sweep: it files into
+swfdb, it groups a storm by the payload digest, which rides the job
+metrics and is not served outside, and one store serves the whole path
+where a sweeper at the gateway would have needed a second one to hold
+its products in.
+
+Job status is not part of that argument. The gateway can read it, and
+a gateway sweeper can be told which jobs failed and which finished,
+through the monitor's MCP relay. What is inside is the digest, the
+record, and the writes to it.
+
+Traffic runs outward at every stage — the payload writes out, the
+sweep reads out, the sweep reports out — and nothing reaches in.
 
 ## Summary
 
@@ -121,14 +128,35 @@ Keeping a bounded number per distinct signature and deleting the rest
 unread costs nothing in understanding and avoids reading a storm one
 object at a time. The signature comes from the digest PanDA already
 carries for every failed job, so the sweep knows what it is looking at
-before it reads anything — which is the whole reason the sweep runs
-where PanDA can be asked. It also knows from PanDA which jobs failed,
-so it lists only their prefixes, and validates the job id before
-filing rather than after.
+before it reads anything.
 
 The sweep's credential is issued by the gateway and held on
 pandaserver02: list, get and delete under the reports prefix, and
 nothing else. It is not the write credential the jobs carry.
+
+### The sweep reports every pass
+
+The sweep deletes from a store it does not own, so it may delete only
+what it reports, and it reports every pass. After each pass it posts a
+pass record to the gateway: the window covered, the job ids taken and
+filed, the object keys deleted after reading and the keys deleted
+unread, and the outcome as ok, partial or failed with its reason. Keys,
+not counts, because the gateway's index is keyed by object.
+
+The empty pass is reported too, and so is the failed one. A pass that
+found nothing is the liveness signal, and it is what separates a quiet
+week from a dead sweeper; a pass that errored is the most useful thing
+the gateway's growth guard can be told, because objects are then
+accumulating for a reason that is not a storm. The record is posted
+after the deletes complete, so the index never records as gone
+something still in the bucket, and a long pass posts partials. A failed
+post is carried to the next pass rather than chased.
+
+This is what lets the gateway tell a stalled drain from an explosion by
+measurement, so the sweep's ordinary deleting never reads as growth and
+the stop stays reserved for what it exists for. The token for the
+endpoint is held on pandaserver02, mode 600. It is the one key each
+side holds into the other, both outbound.
 
 A job page may also fetch a single job's objects directly when someone
 is looking at that job and the sweep has not reached it.
