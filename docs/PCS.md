@@ -242,11 +242,12 @@ Known dynamic tokens:
 - `kN`: optional background-tag segment. It appears immediately after the `.pN.eN.sN.rN` tag run and is part of the logical PCS identity.
 - `.tryN`: terminal PanDA/JEDI attempt suffix. This is the physical-attempt naming feature that lets one logical campaign task produce multiple concrete PanDA tasks without output-name collision. Attempt 1 has no suffix; attempt 2 is `.try2`.
 - `.bN`: terminal Rucio block suffix. It is not part of the logical PCS identity or PanDA task name.
+- `.trial`, `.trialN`: the trial of a configuration (Trials, below). Unlike the two above it belongs to the logical identity, not to transport, and is therefore never stripped by default — stripping it would collapse a trial onto the configuration it proves, and a trial is a standing task of its own. The first trial is the bare `.trial`; further trials number from 2.
 
 The canonical physical order is:
 
 ```
-logical[.tryN][.bN]
+logical[.trialN][.tryN][.bN]
 ```
 
 Examples:
@@ -258,7 +259,23 @@ logical.try2        -> second PanDA attempt
 logical.try2.b1     -> block 1 of the second attempt
 ```
 
-Interpretation strips registered terminal suffixes from right to left. Thus `logical.b1` and `logical.try2.b1` both resolve back to logical identity `logical`, with parsed block/attempt metadata. The implementation lives in `pcs/name_tokens.py`; new dynamic suffixes belong there first, then in this section, so name parsing does not fragment across services.
+Interpretation strips registered terminal suffixes from right to left. Thus `logical.b1` and `logical.try2.b1` both resolve back to logical identity `logical`, with parsed block/attempt metadata. The trial suffix is registered separately and stripped only when a caller asks for it, so `logical.trial.b1` resolves to `logical.trial`. The implementation lives in `pcs/name_tokens.py`; new dynamic suffixes belong there first, then in this section, so name parsing does not fragment across services.
+
+### Trials
+
+A trial is a small, real run of a composed configuration, produced by the path production uses: the requesting group's tags, their input, the production payload, the production submission path, real registered output. It differs from the production run of that configuration in three things and nothing else — its scale, where its outputs land, and that it counts toward no physics.
+
+The trial is offered to the group whose configuration it is. What role it serves for them — a check that the configuration is what they asked for, the sample their benchmarks first run over, the evidence behind their own sign-off — is for them and production to settle, and is not decided here.
+
+**Identity.** A trial is a standing task of its own, not the production task wearing trial apparatus, so it takes its own composed identity: the configuration's name with the trial suffix, `group.EIC.26.07.1.epic_craterlake.p2340.e1.s1.r1.trial`, then `.trial2` and `.trial3` for the variants a configuration needs before it is right. Being its own name it is its own dataset, task and completion unit: it completes, validates and accounts entirely on its own and touches nothing belonging to the configuration it proves.
+
+**Composition.** `pcs.trials.compose_trial` mints a trial from an existing task, carrying that task's tags, campaign, request and requestor unchanged, and binding a production configuration and an input where the source carries neither — the normal case for a configuration PCS adopted from PanDA by name match rather than composed itself. The trial number and its settings live in the dataset's `metadata`, and `build_dataset_name` derives the composed name from the trial number on every save, so the name and the record cannot drift apart. The source task and its dataset are not modified.
+
+**Scale and outputs.** A trial runs one job of its manifest at its own event count, 100 by default, against the real input. Its FULL, RECO and LOG outputs land under `epic:/TEST/trial` in the production layout — the same substructure beneath a root that cannot be mistaken for production — and everything it registers carries a lifetime, two weeks by default. What survives a trial is the acceptance and the record, not the data.
+
+This is deliberately unlike a payload canary, which flattens its output into one dataset and skips the log upload because nobody reads what it produces. A trial keeps the production layout so the group reads its output in the shape real data has, and uploads its logs the way production does, because the path production uses is the thing a trial exists to prove.
+
+**Submission.** `submit-evgen-task.py --trial` submits it as one job with the trial settings riding as an environment prefix on the dispatcher command; the dispatcher passes them to the payload, which routes the outputs and applies the lifetime. The processing type and owner stay production's, and the trial records its PanDA task back to PCS like any other task. Only PCS knows it is a trial, from the suffix in its name.
 
 ### Sample Variants
 
