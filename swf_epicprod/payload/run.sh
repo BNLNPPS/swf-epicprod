@@ -8,6 +8,24 @@ stage() {
   CURRENT_STAGE=$1
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 $2${3:+ $3}" >> "${PAYLOAD_STAGES_LOG:-payload-stages.log}"
 }
+# Every stage that runs a program runs under its own prmon, named for the
+# stage, so wall time, CPU, memory and I/O are attributed to the stage
+# rather than to the job as a whole; the pilot measures the job, this
+# measures its parts. prmon exits with the exit code of the program it
+# watches, so wrapping a stage leaves its failure handling unchanged.
+# Without prmon on the path the program simply runs unwatched.
+monitor() {
+  local label=$1; shift
+  if command -v prmon >/dev/null 2>&1 && [ -n "${LOG_TEMP:-}" ] && [ -d "${LOG_TEMP}" ]; then
+    prmon --filename "${LOG_TEMP}/${TASKNAME}.${label}.prmon.txt" \
+          --json-summary "${LOG_TEMP}/${TASKNAME}.${label}.prmon.json" \
+          --log-filename "${LOG_TEMP}/${TASKNAME}.${label}.prmon.log" \
+          --interval "${PRMON_INTERVAL:-1}" \
+          -- "$@"
+  else
+    "$@"
+  fi
+}
 trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; if [ -n "$CURRENT_STAGE" ]; then stage "$CURRENT_STAGE" fail "line $LINENO: $BASH_COMMAND"; fi; exit $s' ERR
 # Payload report (PAYLOAD_REPORT, payload-report.json in the working
 # directory): written on every exit path from what the run left behind,
@@ -165,20 +183,23 @@ INPUT_DIR=${BASEDIR}/EVGEN/${TAG}
 mkdir -p ${INPUT_DIR}
 TAG=${DETECTOR_VERSION:-main}/${DETECTOR_CONFIG}/${TAG_PREFIX:+${TAG_PREFIX}/}${TAG}
 
+# The log directory holds every stage's prmon output, so it exists before
+# the first stage runs.
+LOG_DIR=LOG/${TAG}
+LOG_TEMP=${TMPDIR}/${LOG_DIR}
+mkdir -p ${LOG_TEMP}
+
 stage input start
 if [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
   # Define location on xrootd from where to stream input file from
   INPUT_FILE=${XRDRURL}/${XRDRBASE}/${INPUT_FILE}
 else
   # Copy input file from xrootd
-  xrdcp -f ${XRDRURL}/${XRDRBASE}/${INPUT_FILE} ${INPUT_DIR}
+  monitor input xrdcp -f ${XRDRURL}/${XRDRBASE}/${INPUT_FILE} ${INPUT_DIR}
 fi
 stage input ok
 
 # Output file names
-LOG_DIR=LOG/${TAG}
-LOG_TEMP=${TMPDIR}/${LOG_DIR}
-mkdir -p ${LOG_TEMP} 
 #
 FULL_DIR=FULL/${TAG}
 FULL_TEMP=${TMPDIR}/${FULL_DIR}
@@ -369,13 +390,19 @@ stage reconstruction start
   ls -al ${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root
 } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.eicrecon.log | tail -n1000
 stage reconstruction ok
-# The reconstructed event count, the count a job delivers.
-RECO_EVENTS=$(python $SCRIPT_DIR/count_events.py "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root") || RECO_EVENTS=""
-if [ -n "${RECO_EVENTS}" ]; then
-  RECO_EVENTS_ARGS=(--events "${RECO_EVENTS}")
-  stage events ok "RECO ${RECO_EVENTS}"
-else
-  stage events fail RECO
+# The reconstructed event count, the count a job delivers. When the
+# output is copied, the validation below takes it from the ROOT open it
+# already performs and writes it here, so the job pays no second open;
+# when it is not, the count is taken here so the report carries it either
+# way.
+RECO_EVENTS_FILE=${TMPDIR}/reco-events.txt
+if [ "${COPYRECO:-false}" != "true" ]; then
+  RECO_EVENTS=$(python $SCRIPT_DIR/count_events.py "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root") || RECO_EVENTS=""
+  if [ -n "${RECO_EVENTS}" ]; then
+    stage events ok "RECO ${RECO_EVENTS}"
+  else
+    stage events fail RECO
+  fi
 fi
 
 # List log files
@@ -393,7 +420,7 @@ fi
 if [[ "${BASENAME}" == *"BACKGROUNDS"* ]]; then
   PODIO_ARGS+=(--no-beam)
 fi
-PODIO_JSON=$(python $SCRIPT_DIR/parse_podio_metadata.py "${PODIO_ARGS[@]}")
+PODIO_JSON=$(monitor metadata python $SCRIPT_DIR/parse_podio_metadata.py "${PODIO_ARGS[@]}")
 
 # Only software_release remains outside podio scope
 METADATA_JSON_BASE=$(jq -n --arg software_release "${JUG_XL_TAG}" '{software_release: $software_release}')
@@ -434,7 +461,7 @@ if [ "${COPYLOG:-false}" == "true" ] ; then
       echo "No log files found to archive."
     fi
     
-    python $SCRIPT_DIR/register_to_rucio.py \
+    monitor logs python $SCRIPT_DIR/register_to_rucio.py \
     -f "${LOG_TEMP}/${TASKNAME}.log.tar.gz" \
     -d "/${LOG_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
     -s epic -r ${LOG_RSE:-isLogRSE} --noregister
@@ -456,7 +483,7 @@ fi
 if [ "${COPYFULL:-false}" == "true" ] ; then
   # Validate ROOT file before transfer
   echo "=== Validating FULL ROOT file before transfer ==="
-  python $SCRIPT_DIR/validate_rootfile.py "${FULL_TEMP}/${TASKNAME}.edm4hep.root"
+  monitor validation_full python $SCRIPT_DIR/validate_rootfile.py "${FULL_TEMP}/${TASKNAME}.edm4hep.root"
   if [ $? -ne 0 ]; then
     echo "ERROR: FULL ROOT file validation failed. Skipping transfer."
     stage validation fail FULL
@@ -467,7 +494,7 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
     stage registration start FULL
-    python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for FULL file."; stage registration fail FULL; exit 78; }
+    monitor registration_full python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for FULL file."; stage registration fail FULL; exit 78; }
     stage registration ok "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
   else
     echo "=== DEBUG: Attempting to copy FULL files to xrootd ==="
@@ -488,7 +515,7 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
   # Validate ROOT file before transfer
   echo "=== Validating RECO ROOT file before transfer ==="
   stage validation start RECO
-  python $SCRIPT_DIR/validate_rootfile.py "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root"
+  monitor validation_reco python $SCRIPT_DIR/validate_rootfile.py "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" --events-file "${RECO_EVENTS_FILE}"
   if [ $? -ne 0 ]; then
     echo "ERROR: RECO ROOT file validation failed. Skipping transfer."
     stage validation fail RECO
@@ -497,9 +524,19 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
   echo "RECO ROOT file validation passed."
   stage validation ok RECO
 
+  # The count the validation took from its own open.
+  RECO_EVENTS=$(cat "${RECO_EVENTS_FILE}" 2>/dev/null || true)
+  if [ -n "${RECO_EVENTS}" ]; then
+    RECO_EVENTS_ARGS=(--events "${RECO_EVENTS}")
+    stage events ok "RECO ${RECO_EVENTS}"
+  else
+    echo "ERROR: the RECO event count could not be taken; registering without it."
+    stage events fail RECO
+  fi
+
   if [ "${USERUCIO:-false}" == "true" ] ; then
     stage registration start RECO
-    python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for RECO file."; stage registration fail RECO; exit 78; }
+    monitor registration_reco python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for RECO file."; stage registration fail RECO; exit 78; }
     stage registration ok "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
   else
     echo "=== DEBUG: Attempting to copy RECO files to xrootd ==="

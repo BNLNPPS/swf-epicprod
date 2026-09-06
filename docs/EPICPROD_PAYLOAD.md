@@ -112,13 +112,38 @@ directory (`PAYLOAD_REPORT`), written from an EXIT trap so a report
 exists on every exit path with the stages reached. It carries the
 payload version and exit code; the events requested by the manifest
 row and the events simulated and reconstructed, each the `events` tree
-entry count of the output file (`count_events.py`); per stage, the
-outcome and the wall time between its start and end lines in the stage
-log; for the background merge, simulation and reconstruction, the
-prmon summary (wall, user and system CPU, CPU efficiency, peak RSS,
-PSS and virtual memory, bytes read and written); the output files with
-their sizes and counts; and the registration outcome with the DIDs
-registered. The stage log gains an `events` line after simulation and
+entry count of the output file; per stage, the outcome and the wall
+time between its start and end lines in the stage log; per stage, what
+prmon measured; the output files with their sizes and counts; and the
+registration outcome with the DIDs registered.
+
+Every stage that runs a program runs under its own prmon, through the
+`monitor` function, which names the output for the stage. prmon exits
+with the exit code of the program it watches, so wrapping a stage
+leaves its failure handling unchanged, and a worker without prmon runs
+the program unwatched. The pilot measures the job as a whole with a
+prmon of its own, attached to the payload's process tree, and reports
+memory, CPU, disk and a memory-growth fit into the PanDA job record;
+what it cannot do is attribute any of it to a stage, since it sees one
+process tree and no stage boundaries. The payload's per-stage
+measurement is the complement, not a duplicate: from each stage's
+summary come wall time, user and system CPU, the CPU efficiency they
+imply, peak resident, proportional and virtual memory, and bytes read
+and written; from each stage's time series come the sample count and
+span, the least-squares growth rate of the stage's memory, its
+starting value and peak, and how well a straight line fits — the same
+shape the pilot computes for the job, per stage, so a leak is
+attributed to the stage that leaks. Stages are discovered in the
+report from the prmon output present, so a newly wrapped stage in
+`run.sh` reports without a reporting change.
+
+The event counts ride opens the payload already performs where it can:
+the reconstructed count comes from the ROOT open the RECO validation
+holds (`validate_rootfile.py --events-file`). The simulated count is
+taken separately after simulation (`count_events.py`), which is what
+makes it available when the FULL output is not copied. Either count
+costs the same whatever the file holds, since it reads the tree header
+and no event data. The stage log gains an `events` line after simulation and
 after reconstruction, and a `metadata` stage around the podio metadata
 extraction. The dispatcher carries the report into `jobReport.json`
 under `payload`, with the reconstructed count as `nEvents`, on
@@ -168,12 +193,13 @@ In order, each a committed step on the clone:
    no completed compute.
 3. **Payload reporting** (2026-09-06, the payload report above).
    `jobReport.json` carries the payload's report: events requested and
-   produced per stage, wall and CPU per stage from the prmon summaries,
-   peak memory, output sizes, the registration outcome, the payload
-   version; any pending registration joins it with item 2. The pilot
-   lifts it into the job record (pilot 3.14.1.31 and later). The job
-   record's event count set from it, and the task and job pages
-   reading it, follow.
+   produced, every stage's outcome and wall time, every stage's prmon
+   summary and memory trend, output sizes, the registration outcome,
+   the payload version; any pending registration joins it with item 2.
+   The pilot lifts it into the job record (pilot 3.14.1.31 and later).
+   The job record's own event count is set from the report by a change
+   to the pilot's ePIC plugin, without which no ePIC job records
+   events at all. The task and job pages reading the report follow.
 4. **PanDA-only shape.** The condor branches go: the bearer-token
    discovery, the `xrdcp` fallbacks, the ad dumps. The environment is
    the one file the doer writes, read by name; exits carry reasons in
@@ -218,9 +244,9 @@ land in this tree; the condor submission path keeps its own copy.
    canary payload run compared with the container payload (pending).
 2. Event counts at registration, verified against the dataset's
    derived total (done 2026-09-06).
-3. Payload reporting in `jobReport.json` (done 2026-09-06); the job
-   record's event count, the task and job pages, and the scout gate
-   reading it (pending).
+3. Payload reporting in `jobReport.json`, every stage measured (done
+   2026-09-06); the job record's event count through the pilot plugin,
+   the task and job pages, and the scout gate reading it (pending).
 4. Registration resilience, Measure 1 then Measure 2, with the
    registrar under the ops agent and the pending-registration view.
 5. PanDA-only shape.

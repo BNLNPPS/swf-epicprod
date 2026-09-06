@@ -26,11 +26,14 @@ from datetime import datetime, timezone
 
 SCHEMA = "epicprod-payload-report/1"
 
-# The prmon summary each stage writes, by the stage name in the stage log.
-PRMON_STAGES = {
-    "background": "hepmcmerger",
-    "simulation": "npsim",
-    "reconstruction": "eicrecon",
+# Every stage runs under its own prmon, and its output is named for the
+# stage. Three labels predate that convention and are named for the tool
+# they monitored; any other label is reported under its own name, so a
+# newly wrapped stage in run.sh needs no change here.
+PRMON_LABEL_STAGES = {
+    "hepmcmerger": "background",
+    "npsim": "simulation",
+    "eicrecon": "reconstruction",
 }
 
 # prmon "Max" fields carried into the report (totals of monotonic
@@ -99,17 +102,84 @@ def stage_summary(entries):
     return out
 
 
+def read_series(path):
+    """The stage's prmon time series as (elapsed seconds, memory kB) pairs
+    of its proportional set size, from the tab-separated file prmon writes
+    a sample at a time. An absent or unreadable series yields nothing; the
+    series is supporting detail, never a reason to fail."""
+    points = []
+    try:
+        with open(path) as f:
+            header = f.readline().split()
+            if "Time" not in header or "pss" not in header:
+                return points
+            i_time, i_pss = header.index("Time"), header.index("pss")
+            t0 = None
+            for line in f:
+                fields = line.split()
+                if len(fields) <= max(i_time, i_pss):
+                    continue
+                try:
+                    t, pss = int(fields[i_time]), float(fields[i_pss])
+                except ValueError:
+                    continue
+                if t0 is None:
+                    t0 = t
+                points.append((t - t0, pss))
+    except OSError:
+        return []
+    return points
+
+
+def series_trend(points):
+    """The memory trend of one stage: how many samples, over what span,
+    the least-squares growth rate of its memory in kB per second, and how
+    well a straight line describes it. A stage that grows steadily and a
+    stage that plateaus are told apart by the rate and the fit together;
+    the pilot computes the same shape for the job as a whole, and this is
+    it per stage. Fewer than three samples yield the count alone."""
+    n = len(points)
+    if n < 3:
+        return {"samples": n} if n else {}
+    span = points[-1][0] - points[0][0]
+    mean_t = sum(t for t, _ in points) / n
+    mean_m = sum(m for _, m in points) / n
+    var_t = sum((t - mean_t) ** 2 for t, _ in points)
+    if var_t <= 0:
+        return {"samples": n, "span_s": span}
+    slope = sum((t - mean_t) * (m - mean_m) for t, m in points) / var_t
+    intercept = mean_m - slope * mean_t
+    ss_res = sum((m - (slope * t + intercept)) ** 2 for t, m in points)
+    ss_tot = sum((m - mean_m) ** 2 for _, m in points)
+    trend = {"samples": n, "span_s": span,
+             "memory_growth_kb_per_s": round(slope, 2),
+             "memory_start_kb": round(intercept),
+             "memory_peak_kb": round(max(m for _, m in points))}
+    if ss_tot > 0:
+        trend["fit_quality"] = round(1 - ss_res / ss_tot, 3)
+    return trend
+
+
 def prmon_summary(prmon_dir, taskname):
-    """Per stage, the prmon summary fields of PRMON_MAX plus the CPU
-    efficiency, from <prmon_dir>/<taskname>.<tool>.prmon.json; a stage
-    whose summary is absent or unreadable is reported as such."""
+    """Per stage, what prmon measured: the summary fields of PRMON_MAX,
+    the CPU efficiency they imply, and the memory trend of the stage's
+    time series. Stages are discovered from the prmon output present, so
+    every wrapped stage reports; a summary that cannot be read is
+    reported as an error under its own stage rather than dropped."""
     out = {}
     if not prmon_dir or not taskname:
         return out
-    for stage, tool in PRMON_STAGES.items():
-        path = os.path.join(prmon_dir, f"{taskname}.{tool}.prmon.json")
-        if not os.path.exists(path):
+    prefix, suffix = f"{taskname}.", ".prmon.json"
+    try:
+        names = sorted(os.listdir(prmon_dir))
+    except OSError:
+        return out
+    for name in names:
+        if not (name.startswith(prefix) and name.endswith(suffix)):
             continue
+        label = name[len(prefix):-len(suffix)]
+        stage = PRMON_LABEL_STAGES.get(label, label)
+        path = os.path.join(prmon_dir, name)
         try:
             with open(path) as f:
                 summary = json.load(f)
@@ -118,9 +188,9 @@ def prmon_summary(prmon_dir, taskname):
             continue
         mx = summary.get("Max") or {}
         rec = {}
-        for key, name in PRMON_MAX.items():
+        for key, field in PRMON_MAX.items():
             if key in mx:
-                rec[name] = mx[key]
+                rec[field] = mx[key]
         wall = rec.get("wall_s")
         cpu = (rec.get("cpu_user_s") or 0) + (rec.get("cpu_sys_s") or 0)
         if wall:
@@ -128,6 +198,9 @@ def prmon_summary(prmon_dir, taskname):
         version = (summary.get("prmon") or {}).get("Version")
         if version:
             rec["prmon_version"] = version
+        trend = series_trend(read_series(path[:-len(suffix)] + ".prmon.txt"))
+        if trend:
+            rec["trend"] = trend
         out[stage] = rec
     return out
 

@@ -7,6 +7,8 @@ import sys
 import argparse
 from pathlib import Path
 
+EVENTS_TREE = "events"
+
 try:
     import ROOT
 except ImportError:
@@ -32,10 +34,13 @@ def validate_rootfile(filepath):
         filepath: Path to the ROOT file
 
     Returns:
-        tuple: (is_valid, message, checks_passed)
+        tuple: (is_valid, message, checks_passed, events)
             - is_valid: True if all checks passed
             - message: Success or error message
             - checks_passed: dict with individual check results
+            - events: entry count of the file's events tree, or None when it
+              has none or cannot be read. Taken from the open this validation
+              already holds, so counting costs no second ROOT startup.
     """
     filepath = Path(filepath)
     checks = {
@@ -118,17 +123,29 @@ def validate_rootfile(filepath):
         if all_readable:
             checks["objects_readable"] = True
 
+    # The events tree entry count, read from the tree header while the file
+    # is open here. No event data is read, and the count costs the same
+    # whatever the file holds.
+    events = None
+    if tfile and checks["is_open"]:
+        tree = tfile.Get(EVENTS_TREE)
+        if tree:
+            try:
+                events = int(tree.GetEntries())
+            except Exception as e:  # noqa: BLE001 - reported, never fatal
+                print(f"   events tree of {filepath} could not be counted: {e}")
+
     # Close file if it was opened
     if tfile:
         tfile.Close()
 
     # Determine if file is valid
     if all(checks.values()):
-        return True, "All validation checks passed", checks
+        return True, "All validation checks passed", checks, events
     else:
         # Return the first error message, or a generic message if no specific error
         error_msg = errors[0] if errors else "Some validation checks failed"
-        return False, error_msg, checks
+        return False, error_msg, checks, events
 
 
 def main():
@@ -151,6 +168,17 @@ def main():
         action="store_true",
         help="Only report invalid files"
     )
+    parser.add_argument(
+        "--events-file",
+        default=None,
+        help="Write the entry count of the file's events tree to this path. "
+             "The count rides the open this validation already performs, so "
+             "the payload pays no second ROOT startup for it "
+             "(swf-epicprod docs/EPICPROD_PAYLOAD.md, payload reporting). "
+             "Only written for a single valid file whose events tree can be "
+             "read; a count that cannot be taken leaves the file absent and "
+             "the validation result unchanged."
+    )
 
     args = parser.parse_args()
 
@@ -161,9 +189,12 @@ def main():
     all_valid = True
     results = []
 
+    events_counted = None
     for filepath in args.files:
-        is_valid, message, checks = validate_rootfile(filepath)
+        is_valid, message, checks, events = validate_rootfile(filepath)
         results.append((filepath, is_valid, message, checks))
+        if is_valid and events is not None and events_counted is None:
+            events_counted = events
 
         if not is_valid:
             all_valid = False
@@ -182,6 +213,20 @@ def main():
         valid_count = sum(1 for _, is_valid, _, _ in results if is_valid)
         invalid_count = len(results) - valid_count
         print(f"\nSummary: {valid_count}/{len(results)} files valid, {invalid_count} invalid")
+
+    # The event count for the caller, when one file was validated and its
+    # events tree could be read. A count that cannot be taken leaves the
+    # file unwritten; the caller reports the gap and carries on.
+    if args.events_file:
+        if len(args.files) == 1 and all_valid and events_counted is not None:
+            try:
+                with open(args.events_file, "w") as f:
+                    f.write(f"{events_counted}\n")
+                print(f"   events: {events_counted} (written to {args.events_file})")
+            except OSError as e:
+                print(f"   events count not written to {args.events_file}: {e}")
+        else:
+            print("   events count not available for this validation")
 
     # Exit with error code if any files are invalid
     sys.exit(0 if all_valid else 1)
