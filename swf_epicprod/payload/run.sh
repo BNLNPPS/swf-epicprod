@@ -7,6 +7,14 @@ CURRENT_STAGE=""
 stage() {
   CURRENT_STAGE=$1
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 $2${3:+ $3}" >> "${PAYLOAD_STAGES_LOG:-payload-stages.log}"
+  # As each stage ends, refresh the report, so the metrics the pilot sends
+  # on its next heartbeat say where the payload has got to. A job that
+  # dies with its worker has then already reported what it had done, which
+  # the job record keeps; its metadata, and so its full report, would not
+  # survive. The refresh never fails the payload.
+  if [ "$2" != "start" ] && [ -n "${TASKNAME:-}" ]; then
+    payload_report "" --quiet || true
+  fi
 }
 # Every stage that runs a program runs under its own prmon, named for the
 # stage, so wall time, CPU, memory and I/O are attributed to the stage
@@ -38,9 +46,16 @@ RECO_EVENTS=""
 FULL_EVENTS_ARGS=()
 RECO_EVENTS_ARGS=()
 payload_report() {
-  local rc=$1
+  local rc=$1; shift
   local here=${SCRIPT_DIR:-$(dirname "$0")}
-  python "${here}/payload_report.py" --out "${PAYLOAD_REPORT:-payload-report.json}" --exit "${rc}" \
+  # An exit code only when the run has ended; the refresh at each stage
+  # reports where the payload has got to, with no exit yet. IFS carries no
+  # space here, so optional arguments travel in an array.
+  local ended=()
+  [ -n "${rc}" ] && ended=(--exit "${rc}")
+  python "${here}/payload_report.py" --out "${PAYLOAD_REPORT:-payload-report.json}" \
+    ${ended[@]+"${ended[@]}"} "$@" \
+    --job-report "${PAYLOAD_JOB_REPORT:-jobReport.json}" \
     --stages "${PAYLOAD_STAGES_LOG:-payload-stages.log}" --version "${here}/VERSION" \
     --requested "${EVENTS_PER_TASK:-}" --prmon-dir "${LOG_TEMP:-}" --taskname "${TASKNAME:-}" \
     --full "${FULL_TEMP:+${FULL_TEMP}/${TASKNAME:-}.edm4hep.root}" \

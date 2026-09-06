@@ -151,10 +151,43 @@ production and canary jobs alike; the pilot ships `jobReport.json` as
 job metadata, which the server keeps for finished jobs. The canary
 verdict's events check reads the reconstructed count.
 
-Two consumers remain to be connected. The pilot's epic plugin stores
-the report as job metadata but does not set the job record's event
-count from it, so JEDI scouts and accounting still read zero events
-for these jobs. The task and job pages do not yet read the report.
+### Reporting from a job that fails
+
+A job that fails reports none of this. The PanDA server keeps job
+metadata for finished jobs only: over the thirty days to 2026-09-06,
+365,477 failed jobs carried metadata not once, and the log tarball is
+no fallback, its dataset being marked failed for every one of them. The
+jobs whose account is most wanted are the jobs whose account is
+discarded.
+
+What the server does keep, whatever state a job ends in, is the job
+metrics string, and the pilot rebuilds and sends it on every heartbeat:
+in the same period it was present on 10,883 of 11,028 failed jobs, and
+on 33,245 of the 45,822 killed with their worker. So the payload
+refreshes its report as each stage ends and declares in it a compact
+digest: the stage reached and its outcome, the trail of stages behind
+it, the events done, the registration state, the payload version, and
+the exit code once there is one. The pilot's ePIC plugin appends the
+digest to the job metrics it sends. Both files are written atomically,
+since the pilot reads them while the job runs.
+
+The heartbeat is 1800 seconds, so this channel's resolution is half an
+hour and the payload's refresh does not accumulate: each rewrite
+replaces the last, and a heartbeat carries the state at that moment,
+not the transitions since the previous one. That is why the digest
+carries the trail rather than the current stage alone — a job of
+ordinary length speaks once or twice in its life, and a single message
+has to say the whole path. A job that dies inside its first heartbeat
+period still says nothing.
+
+The digest is small by design and is not the report. Delivering the
+whole report from a job that fails, at a resolution we choose rather
+than the heartbeat's, needs the job to send it to us directly while it
+runs, on the canary's collection ladder (site-canary DESIGN.md); that
+is designed and not yet built.
+
+Two consumers remain to be connected: the task page, and the scout
+gate. The job page reads the report today.
 
 ## Evolution
 

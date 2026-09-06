@@ -26,6 +26,9 @@ from datetime import datetime, timezone
 
 SCHEMA = "epicprod-payload-report/1"
 
+# The pilot caps the length of a value it will carry in the job metrics.
+MAX_METRIC_VALUE = 64
+
 # Every stage runs under its own prmon, and its output is named for the
 # stage. Three labels predate that convention and are named for the tool
 # they monitored; any other label is reported under its own name, so a
@@ -248,6 +251,50 @@ def read_version(path):
         return ""
 
 
+def job_metrics(report):
+    """The compact digest of the report that rides the pilot's job metrics.
+
+    The pilot appends these to the job metrics it sends on every
+    heartbeat, and the server keeps job metrics whatever state a job ends
+    in, while it keeps metadata for finished jobs only. So this is what
+    survives of the payload's account when a job dies with its worker,
+    and it is deliberately small: where the payload had got to, how much
+    it had done, and how it ended. Values carry no whitespace, which the
+    pilot requires."""
+    stages = report.get("stages") or {}
+    last = list(stages)[-1] if stages else ""
+    events = report["events"].get("reconstructed") or report["events"].get("simulated")
+    # The trail, not only the current stage: heartbeats are half an hour
+    # apart, so most jobs speak once or twice in their life and a single
+    # message has to carry the whole path. Each stage is three letters,
+    # marked when it failed or never ended; the newest survive the cap.
+    marks = {"ok": "", "fail": "!"}
+    trail = ",".join(f"{name[:3]}{marks.get(s.get('status'), '?')}"
+                     for name, s in stages.items() if isinstance(s, dict))
+    while len(trail) > MAX_METRIC_VALUE and "," in trail:
+        trail = trail.split(",", 1)[1]
+    metrics = {"payloadStage": last or "none",
+               "payloadStageStatus": (stages.get(last) or {}).get("status") or "none",
+               "payloadTrail": trail or "none",
+               "payloadRegistration": (report["registration"]["outcome"] or "none").replace(" ", "_"),
+               "payloadVersion": (report.get("payload_version") or "none").split()[-1]}
+    if isinstance(events, int):
+        metrics["payloadEvents"] = events
+    if report.get("exit_code") is not None:
+        metrics["payloadExit"] = report["exit_code"]
+    return metrics
+
+
+def write_json(path, body):
+    """Write one JSON file in place of any previous one, atomically: the
+    pilot reads these files while the job runs, and must never catch one
+    half-written."""
+    temporary = f"{path}.writing"
+    with open(temporary, "w") as f:
+        json.dump(body, f)
+    os.replace(temporary, path)
+
+
 def build_report(args):
     entries = read_stage_log(args.stages)
     stages = stage_summary(entries)
@@ -273,13 +320,16 @@ def build_report(args):
     }
     if args.note:
         report["note"] = args.note
+    report["jobMetrics"] = job_metrics(report)
     return report
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--out", required=True)
-    ap.add_argument("--exit", type=int, required=True)
+    ap.add_argument("--exit", type=int, default=None,
+                    help="the payload's exit code; absent for the refresh at "
+                         "each stage, where the run has not ended")
     ap.add_argument("--stages", required=True, help="the stage log")
     ap.add_argument("--version", required=True, help="the payload VERSION file")
     ap.add_argument("--requested", default="")
@@ -290,16 +340,27 @@ def main():
     ap.add_argument("--full-events", default="")
     ap.add_argument("--reco-events", default="")
     ap.add_argument("--note", default="")
+    ap.add_argument("--job-report", default="",
+                    help="the pilot's job report to refresh alongside this "
+                         "one, so the metrics the payload declares ride the "
+                         "next heartbeat rather than waiting for the job to "
+                         "end. The dispatcher writes it authoritatively when "
+                         "the payload returns.")
+    ap.add_argument("--quiet", action="store_true",
+                    help="report only failure, for the refresh at each stage")
     args = ap.parse_args()
     try:
         report = build_report(args)
-        with open(args.out, "w") as f:
-            json.dump(report, f)
+        write_json(args.out, report)
+        if args.job_report:
+            write_json(args.job_report,
+                       {"jobMetrics": report["jobMetrics"], "payload": report})
         ev = report["events"]
-        print(f"payload report written: {args.out} exit={args.exit} "
-              f"events requested={ev['requested']} simulated={ev['simulated']} "
-              f"reconstructed={ev['reconstructed']} "
-              f"registration={report['registration']['outcome']}")
+        if not args.quiet:
+            print(f"payload report written: {args.out} exit={args.exit} "
+                  f"events requested={ev['requested']} simulated={ev['simulated']} "
+                  f"reconstructed={ev['reconstructed']} "
+                  f"registration={report['registration']['outcome']}")
     except Exception as e:  # noqa: BLE001 - reported, never the payload's exit
         print(f"payload report not written: {type(e).__name__}: {e}", file=sys.stderr)
     return 0
