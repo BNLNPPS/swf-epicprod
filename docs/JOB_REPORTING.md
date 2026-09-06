@@ -149,8 +149,34 @@ week from a dead sweeper; a pass that errored is the most useful thing
 the gateway's growth guard can be told, because objects are then
 accumulating for a reason that is not a storm. The record is posted
 after the deletes complete, so the index never records as gone
-something still in the bucket, and a long pass posts partials. A failed
-post is carried to the next pass rather than chased.
+something still in the bucket, and a long pass posts partials.
+
+The record posts to `POST /prod/api/stageout/sweep-pass/` on the
+gateway, bearer-authenticated, carrying `outcome` (`ok`, `partial` or
+`failed`), `reason` where the outcome is not ok, `window`, `filed` (the
+job ids), `deleted_read` and `deleted_unread` (the object keys).
+Anything else it carries is kept verbatim.
+
+What the reply means decides the retry, and only one code means the
+record is delivered:
+
+- **202** — accepted, written and fsynced to the gateway's spool before
+  the reply. The index applies it within minutes and application is
+  idempotent by pass id. Never re-post a record that got a 202: a
+  duplicate would be harmless there, but re-posting on a late
+  application is how the same keys get retired twice.
+- **503, a timeout, a connection failure, any other 5xx** — the record
+  did not reach the spool. Carry it to the next pass with that pass's
+  own record. The 503 is the case that matters: a reply exists and the
+  record must still be retried.
+- **400 or 413** — the record is malformed or over the 4 MB cap. It
+  will never succeed unchanged, so re-posting it as it stands is a
+  loop. A 413 means the per-pass bound failed and the record is split
+  and posted as partials; a 400 is a defect in the sweep and is raised,
+  never dropped quietly.
+- **401 or 403** — the token is missing or is not the sweeper account.
+  The backlog is kept and the credential failure is raised: this is not
+  a condition to retry around.
 
 This is what lets the gateway tell a stalled drain from an explosion by
 measurement, so the sweep's ordinary deleting never reads as growth and
