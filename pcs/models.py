@@ -10,7 +10,9 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
 from django.utils.functional import cached_property
 
-from .name_tokens import sample_name_reserved_collision, reserved_sample_token_description
+from .name_tokens import (TRIAL_SAMPLE_TOKEN, is_trial_sample_name,
+                          reserved_sample_token_description,
+                          sample_name_reserved_collision)
 
 
 TAG_STATUS_CHOICES = [
@@ -242,6 +244,15 @@ class Dataset(models.Model):
     # indexed for resolution, never rebuilt from the tag FKs at read time. The
     # legacy ``dataset_name`` above (a csv_import.<hash> for imported rows) is
     # left untouched. Not unique: block rows (b1, b2, …) share a composed name.
+    # A trial is a small, real run of this configuration, produced by
+    # the path production uses and shown to the requesting physics
+    # group for acceptance before the configuration goes to scale
+    # (PCS.md, Sample Variants). It is a sample variant of the
+    # configuration it proves, so its identity is composed and
+    # guarded like any other; this flag is what badges, filters and
+    # the accounting exclusions read, so nothing string-matches a
+    # name. Flag and name must agree — see clean().
+    trial = models.BooleanField(default=False, db_index=True)
     composed_name = models.CharField(max_length=255, db_index=True, blank=True, default='')
     scope = models.CharField(max_length=100, default='group.EIC')
     detector_version = models.CharField(max_length=50)
@@ -376,10 +387,18 @@ class Dataset(models.Model):
         # Reserved-token rule (PCS.md §Composed-name suffixes): the sample
         # segment must not collide with optional tag or terminal suffix tokens
         # that anchor positional parsing.
-        if sample_name_reserved_collision(self.sample_name):
+        if sample_name_reserved_collision(self.sample_name,
+                                          allow_trial=self.trial):
             raise ValidationError(
                 f"sample_name {self.sample_name!r} collides with a reserved "
                 f"token ({reserved_sample_token_description()}).")
+        # The flag and the name are two views of one fact, and neither is
+        # allowed to drift from the other: a trial's name ends in the
+        # trial token, and a name ending in it belongs to a trial.
+        if self.trial and not is_trial_sample_name(self.sample_name):
+            raise ValidationError(
+                "a trial's sample_name must end with "
+                f"{TRIAL_SAMPLE_TOKEN}; got {self.sample_name!r}.")
 
     def save(self, *args, **kwargs):
         if not self.dataset_name:

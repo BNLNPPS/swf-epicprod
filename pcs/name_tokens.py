@@ -113,11 +113,31 @@ def try_number_from_physical_name(logical_name, physical_name):
     return suffix_number(suffixes, 'try') or 1
 
 
-def sample_name_reserved_collision(sample_name):
-    """Return True when a sample name would collide with reserved PCS tokens."""
+# The trial token: a trial is a sample variant of the configuration it
+# proves, so it takes a compliant, unique composed identity from the
+# machinery that already guards those, and its last segment says what it
+# is. The token is the system's alone — a physics variant may never be
+# called TRIAL — and a dataset's ``trial`` flag and its name must agree
+# (PCS.md, Sample Variants).
+TRIAL_SAMPLE_TOKEN = 'TRIAL'
+
+
+def is_trial_sample_name(sample_name):
+    """Whether a sample name names a trial: its last segment is TRIAL."""
+    if not sample_name:
+        return False
+    return str(sample_name).split('.')[-1] == TRIAL_SAMPLE_TOKEN
+
+
+def sample_name_reserved_collision(sample_name, allow_trial=False):
+    """Return True when a sample name would collide with reserved PCS
+    tokens. ``allow_trial`` permits the trial token, which only the
+    system's own trial composition may use."""
     if not sample_name:
         return False
     segments = str(sample_name).split('.')
+    if is_trial_sample_name(sample_name) and not allow_trial:
+        return True
     return bool(
         BACKGROUND_TAG_RE.fullmatch(segments[0])
         or match_terminal_suffix(segments[-1])
@@ -125,7 +145,8 @@ def sample_name_reserved_collision(sample_name):
 
 
 def reserved_sample_token_description():
-    return 'first segment k<n> or last segment b<n>/try<n>'
+    return (f'first segment k<n>, last segment b<n>/try<n>, or the '
+            f'{TRIAL_SAMPLE_TOKEN} token')
 
 
 def campaign_family(name):
