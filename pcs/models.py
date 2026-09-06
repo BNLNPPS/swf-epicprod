@@ -976,23 +976,84 @@ class ProdTask(models.Model):
             return ds.stage
         return 'evgen' if self.csv_file else ''
 
-    def get_effective_config(self):
-        """Return ProdConfig field values with per-task overrides applied."""
+    def campaign_standard_config(self):
+        """The campaign's ``<edition> Standard Production``, which every
+        unattended value is filled from. None when the campaign has none."""
+        from .services import standard_prodconfig_name
+        edition = ''
+        if self.dataset_id:
+            edition = str(self.dataset.detector_version or '').strip()
+        if not edition:
+            return None
+        return ProdConfig.objects.filter(
+            name=standard_prodconfig_name(edition)).first()
+
+    def config_fills(self):
+        """Which effective values came from the campaign rather than from this
+        task's own configuration: ``{field: source config name}``, empty when
+        nothing was filled. What the page reports so a filled value is visible
+        and can be changed, instead of being either invisible or a refusal."""
+        _, fills = self._effective_config_and_fills()
+        return fills
+
+    def _effective_config_and_fills(self):
+        from .services import PLACEHOLDER_PRODCONFIG_NAME
         config = self.prod_config
+        standard = None
+        # A value nobody set is not a decision. Where the bound configuration
+        # carries nothing — every field of the Placeholder, an empty key on a
+        # real config — the campaign's Standard Production supplies it. The
+        # fill only ever reaches what is empty; overrides always win over both.
+        placeholder = getattr(config, 'name', '') == PLACEHOLDER_PRODCONFIG_NAME
         overrides = self.overrides or {}
-        result = {}
+        result, fills = {}, {}
         for field in config._meta.get_fields():
             if not hasattr(field, 'attname'):
                 continue
             name = field.name
-            if name in ('id', 'created_at', 'updated_at'):
+            if name in ('id', 'created_at', 'updated_at', 'name'):
                 continue
-            result[name] = overrides.get(name, getattr(config, name))
-        # Merge the data dicts specially (override keys, not replace entire dict)
+            own = getattr(config, name)
+            if name in overrides:
+                result[name] = overrides[name]
+                continue
+            if placeholder or own in (None, ''):
+                if standard is None:
+                    standard = self.campaign_standard_config() or False
+                if standard and hasattr(standard, name):
+                    filled = getattr(standard, name)
+                    if filled not in (None, '') and filled != own:
+                        result[name] = filled
+                        fills[name] = standard.name
+                        continue
+            result[name] = own
+        # data merges key by key, campaign first, so a key the task's own
+        # config sets always beats the campaign's.
+        if standard is None:
+            standard = self.campaign_standard_config() or False
+        std_data = (standard.data or {}) if standard else {}
         base_data = config.data or {}
+        if placeholder:
+            base_data = {**std_data, **base_data}
+        else:
+            base_data = {**{k: v for k, v in std_data.items()
+                            if base_data.get(k) in (None, '')},
+                         **base_data}
+        for k, v in std_data.items():
+            if (config.data or {}).get(k) in (None, '') and base_data.get(k) == v:
+                fills[f'data.{k}'] = standard.name
         override_data = overrides.get('data', {})
         if isinstance(override_data, dict):
             result['data'] = {**base_data, **override_data}
+        else:
+            result['data'] = base_data
+        result['name'] = getattr(config, 'name', '')
+        return result, fills
+
+    def get_effective_config(self):
+        """ProdConfig field values, campaign fill for what nobody set, then
+        per-task overrides. See ``_effective_config_and_fills``."""
+        result, _ = self._effective_config_and_fills()
         return result
 
     def generate_commands(self):
