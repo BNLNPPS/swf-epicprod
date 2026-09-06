@@ -281,6 +281,13 @@ if __name__ == "__main__":
              "upload creates, and the expiry of every DID registered, so a "
              "canary run's output removes itself (epicprod payload canary)"
     )
+    parser.add_argument(
+        '--events', dest="events", type=int, default=None,
+        help="Event count of the file(s), written as Rucio's events "
+             "attribute on each file DID after the upload and read back "
+             "through the dataset's derived total "
+             "(RUCIO_REGISTRATION_CONTRACT.md)"
+    )
 
     args = parser.parse_args()
 
@@ -381,6 +388,33 @@ if __name__ == "__main__":
                         client.set_metadata(scope, name, 'lifetime', int(args.lifetime))
                     except Exception as exc:  # noqa: BLE001
                         logger.error("lifetime not set on %s:%s: %s", scope, name, exc)
+        if args.events is not None and not noregister:
+            # The event count on every file DID, from which Rucio derives
+            # the dataset's total (RUCIO_REGISTRATION_CONTRACT.md). The
+            # derived total is read back and held to the sum of the
+            # dataset's files; a count that cannot be written or does not
+            # verify is reported by name, and the upload stands.
+            for item in upload_items:
+                try:
+                    client.set_metadata(scope, item['did_name'], 'events', int(args.events))
+                    logger.info("events %d registered on %s:%s", int(args.events), scope, item['did_name'])
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("events not set on %s:%s: %s", scope, item['did_name'], exc)
+            for ds_name in sorted({item['dataset_name'] for item in upload_items}):
+                try:
+                    counts = [f.get('events') for f in client.list_files(scope, ds_name)]
+                    derived = client.get_metadata(scope, ds_name).get('events')
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("events on dataset %s:%s unverified: %s", scope, ds_name, exc)
+                    continue
+                if any(c is None for c in counts):
+                    logger.error("events on dataset %s:%s unverified: %d of %d files carry no count",
+                                 scope, ds_name, sum(1 for c in counts if c is None), len(counts))
+                elif derived != sum(counts):
+                    logger.error("events on dataset %s:%s unverified: derived %s differs from the sum of its files %d",
+                                 scope, ds_name, derived, sum(counts))
+                else:
+                    logger.info("events on dataset %s:%s verified: %d over %d files", scope, ds_name, derived, len(counts))
     except Exception as e:
         logger.error(f"Upload failed: {e}")
 

@@ -46,16 +46,18 @@ The stages of run.sh, as cloned:
 
 Consequences of this split:
 
-- No produced FULL or RECO file carries an `events` count, so no
-  dataset total can be derived (RUCIO_REGISTRATION_CONTRACT.md).
+- As cloned, no produced FULL or RECO file carried an `events` count,
+  so no dataset total could be derived
+  (RUCIO_REGISTRATION_CONTRACT.md). Evolution item 1 writes it.
 - Registration failure fails the job at its last step, after the
   payload work is done: the 2026-08-31 loss of 4,400 finished
   Perlmutter jobs (RUCIO_RESILIENCE.md). The measures planned there
   need the registration step implemented in this tree.
-- The payload report is the pilot's lift of `jobReport.json`
-  (`write_job_report` in the dispatcher), which today carries the exit
-  code and message only. Events processed, stage timings and CPU, the
-  basis for scouts and honest efficiency, are not reported.
+- As cloned, the payload report was the pilot's lift of
+  `jobReport.json` (`write_job_report` in the dispatcher) with the
+  exit code and message only; events processed, stage timings and
+  CPU, the basis for scouts and honest efficiency, were not reported.
+  The payload report below carries them.
 - The payload's behavior is bound to the image build: a payload change
   needs a container rebuild, and a task's payload version is not
   recorded anywhere epicprod reads.
@@ -65,8 +67,9 @@ Consequences of this split:
 The payload lives in this repository inside the package, as
 `swf_epicprod/payload/`: `run.sh`, `register_to_rucio.py`,
 `validate_rootfile.py`, `parse_podio_metadata.py`, `shared_utils.py`,
-`rucio.cfg`, `check_output.py`, with a `VERSION` file naming the
-payload version and the upstream commit it was cloned from. Package
+`rucio.cfg`, `check_output.py`, `count_events.py`,
+`payload_report.py`, with a `VERSION` file naming the payload version
+and the upstream commit it was cloned from. Package
 data, so the deploy's non-editable freeze of swf-epicprod carries it
 and the submit doer finds it in the interpreter it runs under; the doer
 copies the directory whole into the sandbox as `payload/`, from the
@@ -102,6 +105,32 @@ on the rule and the DIDs it registers, so the dataset removes itself;
 stage start, end and failure, is written on every run and is the first
 piece of payload reporting (evolution item 3).
 
+### The payload report
+
+Every run of `run.sh` leaves `payload-report.json` in the working
+directory (`PAYLOAD_REPORT`), written from an EXIT trap so a report
+exists on every exit path with the stages reached. It carries the
+payload version and exit code; the events requested by the manifest
+row and the events simulated and reconstructed, each the `events` tree
+entry count of the output file (`count_events.py`); per stage, the
+outcome and the wall time between its start and end lines in the stage
+log; for the background merge, simulation and reconstruction, the
+prmon summary (wall, user and system CPU, CPU efficiency, peak RSS,
+PSS and virtual memory, bytes read and written); the output files with
+their sizes and counts; and the registration outcome with the DIDs
+registered. The stage log gains an `events` line after simulation and
+after reconstruction, and a `metadata` stage around the podio metadata
+extraction. The dispatcher carries the report into `jobReport.json`
+under `payload`, with the reconstructed count as `nEvents`, on
+production and canary jobs alike; the pilot ships `jobReport.json` as
+job metadata, which the server keeps for finished jobs. The canary
+verdict's events check reads the reconstructed count.
+
+Two consumers remain to be connected. The pilot's epic plugin stores
+the report as job metadata but does not set the job record's event
+count from it, so JEDI scouts and accounting still read zero events
+for these jobs. The task and job pages do not yet read the report.
+
 ## Evolution
 
 In order, each a committed step on the clone:
@@ -122,12 +151,12 @@ In order, each a committed step on the clone:
    existing DID, because the output is not bit-reproducible. Task
    39054 lost 6,400 retries this way, thousands of Perlmutter node
    hours, for a dataset that was already complete.
-1. **Event counts at registration.** After a successful upload, the
-   `events` tree entry count of each ROOT output is written to its
-   file DID, so Rucio derives the dataset total. A count that cannot
-   be read or written is reported by file name and the upload stands.
-   This is the contract's open row, and the first change the clone
-   carries.
+1. **Event counts at registration** (2026-09-06). After a successful
+   upload, `register_to_rucio.py --events` writes the output's
+   `events` tree entry count to its file DID and reads the dataset's
+   derived total back, held to the sum of its files. A count that
+   cannot be read, written or verified is reported by name and the
+   upload stands. This closes the contract's open row.
 2. **Registration resilience** (RUCIO_RESILIENCE.md). Measure 1: a
    randomized delay before registration and one attempt with backoff
    and jitter. Measure 2: the job uploads, makes one attempt, records
@@ -137,12 +166,14 @@ In order, each a committed step on the clone:
    concurrency; the BNL interim stash when the upload path itself
    fails (RUCIO_FAILOVER_STASH.md). A registration failure then costs
    no completed compute.
-3. **Payload reporting.** `jobReport.json` becomes the payload's
-   report: events requested and produced per stage, wall and CPU per
-   stage from the prmon summaries, peak memory, output sizes, the
-   registration outcome and any pending registration, the payload
-   version. The pilot lifts it into the job record (pilot 3.14.1.31
-   and later), where scouts, sizing and efficiency read it.
+3. **Payload reporting** (2026-09-06, the payload report above).
+   `jobReport.json` carries the payload's report: events requested and
+   produced per stage, wall and CPU per stage from the prmon summaries,
+   peak memory, output sizes, the registration outcome, the payload
+   version; any pending registration joins it with item 2. The pilot
+   lifts it into the job record (pilot 3.14.1.31 and later). The job
+   record's event count set from it, and the task and job pages
+   reading it, follow.
 4. **PanDA-only shape.** The condor branches go: the bearer-token
    discovery, the `xrdcp` fallbacks, the ad dumps. The environment is
    the one file the doer writes, read by name; exits carry reasons in
@@ -185,10 +216,11 @@ land in this tree; the condor submission path keeps its own copy.
    sandbox from the release, entry point switched, version recorded on
    job and task, and the delivered-output check (done 2026-09-06);
    canary payload run compared with the container payload (pending).
-2. Event counts at registration; verified against a registered
-   dataset's derived total.
-3. Payload reporting in `jobReport.json`, read on the task and job
-   pages and by the scout gate.
+2. Event counts at registration, verified against the dataset's
+   derived total (done 2026-09-06).
+3. Payload reporting in `jobReport.json` (done 2026-09-06); the job
+   record's event count, the task and job pages, and the scout gate
+   reading it (pending).
 4. Registration resilience, Measure 1 then Measure 2, with the
    registrar under the ops agent and the pending-registration view.
 5. PanDA-only shape.

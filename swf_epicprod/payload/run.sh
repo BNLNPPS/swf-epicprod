@@ -9,6 +9,28 @@ stage() {
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 $2${3:+ $3}" >> "${PAYLOAD_STAGES_LOG:-payload-stages.log}"
 }
 trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; if [ -n "$CURRENT_STAGE" ]; then stage "$CURRENT_STAGE" fail "line $LINENO: $BASH_COMMAND"; fi; exit $s' ERR
+# Payload report (PAYLOAD_REPORT, payload-report.json in the working
+# directory): written on every exit path from what the run left behind,
+# by payload_report.py, and carried into jobReport.json by the epicprod
+# dispatcher. Event counts and the note are filled in as the run goes;
+# the report never changes the exit code.
+REPORT_NOTE=""
+FULL_EVENTS=""
+RECO_EVENTS=""
+FULL_EVENTS_ARGS=()
+RECO_EVENTS_ARGS=()
+payload_report() {
+  local rc=$1
+  local here=${SCRIPT_DIR:-$(dirname "$0")}
+  python "${here}/payload_report.py" --out "${PAYLOAD_REPORT:-payload-report.json}" --exit "${rc}" \
+    --stages "${PAYLOAD_STAGES_LOG:-payload-stages.log}" --version "${here}/VERSION" \
+    --requested "${EVENTS_PER_TASK:-}" --prmon-dir "${LOG_TEMP:-}" --taskname "${TASKNAME:-}" \
+    --full "${FULL_TEMP:+${FULL_TEMP}/${TASKNAME:-}.edm4hep.root}" \
+    --reco "${RECO_TEMP:+${RECO_TEMP}/${TASKNAME:-}.eicrecon.edm4eic.root}" \
+    --full-events "${FULL_EVENTS}" --reco-events "${RECO_EVENTS}" --note "${REPORT_NOTE}" \
+    || echo "payload report not written (payload_report.py exit $?)"
+}
+trap 'payload_report $?' EXIT
 IFS=$'\n\t'
 
 # Load bearer token or fall back to x509 proxy for xrootd authentication
@@ -200,9 +222,11 @@ OUTPUT_STATE=$(python $SCRIPT_DIR/check_output.py epic ${RECO_DID} || echo UNKNO
 case "${OUTPUT_STATE}" in
   AVAILABLE)
     echo "Output ${RECO_DID} is registered with an available replica: delivered by an earlier attempt of this job; nothing to do."
+    REPORT_NOTE="output delivered by an earlier attempt of this job"
     exit 0 ;;
   HELD)
     echo "ERROR: output name ${RECO_DID} is held by a failed earlier attempt (registered, no available replica) and cannot be regenerated under this name; rerun the residual as a new try."
+    REPORT_NOTE="output name held by a failed earlier attempt"
     exit 79 ;;
   *)
     echo "Output ${RECO_DID} not registered (${OUTPUT_STATE}); proceeding." ;;
@@ -315,6 +339,15 @@ stage simulation start
   ls -al ${FULL_TEMP}/${TASKNAME}.edm4hep.root
 } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.npsim.log | tail -n1000
 stage simulation ok
+# The simulated event count, from the file: reported, and registered on
+# the FULL DID when the file is (RUCIO_REGISTRATION_CONTRACT.md).
+FULL_EVENTS=$(python $SCRIPT_DIR/count_events.py "${FULL_TEMP}/${TASKNAME}.edm4hep.root") || FULL_EVENTS=""
+if [ -n "${FULL_EVENTS}" ]; then
+  FULL_EVENTS_ARGS=(--events "${FULL_EVENTS}")
+  stage events ok "FULL ${FULL_EVENTS}"
+else
+  stage events fail FULL
+fi
 
 # Run eicrecon reconstruction
 stage reconstruction start
@@ -336,11 +369,20 @@ stage reconstruction start
   ls -al ${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root
 } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.eicrecon.log | tail -n1000
 stage reconstruction ok
+# The reconstructed event count, the count a job delivers.
+RECO_EVENTS=$(python $SCRIPT_DIR/count_events.py "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root") || RECO_EVENTS=""
+if [ -n "${RECO_EVENTS}" ]; then
+  RECO_EVENTS_ARGS=(--events "${RECO_EVENTS}")
+  stage events ok "RECO ${RECO_EVENTS}"
+else
+  stage events fail RECO
+fi
 
 # List log files
 ls -al ${LOG_TEMP}/${TASKNAME}.*
 
 # Build metadata JSON string for Rucio registration
+stage metadata start
 # Extract software release from eic-info: strip trailing (-default)?-<40hexchars> in one pass
 JUG_XL_TAG=$(eic-info 2>/dev/null | grep -oP '(?<=jug_dev: )([\d.]+-(?=stable)|.*?\K)(stable|unstable|nightly|default)')
 # Extract metadata from FULL file via podio (all fields except software_release)
@@ -359,6 +401,7 @@ METADATA_JSON_BASE=$(jq -n --arg software_release "${JUG_XL_TAG}" '{software_rel
 # Merge podio-extracted fields (geometry_config, data_level, beam/gun params)
 METADATA_JSON_FULL=$(jq -n --argjson base "${METADATA_JSON_BASE}" --argjson podio "${PODIO_JSON}" '$base * $podio')
 METADATA_JSON_RECO=$(jq -n --argjson base "${METADATA_JSON_FULL}" '$base | .data_level = "reconstruction"')
+stage metadata ok
 
 # Data egress to directory
 
@@ -424,7 +467,7 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
     stage registration start FULL
-    python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for FULL file."; stage registration fail FULL; exit 78; }
+    python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for FULL file."; stage registration fail FULL; exit 78; }
     stage registration ok "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
   else
     echo "=== DEBUG: Attempting to copy FULL files to xrootd ==="
@@ -456,7 +499,7 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
     stage registration start RECO
-    python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for RECO file."; stage registration fail RECO; exit 78; }
+    python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for RECO file."; stage registration fail RECO; exit 78; }
     stage registration ok "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
   else
     echo "=== DEBUG: Attempting to copy RECO files to xrootd ==="
