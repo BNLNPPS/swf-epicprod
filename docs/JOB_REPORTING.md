@@ -70,6 +70,27 @@ with the standard library alone (`payload/report_out.py`), since the
 campaign container's contents are not ours to choose and the current
 image carries no AWS library.
 
+### As built
+
+The object key is `reports/<PanDA job id>/<n>.json`, `n` counting the
+job's writes from zero, so one job's reports list under one prefix and
+the sweep reaches a job's objects without scanning. A job whose
+environment carries no job id writes under `unidentified`.
+
+The payload sends after each stage ends, at most twelve times, and
+stops sending for the rest of the job after the first failed write: a
+channel unreachable now stays unreachable, and retrying spends wall
+time for nothing. Each write carries a jitter of up to a second, since
+a wave of jobs crosses a stage boundary together. The cap is a constant
+in `payload/run.sh`, not a setting, because a defect that writes in a
+loop is the only unbounded cost this channel has.
+
+The submit doer reads the bucket, region and key from a file held by
+the operating account and writes them into the sandbox environment. The
+task specification and the web tier carry no credential. A missing file
+is not an error: jobs then run without this channel, which is how it is
+turned off for new submissions.
+
 ## Storage, retention and the sweep
 
 Reports share the devcloud stage-out bucket under their own prefix.

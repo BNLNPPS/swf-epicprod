@@ -144,10 +144,10 @@ def main():
     ap.add_argument("--file", required=True)
     ap.add_argument("--key", required=True, help="the object key to write")
     args = ap.parse_args()
-    send(args.file, args.key)
-    # The exit code is always success: a job is never failed by its own
-    # reporting.
-    return 0
+    # The exit code says whether the write happened, so a caller can stop
+    # trying after the first failure. Keeping a job alive is the caller's
+    # guarantee, not this program's silence.
+    return 0 if send(args.file, args.key) else 1
 
 
 if __name__ == "__main__":

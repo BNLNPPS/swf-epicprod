@@ -45,6 +45,33 @@ FULL_EVENTS=""
 RECO_EVENTS=""
 FULL_EVENTS_ARGS=()
 RECO_EVENTS_ARGS=()
+# Sending the report out of the job (swf-epicprod docs/JOB_REPORTING.md).
+# PanDA keeps job metadata for finished jobs only, so a job that dies
+# reaches the production system this way or not at all. The caps are here
+# rather than in configuration: a defect that sends in a loop is the only
+# unbounded cost this channel has, and the fleet cannot raise these.
+REPORT_SEND_MAX=12
+REPORT_SENT=0
+REPORT_SEND_OFF=0
+report_send() {
+  [ -n "${REPORT_OUT_BUCKET:-}" ] || return 0
+  [ "${REPORT_SEND_OFF}" -eq 0 ] || return 0
+  [ "${REPORT_SENT}" -lt "${REPORT_SEND_MAX}" ] || return 0
+  local here=${SCRIPT_DIR:-$(dirname "$0")}
+  # A wave of jobs crosses a stage boundary together; a few seconds of
+  # jitter is what keeps their writes from arriving as one pulse.
+  sleep "0.$((RANDOM % 900 + 100))" 2>/dev/null || true
+  if python "${here}/report_out.py" \
+       --file "${PAYLOAD_REPORT:-payload-report.json}" \
+       --key "reports/${PANDAID:-unidentified}/${REPORT_SENT}.json"; then
+    REPORT_SENT=$((REPORT_SENT + 1))
+  else
+    # One failure is enough: a channel that is unreachable now stays
+    # unreachable for this job, and retrying costs wall time for nothing.
+    REPORT_SEND_OFF=1
+    echo "report sending disabled for this job after a failed write"
+  fi
+}
 payload_report() {
   local rc=$1; shift
   local here=${SCRIPT_DIR:-$(dirname "$0")}
@@ -62,6 +89,7 @@ payload_report() {
     --reco "${RECO_TEMP:+${RECO_TEMP}/${TASKNAME:-}.eicrecon.edm4eic.root}" \
     --full-events "${FULL_EVENTS}" --reco-events "${RECO_EVENTS}" --note "${REPORT_NOTE}" \
     || echo "payload report not written (payload_report.py exit $?)"
+  report_send || true
 }
 trap 'payload_report $?' EXIT
 IFS=$'\n\t'
