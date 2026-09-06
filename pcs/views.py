@@ -5200,21 +5200,12 @@ def pcs_catalog(request):
 
 
 def prod_tasks_list(request):
-    columns = [
-        {'name': 'name', 'title': 'Name', 'orderable': True},
-        {'name': 'status', 'title': 'Status', 'orderable': True},
-        {'name': 'dataset__dataset_name', 'title': 'Dataset', 'orderable': True},
-        {'name': 'prod_config__name', 'title': 'Config', 'orderable': True},
-        {'name': 'created_by', 'title': 'Created By', 'orderable': True},
-        {'name': 'updated_at', 'title': 'Updated', 'orderable': True},
-    ]
-    context = {
-        'table_title': 'Production Tasks',
-        'table_description': 'Production task compositions (Dataset + Config).',
-        'ajax_url': reverse('pcs:prod_tasks_datatable_ajax'),
-        'columns': columns,
-    }
-    return render(request, 'pcs/prod_tasks_list.html', context)
+    """Send the task list to the compose view's Tasks tab, which replaced it.
+
+    Nothing in the interface linked here; the tasks a person browses are the
+    compose view's left pane.
+    """
+    return redirect(f"{reverse('pcs:prod_task_compose')}?tab=tasks")
 
 
 def prod_tasks_datatable_ajax(request):
@@ -5249,6 +5240,26 @@ def prod_tasks_datatable_ajax(request):
 
 
 def prod_task_detail(request, name):
+    """Send a task URL to the compose view, which is where a task is worked.
+
+    The compose view is the canonical surface for reaching a task from
+    anywhere else (PCS.md, "Linking to datasets"). This route survives only
+    to carry the links that already exist — the campaign-delivery task_url,
+    stale bookmarks, and search — onto that surface. It resolves the name so
+    a legacy or raw name still lands on the right task.
+    """
+    from .services import resolve_prodtask
+    try:
+        task = resolve_prodtask(
+            name, ProdTask.objects.select_related('dataset'))
+    except ProdTask.DoesNotExist:
+        raise Http404(f"No task {name!r}")
+    return redirect(
+        f"{reverse('pcs:prod_task_compose')}"
+        f"?tab=tasks&selected={urlquote(task.composed_name)}")
+
+
+def _retired_prod_task_detail(request, name):
     from .commands import build_evgen_task_params
     from .services import resolve_prodtask
     try:
