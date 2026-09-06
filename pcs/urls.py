@@ -67,6 +67,11 @@ urlpatterns = [
          name='find_brains_conversation'),
     path('evgen/', views.evgen_inputs, name='evgen_inputs'),
     path('evgen/update/', views.evgen_inputs_update, name='evgen_inputs_update'),
+    # Trials (docs/PCS.md, Trials): read-open pages, because a trial is
+    # offered to the physics group whose configuration it proves and the
+    # offer is a link they can open.
+    path('trials/', views.trials_list, name='trials_list'),
+    path('trials/<path:name>/', views.trial_detail, name='trial_detail'),
     path('storage/', views.storage_listings_home, name='storage_listings_home'),
     path('storage/<str:listing>/', views.storage_listings, name='storage_listings'),
     path('ingest/', views.pc_ingest, name='pc_ingest'),

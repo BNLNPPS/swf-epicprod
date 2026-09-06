@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% load swf_fmt %}
+
+{% block title %}Trials - PCS{% endblock %}
+
+{% block content %}
+{# The index of trials. A trial is a small, real run of a composed      #}
+{# configuration, offered to the group whose configuration it is       #}
+{# (docs/PCS.md, Trials).                                              #}
+<h2 class="mb-1">Trials</h2>
+<p class="mb-3">
+  A trial is a small, real run of a composed configuration by the path production
+  uses: the same tags, the same input, the same payload and submission, at a
+  hundred events rather than the full sample, with outputs that expire. It counts
+  toward no physics. Each is a standing task of its own and proves the
+  configuration named beside it.
+</p>
+
+{% if rows %}
+<table class="table table-sm table-bordered table-striped w-auto align-middle swf-sortable">
+  <thead>
+    <tr>
+      <th>Trial</th><th class="text-end">#</th><th class="text-end">Events</th>
+      <th>Site</th><th>Status</th><th>PanDA task</th><th>Proves</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="{% url 'pcs:trial_detail' name=r.task.composed_name %}">{{ r.task.composed_name }}</a></td>
+      <td class="text-end">{{ r.number }}</td>
+      <td class="text-end">{{ r.events|default_if_none:"—" }}</td>
+      <td>{{ r.site|default:"—" }}</td>
+      <td class="{{ r.task.status|state_class }}">{{ r.task.status }}</td>
+      <td>{% if r.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' jeditaskid=r.jedi_task_id %}">{{ r.jedi_task_id }}</a>{% if r.panda_status %} <span class="text-muted">{{ r.panda_status }}</span>{% endif %}{% else %}—{% endif %}</td>
+      <td class="small">{{ r.subject }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-muted">No trials yet.</p>
+{% endif %}
+{% endblock %}

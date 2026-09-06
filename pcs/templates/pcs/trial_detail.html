@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% load swf_fmt %}
+
+{% block title %}{{ task.composed_name }} - trial{% endblock %}
+
+{% block content %}
+{# The page a physics group is sent: what this trial proves, what it ran, #}
+{# and what it produced. It says plainly that this is not production data #}
+{# and when the outputs expire (docs/PCS.md, Trials).                     #}
+<h2 class="mb-1">Trial {{ number }}</h2>
+<div class="fs-5 mb-2">{{ task.composed_name }}</div>
+
+<div class="alert alert-info">
+  This is a <strong>trial</strong>: a small, real run of a composed configuration,
+  produced by the path production uses — the same tags, the same input, the same
+  payload, the same submission — at {{ events|default:"100" }} events rather than
+  the full sample, with its outputs under
+  <strong>epic:/{{ output_root|default:"TEST/trial" }}</strong>
+  {% if lifetime_days %}on a {{ lifetime_days }}-day lifetime{% endif %}.
+  It counts toward no physics, and the data expires; what survives is the record
+  that it ran and what it produced.
+</div>
+
+<table class="table table-sm table-bordered table-striped w-auto align-middle mb-3">
+  <tbody>
+    <tr><th>Proves</th>
+        <td>{% if subject %}<a href="{% url 'pcs:prod_task_detail' name=subject_name %}">{{ subject_name }}</a>{% else %}{{ subject_name }}{% endif %}</td></tr>
+    <tr><th>Configuration</th><td>{{ task.prod_config }}</td></tr>
+    <tr><th>Campaign</th><td>{{ task.campaign }}</td></tr>
+    <tr><th>Events</th><td>{{ events|default:"—" }}</td></tr>
+    <tr><th>Site</th><td>{{ site|default:"—" }}</td></tr>
+    <tr><th>Status</th><td class="{{ task.status|state_class }}">{{ task.status }}</td></tr>
+    <tr><th>Input</th>
+        <td>{% for i in inputs %}{{ i.did }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td></tr>
+  </tbody>
+</table>
+
+<h4>Submission</h4>
+{% if attempts %}
+<table class="table table-sm table-bordered table-striped w-auto align-middle mb-3">
+  <thead><tr><th>Try</th><th>PanDA task</th><th>Status</th><th>Site</th><th>Submitted</th></tr></thead>
+  <tbody>
+  {% for a in attempts %}
+    <tr>
+      <td>{{ a.try_number }}</td>
+      <td>{% if a.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' jeditaskid=a.jedi_task_id %}">{{ a.jedi_task_id }}</a>{% else %}—{% endif %}</td>
+      <td class="{{ a.status_snapshot|state_class }}">{{ a.status_snapshot|default:"—" }}</td>
+      <td>{{ a.site|default:"—" }}</td>
+      <td class="text-nowrap">{{ a.created_at|fmt_dt }} ET</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-muted">Not submitted yet.</p>
+{% endif %}
+
+<h4>What it produced</h4>
+{% if outputs %}
+<table class="table table-sm table-bordered table-striped w-auto align-middle">
+  <thead><tr><th>Output</th><th>Kind</th><th class="text-end">Events</th><th class="text-end">Bytes</th><th>State</th></tr></thead>
+  <tbody>
+  {% for o in outputs %}
+    <tr>
+      <td>{{ o.did }}</td>
+      <td>{{ o.kind }}</td>
+      <td class="text-end">{{ o.events|default_if_none:"—" }}</td>
+      <td class="text-end">{{ o.bytes|default_if_none:"—" }}</td>
+      <td>{{ o.status }}{% if o.reason %} <span class="text-muted small">{{ o.reason }}</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-muted">Nothing recorded yet. Outputs appear here as the trial's jobs
+report what they delivered.</p>
+{% endif %}
+{% endblock %}

@@ -5597,6 +5597,10 @@ def prod_task_compose_task_detail(request, name):
     except Exception as e:                                       # noqa: BLE001
         task_params_json = ''
         task_params_error = str(e)
+    # What a trial of this task would run under, or why one cannot be minted.
+    # The panel disables the Trial action and carries this as its reason, so
+    # the button states the blocker instead of failing on click.
+    trial_config, trial_blocked = services.prodtask_runnable_config(task)
     return JsonResponse({
         'task_params_json': task_params_json,
         'task_params_error': task_params_error,
@@ -5604,4 +5608,75 @@ def prod_task_compose_task_detail(request, name):
         'panda_command': task.panda_command,
         'panda_tasks': services.panda_tasks_summary(task, include_live=True),
         'ai_content': ai_content_summary(task.overrides or {}),
+        'trial_blocked': trial_blocked,
+        'trial_config': trial_config.name if trial_config else '',
+    })
+
+
+def trials_list(request):
+    """Every trial, newest first — the index behind a trial's own page.
+
+    Read-open like the rest of the catalog: a trial is offered to the
+    physics group whose configuration it is, so its pages are somewhere
+    a link can be sent (docs/PCS.md, Trials).
+    """
+    from .name_tokens import trial_number_from_name, trial_subject_name
+    trials = list(ProdTask.objects
+                  .filter(dataset__metadata__has_key='trial')
+                  .select_related('dataset', 'prod_config')
+                  .prefetch_related('panda_tasks')
+                  .order_by('-id')[:200])
+    rows = []
+    for t in trials:
+        md = t.dataset.metadata or {}
+        attempts = list(t.panda_tasks.all())
+        rows.append({
+            'task': t,
+            'number': trial_number_from_name(t.composed_name),
+            'events': md.get('trial_events'),
+            'site': md.get('trial_site') or '',
+            'subject': trial_subject_name(t.composed_name),
+            'jedi_task_id': attempts[-1].jedi_task_id if attempts else None,
+            'panda_status': attempts[-1].status_snapshot if attempts else '',
+        })
+    return render(request, 'pcs/trials_list.html', {'rows': rows})
+
+
+def trial_detail(request, name):
+    """One trial: what it proves, what it ran, and what it produced.
+
+    The page a physics group is sent. It states plainly that this is a
+    trial and not production data, what differs from the production run
+    of the same configuration, and when the outputs expire.
+    """
+    from .name_tokens import trial_number_from_name, trial_subject_name
+    from .services import resolve_prodtask
+    try:
+        task = resolve_prodtask(name, ProdTask.objects.select_related(
+            'dataset', 'dataset__physics_tag', 'dataset__evgen_tag',
+            'dataset__simu_tag', 'dataset__reco_tag', 'prod_config',
+        ).prefetch_related('panda_tasks'))
+    except ProdTask.DoesNotExist:
+        raise Http404(f"No trial {name!r}")
+    md = (task.dataset.metadata or {}) if task.dataset_id else {}
+    if not md.get('trial'):
+        raise Http404(f"{name!r} is not a trial")
+    subject_name = trial_subject_name(task.composed_name)
+    subject = (ProdTask.objects
+               .filter(dataset__composed_name=subject_name)
+               .select_related('dataset').first())
+    attempts = list(task.panda_tasks.all())
+    return render(request, 'pcs/trial_detail.html', {
+        'task': task,
+        'dataset': task.dataset,
+        'number': trial_number_from_name(task.composed_name),
+        'events': md.get('trial_events'),
+        'site': md.get('trial_site') or '',
+        'output_root': md.get('trial_output_root') or '',
+        'lifetime_days': md.get('trial_lifetime_days'),
+        'inputs': task.inputs,
+        'subject_name': subject_name,
+        'subject': subject,
+        'attempts': attempts,
+        'outputs': list(task.delivered_outputs.all()) if task.pk else [],
     })
