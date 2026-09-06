@@ -281,6 +281,28 @@ if [[ -n "${CANARY_OUTPUT_DATASET:-}" ]]; then
   echo "canary payload run: outputs to epic:/${CANARY_OUTPUT_DATASET}, lifetime ${CANARY_LIFETIME_S:-unset} s, no log upload"
 fi
 
+# Trial run (docs/PCS.md, Trials): a small, real run of a composed
+# configuration, offered to the requesting physics group. Unlike the
+# canary it keeps the production layout — the same FULL, RECO and LOG
+# substructure — rooted under epic:/TEST/trial, so the group reads the
+# output in the shape real data has while nothing can mistake it for
+# production. Logs are uploaded as production uploads them, under the
+# same root. Everything registered carries a lifetime: what survives a
+# trial is the acceptance and the record, not the data.
+if [[ -n "${TRIAL_OUTPUT_ROOT:-}" ]]; then
+  FULL_DIR=${TRIAL_OUTPUT_ROOT}/FULL/${TAG}
+  FULL_TEMP=${TMPDIR}/${FULL_DIR}
+  RECO_DIR=${TRIAL_OUTPUT_ROOT}/RECO/${TAG}
+  RECO_TEMP=${TMPDIR}/${RECO_DIR}
+  LOG_DIR=${TRIAL_OUTPUT_ROOT}/LOG/${TAG}
+  LOG_TEMP=${TMPDIR}/${LOG_DIR}
+  mkdir -p ${FULL_TEMP} ${RECO_TEMP} ${LOG_TEMP}
+  if [[ -n "${TRIAL_LIFETIME_S:-}" ]]; then
+    LIFETIME_ARGS=(--lifetime "${TRIAL_LIFETIME_S}")
+  fi
+  echo "trial payload run: outputs under epic:/${TRIAL_OUTPUT_ROOT} in the production layout, lifetime ${TRIAL_LIFETIME_S:-unset} s"
+fi
+
 # Before any work, ask the catalog of record about this job's output. A
 # retry of a job whose earlier attempt already delivered the RECO file has
 # nothing to do and exits success here, in seconds, instead of repeating
