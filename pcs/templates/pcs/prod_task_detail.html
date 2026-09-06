@@ -60,8 +60,8 @@
                     <h5 class="card-title">Dataset</h5>
                     <table class="table table-sm table-bordered mb-0">
                         <tr><td style="width:40%"><strong>Name (tag-based)</strong></td><td><a href="{% url 'pcs:datasets_compose' %}?selected={{ task.dataset.dataset_name|urlencode }}">{{ task.dataset.composed_name }}</a></td></tr>
-                        {% if not task.dataset.has_internal_name %}<tr><td><strong>DID</strong></td><td><code>{{ task.dataset.did }}</code></td></tr>{% endif %}
-                        {% if task.dataset.source_location %}<tr><td><strong>Source path</strong></td><td><code>{{ task.dataset.source_location }}</code></td></tr>{% endif %}
+                        {% if not task.dataset.has_internal_name %}<tr><td><strong>DID</strong></td><td style="word-break:break-all;">{{ task.dataset.did }}</td></tr>{% endif %}
+                        {% if task.dataset.source_location %}<tr><td><strong>Source path</strong></td><td style="word-break:break-all;">{{ task.dataset.source_location }}</td></tr>{% endif %}
                         <tr><td><strong>Detector Version</strong></td><td>{{ task.dataset.detector_version }}</td></tr>
                         <tr><td><strong>Detector Config</strong></td><td>{{ task.dataset.detector_config }}</td></tr>
                     </table>
@@ -75,7 +75,7 @@
                     <table class="table table-sm table-bordered mb-0">
                         <tr><td style="width:40%"><strong>Name</strong></td><td><a href="{% url 'pcs:prod_config_detail' pk=task.prod_config.pk %}">{{ task.prod_config.name }}</a></td></tr>
                         <tr><td><strong>JUG_XL Tag</strong></td><td>{{ task.prod_config.jug_xl_tag|default:"-" }}</td></tr>
-                        <tr><td><strong>Container</strong></td><td><code>{{ task.prod_config.container_image|default:"-" }}</code></td></tr>
+                        <tr><td><strong>Container</strong></td><td style="word-break:break-all;">{{ task.prod_config.container_image|default:"-" }}</td></tr>
                         <tr><td><strong>BG Mixing</strong></td><td>{% if task.prod_config.bg_mixing %}Yes{% else %}No{% endif %}</td></tr>
                     </table>
                 </div>
@@ -93,39 +93,35 @@
                         <td>Physics</td>
                         <td><a href="{% url 'pcs:tag_compose' tag_type='p' %}?selected={{ task.dataset.physics_tag.tag_label|urlencode }}">{{ task.dataset.physics_tag.tag_label }}</a></td>
                         <td>{{ task.dataset.physics_tag.description|truncatewords:10 }}</td>
-                        <td>{% for k, v in task.dataset.physics_tag.parameters.items %}<code>{{ k }}</code>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                        <td>{% for k, v in task.dataset.physics_tag.parameters.items %}<span class="text-muted">{{ k }}</span>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
                     </tr>
                     <tr>
                         <td>EvGen</td>
                         <td><a href="{% url 'pcs:tag_compose' tag_type='e' %}?selected={{ task.dataset.evgen_tag.tag_label|urlencode }}">{{ task.dataset.evgen_tag.tag_label }}</a></td>
                         <td>{{ task.dataset.evgen_tag.description|truncatewords:10 }}</td>
-                        <td>{% for k, v in task.dataset.evgen_tag.parameters.items %}<code>{{ k }}</code>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                        <td>{% for k, v in task.dataset.evgen_tag.parameters.items %}<span class="text-muted">{{ k }}</span>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
                     </tr>
                     <tr>
                         <td>Simulation</td>
                         <td><a href="{% url 'pcs:tag_compose' tag_type='s' %}?selected={{ task.dataset.simu_tag.tag_label|urlencode }}">{{ task.dataset.simu_tag.tag_label }}</a></td>
                         <td>{{ task.dataset.simu_tag.description|truncatewords:10 }}</td>
-                        <td>{% for k, v in task.dataset.simu_tag.parameters.items %}<code>{{ k }}</code>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                        <td>{% for k, v in task.dataset.simu_tag.parameters.items %}<span class="text-muted">{{ k }}</span>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
                     </tr>
                     <tr>
                         <td>Reconstruction</td>
                         <td><a href="{% url 'pcs:tag_compose' tag_type='r' %}?selected={{ task.dataset.reco_tag.tag_label|urlencode }}">{{ task.dataset.reco_tag.tag_label }}</a></td>
                         <td>{{ task.dataset.reco_tag.description|truncatewords:10 }}</td>
-                        <td>{% for k, v in task.dataset.reco_tag.parameters.items %}<code>{{ k }}</code>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                        <td>{% for k, v in task.dataset.reco_tag.parameters.items %}<span class="text-muted">{{ k }}</span>={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
                     </tr>
                 </tbody>
             </table>
         </div>
     </div>
 
+    {% if task.output_dataset_overrides or task.input_datasets or task.intermediate_datasets or task.input_source_location %}
     <div class="card mb-3">
         <div class="card-body">
             <h5 class="card-title">Dataset Roles</h5>
-            <p class="text-muted mb-2" style="font-size: 0.9em;">
-                Lists derived from <code>overrides.{input,output,intermediate}_dataset_dids</code>
-                (JSON, no schema column). The canonical requested/output dataset
-                remains the <code>dataset</code> FK.
-            </p>
             {% if task.output_dataset_overrides %}
             <h6 class="mt-2">Output Overrides</h6>
             <table class="table table-sm table-bordered mb-3">
@@ -134,8 +130,8 @@
                     {% for ds in task.output_dataset_overrides %}
                     <tr>
                         <td><a href="{% url 'pcs:datasets_compose' %}?selected={{ ds.dataset_name|urlencode }}">{{ ds.composed_name }}</a></td>
-                        <td>{% if ds.has_internal_name %}<span class="text-muted">&mdash;</span>{% else %}<code>{{ ds.did }}</code>{% endif %}</td>
-                        <td>{% if ds.source_kind %}<code>{{ ds.source_kind }}</code> {{ ds.source_location }}{% else %}-{% endif %}</td>
+                        <td style="word-break:break-all;">{% if ds.has_internal_name %}<span class="text-muted">&mdash;</span>{% else %}{{ ds.did }}{% endif %}</td>
+                        <td style="word-break:break-all;">{% if ds.source_kind %}<span class="text-muted">{{ ds.source_kind }}</span> {{ ds.source_location }}{% else %}-{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -149,8 +145,8 @@
                     {% for ds in task.input_datasets %}
                     <tr>
                         <td><a href="{% url 'pcs:datasets_compose' %}?selected={{ ds.dataset_name|urlencode }}">{{ ds.composed_name }}</a></td>
-                        <td>{% if ds.has_internal_name %}<span class="text-muted">&mdash;</span>{% else %}<code>{{ ds.did }}</code>{% endif %}</td>
-                        <td>{% if ds.source_kind %}<code>{{ ds.source_kind }}</code> {{ ds.source_location }}{% else %}-{% endif %}</td>
+                        <td style="word-break:break-all;">{% if ds.has_internal_name %}<span class="text-muted">&mdash;</span>{% else %}{{ ds.did }}{% endif %}</td>
+                        <td style="word-break:break-all;">{% if ds.source_kind %}<span class="text-muted">{{ ds.source_kind }}</span> {{ ds.source_location }}{% else %}-{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -164,8 +160,8 @@
                     {% for ds in task.intermediate_datasets %}
                     <tr>
                         <td><a href="{% url 'pcs:datasets_compose' %}?selected={{ ds.dataset_name|urlencode }}">{{ ds.composed_name }}</a></td>
-                        <td>{% if ds.has_internal_name %}<span class="text-muted">&mdash;</span>{% else %}<code>{{ ds.did }}</code>{% endif %}</td>
-                        <td>{% if ds.source_kind %}<code>{{ ds.source_kind }}</code> {{ ds.source_location }}{% else %}-{% endif %}</td>
+                        <td style="word-break:break-all;">{% if ds.has_internal_name %}<span class="text-muted">&mdash;</span>{% else %}{{ ds.did }}{% endif %}</td>
+                        <td style="word-break:break-all;">{% if ds.source_kind %}<span class="text-muted">{{ ds.source_kind }}</span> {{ ds.source_location }}{% else %}-{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -174,19 +170,20 @@
             {% if task.input_source_location and not task.input_datasets %}
             <h6 class="mt-2">Input Source (legacy)</h6>
             <table class="table table-sm table-bordered mb-0">
-                <tr><td style="width:30%"><strong>Kind</strong></td><td><code>{{ task.input_source_kind }}</code></td></tr>
-                <tr><td><strong>Location</strong></td><td><code>{{ task.input_source_location }}</code></td></tr>
+                <tr><td style="width:30%"><strong>Kind</strong></td><td>{{ task.input_source_kind }}</td></tr>
+                <tr><td><strong>Location</strong></td><td style="word-break:break-all;">{{ task.input_source_location }}</td></tr>
             </table>
             {% endif %}
         </div>
     </div>
+    {% endif %}
 
     {% if task.csv_file %}
     <div class="card mb-3">
         <div class="card-body">
             <h5 class="card-title">Submission (legacy)</h5>
             <table class="table table-sm table-bordered">
-                <tr><td style="width:30%"><strong>CSV File</strong></td><td><code>{{ task.csv_file }}</code></td></tr>
+                <tr><td style="width:30%"><strong>CSV File</strong></td><td style="word-break:break-all;">{{ task.csv_file }}</td></tr>
             </table>
         </div>
     </div>
@@ -198,7 +195,18 @@
             <h5 class="card-title">Overrides</h5>
             <table class="table table-sm table-bordered mb-0">
                 {% for key, value in task.overrides.items %}
-                <tr><td style="width:40%"><strong>{{ key }}</strong></td><td><code>{{ value }}</code></td></tr>
+                <tr>
+                    <td style="width:22%"><strong>{{ key }}</strong></td>
+                    <td style="word-break:break-word;">
+                        {% if value.items %}
+                        <table class="table table-sm mb-0">
+                            {% for k2, v2 in value.items %}
+                            <tr><td style="width:30%" class="text-muted">{{ k2 }}</td><td>{{ v2|default_if_none:"-" }}</td></tr>
+                            {% endfor %}
+                        </table>
+                        {% elif value %}{{ value }}{% else %}<span class="text-muted">-</span>{% endif %}
+                    </td>
+                </tr>
                 {% endfor %}
             </table>
         </div>
@@ -237,8 +245,8 @@
                 <button class="btn btn-dark-green btn-sm btn-copy" data-target="task-params">Copy</button>
             </div>
             <div class="text-muted mb-2" style="font-size: 0.85em;">
-                Computed from current PCS state. This is the <code>fmt=evgen</code> JSON fetched by
-                <code>submit-evgen-task.py</code> and turned into the PanDA client-API task plus sandbox.
+                Computed from current PCS state: the JSON the submit doer fetches and turns
+                into the PanDA client-API task plus its sandbox.
             </div>
             <pre id="task-params" class="bg-dark text-light p-3 mb-0" style="font-size: 0.8em; white-space: pre-wrap;">{{ task_params_json }}</pre>
         </div>
@@ -272,10 +280,10 @@
                         <td>try{{ pt.try_number }}{% if pt.current %} <span class="badge bg-info">current</span>{% endif %}</td>
                         <td>{% if pt.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' pt.jedi_task_id %}">{{ pt.jedi_task_id }}</a>{% else %}-{% endif %}</td>
                         <td>{{ pt.status_snapshot|default:"-" }}</td>
-                        <td style="word-break:break-all;"><code>{{ pt.task_name }}</code></td>
+                        <td style="word-break:break-all;">{{ pt.task_name }}</td>
                         <td style="word-break:break-all;">
-                            {% if pt.out_ds %}<div><strong>out:</strong> <code>{{ pt.out_ds }}</code></div>{% endif %}
-                            {% if pt.log_ds %}<div><strong>log:</strong> <code>{{ pt.log_ds }}</code></div>{% endif %}
+                            {% if pt.out_ds %}<div><strong>out:</strong> {{ pt.out_ds }}</div>{% endif %}
+                            {% if pt.log_ds %}<div><strong>log:</strong> {{ pt.log_ds }}</div>{% endif %}
                             {% if not pt.out_ds and not pt.log_ds %}-{% endif %}
                         </td>
                         <td>
