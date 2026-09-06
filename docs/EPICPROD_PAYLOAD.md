@@ -89,7 +89,18 @@ podio metadata and validation, and identical registration records
 apart from the DID try namespace. This is the canary payload run of
 the submission ladder (CONTINUOUS_PRODUCTION.md § The submission
 ladder, rung 2) applied to the payload itself; it is the gate before
-the payload serves a campaign task.
+the payload serves a campaign task. It runs as a **payload canary** on
+the canary page (site-canary IMPLEMENTATION.md § Payload canaries): the
+production payload on one manifest row of a PCS task, as a canary task
+on a chosen queue, with a checklist verdict read from the payload's
+report. The payload's canary settings, set by the dispatcher's
+payload-canary mode and never in production: `CANARY_OUTPUT_DATASET`
+points both output directories at one flat dataset under `epic:/TEST/`
+and turns the JLab log upload off; `CANARY_LIFETIME_S` puts a lifetime
+on the rule and the DIDs it registers, so the dataset removes itself;
+`PAYLOAD_STAGES_LOG` names the stage log. The stage log, one line per
+stage start, end and failure, is written on every run and is the first
+piece of payload reporting (evolution item 3).
 
 ## Evolution
 

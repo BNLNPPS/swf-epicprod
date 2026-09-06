@@ -130,10 +130,13 @@ service credential is a later robustness improvement
    representative test job requested for resource estimation are the
    same artifact.
 2. **Payload validation (mini-scout)** — task integrity and sizing
-   before bulk commitment, staged in two forms. The first stage is a
-   canary payload task of one or two jobs per new or changed
-   configuration, submitted and gated by the dispatcher; it has no
-   prerequisites and works today. The target mechanism is JEDI's
+   before bulk commitment, staged in two forms. The first stage is the
+   payload canary (site-canary IMPLEMENTATION.md § Payload canaries):
+   the production payload on one manifest row of the configuration, as
+   a canary task with an expiring output dataset and a checklist
+   verdict on the canary page, run per new or changed configuration
+   and gated by the dispatcher; it has no prerequisites and works
+   today. The target mechanism is JEDI's
    native scouts, used lightly: JEDI runs a few scout jobs per task,
    measures cpuTime, ramCount, output and scratch size, and I/O
    intensity, adjusts the task parameters, and avalanches only when

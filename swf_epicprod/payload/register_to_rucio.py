@@ -275,6 +275,12 @@ if __name__ == "__main__":
         action="store", default=None,
         help="JSON string containing dataset metadata"
     )
+    parser.add_argument(
+        '--lifetime', dest="lifetime", type=int, default=None,
+        help="Seconds the registration lives: the rule of a dataset this "
+             "upload creates, and the expiry of every DID registered, so a "
+             "canary run's output removes itself (epicprod payload canary)"
+    )
 
     args = parser.parse_args()
 
@@ -309,18 +315,27 @@ if __name__ == "__main__":
         print(f"Loaded metadata: {json.dumps(dataset_meta, indent=2)}")
 
     upload_items = []  # List to hold the upload items
+    client = Client()
+
+    def _dataset_exists(name):
+        from rucio.common.exception import DataIdentifierNotFound
+        try:
+            client.get_did(scope, name)
+            return True
+        except DataIdentifierNotFound:
+            return False
 
     # Loop through the file paths and did names
     for file_path, did_name in zip(file_paths, did_names):
         parent_directory = os.path.dirname(did_name)  # Get the parent directory from did_name
-        
+
         # Validate that parent_directory is not empty
         if not parent_directory:
             raise ValueError(
                 f"DID name '{did_name}' does not contain a parent directory. "
                 "Expected format: 'parent/filename'"
             )
-        
+
         # Create a new dictionary for each file and did_name
         upload_item = {
             'path': file_path,
@@ -331,11 +346,17 @@ if __name__ == "__main__":
             'dataset_name': parent_directory,
             'no_register': noregister
         }
-        
+
         # Add metadata if provided and not in noregister mode
         if dataset_meta and not noregister:
             upload_item['dataset_meta'] = dataset_meta
-        
+        # A lifetime bounds the rule of a dataset this upload creates; the
+        # client refuses a lifetime on a dataset that already exists, so a
+        # second file into the same expiring dataset carries none here and
+        # gets its DID expiry below.
+        if args.lifetime and not noregister and not _dataset_exists(parent_directory):
+            upload_item['lifetime'] = int(args.lifetime)
+
         # Append the new item to the upload_items list
         upload_items.append(upload_item)
 
@@ -343,13 +364,23 @@ if __name__ == "__main__":
     logger = logging.getLogger('upload_client')
     logger.addHandler(logging.StreamHandler())
     logger.setLevel(logging.INFO)
-    
+
     upload_client = UploadClient(logger=logger)
-    client = Client()
-    
+
     try:
         upload_client.upload(upload_items)
         logger.info("Upload completed successfully!")
+        if args.lifetime and not noregister:
+            # Every DID registered expires with the run's lifetime, the
+            # files and their dataset alike, so the catalog forgets a canary
+            # run as its replica is reaped. A failure here is logged, never
+            # a failed job: the upload stands and the cleanup is by hand.
+            for item in upload_items:
+                for name in (item['did_name'], item['dataset_name']):
+                    try:
+                        client.set_metadata(scope, name, 'lifetime', int(args.lifetime))
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error("lifetime not set on %s:%s: %s", scope, name, exc)
     except Exception as e:
         logger.error(f"Upload failed: {e}")
 

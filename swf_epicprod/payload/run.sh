@@ -1,6 +1,14 @@
 #!/bin/bash
 set -Euo pipefail
-trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; exit $s' ERR
+# Stage log: one line per stage start, end and failure, in the job working
+# directory (PAYLOAD_STAGES_LOG), read by the epicprod dispatcher for the
+# payload report and the canary verdict (swf-epicprod docs/EPICPROD_PAYLOAD.md).
+CURRENT_STAGE=""
+stage() {
+  CURRENT_STAGE=$1
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 $2${3:+ $3}" >> "${PAYLOAD_STAGES_LOG:-payload-stages.log}"
+}
+trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; if [ -n "$CURRENT_STAGE" ]; then stage "$CURRENT_STAGE" fail "line $LINENO: $BASH_COMMAND"; fi; exit $s' ERR
 IFS=$'\n\t'
 
 # Load bearer token or fall back to x509 proxy for xrootd authentication
@@ -135,6 +143,7 @@ INPUT_DIR=${BASEDIR}/EVGEN/${TAG}
 mkdir -p ${INPUT_DIR}
 TAG=${DETECTOR_VERSION:-main}/${DETECTOR_CONFIG}/${TAG_PREFIX:+${TAG_PREFIX}/}${TAG}
 
+stage input start
 if [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
   # Define location on xrootd from where to stream input file from
   INPUT_FILE=${XRDRURL}/${XRDRBASE}/${INPUT_FILE}
@@ -142,6 +151,7 @@ else
   # Copy input file from xrootd
   xrdcp -f ${XRDRURL}/${XRDRBASE}/${INPUT_FILE} ${INPUT_DIR}
 fi
+stage input ok
 
 # Output file names
 LOG_DIR=LOG/${TAG}
@@ -155,6 +165,21 @@ mkdir -p ${FULL_TEMP}
 RECO_DIR=RECO/${TAG}
 RECO_TEMP=${TMPDIR}/${RECO_DIR}
 mkdir -p ${RECO_TEMP}
+
+# Canary payload run (site-canary IMPLEMENTATION.md, Payload canaries):
+# the FULL and RECO files go to one flat dataset under epic:/TEST/, named
+# by the run, with a lifetime on everything registered; no log upload to
+# JLab, the PanDA log dataset carries the logs. The production layout is
+# not reproduced, and no production record reads /TEST.
+if [[ -n "${CANARY_OUTPUT_DATASET:-}" ]]; then
+  FULL_DIR=${CANARY_OUTPUT_DATASET}
+  FULL_TEMP=${TMPDIR}/${FULL_DIR}
+  RECO_DIR=${CANARY_OUTPUT_DATASET}
+  RECO_TEMP=${TMPDIR}/${RECO_DIR}
+  mkdir -p ${FULL_TEMP} ${RECO_TEMP}
+  COPYLOG=false
+  echo "canary payload run: outputs to epic:/${CANARY_OUTPUT_DATASET}, lifetime ${CANARY_LIFETIME_S:-unset} s, no log upload"
+fi
 
 # Before any work, ask the catalog of record about this job's output. A
 # retry of a job whose earlier attempt already delivered the RECO file has
@@ -243,6 +268,7 @@ else
 fi
 
 # Run simulation
+stage simulation start
 {
   date
   eic-info
@@ -282,8 +308,10 @@ fi
   npsim "${common_flags[@]}" "${uncommon_flags[@]}"
   ls -al ${FULL_TEMP}/${TASKNAME}.edm4hep.root
 } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.npsim.log | tail -n1000
+stage simulation ok
 
 # Run eicrecon reconstruction
+stage reconstruction start
 {
   date
   eic-info
@@ -301,6 +329,7 @@ fi
   if [ -f jana.dot ] ; then mv jana.dot ${LOG_TEMP}/${TASKNAME}.eicrecon.dot ; fi
   ls -al ${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root
 } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.eicrecon.log | tail -n1000
+stage reconstruction ok
 
 # List log files
 ls -al ${LOG_TEMP}/${TASKNAME}.*
@@ -381,12 +410,16 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
   python $SCRIPT_DIR/validate_rootfile.py "${FULL_TEMP}/${TASKNAME}.edm4hep.root"
   if [ $? -ne 0 ]; then
     echo "ERROR: FULL ROOT file validation failed. Skipping transfer."
+    stage validation fail FULL
     exit 65
   fi
   echo "FULL ROOT file validation passed."
+  stage validation ok FULL
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
-    python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" || { echo "ERROR: Rucio registration failed for FULL file."; exit 78; }
+    stage registration start FULL
+    python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${CANARY_LIFETIME_S:+--lifetime ${CANARY_LIFETIME_S}} || { echo "ERROR: Rucio registration failed for FULL file."; stage registration fail FULL; exit 78; }
+    stage registration ok "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
   else
     echo "=== DEBUG: Attempting to copy FULL files to xrootd ==="
     setup_xrd_auth
@@ -405,15 +438,20 @@ fi
 if [ "${COPYRECO:-false}" == "true" ] ; then
   # Validate ROOT file before transfer
   echo "=== Validating RECO ROOT file before transfer ==="
+  stage validation start RECO
   python $SCRIPT_DIR/validate_rootfile.py "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root"
   if [ $? -ne 0 ]; then
     echo "ERROR: RECO ROOT file validation failed. Skipping transfer."
+    stage validation fail RECO
     exit 65
   fi
   echo "RECO ROOT file validation passed."
+  stage validation ok RECO
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
-    python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" || { echo "ERROR: Rucio registration failed for RECO file."; exit 78; }
+    stage registration start RECO
+    python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${CANARY_LIFETIME_S:+--lifetime ${CANARY_LIFETIME_S}} || { echo "ERROR: Rucio registration failed for RECO file."; stage registration fail RECO; exit 78; }
+    stage registration ok "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
   else
     echo "=== DEBUG: Attempting to copy RECO files to xrootd ==="
     setup_xrd_auth
