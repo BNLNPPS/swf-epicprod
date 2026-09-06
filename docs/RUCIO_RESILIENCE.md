@@ -21,4 +21,14 @@ This flattens the pulse and likely prevents recurrence at current scale. It does
 
 BNL storage operations are asked to confirm the allocation behind BNL_PROD_DISK_1 supports science-scale temporary overflow. Site-side buffering is the last option when no wide-area path works.
 
+## Measure 3 — the record is the authority, and registration never clashes
+
+The second failure type is structural rather than load-driven: a retry regenerates an output whose name an earlier attempt already registered, the regenerated file differs byte for byte, and the job dies at its final step. In the seven days to 2026-09-06 this was 9,578 jobs and 14,836 core-hours, two thirds of all core-hours wasted in the window, and it recurs at that scale every week the record covers.
+
+- **The production record is the authority for what a sample contains, not the catalog.** The payload already reports, per output, the file, its size, its event count, and the registration outcome with the DIDs it registered and those it did not; the report leaves the job on every heartbeat and survives any exit. One pass over a task's finished jobs therefore yields both the delivered output of each work unit and the set of pending registrations to complete — the authority record and the registrar's worklist from a single ingest. Rucio holds the bytes; the production record holds the truth. A second file for a work unit then costs storage rather than correctness, and per-file event counts stop being inferred from file sizes.
+- **Registration adopts or diverts, and never discards validated data.** An output name already registered with the same event count and checksum is the same work: the job adopts it and exits success. An output name registered with different content is a genuine clash, and the file registers under a derived name rather than failing — validated data is never thrown away to protect a naming rule. The divergence is surfaced for a human decision by content validation ([EPICPROD_VALIDATION.md](EPICPROD_VALIDATION.md)), not resolved by the job.
+- **The delivered-output check becomes authoritative.** Asking whether a replica exists is not asking whether the data is right. The check takes the event count the job is to produce and requires the registered DID to carry it; a replica whose recorded count is absent or different is not a delivered output. The check covers both produced outputs, FULL as well as RECO.
+
+With the record as the authority, a clash costs a derived name and a human decision, and a registration failure costs a retry in the registrar. Neither costs the job.
+
 These run script changes land in the epicprod payload, the production team's run script cloned into this tree and evolved here (EPICPROD_PAYLOAD.md); the September run-script changes planned by the production team land there too.

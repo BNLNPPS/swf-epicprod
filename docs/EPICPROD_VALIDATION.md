@@ -41,6 +41,8 @@ each produced sample.
 
 ```
 PanDA processing brings a sample to its event count target
+  → the sample's Rucio content is reconciled against the production
+    record and accepted (Content validation, below)
   → epicprod calls the Hydra REST endpoint: sample complete
     → Hydra runs the validation benchmarks and evaluates the sample
       → epicprod reads the validation result
@@ -62,6 +64,31 @@ Sample completion is event-based: a sample is complete when its delivered event
 count reaches its event count target. The catalog today records file-level
 completeness only; the event basis — delivered event counts from production and
 per-sample event count targets — is in development on both sides.
+
+### Content validation
+
+The signal is only as sound as the dataset it names, so the first validation is
+of the content itself, before any benchmark runs. The production record states
+which file is the delivered output of each work unit and how many events it
+carries; the Rucio dataset states what it holds. Reconciling the two names
+everything that would make the signal false: files present with no work unit
+behind them, work units with no delivered file, two files for one unit, and
+event counts inferred from file sizes rather than recorded at registration
+([RUCIO_RESILIENCE.md](RUCIO_RESILIENCE.md), Measure 3).
+
+A production operator accepts the proposed corrections for a sample as one
+action: files that do not belong are detached from the dataset, the delivered
+output of each work unit is affirmed, and the sample's delivered event count
+becomes the sum of recorded counts. Acceptance never deletes — a detached file
+keeps its replica and expires under its own lifetime — so a mistaken acceptance
+costs storage and not data.
+
+Reaching the event count target makes a sample a candidate. Acceptance of its
+content makes it complete, and the availability signal follows acceptance. The
+delivered event count the signal carries is therefore the sum of recorded
+per-file counts. In the return direction the same record makes invalidation
+exact: a failed sample loses the event counts of the work units invalidated,
+and production knows which units to run again.
 
 When a sample is complete, epicprod signals its availability for validation by
 calling a REST endpoint provided by Hydra. Separately, epicprod serves the
