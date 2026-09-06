@@ -5577,6 +5577,14 @@ def prod_task_compose_dataset_detail(request, pk):
     return JsonResponse(payload)
 
 
+def _jsonable(value):
+    """JSON-safe rendering of a config field value; Decimals and dates become
+    their string form rather than breaking the whole hydration payload."""
+    if value is None or isinstance(value, (str, bool, int, float, dict, list)):
+        return value
+    return str(value)
+
+
 def prod_task_compose_task_detail(request, name):
     """On-demand hydration for the compose view: a task's live EVGEN submission
     spec and cached condor/panda commands, which the light initial payload omits.
@@ -5616,6 +5624,15 @@ def prod_task_compose_task_detail(request, name):
         # nothing about whether another destination accepts the writes.
         'trial_site': (task.get_effective_config().get('panda_site')
                        or EVGEN_DEFAULT_SITE),
+        # What this task runs on that nobody set for it, and where it came
+        # from, so a filled value is visible and can be changed rather than
+        # quietly standing in for a decision.
+        'config_fills': task.config_fills(),
+        # The values this task actually runs on, campaign fill included. The
+        # panel renders these rather than the bound configuration's own, which
+        # for a Placeholder-bound task are empty and would misreport the run.
+        'effective_config': {k: _jsonable(v)
+                             for k, v in task.get_effective_config().items()},
     })
 
 

@@ -602,6 +602,8 @@
                 if (d.trial_blocked !== undefined) t.trial_blocked = d.trial_blocked;
                 if (d.trial_config !== undefined) t.trial_config = d.trial_config;
                 if (d.trial_site !== undefined) t.trial_site = d.trial_site;
+                if (d.config_fills !== undefined) t.config_fills = d.config_fills;
+                if (d.effective_config !== undefined) t.effective_config = d.effective_config;
                 t._hydrated = true;
             }
         } catch (e) { /* leave light */ }
@@ -1360,15 +1362,39 @@
         }
 
         // Config summary
+        // Render what the task actually runs on — the effective configuration,
+        // campaign fill included — not the bound row, whose fields are empty
+        // for a Placeholder-bound task and would misreport the run. Each
+        // filled value says where it came from, so it can be changed.
+        const eff = t.effective_config || cfg;
+        const fills = t.config_fills || {};
+        const fillSources = Array.from(new Set(Object.values(fills)));
         html += `<h6>Config: ${t.prod_config_name}</h6>`;
-        if (cfg) {
-            function cfgRow(l,v) { return `<tr><td style="width:35%"><strong>${l}</strong></td><td>${v||'-'}</td></tr>`; }
-            let cfgRows = cfgRow('JUG_XL', cfg.jug_xl_tag) + cfgRow('Container', cfg.container_image ? textOrUrl(cfg.container_image) : '-')
-                + cfgRow('BG Mixing', cfg.bg_mixing?'Yes':'No') + cfgRow('Copy', [cfg.copy_reco?'Reco':'', cfg.copy_full?'Full':'', cfg.copy_log?'Log':''].filter(Boolean).join(', ')||'-')
-                + cfgRow('Rucio', cfg.use_rucio?`Yes${cfg.rucio_rse?' ('+cfg.rucio_rse+')':''}` : 'No')
-                + cfgRow('Hours/Job', cfg.target_hours_per_job) + cfgRow('Events/Task', cfg.events_per_task);
-            if (cfg.panda_site) cfgRows += cfgRow('PanDA Site', cfg.panda_site);
-            if (cfg.panda_working_group) cfgRows += cfgRow('Working Group', cfg.panda_working_group);
+        if (fillSources.length) {
+            html += `<div class="mb-2" style="font-size:.9em;">`
+                + `${Object.keys(fills).length} values not set here are taken from `
+                + fillSources.map(s => htmlEscape(s)).join(', ')
+                + `. <a href="/swf-monitor/pcs/configs/compose/">Change them</a>.</div>`;
+        }
+        if (eff) {
+            const cfg = eff;
+            function cfgRow(l,v,key) {
+                const from = key && fills[key];
+                const note = from ? ` <span style="font-size:.85em;">(from ${htmlEscape(from)})</span>` : '';
+                return `<tr><td style="width:35%"><strong>${l}</strong></td><td>${v||'-'}${note}</td></tr>`;
+            }
+            let cfgRows = cfgRow('JUG_XL', cfg.jug_xl_tag, 'jug_xl_tag')
+                + cfgRow('Container', cfg.container_image ? textOrUrl(cfg.container_image) : '-', 'container_image')
+                + cfgRow('BG Mixing', cfg.bg_mixing?'Yes':'No', 'bg_mixing') + cfgRow('Copy', [cfg.copy_reco?'Reco':'', cfg.copy_full?'Full':'', cfg.copy_log?'Log':''].filter(Boolean).join(', ')||'-')
+                + cfgRow('Rucio', cfg.use_rucio?`Yes${cfg.rucio_rse?' ('+cfg.rucio_rse+')':''}` : 'No', 'use_rucio')
+                + cfgRow('Hours/Job', cfg.target_hours_per_job, 'target_hours_per_job') + cfgRow('Events/Task', cfg.events_per_task, 'events_per_task');
+            // Always shown, because the site is where the work actually goes.
+            // When no configuration names one, the submission default stands
+            // in and says so rather than leaving the row blank.
+            cfgRows += cfg.panda_site
+                ? cfgRow('PanDA Site', cfg.panda_site, 'panda_site')
+                : cfgRow('PanDA Site', `${htmlEscape(t.trial_site || '')} <span style="font-size:.85em;">(submission default)</span>`);
+            if (cfg.panda_working_group) cfgRows += cfgRow('Working Group', cfg.panda_working_group, 'panda_working_group');
             if (cfg.data && Object.keys(cfg.data).length) {
                 Object.entries(cfg.data).forEach(([k,v]) => { cfgRows += cfgRow('data.'+k, textOrUrl(v)); });
             }
