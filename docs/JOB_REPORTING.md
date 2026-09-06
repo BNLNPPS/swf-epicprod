@@ -3,13 +3,19 @@
 How a production job's own account of itself reaches the production
 system, including from a job that fails.
 
-The devcloud host is the gateway: it holds the object store this
-depends on, manages it, watches it, and sweeps it, holding the swept
-products. pandaserver02 holds the production record and draws from the
-gateway. The division follows the credentials: everything touching the
-account and its objects belongs where the account is, the production
-record belongs where the production database is, and nothing outside
-the facility holds a credential into swfdb.
+The devcloud host is the gateway: it owns the account and the bucket,
+its lifecycle rule and the write credential, watches the store's growth
+and holds the stop. pandaserver02 holds the production record and runs
+the sweep, reaching outward to read and delete the objects it files.
+
+The division follows the credentials in both directions. Account
+operations belong where the account is. Every write to the production
+record stays inside the facility, and so does the sweep, because the
+sweep is the step that needs to know things only the inside knows:
+which jobs failed, what the payload's digest says about them, and
+whether a job id names a real ePIC production job at all. Traffic runs
+outward at every stage — the payload writes out, the sweep reads out —
+and nothing reaches in.
 
 ## Summary
 
@@ -103,42 +109,26 @@ something only until what they say has been taken. The week absorbs an
 outage of the sweep, or of the perimeter, without losing the reports
 that matter, and a week of objects is a few gigabytes.
 
-The drain exists to permit deletion. A sweep on the gateway, on its own
-schedule and never in a request path, reads the objects of jobs that
-did not end well, keeps what is useful as its own product, and deletes
-the objects. Expiry is the backstop for whatever the sweep does not
-reach.
+The drain exists to permit deletion. A sweep on the production
+operations agent, on its own schedule and never in a request path,
+pulls the objects of failed jobs from the bucket, files what is useful
+in swfdb beside the job record, and deletes them. Expiry is the
+backstop for whatever the sweep does not reach.
 
 The sweep is selective. A storm produces thousands of objects that say
 one thing: the same stage, the same reason, the same node or site.
 Keeping a bounded number per distinct signature and deleting the rest
 unread costs nothing in understanding and avoids reading a storm one
-object at a time.
+object at a time. The signature comes from the digest PanDA already
+carries for every failed job, so the sweep knows what it is looking at
+before it reads anything — which is the whole reason the sweep runs
+where PanDA can be asked. It also knows from PanDA which jobs failed,
+so it lists only their prefixes, and validates the job id before
+filing rather than after.
 
-The signature is read from the objects themselves — the last report of
-a job prefix carries the exit code, the stage trail and the
-registration outcome — because the gateway sits outside the facility
-and cannot query PanDA. The same reading is what tells the sweep which
-jobs are worth keeping at all: a job that ended well writes a final
-report saying so, and a prefix that stops mid-stage and then stays
-quiet longer than a job can run did not. That classification is
-provisional by construction, and is validated against PanDA on the
-inside, before anything is filed.
-
-### The draw
-
-The production record pulls; the gateway does not push. The gateway
-serves its swept products, by job and as a cursor-paged feed of what is
-new, and the production operations agent draws on its own schedule,
-files what it draws beside the job record in swfdb, and advances its
-cursor. A missed draw costs nothing: the next one resumes from the
-cursor. A job page may ask the gateway for one job's product directly
-when someone is looking at that job and the draw has not reached it.
-
-The direction is the point. A push would put a credential into swfdb on
-a host outside the facility; a draw keeps every write to the production
-record inside it, and matches the notice store, which consumers already
-poll from their own side.
+The sweep's credential is issued by the gateway and held on
+pandaserver02: list, get and delete under the reports prefix, and
+nothing else. It is not the write credential the jobs carry.
 
 A job page may also fetch a single job's objects directly when someone
 is looking at that job and the sweep has not reached it.
