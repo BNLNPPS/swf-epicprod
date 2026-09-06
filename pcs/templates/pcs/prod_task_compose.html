@@ -596,6 +596,11 @@
                 if (d.condor_command !== undefined) t.condor_command = d.condor_command;
                 if (d.panda_command !== undefined) t.panda_command = d.panda_command;
                 if (d.panda_tasks !== undefined) t.panda_tasks = d.panda_tasks;
+                // What a trial of this task would run under, or what stops one.
+                // The Trial action is inactive until this arrives, so it must be
+                // carried across or the action never enables.
+                if (d.trial_blocked !== undefined) t.trial_blocked = d.trial_blocked;
+                if (d.trial_config !== undefined) t.trial_config = d.trial_config;
                 t._hydrated = true;
             }
         } catch (e) { /* leave light */ }
