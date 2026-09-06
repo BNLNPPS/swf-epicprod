@@ -53,6 +53,14 @@ RECO_EVENTS_ARGS=()
 REPORT_SEND_MAX=12
 REPORT_SENT=0
 REPORT_SEND_OFF=0
+# What the job calls itself when it reports. The PanDA job id when the
+# server substituted one, and otherwise something unique to this run:
+# object storage has no versioning here, so a shared name means one job
+# silently overwrites another's reports.
+REPORT_ID=${PANDAID:-}
+case "${REPORT_ID}" in
+  ''|*[!0-9]*) REPORT_ID="unidentified-$(hostname -s 2>/dev/null || echo host)-$$-$(date -u +%s)" ;;
+esac
 report_send() {
   [ -n "${REPORT_OUT_BUCKET:-}" ] || return 0
   [ "${REPORT_SEND_OFF}" -eq 0 ] || return 0
@@ -63,7 +71,7 @@ report_send() {
   sleep "0.$((RANDOM % 900 + 100))" 2>/dev/null || true
   if python "${here}/report_out.py" \
        --file "${PAYLOAD_REPORT:-payload-report.json}" \
-       --key "reports/${PANDAID:-unidentified}/${REPORT_SENT}.json"; then
+       --key "reports/${REPORT_ID}/${REPORT_SENT}.json"; then
     REPORT_SENT=$((REPORT_SENT + 1))
   else
     # One failure is enough: a channel that is unreachable now stays
