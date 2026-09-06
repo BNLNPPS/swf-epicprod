@@ -137,15 +137,18 @@
         <div class="panel-header">
             <h4 id="panel-title" style="margin:0;">Select an item</h4>
             <div id="panel-buttons">
-                {% if username %}
-                <button class="btn btn-dark-green btn-sm" id="btn-copy-task" style="display:none;">Copy</button>
-                <button class="btn btn-dark-green btn-sm" id="btn-edit-task" style="display:none;">Edit</button>
-                <button class="btn btn-danger btn-sm" id="btn-delete-task" style="display:none;">Delete</button>
-                <button class="btn btn-success btn-sm" id="btn-lock-task" style="display:none;">Lock</button>
-                <span id="submit-task-wrap" tabindex="0" style="display:none;">
-                    <button class="btn btn-success btn-sm" id="btn-submit-task">Submit to PanDA</button>
+                <!-- The row is its own indicator: every action is always present and
+                     goes inactive when the state or the viewer does not allow it, so a
+                     missing button never has to be told apart from a disallowed one.
+                     Signed-out viewers see the same row, nothing clickable. -->
+                <button class="btn btn-dark-green btn-sm" id="btn-copy-task" disabled>Copy</button>
+                <button class="btn btn-dark-green btn-sm" id="btn-edit-task" disabled>Edit</button>
+                <button class="btn btn-dark-green btn-sm" id="btn-trial-task" disabled>Trial</button>
+                <button class="btn btn-danger btn-sm" id="btn-delete-task" disabled>Delete</button>
+                <button class="btn btn-success btn-sm" id="btn-lock-task" disabled>Lock</button>
+                <span id="submit-task-wrap" tabindex="0">
+                    <button class="btn btn-success btn-sm" id="btn-submit-task" disabled>Submit to PanDA</button>
                 </span>
-                {% endif %}
                 <button class="btn btn-secondary btn-sm" id="btn-clear-suggestions" style="display:none;">Clear</button>
                 <button class="btn btn-secondary btn-sm" id="btn-cancel" style="display:none;">Cancel</button>
                 <button class="btn btn-primary btn-sm" id="btn-save" style="display:none;" disabled>Save Task</button>
@@ -620,8 +623,29 @@
     const btnCopyTask = document.getElementById('btn-copy-task');
     const btnDeleteTask = document.getElementById('btn-delete-task');
     const btnLockTask = document.getElementById('btn-lock-task');
+    const btnTrialTask = document.getElementById('btn-trial-task');
     const submitTaskWrap = document.getElementById('submit-task-wrap');
     const btnSubmitTask = document.getElementById('btn-submit-task');
+
+    // Availability, never visibility: the action stays in the row and goes
+    // inactive, carrying the reason as its tooltip. `why` is shown when the
+    // action is unavailable and there is something useful to say.
+    function setTaskBtn(btn, allowed, why) {
+        if (!btn) return;
+        // The non-task tabs hide this row wholesale (hideTaskActions); putting
+        // the action back is this function's job, so a tab round trip cannot
+        // leave a button hidden rather than disabled.
+        btn.style.display = '';
+        btn.disabled = !allowed;
+        btn.setAttribute('aria-disabled', String(!allowed));
+        if (!allowed && why) btn.title = why;
+        else btn.removeAttribute('title');
+    }
+
+    function disableTaskActions() {
+        [btnEditTask, btnCopyTask, btnTrialTask, btnDeleteTask, btnLockTask,
+         btnSubmitTask].forEach(b => setTaskBtn(b, false));
+    }
     const btnResetTask = null;
     const btnClearSuggestions = document.getElementById('btn-clear-suggestions');
     const btnCancel = document.getElementById('btn-cancel');
@@ -651,11 +675,7 @@
         btnCancel.style.display = 'none';
         btnSave.style.display = 'none';
         if (btnNewTask) btnNewTask.style.display = browseType === 'tasks' ? 'block' : 'none';
-        if (btnEditTask) btnEditTask.style.display = 'none';
-        if (btnCopyTask) btnCopyTask.style.display = 'none';
-        if (btnDeleteTask) btnDeleteTask.style.display = 'none';
-        if (btnLockTask) btnLockTask.style.display = 'none';
-        if (submitTaskWrap) submitTaskWrap.style.display = 'none';
+        disableTaskActions();
         composeTaskId = null; composeTaskName = null; composeDatasetId = null; composeConfigId = null;
         composeDataset = null; composeConfig = null;
         updateUrl();
@@ -666,11 +686,7 @@
         browsePanel.style.display = 'none';
         composePanel.style.display = 'block';
         if (btnNewTask) btnNewTask.style.display = 'none';
-        if (btnEditTask) btnEditTask.style.display = 'none';
-        if (btnCopyTask) btnCopyTask.style.display = 'none';
-        if (btnDeleteTask) btnDeleteTask.style.display = 'none';
-        if (btnLockTask) btnLockTask.style.display = 'none';
-        if (submitTaskWrap) submitTaskWrap.style.display = 'none';
+        disableTaskActions();
         btnCancel.style.display = 'inline-block';
         btnSave.style.display = 'inline-block';
         btnSave.disabled = true;
@@ -739,11 +755,7 @@
             browseEmpty.style.display = 'block';
             browseContent.style.display = 'none';
             panelTitle.textContent = 'Select an item';
-            if (btnDeleteTask) btnDeleteTask.style.display = 'none';
-            if (btnEditTask) btnEditTask.style.display = 'none';
-            if (btnCopyTask) btnCopyTask.style.display = 'none';
-            if (btnLockTask) btnLockTask.style.display = 'none';
-            if (submitTaskWrap) submitTaskWrap.style.display = 'none';
+            disableTaskActions();
         }
         renderList();
         updateUrl();
@@ -999,7 +1011,8 @@
     // action (Submit/Lock/Edit/Copy/Delete/New) that a prior task
     // view may have left visible. Submit-to-PanDA is task business, not dataset.
     function hideTaskActions() {
-        [btnCopyTask, btnEditTask, btnDeleteTask, btnLockTask, submitTaskWrap,
+        [btnCopyTask, btnEditTask, btnTrialTask, btnDeleteTask, btnLockTask,
+         submitTaskWrap,
          btnNewTask].forEach(b => { if (b) b.style.display = 'none'; });
     }
 
@@ -1209,24 +1222,40 @@
                 : t.task_params_error;
             if (!readinessProblems.includes(specProblem)) readinessProblems.push(specProblem);
         }
-        if (btnCopyTask) btnCopyTask.style.display = currentUser ? 'inline-block' : 'none';
-        if (btnEditTask) btnEditTask.style.display = operatorDraft ? 'inline-block' : 'none';
-        if (btnDeleteTask) btnDeleteTask.style.display = operatorDraft ? 'inline-block' : 'none';
-        if (btnLockTask) btnLockTask.style.display = operatorDraft ? 'inline-block' : 'none';
-        // Submit is shown only when the task is in the buildable lifecycle and
-        // the readiness checks agree it can produce a submission spec.
+        const signInFirst = 'Sign in to operate production tasks.';
+        const draftOnly = submitted
+            ? 'This task is submitted; only a draft can be changed.'
+            : 'Only a draft task can be changed.';
+        setTaskBtn(btnCopyTask, canOperate, signInFirst);
+        setTaskBtn(btnEditTask, operatorDraft, canOperate ? draftOnly : signInFirst);
+        setTaskBtn(btnDeleteTask, operatorDraft, canOperate ? draftOnly : signInFirst);
+        setTaskBtn(btnLockTask, operatorDraft, canOperate ? draftOnly : signInFirst);
+        // Trial: a small real run of this configuration through the production
+        // path. The server says what a trial would run under, or what stops one
+        // (no real configuration, no per-job event count, no matched input).
+        const trialBlocked = t.trial_blocked || '';
+        const trialHydrated = ('trial_blocked' in t);
+        setTaskBtn(btnTrialTask, canOperate && trialHydrated && !trialBlocked,
+                   !canOperate ? signInFirst
+                   : (trialBlocked || 'Opening the task determines whether it can be trialled.'));
+        if (btnTrialTask && canOperate && trialHydrated && !trialBlocked && t.trial_config) {
+            btnTrialTask.title = `Trial this configuration under ${t.trial_config}`;
+        }
+        // Submit needs the buildable lifecycle and a spec the readiness checks
+        // agree can be produced.
         if (submitTaskWrap) {
+            submitTaskWrap.style.display = '';
             const inLifecycle = t.status === 'draft' || t.status === 'ready';
             const readyToSubmit = !readinessProblems.length;
-            if (canOperate && !submitted && inLifecycle && readyToSubmit) {
-                submitTaskWrap.style.display = 'inline-block';
-                btnSubmitTask.disabled = false;
-                btnSubmitTask.style.pointerEvents = '';
-                btnSubmitTask.textContent = 'Submit to PanDA';
-                submitTaskWrap.title = '';
-            } else {
-                submitTaskWrap.style.display = 'none';
-            }
+            const canSubmit = canOperate && !submitted && inLifecycle && readyToSubmit;
+            btnSubmitTask.textContent = 'Submit to PanDA';
+            btnSubmitTask.style.pointerEvents = '';
+            setTaskBtn(btnSubmitTask, canSubmit,
+                       !canOperate ? signInFirst
+                       : submitted ? 'Already submitted to PanDA.'
+                       : !inLifecycle ? `A ${t.status} task is not submittable.`
+                       : readinessProblems.join(' '));
+            submitTaskWrap.title = '';
         }
         const statusColors = {draft:'secondary', ready:'primary', submitted:'info', completed:'success', failed:'danger', past_output:'dark'};
         const hasPandaTasks = Array.isArray(t.panda_tasks) && t.panda_tasks.length > 0;
@@ -1522,6 +1551,37 @@
             let msg = `Lock failed (HTTP ${resp.status})`;
             try { const d = await resp.json(); msg = d.detail || msg; } catch(e) {}
             alert(msg);
+        }
+    });
+    if (btnTrialTask) btnTrialTask.addEventListener('click', async () => {
+        const t = allTasks.find(x => x.id === selectedItemId);
+        if (!t) return;
+        const under = t.trial_config ? ` under ${t.trial_config}` : '';
+        if (!confirm(`Trial "${taskComposedName(t)}"${under}?\n\n`
+                     + `A trial is a small, real run of this configuration through `
+                     + `the production path: 100 events of the real input, outputs `
+                     + `under TEST/trial with a two-week lifetime, counting toward `
+                     + `no physics. It is composed as its own task; nothing is `
+                     + `submitted yet.`)) return;
+        btnTrialTask.disabled = true;
+        const was = btnTrialTask.textContent;
+        btnTrialTask.textContent = 'Composing…';
+        try {
+            const resp = await fetch(taskApiUrl(t, 'trial/'),
+                {method: 'POST', headers: {'Content-Type': 'application/json',
+                                           'X-CSRFToken': csrfToken},
+                 body: '{}'});
+            if (resp.ok) {
+                const d = await resp.json();
+                window.location = d.url;      // land on the trial, selected
+                return;
+            }
+            let msg = `Trial failed (HTTP ${resp.status})`;
+            try { const d = await resp.json(); msg = d.detail || msg; } catch(e) {}
+            alert(msg);
+        } finally {
+            btnTrialTask.textContent = was;
+            btnTrialTask.disabled = false;
         }
     });
     let pendingPandaOperation = null;

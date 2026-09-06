@@ -7,6 +7,9 @@ Tag delete via POST /delete/ — creator-only, draft-only (locked tags protected
 Tag numbers auto-assigned on POST: physics from category range, e/s/r from PersistentState.
 Dataset creation requires all four tags to be locked. created_by set from authenticated user.
 """
+from urllib.parse import quote as urlquote
+
+from django.urls import reverse
 from rest_framework import viewsets, status
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from monitor_app.middleware import TunnelAuthentication
@@ -520,6 +523,31 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         if warnings:
             data['warnings'] = warnings
         return Response(data)
+
+    @action(detail=True, methods=['post'])
+    def trial(self, request, name=None):
+        """Mint a trial of this task's configuration — a small, real run
+        through the production path (PCS.md § Trials). Binds the edition's
+        Standard Production configuration and the task's matched input where
+        the source carries neither, and refuses when the result could not
+        submit. Returns the new trial task; nothing is submitted here."""
+        task = self.get_object()
+        try:
+            result = services.prodtask_compose_trial(
+                task=task,
+                events=request.data.get('events'),
+                site=request.data.get('site') or '',
+                created_by=getattr(request.user, 'username', '') or 'operator',
+            )
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(
+            {'composed_name': result['composed_name'],
+             'prod_config': result['config'],
+             'source_task': task.composed_name,
+             'url': (f"{reverse('pcs:prod_task_compose')}?tab=tasks"
+                     f"&selected={urlquote(result['composed_name'])}")},
+            status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='panda-add-retry')
     def panda_add_retry(self, request, name=None):

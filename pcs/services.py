@@ -5388,6 +5388,46 @@ def prodtask_rerun_residual_request(*, task):
     return task
 
 
+def prodtask_runnable_config(task):
+    """The real production configuration ``task`` would run under, and what
+    stops it running as composed. Returns ``(config, blocked)``.
+
+    A task's own bound configuration counts only when it is a real one: the
+    Placeholder anchors rows PCS adopted rather than composed
+    (EPICPROD_TASK_CATALOG.md) and carries nothing to run with, so the
+    edition's Standard Production stands in for it. Beyond a configuration,
+    running needs a per-job event count, because Rucio carries no per-file
+    count, and a matched EVGEN input to resolve the manifest from.
+
+    Database reads only, safe in a page. Shared by the adopt control and by
+    trial composition so the two cannot drift on what "runnable" means.
+    """
+    edition = ''
+    if task.dataset_id:
+        edition = str(task.dataset.detector_version or '').strip()
+    config = None
+    if task.prod_config_id and task.prod_config.name != PLACEHOLDER_PRODCONFIG_NAME:
+        config = task.prod_config
+    elif edition:
+        config = ProdConfig.objects.filter(
+            name=standard_prodconfig_name(edition)).first()
+    if config is None:
+        wanted = (standard_prodconfig_name(edition) if edition
+                  else 'a Standard Production configuration')
+        return None, (f'no production configuration for this task: {wanted} '
+                      f'does not exist. The campaign configuration ping on the '
+                      f'alarm dashboard creates it.')
+    if not int((config.data or {}).get('events_per_job') or 0):
+        return config, f'configuration {config.name} carries no events_per_job.'
+    if not task.inputs:
+        paths = ', '.join(task.evgen_paths or []) or 'the EVGEN input'
+        return config, (f'{paths} is not matched in JLab Rucio, so no manifest '
+                        f'can be resolved. Register it on the EVGEN inputs '
+                        f'Registration view, then Update from Rucio; this '
+                        f'control unblocks.')
+    return config, ''
+
+
 # ── moving a name-matched legacy task into PCS ──────────────────────────
 # JEDI_INTEGRATION.md § Residual rerun: a task associated by name match
 # alone is not a PCS submission until it carries a recorded PanDA id, a
@@ -5410,30 +5450,11 @@ def prodtask_adopt_readiness(task):
         return out
     out['applicable'] = True
     out['jedi_task_id'] = latest.jedi_task_id
-    edition = ''
-    if task.dataset_id:
-        edition = str(task.dataset.detector_version or '').strip()
-    config = None
-    if task.prod_config_id and task.prod_config.name != PLACEHOLDER_PRODCONFIG_NAME:
-        config = task.prod_config
-    elif edition:
-        config = ProdConfig.objects.filter(
-            name=standard_prodconfig_name(edition)).first()
-    if config is None:
-        wanted = standard_prodconfig_name(edition) if edition else 'a Standard Production configuration'
-        out['blocked'] = (f'no production configuration for this task: {wanted} '
-                          f'does not exist. The campaign configuration ping on the '
-                          f'alarm dashboard creates it.')
-        return out
-    out['config'] = config.name
-    if not int((config.data or {}).get('events_per_job') or 0):
-        out['blocked'] = f'configuration {config.name} carries no events_per_job.'
-        return out
-    if not task.inputs:
-        paths = ', '.join(task.evgen_paths or []) or 'the EVGEN input'
-        out['blocked'] = (f'{paths} is not matched in JLab Rucio, so no manifest can '
-                          f'be resolved. Register it on the EVGEN inputs Registration '
-                          f'view, then Update from Rucio; this control unblocks.')
+    config, blocked = prodtask_runnable_config(task)
+    if config is not None:
+        out['config'] = config.name
+    if blocked:
+        out['blocked'] = blocked
         return out
     out['eligible'] = True
     return out
@@ -5472,6 +5493,43 @@ def prodtask_adopt_legacy(*, task, changed_by):
         url=f'/pcs/tasks/compose/?selected={task.name}')
     return {'task': task, 'log_id': log_id,
             'jedi_task_id': ready['jedi_task_id'], 'config': config.name}
+
+
+def prodtask_compose_trial(*, task, events=None, site='', created_by=''):
+    """Mint a trial of ``task``'s configuration and return the new task.
+
+    A trial is a small, real run of a composed configuration through the path
+    production uses, differing from the production run in its scale, where its
+    outputs land, and that it counts toward no physics (PCS.md § Trials). It
+    takes its own composed identity, so it completes and accounts on its own
+    and touches nothing belonging to the configuration it proves.
+
+    Binds a real production configuration and carries the source's matched
+    input — what an adopted row lacks. Refuses rather than minting a trial
+    anchored to the Placeholder or without an input, because such a trial
+    could never submit, and a trial exists in order to run. One
+    origin-stamped ``prodtask_trial`` event; returns {task, log_id, config,
+    composed_name}.
+    """
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from . import trials
+
+    config, blocked = prodtask_runnable_config(task)
+    if blocked:
+        raise ServiceError(blocked, status=409)
+    with transaction.atomic():
+        trial = trials.compose_trial(
+            task, events=events or trials.DEFAULT_TRIAL_EVENTS,
+            site=site or '', created_by=created_by or 'operator',
+            prod_config=config)
+    log_id = log_epicprod_action(
+        'web', 'prodtask_trial', subject_type='prod_task',
+        subject_key=trial.name, subject_label=trial.name,
+        username=created_by or '', sublevel='normal', live_default=True,
+        source_task=task.name, prod_config=config.name,
+        url=f'/pcs/tasks/compose/?selected={trial.name}')
+    return {'task': trial, 'log_id': log_id, 'config': config.name,
+            'composed_name': trial.composed_name}
 
 
 def prodtask_record_submission_failure(*, task, panda_tasks_id, reason):
