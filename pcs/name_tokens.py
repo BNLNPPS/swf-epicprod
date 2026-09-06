@@ -12,9 +12,16 @@ Those suffixes are not part of the logical PCS name:
     logical.try2        second PanDA/JEDI submission attempt
     logical.try2.b1     block 1 of the second attempt
 
+One suffix belongs to the logical identity rather than to transport, and is
+therefore never stripped by default (docs/PCS.md, Trials):
+
+    logical.trial       the first trial of this configuration
+    logical.trial2      the second, and so on
+
 Keep these rules here rather than spreading positional regexes through model,
 service, and monitor code. New dynamic suffixes should be added to
-TERMINAL_SUFFIX_PATTERNS and documented in docs/PCS.md.
+TERMINAL_SUFFIX_PATTERNS (transport) or LOGICAL_SUFFIX_PATTERNS (identity)
+and documented in docs/PCS.md.
 """
 from dataclasses import dataclass
 import re
@@ -26,6 +33,21 @@ TERMINAL_SUFFIX_PATTERNS = {
     'try': re.compile(r'^try(?P<number>[1-9]\d*)$'),
     'block': re.compile(r'^b(?P<number>[1-9]\d*)$'),
 }
+
+# A logical suffix is part of the PCS identity rather than transport. A
+# trial is a standing task of its own, modelled on the configuration it
+# proves and carrying its own event count and outputs (docs/PCS.md,
+# Trials), so stripping its suffix would collapse it onto that
+# configuration. Logical suffixes are therefore kept out of the default
+# stripping set and matched only when a caller names the kind. Bare
+# ``trial`` is the first trial, as a bare logical name is attempt 1;
+# further trials number from 2, for the variants a configuration needs
+# before it is right.
+LOGICAL_SUFFIX_PATTERNS = {
+    'trial': re.compile(r'^trial(?P<number>[2-9]\d*)?$'),
+}
+
+ALL_SUFFIX_PATTERNS = {**TERMINAL_SUFFIX_PATTERNS, **LOGICAL_SUFFIX_PATTERNS}
 
 
 @dataclass(frozen=True)
@@ -40,12 +62,14 @@ class NameSuffix:
 def match_terminal_suffix(token, suffix_kinds=None):
     """Return a NameSuffix for one reserved terminal token, or None."""
     allowed = set(suffix_kinds or TERMINAL_SUFFIX_PATTERNS)
-    for kind, pattern in TERMINAL_SUFFIX_PATTERNS.items():
+    for kind, pattern in ALL_SUFFIX_PATTERNS.items():
         if kind not in allowed:
             continue
         match = pattern.fullmatch(token or '')
         if match:
-            return NameSuffix(kind=kind, token=token, number=int(match.group('number')))
+            # A suffix whose number is optional carries 1 when bare.
+            number = int(match.group('number') or 1)
+            return NameSuffix(kind=kind, token=token, number=number)
     return None
 
 
@@ -113,19 +137,49 @@ def try_number_from_physical_name(logical_name, physical_name):
     return suffix_number(suffixes, 'try') or 1
 
 
+def trial_name(logical_name, trial_number=1):
+    """The logical name of a trial of ``logical_name``: ``.trial`` for
+    the first, ``.trial<n>`` after that (docs/PCS.md, Trials)."""
+    number = int(trial_number or 0)
+    if number < 1:
+        raise ValueError('trial_number must be >= 1')
+    token = 'trial' if number == 1 else f'trial{number}'
+    return f'{logical_name}.{token}'
+
+
+def trial_number_from_name(name):
+    """The trial number a name carries, or 0 when it names no trial.
+    Physical suffixes are stripped first, so a trial's physical forms
+    answer the same as its logical name."""
+    base, _physical = split_terminal_suffixes(name, suffix_kinds=('try', 'block'))
+    _logical, suffixes = split_terminal_suffixes(base, suffix_kinds=('trial',))
+    return suffix_number(suffixes, 'trial') or 0
+
+
+def trial_subject_name(name):
+    """The configuration a trial proves: the name with its trial suffix
+    removed. A name that is no trial is returned unchanged."""
+    base, _physical = split_terminal_suffixes(name, suffix_kinds=('try', 'block'))
+    logical, _suffixes = split_terminal_suffixes(base, suffix_kinds=('trial',))
+    return logical
+
+
 def sample_name_reserved_collision(sample_name):
-    """Return True when a sample name would collide with reserved PCS tokens."""
+    """Return True when a sample name would collide with reserved PCS
+    tokens. The trial suffix is among them: no physics variant may be
+    named for one, which is what keeps the parse unambiguous."""
     if not sample_name:
         return False
     segments = str(sample_name).split('.')
     return bool(
         BACKGROUND_TAG_RE.fullmatch(segments[0])
-        or match_terminal_suffix(segments[-1])
+        or match_terminal_suffix(segments[-1],
+                                 suffix_kinds=tuple(ALL_SUFFIX_PATTERNS))
     )
 
 
 def reserved_sample_token_description():
-    return 'first segment k<n> or last segment b<n>/try<n>'
+    return 'first segment k<n>, or last segment b<n>/try<n>/trial[<n>]'
 
 
 def campaign_family(name):
