@@ -10,7 +10,8 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
 from django.utils.functional import cached_property
 
-from .name_tokens import sample_name_reserved_collision, reserved_sample_token_description
+from .name_tokens import (reserved_sample_token_description,
+                          sample_name_reserved_collision, trial_name)
 
 
 TAG_STATUS_CHOICES = [
@@ -417,6 +418,13 @@ class Dataset(models.Model):
             name = f"{name}.{self.background_tag.tag_label}"
         if self.sample_name:
             name = f"{name}.{self.sample_name}"
+        # A trial of this configuration takes its own identity, the
+        # logical trial suffix (docs/PCS.md, Trials). The trial number
+        # lives in metadata, so the name is derived from it on every
+        # save and the two can never disagree.
+        trial = (self.metadata or {}).get('trial') if self.metadata else None
+        if trial:
+            name = trial_name(name, trial)
         return name
 
     @property
