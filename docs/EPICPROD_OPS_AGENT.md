@@ -235,7 +235,7 @@ Each item below is, by design, a new handler + doer on this agent.
 
 - **Async execution** (above) — implemented; the structural prerequisite for
   piling more long-running capabilities onto the singleton.
-- **Campaign-provenance sweep** — the join Sakib's catalogue and the
+- **Campaign-provenance sweep** — the join the campaign catalogue and the
   `eic/snippets` `check_campaign.py` / `check_storage.py` do by hand, run live
   and credentialed: for each requested EVGEN path
   `/volatile/eic/EPIC/EVGEN/<suffix>`, resolve the produced

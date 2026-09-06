@@ -91,7 +91,8 @@ Production operations:
 - [EPICPROD_TASK_CATALOG.md](docs/EPICPROD_TASK_CATALOG.md) — the
   production task catalog.
 - [EPICPROD_DATA_LINEAGE.md](docs/EPICPROD_DATA_LINEAGE.md) — produced
-  data gathered onto the catalog.
+  data gathered onto the catalog; also the home of the find page
+  (`/pcs/find/`), the direct dataset lookup over the recorded corpus.
 - [EPICPROD_EVGEN_INPUTS.md](docs/EPICPROD_EVGEN_INPUTS.md) — EVGEN
   inputs: assimilation, matching, marks, registration.
 - [PCS_INGEST.md](docs/PCS_INGEST.md) — PC ingest: physics
@@ -109,6 +110,9 @@ Production operations:
 - [EPICPROD_PAYLOAD.md](docs/EPICPROD_PAYLOAD.md) — the epicprod
   payload: the in-job runner and payload implemented end to end,
   cloned from the production team's run script and evolved here.
+- [EPICPROD_RETRIES.md](docs/EPICPROD_RETRIES.md) — retries and reruns:
+  the four recovery levels, what each needs to still exist, the
+  task-state gates, and the output-name collision rule.
 - [RUCIO_RESILIENCE.md](docs/RUCIO_RESILIENCE.md) — preventing Rucio
   registration losses.
 - [RUCIO_FAILOVER_STASH.md](docs/RUCIO_FAILOVER_STASH.md) — the failover

@@ -17,7 +17,7 @@ JEDI's `taskParamMap`, the submission flow, and the current operational paths.
 
 ## Reference implementation — the working basis
 
-Our EVGEN submission is derived from the EIC production submitter maintained by Sakib Rahman in `eic/job_submission_condor`, branch **`feature-add-panda-wrapper`**. This is the authoritative working template; `scripts/evgen_panda_submit.py` in this repo is adapted from it, and any divergence in submission behavior is checked against it first.
+Our EVGEN submission is derived from the EIC production submitter in `eic/job_submission_condor`, branch **`feature-add-panda-wrapper`**, maintained by production coordination. This is the authoritative working template; `scripts/evgen_panda_submit.py` in this repo is adapted from it, and any divergence in submission behavior is checked against it first.
 
 - [`scripts/submit_csv.sh`](https://github.com/eic/job_submission_condor/blob/feature-add-panda-wrapper/scripts/submit_csv.sh#L107-L151) — PanDA-mode entry: stages the sandbox, derives the `group.EIC.<dataset>` name from the detector version/config and the CSV's first path, and builds the `submit_panda_api.py` command line.
 - [`scripts/submit_panda_api.py`](https://github.com/eic/job_submission_condor/blob/feature-add-panda-wrapper/scripts/submit_panda_api.py) — builds the `taskParamMap` (`noInput=True`, `noOutput=True`; container `multiStepExec`; `%RNDM`→`${SEQNUMBER}` pseudo-input; sandbox tarball via `Client.putFile`) and submits with `panda_api.get_api().submit_task(params)`.
@@ -785,7 +785,7 @@ submitted by the move itself (`pcs.services.prodtask_adopt_legacy`, one
 - `panda-client/pandaclient/Client.py:1304` — `insertTaskParams()` implementation
 
 ### Working submitter — reference basis (eic/job_submission_condor)
-Branch **`feature-add-panda-wrapper`** — Sakib Rahman's working EVGEN production submitter (see "Reference implementation" above):
+Branch **`feature-add-panda-wrapper`** — the working EVGEN production submitter (see "Reference implementation" above):
 - [`scripts/submit_csv.sh`](https://github.com/eic/job_submission_condor/blob/feature-add-panda-wrapper/scripts/submit_csv.sh#L107-L151)
 - [`scripts/submit_panda_api.py`](https://github.com/eic/job_submission_condor/blob/feature-add-panda-wrapper/scripts/submit_panda_api.py)
 - [`scripts/submit_panda.py`](https://github.com/eic/job_submission_condor/blob/feature-add-panda-wrapper/scripts/submit_panda.py)

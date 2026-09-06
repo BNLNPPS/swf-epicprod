@@ -24,7 +24,7 @@ future mode where EVGEN is run as an internal production stage.
 
 ## Current Situation
 
-Sakib has described and prototyped this public intake path:
+Production coordination has described and prototyped this public intake path:
 
 1. A requester submits a dataset request through a GitHub issue template or,
    later, through Mattermost/DISpatcher as dialog front end to issue creation.
@@ -180,7 +180,7 @@ reconstruction metadata.
 
 ## Lifecycle
 
-The public catalogue publication state is not production readiness. Sakib's
+The public catalogue publication state is not production readiness. The
 current issue fields are sufficient to create a public planning row and a
 partial PCS request, but not a fully specified PCS production task.
 

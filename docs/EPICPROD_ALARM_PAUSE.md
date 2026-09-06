@@ -1,7 +1,7 @@
 # Alarm-Driven Task Pause
 
 Plan for automatic pausing of PanDA tasks on catastrophic failure,
-requested by S. Rahman (2026-08-05) after storage failures at Taiwan and
+requested by production coordination (2026-08-05) after storage failures at Taiwan and
 JLab drove task failure rates to 100% and wasted resources until an
 operator intervened. The alarm system owns both the detection and the
 response policy; execution reuses the verified PanDA task-operation
@@ -68,7 +68,7 @@ Operators define both thresholds on the alarm config entry, in
 
 | Param | Type | Meaning |
 |---|---|---|
-| `window_hours` | float | moving window for the rate (Rahman's ask: 1–2 h) |
+| `window_hours` | float | moving window for the rate (as requested: 1–2 h) |
 | `threshold` | float | alarm threshold: detection + email, as today |
 | `pause_enabled` | bool, default false | master switch for the action |
 | `pause_threshold` | float | rate at or above which the task is paused; must be ≥ `threshold` |

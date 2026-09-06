@@ -150,4 +150,4 @@ thin adapters only (MCP tool registration, navigation entries).
    natural first code migration: it is the one component that is
    entirely production domain, and it is well encapsulated.
 
-[EPICPROD_ASSESSMENTS.md]: https://github.com/BNLNPPS/swf-monitor/blob/infra/baseline-v38/docs/EPICPROD_ASSESSMENTS.md
+[EPICPROD_ASSESSMENTS.md]: EPICPROD_ASSESSMENTS.md
