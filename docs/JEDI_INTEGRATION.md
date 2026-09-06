@@ -664,6 +664,11 @@ submit path.
 
 ## Residual rerun — `.tryN` over the undelivered remainder
 
+This section is the design and its derivation. The operative account —
+the four recovery levels, what each needs to still exist, the
+task-state gates, the guards, and the operator's choice among them —
+is [EPICPROD_RETRIES.md](EPICPROD_RETRIES.md).
+
 Implemented 2026-08-13 (`build_evgen_task_params(residual=True)`, the
 `rerun-residual` and `residual-preview` API actions, the doer's
 `--residual` flag, and the compose page's Rerun Residual action); the
@@ -743,7 +748,7 @@ submitted by the move itself (`pcs.services.prodtask_adopt_legacy`, one
 ## Infrastructure: What We Know
 
 - **VO**: `eic`
-- **Queues**: 21 EIC queues, all online and ACTIVE (BNL_EPIC_PROD_1, BNL_OSG_EPIC_PROD_1, NERSC_Perlmutter_epic, E1_BNL, E1_JLAB, UM_GREX_PanDA_1, etc.). All support Apptainer containers.
+- **Queues**: the EIC queue set is defined in schedconfig and grows; take the census live, from the EIC queues page or `panda_list_queues(vo='eic')`, never from a number written here (21 online and ACTIVE at this writing: BNL_EPIC_PROD_1, BNL_OSG_EPIC_PROD_1, NERSC_Perlmutter_epic, E1_BNL, E1_JLAB, UM_GREX_PanDA_1, and others). All support Apptainer containers.
 - **Auth**: OIDC with `PANDA_AUTH=oidc`. The credentialed doers set
   `PANDA_AUTH_VO=EIC.production`, which is what carries the production role;
   see [Production role and server-side task defaults](#production-role-and-server-side-task-defaults)

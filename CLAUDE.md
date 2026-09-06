@@ -32,7 +32,9 @@ inputs, questionnaire, validation, narratives, assessments, LLM
 operations, succession), `PANDA_USER_JOBS.md`,
 `JEDI_INTEGRATION.md`, `JEDI_EPIC_PROPOSAL.md`,
 `CAMPAIGN_CONTINUUM.md`, `CAMPAIGN_DELIVERY.md`, `STORAGE.md`,
-`CONTINUOUS_PRODUCTION.md`, `EPICPROD_PAYLOAD.md`, `RUCIO_RESILIENCE.md`,
+`CONTINUOUS_PRODUCTION.md`, `EPICPROD_PAYLOAD.md`, `EPICPROD_RETRIES.md`
+(the four recovery levels and their gates; read before answering any
+retry, rerun, or ghost question), `RUCIO_RESILIENCE.md`,
 `RUCIO_FAILOVER_STASH.md`, `OSG_SUBMISSION.md`, `JOB_REPORTING.md`,
 and `COMMISSIONING_RELAXATIONS.md`.
 Platform-service docs (action stream, SSE, external access, MCP,

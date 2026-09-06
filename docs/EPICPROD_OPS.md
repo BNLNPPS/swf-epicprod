@@ -113,7 +113,9 @@ physical PanDA submission its own concrete task and output names.
 
 The campaign task compose page shows the associated PanDA tasks in a `PanDA
 Tasks` table. When a campaign task has an associated JEDI task, the page exposes
-four operations:
+four operations. Which one to reach for, what each needs to still exist, the
+task-state gates, and the output-name collision rule are in
+[EPICPROD_RETRIES.md](EPICPROD_RETRIES.md); the table here is the summary.
 
 | Operation | When used | Effect |
 |---|---|---|
