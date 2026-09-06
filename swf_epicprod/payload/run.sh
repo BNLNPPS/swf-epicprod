@@ -522,10 +522,30 @@ if [ "${COPYLOG:-false}" == "true" ] ; then
       echo "No log files found to archive."
     fi
     
-    monitor logs python $SCRIPT_DIR/register_to_rucio.py \
-    -f "${LOG_TEMP}/${TASKNAME}.log.tar.gz" \
-    -d "/${LOG_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
-    -s epic -r ${LOG_RSE:-isLogRSE} --noregister
+    # A log upload NEVER kills a job. The physics is already made and
+    # validated by the time this runs; losing it because a log tarball
+    # could not be written is the most expensive possible way to lose
+    # nothing of value. On 2026-08-08 exactly that destroyed three
+    # attempts at 9x275 q2_10to100 — every job reconstructed, then
+    # refused at EIC-XRD-LOG with HTTP 403, roughly 17,000 core-hours
+    # for want of a log. So: try the log store, and if it refuses, put
+    # the log beside the science data instead, and if that refuses too,
+    # say so and carry on to deliver the physics.
+    if ! monitor logs python $SCRIPT_DIR/register_to_rucio.py \
+        -f "${LOG_TEMP}/${TASKNAME}.log.tar.gz" \
+        -d "/${LOG_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
+        -s epic -r ${LOG_RSE:-isLogRSE} --noregister; then
+      echo "WARNING: log upload to ${LOG_RSE:-isLogRSE} failed; trying the output store."
+      if monitor logs_fallback python $SCRIPT_DIR/register_to_rucio.py \
+          -f "${LOG_TEMP}/${TASKNAME}.log.tar.gz" \
+          -d "/${RECO_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
+          -s epic -r ${OUT_RSE:-EIC-XRD} --noregister; then
+        stage logs fallback "log written beside the science data at ${OUT_RSE:-EIC-XRD}"
+      else
+        stage logs fail "log upload failed at ${LOG_RSE:-isLogRSE} and at ${OUT_RSE:-EIC-XRD}; the job's physics is unaffected"
+        echo "WARNING: no log upload succeeded. The payload continues; the report carries this."
+      fi
+    fi
   else
     echo "=== DEBUG: Attempting to copy LOG files to xrootd ==="
     setup_xrd_auth
