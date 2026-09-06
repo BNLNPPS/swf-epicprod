@@ -32,7 +32,16 @@ def get_str(params, key):
 
 include_gun = "--gun" in sys.argv
 no_beam = "--no-beam" in sys.argv
-rootfile = next(a for a in sys.argv[1:] if not a.startswith("--"))
+# Where to write the result. A caller that runs this under a monitor
+# cannot capture stdout safely, since the monitor shares it, so it asks
+# for a file instead.
+out_path = None
+if "--out" in sys.argv:
+    out_path = sys.argv[sys.argv.index("--out") + 1]
+positional = [a for a in sys.argv[1:] if not a.startswith("--")]
+if out_path in positional:
+    positional.remove(out_path)
+rootfile = positional[0]
 
 reader = podio.root_io.Reader(rootfile)
 frame = next(iter(reader.get("runs")))
@@ -133,4 +142,8 @@ if include_gun:
     result["gun_phi_min_deg"] = rad_to_deg(phi_min) if phi_min is not None else 0
     result["gun_phi_max_deg"] = rad_to_deg(phi_max) if phi_max is not None else 360
 
-print(json.dumps(result))
+if out_path:
+    with open(out_path, "w") as f:
+        json.dump(result, f)
+else:
+    print(json.dumps(result))

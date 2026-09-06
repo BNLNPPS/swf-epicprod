@@ -471,7 +471,17 @@ fi
 if [[ "${BASENAME}" == *"BACKGROUNDS"* ]]; then
   PODIO_ARGS+=(--no-beam)
 fi
-PODIO_JSON=$(monitor metadata python $SCRIPT_DIR/parse_podio_metadata.py "${PODIO_ARGS[@]}")
+# The script writes its JSON to a file rather than to stdout, because
+# stdout here belongs to the monitor as well and anything the monitor
+# says would be read as metadata.
+PODIO_JSON_FILE=${TMPDIR}/podio-metadata.json
+monitor metadata python $SCRIPT_DIR/parse_podio_metadata.py "${PODIO_ARGS[@]}" --out "${PODIO_JSON_FILE}"
+PODIO_JSON=$(cat "${PODIO_JSON_FILE}" 2>/dev/null || true)
+if ! echo "${PODIO_JSON}" | jq -e . >/dev/null 2>&1; then
+  echo "ERROR: podio metadata was not produced as JSON; nothing can be registered without it."
+  stage metadata fail
+  exit 66
+fi
 
 # Only software_release remains outside podio scope
 METADATA_JSON_BASE=$(jq -n --arg software_release "${JUG_XL_TAG}" '{software_release: $software_release}')
