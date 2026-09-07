@@ -261,7 +261,11 @@ fill fraction can be watched.
   the catalog's deterministic algorithm expects.
 - BNL Rucio administration: the `panda` account writing science-sized
   stash datasets in `group.EIC`; the `_stash` dataset convention;
-  path-like DID names under the BNL instance's naming policy.
+  path-like DID names under the BNL instance's naming policy; and the
+  `panda` account deleting file replicas on `BNL_PROD_DISK_1`, which it
+  may not today (measured 2026-09-07), so a stash entry brought home
+  keeps its catalog row, marked `staging: false` and `home: <RSE>`, with
+  no file behind it.
 - The production team: agreement that a job with a stashed output exits
   success, the contract change of Measure 2.
 
