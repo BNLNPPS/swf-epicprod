@@ -269,6 +269,18 @@ generated in 6 s, the afterburner built in 33 s and applied at 275×9,
 the sample at
 `EVGEN/EXCLUSIVE/UPSILON/eSTARlight1.2.0/ep/9x275/1s_photo_hiAcc/`.
 
+The trial ran as JEDI task 39365 (job 2721377, BNL_OSG_PanDA_1, payload
+0.8.0, 2026-09-07) and passed: every stage ok, the geometry stage
+resolving `epic_craterlake_9x275.xml`, the generation stage 50 s wall
+for 100 events including the afterburner build, simulation 410 s,
+reconstruction 77 s, 100 events simulated and reconstructed, the log
+uploaded to EIC-XRD-LOG, and the generated sample and the RECO output
+registered with their event counts under
+`epic:/TEST/trial/group.EIC.26.07.1.epic_craterlake.p5446.e50.s1.r1.trial/`
+in the exclusive layout. Pilot to finish, 11 minutes. It is the first
+configuration produced end to end with a generator other than pythia8,
+and the first exclusive one.
+
 ## Related
 
 - [EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md) — the payload this stage
