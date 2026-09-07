@@ -19,16 +19,25 @@
   {% if lifetime_days %}on a {{ lifetime_days }}-day lifetime{% endif %}.
   It counts toward no physics, and the data expires; what survives is the record
   that it ran and what it produced.
+  <br><br>
+  A trial <strong>qualifies a path</strong>: it establishes that this
+  configuration resolves into a submittable task, that its input is reachable,
+  that the software runs on it, that the output is produced and structurally
+  valid, and that the destination accepts a write and a registration — today,
+  at this site. It establishes nothing about whether the physics is right, which
+  needs statistics and is what validation benchmarks are for, and nothing about
+  behaviour at scale.
 </div>
 
 <table class="table table-sm table-bordered table-striped w-auto align-middle mb-3">
   <tbody>
-    <tr><th>Proves</th>
+    <tr><th>Qualifies</th>
         <td>{% if subject %}<a href="{% url 'pcs:prod_task_detail' name=subject_name %}">{{ subject_name }}</a>{% else %}{{ subject_name }}{% endif %}</td></tr>
     <tr><th>Configuration</th><td>{{ task.prod_config }}</td></tr>
     <tr><th>Campaign</th><td>{{ task.campaign }}</td></tr>
     <tr><th>Events</th><td>{{ events|default:"—" }}</td></tr>
-    <tr><th>Site</th><td>{{ site|default:"—" }}</td></tr>
+    <tr><th>Site</th>
+        <td>{{ site }}{% if not site_chosen %} <span class="text-danger">— nobody chose this; it is the configuration's default</span>{% endif %}</td></tr>
     <tr><th>Status</th><td class="{{ task.status|state_class }}">{{ task.status }}</td></tr>
     <tr><th>Input</th>
         <td>{% for i in inputs %}{{ i.did }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td></tr>
@@ -44,8 +53,9 @@
     <tr>
       <td>{{ a.try_number }}</td>
       <td>{% if a.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' jeditaskid=a.jedi_task_id %}">{{ a.jedi_task_id }}</a>{% else %}—{% endif %}</td>
-      <td class="{{ a.status_snapshot|state_class }}">{{ a.status_snapshot|default:"—" }}</td>
-      <td>{{ a.site|default:"—" }}</td>
+      <td class="{{ a.live_status|state_class }}">{{ a.live_status|default:"—" }}
+          {% if a.live_error %}<div class="text-danger small">{{ a.live_error }}</div>{% endif %}</td>
+      <td>{{ a.live_site|default:"—" }}</td>
       <td class="text-nowrap">{{ a.created_at|fmt_dt }} ET</td>
     </tr>
   {% endfor %}

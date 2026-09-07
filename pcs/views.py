@@ -5649,20 +5649,71 @@ def trials_list(request):
                   .select_related('dataset', 'prod_config')
                   .prefetch_related('panda_tasks')
                   .order_by('-id')[:200])
+    live = _live_task_state(
+        [a.jedi_task_id for t in trials for a in t.panda_tasks.all()
+         if a.jedi_task_id])
     rows = []
     for t in trials:
         md = t.dataset.metadata or {}
         attempts = list(t.panda_tasks.all())
+        last = attempts[-1] if attempts else None
+        state = live.get(last.jedi_task_id) if last else None
         rows.append({
             'task': t,
             'number': trial_number_from_name(t.composed_name),
             'events': md.get('trial_events'),
-            'site': md.get('trial_site') or '',
             'subject': trial_subject_name(t.composed_name),
-            'jedi_task_id': attempts[-1].jedi_task_id if attempts else None,
-            'panda_status': attempts[-1].status_snapshot if attempts else '',
+            'jedi_task_id': last.jedi_task_id if last else None,
+            # Live PanDA state, never the stored snapshot: a snapshot is
+            # empty on a fresh association and stale after, which hid a
+            # job-generation failure on the first trial ever run.
+            'panda_status': (state or {}).get('status') or '',
+            'panda_error': (state or {}).get('error') or '',
+            **_trial_site(t, md, state),
         })
     return render(request, 'pcs/trials_list.html', {'rows': rows})
+
+
+def _live_task_state(jedi_task_ids):
+    """Live status, error dialog and site for PanDA tasks, by id.
+
+    The page reads PanDA rather than the association snapshot: the
+    snapshot is written once and does not follow the task, so a trial
+    that died at job generation showed as merely submitted.
+    """
+    ids = [int(i) for i in jedi_task_ids if i]
+    if not ids:
+        return {}
+    from django.db import connections
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    sql = (f'SELECT jeditaskid, status, errordialog, site '
+           f'FROM "{PANDA_SCHEMA}".jedi_tasks WHERE jeditaskid = ANY(%s)')
+    try:
+        with connections['panda'].cursor() as cursor:
+            cursor.execute(sql, [ids])
+            return {r[0]: {'status': r[1], 'error': r[2] or '', 'site': r[3]}
+                    for r in cursor.fetchall()}
+    except Exception as e:                                    # noqa: BLE001
+        logger.error(f'trial page: live PanDA state unavailable: {e}')
+        return {}
+
+
+def _trial_site(task, md, state=None):
+    """The site a trial ran at or would run at, and whether anyone chose it.
+
+    A trial qualifies a path, and the site is part of that path, so a
+    blank is the one thing the page must not show: an unsited trial
+    still goes somewhere — its config's site — and that is a choice
+    nobody made (docs/PCS.md, Trials).
+    """
+    chosen = (md or {}).get('trial_site') or ''
+    if state and state.get('site'):
+        return {'site': state['site'], 'site_chosen': bool(chosen)}
+    if chosen:
+        return {'site': chosen, 'site_chosen': True}
+    cfg = getattr(task, 'prod_config', None)
+    default = ((cfg.data or {}).get('panda_site') if cfg else '') or ''
+    return {'site': default or 'BNL_OSG_PanDA_1', 'site_chosen': False}
 
 
 def trial_detail(request, name):
@@ -5689,12 +5740,19 @@ def trial_detail(request, name):
                .filter(dataset__composed_name=subject_name)
                .select_related('dataset').first())
     attempts = list(task.panda_tasks.all())
+    live = _live_task_state([a.jedi_task_id for a in attempts])
+    last_state = live.get(attempts[-1].jedi_task_id) if attempts else None
+    for a in attempts:
+        state = live.get(a.jedi_task_id) or {}
+        a.live_status = state.get('status') or ''
+        a.live_error = state.get('error') or ''
+        a.live_site = state.get('site') or ''
     return render(request, 'pcs/trial_detail.html', {
         'task': task,
         'dataset': task.dataset,
         'number': trial_number_from_name(task.composed_name),
         'events': md.get('trial_events'),
-        'site': md.get('trial_site') or '',
+        **_trial_site(task, md, last_state),
         'output_root': md.get('trial_output_root') or '',
         'lifetime_days': md.get('trial_lifetime_days'),
         'inputs': task.inputs,

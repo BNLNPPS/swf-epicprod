@@ -12,8 +12,11 @@
   A trial is a small, real run of a composed configuration by the path production
   uses: the same tags, the same input, the same payload and submission, at a
   hundred events rather than the full sample, with outputs that expire. It counts
-  toward no physics. Each is a standing task of its own and proves the
-  configuration named beside it.
+  toward no physics. Each is a standing task of its own and qualifies the path
+  for the configuration named beside it: that it submits, its input is reachable,
+  the software runs, the output is valid, and the destination accepts it — not
+  that the physics is right, which needs statistics, and not that it will hold at
+  scale.
 </p>
 
 {% if rows %}
@@ -21,7 +24,7 @@
   <thead>
     <tr>
       <th>Trial</th><th class="text-end">#</th><th class="text-end">Events</th>
-      <th>Site</th><th>Status</th><th>PanDA task</th><th>Proves</th>
+      <th>Site</th><th>Status</th><th>PanDA task</th><th>Qualifies</th>
     </tr>
   </thead>
   <tbody>
@@ -30,9 +33,9 @@
       <td><a href="{% url 'pcs:trial_detail' name=r.task.composed_name %}">{{ r.task.composed_name }}</a></td>
       <td class="text-end">{{ r.number }}</td>
       <td class="text-end">{{ r.events|default_if_none:"—" }}</td>
-      <td>{{ r.site|default:"—" }}</td>
+      <td>{{ r.site }}{% if not r.site_chosen %} <span class="text-danger" title="nobody chose this site; it is the configuration's default">(default)</span>{% endif %}</td>
       <td class="{{ r.task.status|state_class }}">{{ r.task.status }}</td>
-      <td>{% if r.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' jeditaskid=r.jedi_task_id %}">{{ r.jedi_task_id }}</a>{% if r.panda_status %} <span class="text-muted">{{ r.panda_status }}</span>{% endif %}{% else %}—{% endif %}</td>
+      <td>{% if r.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' jeditaskid=r.jedi_task_id %}">{{ r.jedi_task_id }}</a>{% if r.panda_status %} <span class="{{ r.panda_status|state_class }}">{{ r.panda_status }}</span>{% endif %}{% if r.panda_error %}<div class="text-danger small">{{ r.panda_error }}</div>{% endif %}{% else %}—{% endif %}</td>
       <td class="small">{{ r.subject }}</td>
     </tr>
   {% endfor %}
