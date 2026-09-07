@@ -44,7 +44,7 @@
         <div class="small text-muted"><a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&selected={{ g.subject|urlencode }}">{{ g.subject }}</a></div>
       </td>
       {% endif %}
-      <td><a href="{% url 'pcs:trial_detail' name=r.task.composed_name %}" title="{{ r.task.composed_name }}">{{ r.suffix }}</a></td>
+      <td class="text-end"><a href="{% url 'pcs:trial_detail' name=r.task.composed_name %}" title="{{ r.task.composed_name }}">{{ r.number }}</a></td>
       <td>{{ r.created|fmt_dt }}</td>
       <td class="text-end">{{ r.events|default_if_none:"" }}</td>
       <td>{{ r.site }}</td>
