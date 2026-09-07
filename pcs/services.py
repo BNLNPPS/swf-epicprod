@@ -5388,9 +5388,13 @@ def prodtask_rerun_residual_request(*, task):
     return task
 
 
-def prodtask_runnable_config(task):
+def prodtask_runnable_config(task, require_input=True):
     """The real production configuration ``task`` would run under, and what
     stops it running as composed. Returns ``(config, blocked)``.
+
+    ``require_input=False`` drops the matched-input clause, for a caller that
+    supplies the input DID itself — trial composition of an adopted row, whose
+    dataset carries no matched entry of its own (``trials.compose_trial``).
 
     A task's own bound configuration counts only when it is a real one: the
     Placeholder anchors rows PCS adopted rather than composed
@@ -5419,7 +5423,7 @@ def prodtask_runnable_config(task):
                       f'alarm dashboard creates it.')
     if not int((config.data or {}).get('events_per_job') or 0):
         return config, f'configuration {config.name} carries no events_per_job.'
-    if not task.inputs:
+    if require_input and not task.inputs:
         paths = ', '.join(task.evgen_paths or []) or 'the EVGEN input'
         return config, (f'{paths} is not matched in JLab Rucio, so no manifest '
                         f'can be resolved. Register it on the EVGEN inputs '
@@ -5495,7 +5499,8 @@ def prodtask_adopt_legacy(*, task, changed_by):
             'jedi_task_id': ready['jedi_task_id'], 'config': config.name}
 
 
-def prodtask_compose_trial(*, task, events=None, site='', created_by=''):
+def prodtask_compose_trial(*, task, events=None, site='', created_by='',
+                           input_did=''):
     """Mint a trial of ``task``'s configuration and return the new task.
 
     A trial is a small, real run of a composed configuration through the path
@@ -5505,23 +5510,25 @@ def prodtask_compose_trial(*, task, events=None, site='', created_by=''):
     and touches nothing belonging to the configuration it proves.
 
     Binds a real production configuration and carries the source's matched
-    input — what an adopted row lacks. Refuses rather than minting a trial
-    anchored to the Placeholder or without an input, because such a trial
-    could never submit, and a trial exists in order to run. One
+    input, or ``input_did`` where the source has none — the case for a row
+    PCS adopted from PanDA rather than composed. Refuses rather than minting
+    a trial anchored to the Placeholder or without an input, because such a
+    trial could never submit, and a trial exists in order to run. One
     origin-stamped ``prodtask_trial`` event; returns {task, log_id, config,
     composed_name}.
     """
     from monitor_app.epicprod_logging import log_epicprod_action
     from . import trials
 
-    config, blocked = prodtask_runnable_config(task)
+    config, blocked = prodtask_runnable_config(
+        task, require_input=not input_did)
     if blocked:
         raise ServiceError(blocked, status=409)
     with transaction.atomic():
         trial = trials.compose_trial(
             task, events=events or trials.DEFAULT_TRIAL_EVENTS,
             site=site or '', created_by=created_by or 'operator',
-            prod_config=config)
+            prod_config=config, input_did=input_did or '')
     log_id = log_epicprod_action(
         'web', 'prodtask_trial', subject_type='prod_task',
         subject_key=trial.name, subject_label=trial.name,

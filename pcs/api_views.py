@@ -530,7 +530,9 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         through the production path (PCS.md § Trials). Binds the edition's
         Standard Production configuration and the task's matched input where
         the source carries neither, and refuses when the result could not
-        submit. Returns the new trial task; nothing is submitted here."""
+        submit. An adopted row carries no matched input of its own; give the
+        EVGEN DID as ``input_did`` and the trial takes it. Returns the new
+        trial task; nothing is submitted here."""
         task = self.get_object()
         try:
             result = services.prodtask_compose_trial(
@@ -538,6 +540,7 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
                 events=request.data.get('events'),
                 site=request.data.get('site') or '',
                 created_by=getattr(request.user, 'username', '') or 'operator',
+                input_did=request.data.get('input_did') or '',
             )
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
