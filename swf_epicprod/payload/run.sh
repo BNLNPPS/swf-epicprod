@@ -273,6 +273,30 @@ else
   stage landing ok
 fi
 
+# The beam-energy geometry: the detector compact file for the requested
+# beams, or for the stand-in beams DETECTOR_BEAMS names when no geometry
+# exists for them (a declared wrong knob of a trial, set on the task's
+# configuration; docs/EPICPROD_INTERNAL_EVGEN.md § Trials). The image
+# carries compact files for the nominal ep energies and a few eA ones,
+# and npsim exits 1 for any other pair after the generation has run (trial
+# 39362, job 2721364: 5x130 has none). Checked here instead, in the first
+# seconds, with its own exit code (83).
+DETECTOR_BEAMS=${DETECTOR_BEAMS:-${EBEAM:+${PBEAM:+${EBEAM}x${PBEAM}}}}
+export DETECTOR_COMPACT=${DETECTOR_PATH}/${DETECTOR_CONFIG}${DETECTOR_BEAMS:+_${DETECTOR_BEAMS}}.xml
+stage geometry start
+if [ -f "${DETECTOR_COMPACT}" ]; then
+  if [ "${DETECTOR_BEAMS}" != "${EBEAM:-}x${PBEAM:-}" ]; then
+    stage geometry ok "$(basename ${DETECTOR_COMPACT}), a stand-in for beams ${EBEAM:-?}x${PBEAM:-?}"
+  else
+    stage geometry ok "$(basename ${DETECTOR_COMPACT})"
+  fi
+else
+  stage geometry fail "${DETECTOR_COMPACT} does not exist"
+  REPORT_NOTE="no detector geometry for beams ${DETECTOR_BEAMS}: $(basename ${DETECTOR_COMPACT}) is not in the image"
+  echo "ERROR: no detector geometry ${DETECTOR_COMPACT}; no work started."
+  exit 83
+fi
+
 # Internal EVGEN (docs/EPICPROD_INTERNAL_EVGEN.md): the job generates the
 # sample it simulates, at the path an externally supplied one would have
 # had, so the input stage and everything after it run unchanged. The
@@ -545,7 +569,7 @@ stage simulation start
     --printLevel WARNING
     --filter.tracker 'edep0'
     --numberOfEvents ${EVENTS_PER_TASK}
-    --compactFile ${DETECTOR_PATH}/${DETECTOR_CONFIG}${EBEAM:+${PBEAM:+_${EBEAM}x${PBEAM}}}.xml
+    --compactFile ${DETECTOR_COMPACT}
     --outputFile ${FULL_TEMP}/${TASKNAME}.edm4hep.root
   )
   # Uncommon flags based on EXTENSION
@@ -596,7 +620,7 @@ stage reconstruction start
     --log-filename ${LOG_TEMP}/${TASKNAME}.eicrecon.prmon.log \
     -- \
   eicrecon \
-    -Pdd4hep:xml_files="${DETECTOR_PATH}/${DETECTOR_CONFIG}${EBEAM:+${PBEAM:+_${EBEAM}x${PBEAM}}}.xml" \
+    -Pdd4hep:xml_files="${DETECTOR_COMPACT}" \
     -Ppodio:output_file="${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" \
     -Pjana:warmup_timeout=0 -Pjana:timeout=0 \
     -Pplugins=janadot \

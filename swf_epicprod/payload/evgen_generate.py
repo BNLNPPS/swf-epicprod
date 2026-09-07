@@ -4,16 +4,19 @@
 
 Generates the sample this job simulates, at the path an externally
 supplied sample would have had, from the generation environment the
-submission wrote (EVGEN_GENERATOR, EVGEN_PROCESS, EVGEN_Q2_RANGE,
-EVGEN_BEAM_SPECIES, EVGEN_RADIATIVE, EBEAM, PBEAM, EVGEN_AB_PRESET):
+submission wrote (EVGEN_GENERATOR, EVGEN_PROCESS, EVGEN_Q2_RANGE or
+EVGEN_STATE/EVGEN_MECHANISM, EVGEN_BEAM_SPECIES, EVGEN_RADIATIVE, EBEAM,
+PBEAM, EVGEN_AB_PRESET):
 
-1. composes the generator's command file from that environment,
-2. compiles the driver (evgen_pythia8_hepmc3.cc) against the campaign
-   image's Pythia and HepMC3, once per job,
-3. runs it: the requested events to HepMC3 ASCII,
-4. runs the afterburner (abconv) on the result: beam effects applied,
+1. composes the generator's steering file from that environment, one
+   composer per (generator, process) pair,
+2. runs the generator to HepMC3 ASCII: pythia8 through the driver
+   (evgen_pythia8_hepmc3.cc) compiled against the campaign image's
+   Pythia and HepMC3, once per job; eSTARlight as the image's own
+   e_starlight,
+3. runs the afterburner (abconv) on the result: beam effects applied,
    written as hepmc3.tree.root,
-5. moves the file to --out and writes a summary beside it.
+4. moves the file to --out and writes a summary beside it.
 
 Everything the stage did is in its log; every failure names its step.
 Exit 0 with the file in place; nonzero otherwise, with the reason as the
@@ -122,7 +125,91 @@ def pythia8_dis_nc_card(events, seed):
     return '\n'.join(lines) + '\n'
 
 
-CARDS = {('pythia8', 'DIS_NC'): pythia8_dis_nc_card}
+ELECTRON_MASS = 0.000510998950   # GeV
+PROTON_MASS = 0.93827208816      # GeV
+# eSTARlight's PROD_PID for the Upsilon states and their masses (GeV),
+# the mass setting the gamma-p energy window's lower edge.
+UPSILON_STATES = {'1s': (553, 9.4603), '2s': (100553, 10.0233),
+                  '3s': (200553, 10.3552)}
+TARGET_ZA = {'p': (1, 1)}
+
+
+def estarlight_upsilon_card(events, seed):
+    """Exclusive Upsilon photoproduction in eSTARlight, e p -> e p Upsilon:
+    production mode 12 (the narrow-resonance photon-Pomeron channel), the
+    state from EVGEN_STATE, the steering stated in
+    docs/EPICPROD_INTERNAL_EVGEN.md § The steering. eSTARlight takes the
+    beams as Lorentz factors and writes the electron along -z and the
+    hadron along +z, the frame the afterburner expects; OUTPUT_FORMAT 2
+    is HepMC3 ASCII (slight.hepmc). The kinematic windows are the
+    generator's example values; the gamma-p energy window runs from just
+    above the state's threshold to just below the collision energy."""
+    ebeam = float(env_value('EBEAM', required=True))
+    pbeam = float(env_value('PBEAM', required=True))
+    state = env_value('EVGEN_STATE', required=True).lower()
+    mechanism = env_value('EVGEN_MECHANISM', 'photo').lower()
+    if state not in UPSILON_STATES:
+        fail(f'EVGEN_STATE {state!r}: the eSTARlight Upsilon states are '
+             f'{sorted(UPSILON_STATES)}')
+    if mechanism != 'photo':
+        fail(f'EVGEN_MECHANISM {mechanism!r}: only photoproduction (photo) '
+             'is composed for eSTARlight')
+    hadron = env_value('EVGEN_BEAM_SPECIES', 'ep').lower()[1:] or 'p'
+    if hadron not in TARGET_ZA:
+        fail(f'no eSTARlight target for hadron species {hadron!r} (known: '
+             f'{sorted(TARGET_ZA)})')
+    z, a = TARGET_ZA[hadron]
+    pid, mass = UPSILON_STATES[state]
+    roots = 2.0 * (ebeam * pbeam) ** 0.5
+    w_gp_min = round(mass + PROTON_MASS + 0.1, 2)
+    w_gp_max = round(0.99 * roots, 1)
+    if w_gp_max <= w_gp_min:
+        fail(f'no gamma-p energy window for Upsilon({state}) at {ebeam}x{pbeam}: '
+             f'threshold {w_gp_min} GeV, collision energy {roots:.1f} GeV')
+    lines = [
+        '# epicprod internal EVGEN: eSTARlight exclusive Upsilon photoproduction',
+        '# composed by evgen_generate.py from the job environment',
+        'baseFileName = slight',
+        f'TARGET_BEAM_Z = {z}',
+        f'TARGET_BEAM_A = {a}',
+        f'ELECTRON_BEAM_GAMMA = {ebeam / ELECTRON_MASS:.4f}',
+        f'TARGET_BEAM_GAMMA = {pbeam / PROTON_MASS:.4f}',
+        'W_MAX = -1',
+        'W_MIN = -1',
+        'W_N_BINS = 50',
+        f'W_GP_MIN = {w_gp_min}',
+        f'W_GP_MAX = {w_gp_max}',
+        'RAP_MAX = 9.',
+        'RAP_N_BINS = 200',
+        'EGA_N_BINS = 400',
+        'CUT_PT = 0',
+        'PT_MIN = 1.0',
+        'PT_MAX = 3.0',
+        'CUT_ETA = 0',
+        'ETA_MIN = -10',
+        'ETA_MAX = 10',
+        'PROD_MODE = 12',
+        f'N_EVENTS = {events}',
+        f'PROD_PID = {pid}',
+        f'RND_SEED = {seed}',
+        'BREAKUP_MODE = 5',
+        'INTERFERENCE = 0',
+        'IF_STRENGTH = 1.',
+        'INT_PT_MAX = 0.24',
+        'INT_PT_N_BINS = 120',
+        'MIN_GAMMA_ENERGY = 6.0',
+        'MAX_GAMMA_ENERGY = 600000.0',
+        'MIN_GAMMA_Q2 = 0.',
+        'MAX_GAMMA_Q2 = 100.',
+        'INT_GAMMA_Q2_BINS = 400',
+        'OUTPUT_FORMAT = 2',
+    ]
+    return '\n'.join(lines) + '\n'
+
+
+CARDS = {('pythia8', 'DIS_NC'): pythia8_dis_nc_card,
+         ('estarlight', 'UPSILON'): estarlight_upsilon_card}
+CARD_SUFFIX = {'pythia8': '.cmnd', 'estarlight': '.in'}
 
 
 def run(cmd, log, **kwargs):
@@ -165,6 +252,32 @@ def compile_driver(workdir, log):
     if run(cmd, log) != 0:
         fail('driver compilation failed:\n' + tail(log))
     return binary
+
+
+def generate_pythia8(card_path, ascii_path, workdir, log):
+    """The requested events to HepMC3 ASCII through the compiled driver."""
+    binary = compile_driver(workdir, log)
+    if run([binary, card_path, ascii_path], log) != 0:
+        fail('generation failed:\n' + tail(log))
+
+
+def generate_estarlight(card_path, ascii_path, workdir, log):
+    """The requested events to HepMC3 ASCII through the image's
+    e_starlight, which reads slight.in from its working directory and
+    writes slight.hepmc beside it (OUTPUT_FORMAT 2) with its text
+    outputs."""
+    rundir = os.path.join(workdir, 'estarlight')
+    os.makedirs(rundir, exist_ok=True)
+    shutil.copyfile(card_path, os.path.join(rundir, 'slight.in'))
+    if run(['e_starlight'], log, cwd=rundir) != 0:
+        fail('eSTARlight failed:\n' + tail(log))
+    produced = os.path.join(rundir, 'slight.hepmc')
+    if not os.path.exists(produced) or os.path.getsize(produced) == 0:
+        fail(f'eSTARlight wrote no events to {produced}:\n' + tail(log))
+    shutil.move(produced, ascii_path)
+
+
+GENERATORS = {'pythia8': generate_pythia8, 'estarlight': generate_estarlight}
 
 
 AB_SOURCE = os.path.join(HERE, 'afterburner-cpp.tgz')
@@ -248,8 +361,9 @@ def main():
     if composer is None:
         fail(f'no steering composer for generator {generator!r} and process '
              f'{process!r} (known: {sorted(CARDS)})')
-    if generator != 'pythia8':
-        fail(f'no driver for generator {generator!r}')
+    generate = GENERATORS.get(generator)
+    if generate is None:
+        fail(f'no runner for generator {generator!r} (known: {sorted(GENERATORS)})')
 
     seed = args.seed
     if seed <= 0:
@@ -265,17 +379,15 @@ def main():
         if stem.endswith(suffix):
             stem = stem[:-len(suffix)]
             break
-    card_path = os.path.join(args.workdir, f'{stem}.cmnd')
+    card_path = os.path.join(args.workdir, stem + CARD_SUFFIX.get(generator, '.card'))
     ascii_path = os.path.join(args.workdir, f'{stem}.hepmc')
     with open(card_path, 'w') as handle:
         handle.write(composer(args.events, seed))
     print(f'steering ({card_path}):')
     print(open(card_path).read())
 
-    binary = compile_driver(args.workdir, log)
     t0 = time.time()
-    if run([binary, card_path, ascii_path], log) != 0:
-        fail('generation failed:\n' + tail(log))
+    generate(card_path, ascii_path, args.workdir, log)
     generation_s = round(time.time() - t0, 1)
     if not os.path.exists(ascii_path) or os.path.getsize(ascii_path) == 0:
         fail(f'the driver wrote no events to {ascii_path}')
@@ -313,6 +425,8 @@ def main():
         'generator': generator, 'generator_version':
             env_value('EVGEN_GENERATOR_VERSION', ''),
         'process': process, 'q2_range': env_value('EVGEN_Q2_RANGE', ''),
+        'state': env_value('EVGEN_STATE', ''),
+        'mechanism': env_value('EVGEN_MECHANISM', ''),
         'beam_species': env_value('EVGEN_BEAM_SPECIES', 'ep'),
         'ebeam': env_value('EBEAM', ''), 'pbeam': env_value('PBEAM', ''),
         'radiative': env_value('EVGEN_RADIATIVE', 'off'),

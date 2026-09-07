@@ -36,6 +36,7 @@ The stages of run.sh, as cloned:
 | Environment | sources `environment*.sh` from the working directory by glob; prints host, site, disk, condor ads | the sandbox env file |
 | Software | sources the detector setup for `DETECTOR_VERSION`; sets `RUCIO_CONFIG` to its own `rucio.cfg`, account `eicprod` | the container |
 | Landing | `landing_check.py`: a TLS handshake with the Rucio server named in `rucio.cfg` and a TCP connect to the input door, each with a short timeout and one retry; a definite negative exits 80 in seconds with the reason in the stage log and the report, doubt proceeds | `RUCIO_CONFIG`, `XRDRURL` |
+| Geometry | resolves the detector compact file for the beams, `<config>_<e>x<p>.xml`, or for the stand-in beams `DETECTOR_BEAMS` names when the image has no geometry for the physics beams; a missing file exits 83 in seconds, before any generation or simulation | the container, `EBEAM`, `PBEAM`, `DETECTOR_BEAMS` |
 | Input | streams `hepmc3.tree.root` input from the JLab door, copies other inputs with `xrdcp` | `XRDRURL`, `XRDRBASE` |
 | Background | merges signal and background with `SignalBackgroundMerger` from `BG_FILES`, rate-scaled skips and a seed mixed from the input name | the container, staged `BG_FILES` |
 | Simulation | `npsim` under `prmon`, seeded per chunk | the container |
@@ -214,6 +215,7 @@ path adds one rather than exiting 1.
 | 79 | The output name is held by a failed earlier attempt of this job and cannot be regenerated under it; the residual rerun as a new try is the route. |
 | 80 | The landing was declined: the Rucio server or the input door could not be reached from this worker, twice, in the payload's first seconds, so no work was started. The reason is in the stage log and the report; PanDA's retry sends the job elsewhere. |
 | 82 | Event generation failed (internal EVGEN, EPICPROD_INTERNAL_EVGEN.md): the steering could not be composed, the driver did not build or run, the afterburner did not build from the shipped source, or the afterburner refused the beams. Nothing downstream ran; the step that refused is the last ERROR line of the evgen stage log. |
+| 83 | No detector geometry for the beams: the image has no compact file for the physics tag's beam energies (or for the stand-in `DETECTOR_BEAMS` names), so no work was started. The image's ep geometries are 5x41, 5x100, 9x100, 9x130, 9x250, 9x275, 10x100, 10x130, 10x250, 10x275 and 18x275 (26.07.1); a trial at another pair declares a stand-in through the configuration's `detector_beams`. |
 
 Codes 65, 78 and 79 also appear in the run script's stage log and in
 the payload report, so a job that dies before its report is sent is

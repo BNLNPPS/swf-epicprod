@@ -551,6 +551,10 @@ def _evgen_env(task):
         'DETECTOR_CONFIG': ds.detector_config,
         'EBEAM': str(physics.get('beam_energy_electron', '')),
         'PBEAM': str(physics.get('beam_energy_hadron', '')),
+        # The beams whose detector geometry the job simulates with, when
+        # they are not the physics tag's own: a trial's declared stand-in
+        # for a beam pair the image has no compact file for.
+        'DETECTOR_BEAMS': str(data.get('detector_beams') or ''),
     }
     _add_background_env(env, task)
     if str(data.get('workflow_mode') or 'external_evgen') == 'internal_evgen':
@@ -570,42 +574,56 @@ def _internal_evgen_env(task):
     data = cfg.get('data') or {}
     physics = ds.physics_tag.parameters or {}
     evgen = ds.evgen_tag.parameters or {}
-    missing = [name for name, value in (
-        ('physics tag process', physics.get('process')),
-        ('physics tag q2_range', physics.get('q2_range')),
+    process = str(physics.get('process') or '')
+    needed = [
+        ('physics tag process', process),
         ('physics tag beam_energy_electron', physics.get('beam_energy_electron')),
         ('physics tag beam_energy_hadron', physics.get('beam_energy_hadron')),
         ('evgen tag generator', evgen.get('generator')),
         ('evgen tag generator_version', evgen.get('generator_version')),
-    ) if not str(value or '').strip()]
+    ]
+    # A Q^2 range is the DIS steering's phase space; an exclusive process
+    # is steered by its state, mechanism and beam configuration instead,
+    # passed through below when the tag carries them.
+    if process.upper().startswith('DIS'):
+        needed.append(('physics tag q2_range', physics.get('q2_range')))
+    missing = [name for name, value in needed if not str(value or '').strip()]
     if missing:
         raise ValueError(
             'internal EVGEN needs ' + ', '.join(missing) + ' on the composed tags')
-    return {
+    env = {
         'EVGEN_INTERNAL': 'true',
         'EVGEN_GENERATOR': str(evgen.get('generator')),
         'EVGEN_GENERATOR_VERSION': str(evgen.get('generator_version')),
         'EVGEN_RADIATIVE': str(evgen.get('radiative') or 'off'),
-        'EVGEN_PROCESS': str(physics.get('process')),
-        'EVGEN_Q2_RANGE': str(physics.get('q2_range')),
+        'EVGEN_PROCESS': process,
         'EVGEN_BEAM_SPECIES': str(physics.get('beam_species') or 'ep'),
         'EVGEN_AB_PRESET': str(data.get('afterburner_preset') or '1'),
         'COPYEVGEN': 'true' if data.get('copy_evgen') else 'false',
     }
+    for key, name in (('q2_range', 'EVGEN_Q2_RANGE'), ('state', 'EVGEN_STATE'),
+                      ('mechanism', 'EVGEN_MECHANISM'),
+                      ('beam_config', 'EVGEN_BEAM_CONFIG')):
+        if str(physics.get(key) or '').strip():
+            env[name] = str(physics[key])
+    return env
 
 
 def internal_evgen_sample(task):
     """The generated sample's path below EVGEN/ and its file stem, in the
-    production team's EVGEN layout, from the composed tags:
+    production team's EVGEN layout, from the composed tags. DIS:
     ``DIS/pythia8.316-1.0/NC/noRad/ep/10x100/q2_10to100`` and
-    ``pythia8.316-1.0_NC_noRad_ep_10x100_q2_10to100``. The name a job
+    ``pythia8.316-1.0_NC_noRad_ep_10x100_q2_10to100``. Any other
+    process follows the exclusive samples' layout, the physics tag's
+    category as the top directory and the tag's state, mechanism and
+    beam_config (those present, in that order) as the qualifier:
+    ``EXCLUSIVE/UPSILON/eSTARlight1.2.0/ep/9x275/1s_photo_hiAcc`` and
+    ``eSTARlight1.2.0_UPSILON_1s_photo_hiAcc_ep_9x275``. The name a job
     generates under is this stem with ``_run<NNN>`` for its row."""
     ds = task.dataset
     physics = ds.physics_tag.parameters or {}
     evgen = ds.evgen_tag.parameters or {}
     process = str(physics.get('process') or '')
-    category, _, current = process.partition('_')
-    current = current or 'NC'
     # The generator token as the layout writes it, the inverse of the
     # catalog grammar (pcs/physics_match.py _split_gen_token): pythia8
     # with version 8.316-1.0 is 'pythia8.316-1.0', the major digit shared
@@ -618,12 +636,23 @@ def internal_evgen_sample(task):
         generator = f'pythia{gen_version}'
     else:
         generator = f'{gen_name}{gen_version}'
-    rad = 'noRad' if str(evgen.get('radiative') or 'off').lower() == 'off' else 'rad'
     species = str(physics.get('beam_species') or 'ep')
     beams = f"{physics.get('beam_energy_electron')}x{physics.get('beam_energy_hadron')}"
-    q2 = str(physics.get('q2_range') or '')
-    path = '/'.join([category, generator, current, rad, species, beams, q2])
-    stem = '_'.join([generator, current, rad, species, beams, q2])
+    if process.upper().startswith('DIS'):
+        category, _, current = process.partition('_')
+        current = current or 'NC'
+        rad = 'noRad' if str(evgen.get('radiative') or 'off').lower() == 'off' else 'rad'
+        q2 = str(physics.get('q2_range') or '')
+        path = '/'.join([category, generator, current, rad, species, beams, q2])
+        stem = '_'.join([generator, current, rad, species, beams, q2])
+        return path, stem
+    area = str(ds.physics_tag.category.name or 'Exclusive').upper().replace(' ', '_')
+    qualifier = '_'.join(str(physics[key]) for key in ('state', 'mechanism', 'beam_config')
+                         if physics.get(key))
+    path = '/'.join([area, process.upper(), generator, species, beams]
+                    + ([qualifier] if qualifier else []))
+    stem = '_'.join([generator, process.upper()] + ([qualifier] if qualifier else [])
+                    + [species, beams])
     return path, stem
 
 
