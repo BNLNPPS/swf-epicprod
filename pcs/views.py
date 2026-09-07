@@ -1785,8 +1785,11 @@ def evgen_inputs(request):
         'complete': (request.GET.get('complete') or '').strip(),
         'validity': (request.GET.get('validity') or '').strip(),
         'priority': (request.GET.get('priority') or '').strip(),
+        'needed': (request.GET.get('needed') or '').strip(),
         'q': (request.GET.get('q') or '').strip(),
     }
+    if selected['needed'] not in ('', 'blocking', 'other'):
+        selected['needed'] = ''
     if selected['validity'] not in ('', 'current', 'obsolete'):
         selected['validity'] = ''
     if selected['priority'] not in ('', '1', '2', '3', 'unset'):
@@ -1801,13 +1804,39 @@ def evgen_inputs(request):
         params = {}
         if view == 'coverage':
             params['view'] = 'coverage'
-        for key in ('cls', 'matched', 'complete', 'validity', 'priority', 'q'):
+        for key in ('cls', 'matched', 'complete', 'validity', 'priority',
+                    'needed', 'q'):
             value = over.get(key, selected[key])
             if value:
                 params[key] = value
         return '?' + urlencode(params) if params else request.path
 
     population = rows if view != 'coverage' else coverage['missing']
+
+    # The registrations that are actually in the way: EVGEN paths declared by a
+    # production task that is waiting to run and cannot, because its input is
+    # not matched. Registering these turns drafts into runnable tasks;
+    # registering the rest tidies the catalogue. One pass over the waiting
+    # tasks, and only for the coverage view that offers the filter.
+    blocking_paths = set()
+    if view == 'coverage':
+        waiting = (ProdTask.objects
+                   .select_related('dataset', 'dataset__simu_tag',
+                                   'dataset__reco_tag')
+                   .filter(status__in=('draft', 'ready'),
+                           panda_task_id__isnull=True))
+        for wt in waiting:
+            wds = wt.dataset
+            if wds is None or not wds.simu_tag_id or not wds.reco_tag_id:
+                continue
+            # Generator-stage catalogue rows are not production tasks and are
+            # not waiting on anything.
+            if (wds.simu_tag.tag_label or '') == 's0' \
+                    or (wds.reco_tag.tag_label or '') == 'r0':
+                continue
+            if wt.inputs:
+                continue
+            blocking_paths.update(wt.evgen_paths or [])
     filters = []
     cls_counts = Counter(x['cls'] for x in population if x.get('cls'))
     filters.append({
@@ -1850,6 +1879,17 @@ def evgen_inputs(request):
                      'url': _qs(priority=v)}
                     for v in ('1', '2', '3', 'unset')
                     if priority_counts.get(v)]})
+    if view == 'coverage':
+        blocking_counts = Counter(
+            'blocking' if x['evgen_path'] in blocking_paths else 'other'
+            for x in population)
+        filters.append({
+            'key': 'needed', 'label': 'Blocking a task',
+            'selected': selected['needed'], 'all_url': _qs(needed=''),
+            'options': [{'value': v, 'count': blocking_counts[v],
+                         'url': _qs(needed=v)}
+                        for v in ('blocking', 'other')
+                        if blocking_counts.get(v)]})
 
     def _keep(x, is_row):
         if needle and needle not in (x['path'] if is_row
@@ -1862,6 +1902,12 @@ def evgen_inputs(request):
             return False
         if selected['cls'] and x['cls'] != selected['cls']:
             return False
+        if selected['needed'] and not is_row:
+            blocks = x['evgen_path'] in blocking_paths
+            if selected['needed'] == 'blocking' and not blocks:
+                return False
+            if selected['needed'] == 'other' and blocks:
+                return False
         if is_row:
             if selected['matched'] == 'matched' and not x['dataset']:
                 return False
@@ -5530,13 +5576,25 @@ def prod_task_delete(request, name):
     if task.status != 'draft':
         messages.error(request, "Only draft tasks can be deleted.")
         return redirect('pcs:prod_task_detail', name=task.composed_name)
+    deleted_name = task.composed_name
+    # A trial mints its own dataset and is the only thing that will ever use
+    # it, so deleting the trial and leaving the dataset behind puts an
+    # unreachable row in the catalog. Ordinary tasks share their dataset with
+    # the catalog and never take it with them.
+    dataset = task.dataset
+    trial_dataset = (dataset is not None
+                     and 'trial' in (dataset.metadata or {})
+                     and dataset.prod_tasks.exclude(pk=task.pk).count() == 0)
     task.delete()
-    messages.success(request, f"Task '{task.composed_name}' deleted.")
+    if trial_dataset:
+        dataset.delete()
+    messages.success(request, f"Task '{deleted_name}' deleted.")
     log_epicprod_action(
         'web', 'task_delete', subject_type='campaign_task',
-        subject_key=task.composed_name,
+        subject_key=deleted_name,
         username=getattr(request.user, 'username', ''),
-        sublevel='normal', live_default=True)
+        sublevel='normal', live_default=True,
+        trial_dataset_removed=bool(trial_dataset))
     return redirect('pcs:prod_tasks_list')
 
 
