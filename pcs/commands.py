@@ -641,7 +641,7 @@ def internal_evgen_sample(task):
     if process.upper().startswith('DIS'):
         category, _, current = process.partition('_')
         current = current or 'NC'
-        rad = 'noRad' if str(evgen.get('radiative') or 'off').lower() == 'off' else 'rad'
+        rad = 'noRad' if str(evgen.get('radiative') or 'off').lower() == 'off' else 'Rad'
         q2 = str(physics.get('q2_range') or '')
         path = '/'.join([category, generator, current, rad, species, beams, q2])
         stem = '_'.join([generator, current, rad, species, beams, q2])

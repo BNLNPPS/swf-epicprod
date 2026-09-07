@@ -207,9 +207,76 @@ def estarlight_upsilon_card(events, seed):
     return '\n'.join(lines) + '\n'
 
 
+def djangoh_dis_cc_card(events, seed):
+    """Charged-current DIS in DJANGOH 4.6.21 (HERACLES with LEPTO), e- p ->
+    nu X through W- exchange, the steering stated in
+    docs/EPICPROD_INTERNAL_EVGEN.md § The steering: the electron fully
+    left-handed, as the charged current requires (the sampled cross
+    section is then twice the unpolarized one), the proton unpolarized,
+    the electroweak radiative corrections on or off from EVGEN_RADIATIVE,
+    the Q^2 window from EVGEN_Q2_RANGE with the other cuts as the
+    inclusive group's 9x275 CC cards have them, LEPTO's internal parton
+    densities (the image installs no LHAPDF sets), and the seed through
+    DJANGOH_SEED in the environment (RNDM-SEEDS -1 -1; the payload's
+    patch). The card names its outputs djangoh_*.dat; the runner converts
+    djangoh_evt.dat."""
+    ebeam = env_value('EBEAM', required=True)
+    pbeam = env_value('PBEAM', required=True)
+    lo, hi = q2_bounds(env_value('EVGEN_Q2_RANGE', required=True))
+    radiative = env_value('EVGEN_RADIATIVE', 'on').lower()
+    if radiative not in ('on', 'off'):
+        fail(f'EVGEN_RADIATIVE {radiative!r}: expected on or off')
+    species = env_value('EVGEN_BEAM_SPECIES', 'ep').lower()
+    if species != 'ep':
+        fail(f'EVGEN_BEAM_SPECIES {species!r}: only ep is composed for DJANGOH')
+    if hi is None:
+        hi = f'{4.0 * float(ebeam) * float(pbeam):.0f}'   # s, the kinematic limit
+    if radiative == 'on':
+        gsw, int_cc, sam_cc = '2 1 3 1 1 1 2 1 1 1 1', '1 20 0 20', '1 1 0 1'
+    else:
+        gsw, int_cc, sam_cc = '2 0 3 1 0 0 2 1 1 1 1', '1 0 0 0', '1 0 0 0'
+    pairs = [
+        ('OUTFILENAM', 'djangoh'),
+        ('TITLE', f'epicprod internal EVGEN: DJANGOH charged-current DIS, e- p, '
+                  f'{ebeam}x{pbeam}, Q2 {lo} to {hi}, radiative corrections {radiative}'),
+        ('EL-BEAM', f'{ebeam}D0    -1.0D0    -1'),
+        ('PR-BEAM', f'{pbeam}D0   0.0D0'),
+        ('GSW-PARAM', gsw),
+        ('KINEM-CUTS', f'3   0D0  1.00D0  0.01D0  0.95D0  {lo}D0  {hi}D0  1.4D0'),
+        ('EGAM-MIN', '0D0'),
+        ('INT-OPT-NC', '0 0 0 0 0   0 0 0 0'),
+        ('INT-OPT-CC', int_cc),
+        ('INT-ONLY', '1'),
+        ('INT-POINTS', '30000'),
+        ('SAM-OPT-NC', '0 0 0 0 0   0 0 0 0'),
+        ('SAM-OPT-CC', sam_cc),
+        ('NUCLEUS', f'{pbeam}D0   1   1'),
+        ('NUCL-MOD', '0'),
+        ('STRUCTFUNC', '0 1 9'),
+        ('POLPDF', '0'),
+        ('FLONG', '0  0.01  0.03'),
+        ('ALFAS', '1   0   0.20   0.235'),
+        ('NFLAVORS', '0   5'),
+        ('RNDM-SEEDS', '-1   -1'),
+        ('START', str(events)),
+        ('SOPHIA', '1.5'),
+        ('OUT-LEP', '1'),
+        ('FRAG', '1'),
+        ('CASCADES', '1'),
+        ('MAX-VIRT', '5'),
+    ]
+    lines = []
+    for key, value in pairs:
+        lines.append(key)
+        lines.append(value if key in ('OUTFILENAM', 'TITLE') else f'            {value}')
+    lines.append('CONTINUE')
+    return '\n'.join(lines) + '\n'
+
+
 CARDS = {('pythia8', 'DIS_NC'): pythia8_dis_nc_card,
-         ('estarlight', 'UPSILON'): estarlight_upsilon_card}
-CARD_SUFFIX = {'pythia8': '.cmnd', 'estarlight': '.in'}
+         ('estarlight', 'UPSILON'): estarlight_upsilon_card,
+         ('djangoh', 'DIS_CC'): djangoh_dis_cc_card}
+CARD_SUFFIX = {'pythia8': '.cmnd', 'estarlight': '.in', 'djangoh': '.in'}
 
 
 def run(cmd, log, **kwargs):
@@ -254,14 +321,59 @@ def compile_driver(workdir, log):
     return binary
 
 
-def generate_pythia8(card_path, ascii_path, workdir, log):
+def generate_pythia8(card_path, ascii_path, workdir, log, seed, events):
     """The requested events to HepMC3 ASCII through the compiled driver."""
     binary = compile_driver(workdir, log)
     if run([binary, card_path, ascii_path], log) != 0:
         fail('generation failed:\n' + tail(log))
 
 
-def generate_estarlight(card_path, ascii_path, workdir, log):
+DJANGOH_SOURCE = os.path.join(HERE, 'djangoh-4.6.21.tgz')
+DJANGOH_PATCH = os.path.join(HERE, 'djangoh-epicprod.patch')
+DJANGOH_VERSION = os.path.join(HERE, 'djangoh.VERSION')
+DJANGOH_CONVERTER = os.path.join(HERE, 'evgen_djangoh_hepmc3.py')
+
+
+def generate_djangoh(card_path, ascii_path, workdir, log, seed, events):
+    """The requested events to HepMC3 ASCII through DJANGOH built in the
+    job: the shipped upstream source (djangoh.VERSION) unpacked and
+    patched (djangoh-epicprod.patch: the event-file writer, the seed
+    from DJANGOH_SEED), built with the image's gfortran and LHAPDF at -O1
+    (about 100 s on one core), run on the card from its own directory
+    with the seed in the environment, and its event file converted by
+    evgen_djangoh_hepmc3.py."""
+    for needed in (DJANGOH_SOURCE, DJANGOH_PATCH, DJANGOH_CONVERTER):
+        if not os.path.exists(needed):
+            fail(f'{needed} is not in the payload')
+    rundir = os.path.join(workdir, 'djangoh')
+    os.makedirs(rundir, exist_ok=True)
+    if run(['tar', 'xzf', DJANGOH_SOURCE, '-C', rundir], log) != 0:
+        fail('could not unpack the DJANGOH source:\n' + tail(log))
+    src = os.path.join(rundir, 'djangoh')
+    if run(['patch', '-p1', '-i', DJANGOH_PATCH], log, cwd=src) != 0:
+        fail('the DJANGOH patch did not apply:\n' + tail(log))
+    lhapdf = flags('lhapdf-config', '--prefix')[0]
+    jobs = str(max(1, min(4, os.cpu_count() or 1)))
+    if run(['make', '-f', 'Makefile-sample', '-j', jobs, f'LHAPDF={lhapdf}',
+            'CFFLAGS=-O1 -fno-automatic -std=legacy -fallow-argument-mismatch -w'],
+           log, cwd=src) != 0:
+        fail('the DJANGOH build failed:\n' + tail(log))
+    binary = os.path.join(src, 'djangoh')
+    if not os.access(binary, os.X_OK):
+        fail('the DJANGOH build produced no djangoh binary')
+    env = dict(os.environ, DJANGOH_SEED=str(seed))
+    with open(card_path) as card:
+        if run([binary], log, cwd=src, stdin=card, env=env) != 0:
+            fail('DJANGOH failed:\n' + tail(log))
+    produced = os.path.join(src, 'djangoh_evt.dat')
+    if not os.path.exists(produced) or os.path.getsize(produced) == 0:
+        fail(f'DJANGOH wrote no events to {produced}:\n' + tail(log))
+    if run([sys.executable, DJANGOH_CONVERTER, produced, ascii_path,
+            '--expect', str(events)], log) != 0:
+        fail('the DJANGOH event file did not convert:\n' + tail(log))
+
+
+def generate_estarlight(card_path, ascii_path, workdir, log, seed, events):
     """The requested events to HepMC3 ASCII through the image's
     e_starlight, which reads slight.in from its working directory and
     writes slight.hepmc beside it (OUTPUT_FORMAT 2) with its text
@@ -277,7 +389,8 @@ def generate_estarlight(card_path, ascii_path, workdir, log):
     shutil.move(produced, ascii_path)
 
 
-GENERATORS = {'pythia8': generate_pythia8, 'estarlight': generate_estarlight}
+GENERATORS = {'pythia8': generate_pythia8, 'estarlight': generate_estarlight,
+              'djangoh': generate_djangoh}
 
 
 AB_SOURCE = os.path.join(HERE, 'afterburner-cpp.tgz')
@@ -387,7 +500,7 @@ def main():
     print(open(card_path).read())
 
     t0 = time.time()
-    generate(card_path, ascii_path, args.workdir, log)
+    generate(card_path, ascii_path, args.workdir, log, seed, args.events)
     generation_s = round(time.time() - t0, 1)
     if not os.path.exists(ascii_path) or os.path.getsize(ascii_path) == 0:
         fail(f'the driver wrote no events to {ascii_path}')

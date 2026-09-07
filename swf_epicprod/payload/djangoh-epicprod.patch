@@ -1,0 +1,99 @@
+--- a/djangoh_h.f	2026-09-07 15:38:15.478059485 -0400
++++ b/djangoh_h.f	2026-09-07 15:38:15.599064384 -0400
+@@ -241,6 +241,8 @@
+       DIMENSION INT2C(5),ISAM2C(5),INT3C(15),ISAM3C(15)
+ C---for date and time, used as seeds for random number generator 
+       integer today(3), now(3)
++      character*32 seedenv
++      integer iseedst
+ C
+ C-------------------------------
+ C---INITIALIZE DEFAULTS NOT YET INITIALIZED IN BLOCK DATA
+@@ -1094,10 +1096,19 @@
+         READ(LUNRND,*) CIO,CDIO,CMIO,IIO,JIO
+         CALL HSRNIN(UIO,CIO,CDIO,CMIO,IIO,JIO)
+       elseif (isdinp.lt.0) then
++C---epicprod: the seed from the environment when DJANGOH_SEED is set,
++C   so a retried job regenerates the same events; the clock otherwise.
++        call get_environment_variable('DJANGOH_SEED', seedenv,
++     &                                status=iseedst)
++        if (iseedst.eq.0 .and. len_trim(seedenv).gt.0) then
++          read(seedenv,*) initseed
++          write(lunout,'(5x,A)') ' Use ranlux, seed from DJANGOH_SEED'
++        else
+         write(lunout,'(5x,A)') ' Use ranlux with date and time as seed'
+         call idate(today)   ! today(1)=day, (2)=month, (3)=year
+         call itime(now)     ! now(1)=hour, (2)=minute, (3)=second
+         initseed = today(1)+10*today(2)+today(3)+now(1)+5*now(3)
++        endif
+         write(lunout,'(5X,A,I12)') ' SEED = ', initseed
+         call rndmq (idum1,idum2,initseed,' ')
+       elseif (isdinp.eq.0) then
+--- a/djangoh_u.f	2026-09-07 15:38:15.492060051 -0400
++++ b/djangoh_u.f	2026-09-07 15:38:15.605064626 -0400
+@@ -48,6 +48,7 @@
+       DATA LFIRST /.TRUE./
+ ctest      DATA NEVMOD/1000/
+       DATA NEVMOD/100/
++      DOUBLE PRECISION NULEP,NUHAD,W2LEP,DEPOL
+       SAVE IFLCNT
+ C
+       IF(LFIRST) THEN
+@@ -86,6 +87,15 @@
+       DO 13 I=-6,6
+         IFLCNT(I)=0
+  13   CONTINUE
++C---epicprod: the event file header, the layout eic-smear reads
++      WRITE(LUNEVT,'(A)') ' DJANGOH EVENT FILE '
++      WRITE(LUNEVT,'(A)') '========================================'
++      WRITE(LUNEVT,2401)
++      WRITE(LUNEVT,'(A)') '========================================'
++      WRITE(LUNEVT,'(A,A)')
++     & ' I  K(I,1)  K(I,2)  K(I,3)  K(I,4)  K(I,5) ',
++     & 'P(I,1)  P(I,2)  P(I,3)  P(I,4)  P(I,5)  V(I,1)  V(I,2)  V(I,3)'
++      WRITE(LUNEVT,'(A)') '========================================'
+       RETURN
+ 
+  200  CONTINUE
+@@ -104,6 +114,28 @@
+       ENDIF
+       W2HAD=YHAD*(1D0-XHAD)*GSP+MPRO2
+       WHAD=SQRT(W2HAD)
++
++C---epicprod: the event record to the event file, every LUJETS entry
++C   before LUEDIT, the hadron beam along +z (pz sign flipped), the
++C   structure-function columns zero (HSFG is not in this version).
++      IF (LST(21).EQ.0) THEN
++        W2LEP=Y*(1D0-X)*GSP+MPRO2
++        NULEP=(W2LEP+Q2-MPRO2)/(2D0*MPRO)
++        NUHAD=(W2HAD+Q2HAD-MPRO2)/(2D0*MPRO)
++        DEPOL=(S*S-U*U)/(S*S+U*U)
++        WRITE(LUNEVT,2402) 0,NEVHEP,ICHNN,LST(23),LST(24),LST(22),
++     &    LST(25),LST(26),Y,Q2,X,W2LEP,NULEP,YHAD,Q2HAD,XHAD,W2HAD,
++     &    NUHAD,SIGTOT,SIGTRR,DEPOL,0D0,0D0,0D0,0D0,0D0,0D0,0D0,0D0,
++     &    0D0,N
++        WRITE(LUNEVT,'(A)') '========================================'
++        DO 2410 I=1,N
++          IF (K(I,3).LE.N) THEN
++            WRITE(LUNEVT,2403) I,K(I,1),K(I,2),K(I,3),K(I,4),K(I,5),
++     &        P(I,1),P(I,2),-P(I,3),P(I,4),P(I,5),V(I,1),V(I,2),V(I,3)
++          ENDIF
++ 2410   CONTINUE
++        WRITE(LUNEVT,'(A)') '============= Event finished ============='
++      ENDIF
+  
+ C...Count flavors
+       IF (NSPACC.EQ.0) THEN
+@@ -243,6 +275,12 @@
+  2204 FORMAT(' HS q-scat: ',5F12.4)
+  2205 FORMAT(' HS ga-rad: ',5F12.4)
+  2206 FORMAT(' LST(21) = ',I3,'  MSTU(24) = ',I3,'  NSPACC = ',I3,/)
++ 2401 FORMAT('I, ievent, IChannel, process, subprocess, nucleon, ',
++     &  'struckparton, partontrck, Y, Q2, X, W2, NU, trueY, trueQ2, ',
++     &  'trueX, trueW2,trueNu, SIGtot, errSIGtot, D, F1NC, F3NC, ',
++     &  'G1NC,G3NC, A1NC, F1CC, F3CC, G1CC, G5CC, nrTracks')
++ 2402 FORMAT((I4,1X),(I10,1X),6(I6,1X),22(E18.10,1X),I12)
++ 2403 FORMAT(6(I10,1X),8(F15.6,1X))
+ 
+       RETURN
+  
