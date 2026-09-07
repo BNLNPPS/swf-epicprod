@@ -21,6 +21,39 @@ authentication endpoint stopped answering for several minutes and every
 nightly catalog step that needed it failed; an outage of that shape
 during a wave of finishing jobs is what the stash covers.
 
+## What is built
+
+As of 2026-09-07 the measure is implemented and running, and the asks
+below were not needed to get there — the space, the credential and the
+client were already in hand.
+
+- **The payload stashes** (epicprod-payload 0.6.0): when a JLab
+  registration fails outright, the output is written to the stash door
+  with `xrdcp` and recorded in the payload report — the flat name it took,
+  the path, the DID it owes, and why. The job exits on its physics. A
+  stash that refuses the file too is still exit 78.
+- **The drain** (`swf-monitor/scripts/stash-drain.py`, ops-agent handler
+  `stash_drain`, hourly at :47): reads what jobs stashed from their
+  reports, confirms each file is at the door, registers the replica in the
+  BNL catalog with the size and checksum the storage reports, and records
+  what it owes. It does not attempt the move while JLab is silent.
+- **Proved end to end on 2026-09-07**, against production, with no ask to
+  anyone: authenticated to the BNL instance as `panda`; `BNL_PROD_DISK_1`
+  writable over the wide area; a file written and verified on the door;
+  the replica registered and reading AVAILABLE; `staging`, `owes` and
+  `stash_reason` read back under the JSON plugin.
+- **Not built yet**: the move home and the JLab registration by logical
+  name, the pending view, the storage record's stash block, and the
+  alarms. The stash therefore accumulates and is catalogued; it does not
+  yet drain itself.
+
+Two implementation facts worth keeping, both measured rather than assumed.
+Rucio's upload client needs gfal2, which the ops-agent host does not have,
+so writes go through `xrdcp` to the deterministic path and the catalog
+work is done with `add_replicas`. And xrootd refuses a credential whose
+file permissions are wider than 0600, so the drain keeps a private-mode
+copy of the proxy and refreshes it from the source, as the EVGEN doer does.
+
 ## What exists
 
 - The BNL Rucio instance, scope `group.EIC`, the PanDA production
@@ -79,18 +112,19 @@ per-job timeouts.
   credential and client the job already carries. `BNL_PROD_DISK_1` is
   the candidate that needs no new RSE or credential, since jobs already
   write their logs to it.
-- Naming: the file DID keeps the name the JLab catalog will receive, the
-  logical file name under `/RECO/...` or `/FULL/...`, so the move is
-  name-preserving and a stash entry names its destination without a
-  lookup. Files attach to a stash dataset per task,
-  `group.EIC.<taskname>_stash.<jeditaskid>.<jeditaskid>`, parallel to
-  the `_log` datasets the pilot writes.
-- Metadata on each stash file DID: `staging: true`, the destination
-  scope and dataset, campaign, task and job identifiers, the stash time,
-  the JLab failure text, the `events` count the registration contract
-  requires, and the dataset-level metadata the JLab registration would
-  have carried, so the registrar registers at JLab from the catalog
-  entry alone.
+- Naming: the stash DID is **flat**, `swf.stash.<pandaid>.<file>`, and the
+  destination travels in its metadata. Name-preserving was the intent and
+  the BNL instance refuses it: a path-like name is parsed with the leading
+  path element as a scope, and `group.EIC/TEST/stash-probe` came back as a
+  scope of more than 25 characters (measured 2026-09-07). The registrar
+  reads the destination from metadata in any case, so nothing is lost.
+- Metadata on each stash file DID: `staging: true`, `owes` (the DID the
+  catalog of record is owed), `stash_reason`, and the `events` count the
+  registration contract requires, so the registrar registers at JLab from
+  the catalog entry alone when a report is lost. These are custom keys and
+  live under the JSON plugin on the BNL instance: `get_metadata` returns
+  none of them unless it is asked with `plugin='JSON'`, which reads exactly
+  like metadata that failed to stick.
 - No lifetime on stash entries. Deletion is the registrar's act after
   the JLab registration is verified; an entry older than the threshold
   raises an alarm rather than expiring.
