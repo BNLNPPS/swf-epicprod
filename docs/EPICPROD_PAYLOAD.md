@@ -207,7 +207,7 @@ path adds one rather than exiting 1.
 
 | Code | Meaning |
 |---|---|
-| 0 | The work completed, or an earlier attempt of this job had already delivered its output and this one had nothing to do. |
+| 0 | The work completed, or an earlier attempt of this job had already delivered its output and this one had nothing to do, or the output was produced and uploaded and its registration is pending because the catalog could not be reached. |
 | 65 | An output file failed ROOT validation and was not uploaded. |
 | 66 | The podio metadata was not produced as JSON, so nothing could be registered with it. |
 | 78 | Registration in the catalog of record failed after the output was produced. |
@@ -217,6 +217,17 @@ path adds one rather than exiting 1.
 Codes 65, 78 and 79 also appear in the run script's stage log and in
 the payload report, so a job that dies before its report is sent is
 still classified by its code alone.
+
+78 now means what it says and no more: the catalog answered, and the
+output is not registered. When the catalog cannot be reached at all —
+neither to register the output nor to say whether it is already there —
+`register_to_rucio.py` exits 81 and `run.sh` records the registration
+stage as **pending** with the DID, and the job exits on its physics.
+81 is a code between those two files and never becomes a job's exit
+code; the pending outcome travels in the payload report, where the
+registrar reads it (docs/RUCIO_RESILIENCE.md, Measure 2). A job whose
+registration is pending has its bytes at the RSE and its record
+unconfirmed, which is a bookkeeping task rather than lost work.
 
 ## Evolution
 

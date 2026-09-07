@@ -652,8 +652,25 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
     stage registration start FULL
-    monitor registration_full python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for FULL file."; stage registration fail FULL; exit 78; }
-    stage registration ok "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
+    # A registration failure must not destroy finished physics. The script
+    # exits 81 when the catalog could neither register the output nor say
+    # whether it is already there: the bytes are written, the record is
+    # unconfirmed, and the registrar settles it later, so the stage is
+    # recorded pending and the job carries on (docs/RUCIO_RESILIENCE.md,
+    # Measure 2). A catalog that answers, and answers that the output is not
+    # there, is a real failure and still exits 78.
+    monitor registration_full python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}
+    REG_RC=$?
+    if [ ${REG_RC} -eq 0 ]; then
+      stage registration ok "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
+    elif [ ${REG_RC} -eq 81 ]; then
+      echo "WARNING: catalog unreachable for FULL; registration pending."
+      stage registration pending "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
+    else
+      echo "ERROR: Rucio registration failed for FULL file."
+      stage registration fail FULL
+      exit 78
+    fi
   else
     echo "=== DEBUG: Attempting to copy FULL files to xrootd ==="
     setup_xrd_auth
@@ -694,8 +711,20 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
     stage registration start RECO
-    monitor registration_reco python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} || { echo "ERROR: Rucio registration failed for RECO file."; stage registration fail RECO; exit 78; }
-    stage registration ok "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
+    # Pending rather than failed when the catalog cannot answer; see the FULL
+    # step above and docs/RUCIO_RESILIENCE.md, Measure 2.
+    monitor registration_reco python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}
+    REG_RC=$?
+    if [ ${REG_RC} -eq 0 ]; then
+      stage registration ok "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
+    elif [ ${REG_RC} -eq 81 ]; then
+      echo "WARNING: catalog unreachable for RECO; registration pending."
+      stage registration pending "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
+    else
+      echo "ERROR: Rucio registration failed for RECO file."
+      stage registration fail RECO
+      exit 78
+    fi
   else
     echo "=== DEBUG: Attempting to copy RECO files to xrootd ==="
     setup_xrd_auth

@@ -11,6 +11,14 @@ from rucio.client import Client
 from rucio.common.exception import InputValidationError, RSEWriteBlocked, NoFilesUploaded, NotAllFilesUploaded
 from jsonschema import validate as json_validate, ValidationError
 
+# The catalog could not be reached to register the output, and could not be
+# reached to say whether the output is there. The run script reads this as a
+# pending registration: the stage is recorded pending, the job keeps its
+# finished physics and exits success, and the registrar completes the
+# registration later (docs/RUCIO_RESILIENCE.md, Measure 2). It is a code
+# between this script and run.sh and never becomes a job's exit code.
+PENDING_EXIT = 81
+
 
 # Define the metadata schema
 METADATA_SCHEMA = {
@@ -427,9 +435,21 @@ if __name__ == "__main__":
         # bytes differ only because the simulation is not reproducible. Exit
         # success rather than fail the job on the conflict (epicprod payload,
         # swf-epicprod docs/EPICPROD_PAYLOAD.md).
-        delivered = [
-            rep['name'] for rep in client.list_replicas(dids, all_states=True)
-            if 'AVAILABLE' in (rep.get('states') or {}).values()]
+        # Asking the catalog is itself a call on the thing that just failed.
+        # When it cannot answer, the job knows neither that its output is
+        # delivered nor that it is not, and failing on that ignorance is what
+        # costs the finished physics: exit pending instead and let the
+        # registrar settle it later (docs/RUCIO_RESILIENCE.md, Measure 2).
+        try:
+            delivered = [
+                rep['name'] for rep in client.list_replicas(dids, all_states=True)
+                if 'AVAILABLE' in (rep.get('states') or {}).values()]
+        except Exception as probe:                            # noqa: BLE001
+            logger.error(
+                "Catalog unreachable while asking whether the output is "
+                "delivered: %s. Exiting pending; the output stands and the "
+                "registrar completes it.", probe)
+            sys.exit(PENDING_EXIT)
         if delivered and len(delivered) == len(dids):
             logger.warning(
                 "Output already registered with an available replica, "
@@ -437,12 +457,19 @@ if __name__ == "__main__":
             sys.exit(0)
 
         # Get replicas for all DIDs in the rse
-        replicas = client.list_replicas(
-            dids,
-            all_states=True,
-            rse_expression=rse
-        )
-        
+        try:
+            replicas = client.list_replicas(
+                dids,
+                all_states=True,
+                rse_expression=rse
+            )
+        except Exception as probe:                            # noqa: BLE001
+            logger.error(
+                "Catalog unreachable while listing replicas at %s: %s. "
+                "Exiting pending rather than failing finished work.",
+                rse, probe)
+            sys.exit(PENDING_EXIT)
+
         # Collect files that need to be cleaned up
         files_to_update = []
         files_to_tombstone = []
