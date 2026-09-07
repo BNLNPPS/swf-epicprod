@@ -34,25 +34,51 @@ client were already in hand.
   stash that refuses the file too is still exit 78.
 - **The drain** (`swf-monitor/scripts/stash-drain.py`, ops-agent handler
   `stash_drain`, hourly at :47): reads what jobs stashed from their
-  reports, confirms each file is at the door, registers the replica in the
-  BNL catalog with the size and checksum the storage reports, and records
-  what it owes. It does not attempt the move while JLab is silent.
+  reports and from the BNL catalog's own listing of stash entries, the
+  authority when a report is lost; confirms each file is at the door;
+  registers the replica in the BNL catalog with the size and checksum the
+  storage reports, what it owes and its event count. It does not attempt
+  the move while JLab is silent.
+- **The move home** (the same doer, since 2026-09-07): each catalogued
+  file is copied to the destination RSE, the one the payload uploads to,
+  at the path the catalog's deterministic algorithm gives its logical
+  name, through the RSE's write door; verified there by size and checksum;
+  registered in the catalog of record by logical name with its event
+  count, through the registrar's own registration; verified AVAILABLE; and
+  only then removed from the stash, the file at the door and the catalog
+  row. A file that will not move keeps its stash entry and is tried again
+  hourly, eight times at most, with its reason kept in the drain's state
+  file beside the storage store. An output under `/TEST/` brought home
+  carries a seven-day lifetime, as the payload canaries' do.
+- **The pending view** (`/pcs/stash/`, in the Data menu and on the nav
+  dashboard): what is waiting and what it owes, how far each entry got,
+  attempts and last error, what the last pass brought home, and the JLab
+  probe state, from the drain's own account.
 - **Proved end to end on 2026-09-07**, against production, with no ask to
   anyone: authenticated to the BNL instance as `panda`; `BNL_PROD_DISK_1`
   writable over the wide area; a file written and verified on the door;
   the replica registered and reading AVAILABLE; `staging`, `owes` and
-  `stash_reason` read back under the JSON plugin.
-- **Not built yet**: the move home and the JLab registration by logical
-  name, the pending view, the storage record's stash block, and the
-  alarms. The stash therefore accumulates and is catalogued; it does not
-  yet drain itself.
+  `stash_reason` read back under the JSON plugin; the same file copied to
+  the BNL-XRD write door with the production account's credential and
+  read back with its size and checksum.
+- **Not built yet**: the storage record's stash block and the alarms.
 
-Two implementation facts worth keeping, both measured rather than assumed.
-Rucio's upload client needs gfal2, which the ops-agent host does not have,
-so writes go through `xrdcp` to the deterministic path and the catalog
-work is done with `add_replicas`. And xrootd refuses a credential whose
-file permissions are wider than 0600, so the drain keeps a private-mode
-copy of the proxy and refreshes it from the source, as the EVGEN doer does.
+Implementation facts, each measured rather than assumed. Rucio's upload
+client needs gfal2, which the ops-agent host does not have, so writes go
+through `xrdcp` to the deterministic path and the catalog work is done
+with `add_replicas`. xrootd refuses a credential whose file permissions
+are wider than 0600, so the drain keeps a private-mode copy of the proxy
+and refreshes it from the source, as the EVGEN doer does. Third-party
+copy over xrootd is not supported at the BNL-XRD write door (the door
+answers "tpc not supported (destination)" and leaves an empty file); the
+RSE declares it only over HTTPS, which needs gfal2 or davix, so the copy
+is streamed through the ops-agent host instead, with the production
+account's credential, which the stash door and both destination doors
+accept. That is bandwidth-bound and fine for a backlog of days; a week of
+production would want the HTTPS third-party copy tried. And an RSE's read
+door can be a port with no write at all (BNL-XRD reads on 1095 and writes
+on 1094), so the drain chooses the write door by the protocol's own write
+priority and never infers it from the read one.
 
 ## What exists
 
@@ -145,19 +171,18 @@ A production operations agent doer, `stash_drain`, enqueued hourly by
 cron and on demand from the pending view, on the prod-ops pattern
 (EPICPROD_OPS_AGENT.md). One pass:
 
-1. Lists the staging entries in the BNL catalog by metadata and
-   reconciles them with the reports and with its own store, a SQLite
-   database beside the storage store,
-   `/data/wenauseic/swf-delivery/stash.sqlite`: one row per file with
-   its state (stashed, moving, registered, deleted, failed), attempts,
-   and timestamps.
+1. Lists the stash entries in the BNL catalog by name and reconciles
+   them with the reports and with its own state, a JSON file beside the
+   storage store, `/data/wenauseic/swf-delivery/stash-drain-state.json`:
+   one entry per file with its outcome (home, registered, failed),
+   attempts, last attempt and reason.
 2. Probes JLab: authentication and a door check. If either fails, the
    probe is recorded and the pass ends without touching entries.
-3. Moves each file to its JLab destination by a third-party copy
-   between the BNL door and the JLab door, into the path the JLab
-   catalog's deterministic algorithm gives the logical file name, at
-   bounded concurrency, a few files at a time, so the JLab door sees a
-   trickle rather than a wave.
+3. Moves each file to its destination RSE, into the path the catalog's
+   deterministic algorithm gives the logical file name, through the
+   RSE's write door, one file at a time through the ops-agent host
+   (third-party copy is not supported at the door; see What is built),
+   so the destination sees a trickle rather than a wave.
 4. Registers the moved file in JLab Rucio: the replica by logical file
    name at the destination RSE, the attachment to its dataset, the file
    metadata including `events`; then verifies the replica reads

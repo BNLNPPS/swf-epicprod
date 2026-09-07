@@ -18,6 +18,7 @@
     <p class="mb-3">
         <strong>{{ entries|length }}</strong> output{{ entries|length|pluralize }}
         waiting at {{ state.rse }}{% if entries %}, owed to the catalog of record{% endif %}.
+        {% if state.moved %}<strong>{{ state.moved }}</strong> brought home to {{ state.destination_rse }} on the last pass.{% endif %}
         JLab is
         <strong class="{% if state.jlab_reachable %}finished_fill{% else %}failed_fill{% endif %}">{% if state.jlab_reachable %}answering{% else %}not answering{% endif %}</strong>.
         Last pass <span data-relative-time="{{ built_at }}">{{ built_at }}</span>.
@@ -27,14 +28,18 @@
     {% if entries %}
     <table class="table table-striped table-bordered table-sm align-middle w-auto mb-2 swf-sortable">
         <thead><tr><th>Job</th><th>Stashed as</th><th>Owed to the catalog of record</th>
-            <th>Why it went here</th></tr></thead>
+            <th>Why it went here</th><th>Move</th><th>Attempts</th><th>Last attempt</th><th>Last error</th></tr></thead>
         <tbody>
         {% for e in entries %}
             <tr>
-                <td><a href="{% url 'monitor_app:panda_job_detail' pandaid=e.pandaid %}">{{ e.pandaid }}</a></td>
+                <td>{% if e.pandaid %}<a href="{% url 'monitor_app:panda_job_detail' pandaid=e.pandaid %}">{{ e.pandaid }}</a>{% else %}<span class="text-muted">catalog only</span>{% endif %}</td>
                 <td>{{ e.stashed_as }}</td>
                 <td>{{ e.owes }}</td>
                 <td>{{ e.reason }}</td>
+                <td class="{% if e.outcome == 'home' %}finished_fill{% elif e.outcome == 'failed' %}failed_fill{% elif e.outcome == 'registered' %}running_fill{% endif %}">{% if e.outcome == 'home' %}home{% elif e.outcome == 'registered' %}home, stash entry not yet removed{% elif e.outcome == 'failed' %}failed{% else %}waiting{% endif %}</td>
+                <td>{{ e.attempts }}</td>
+                <td>{% if e.last_attempt %}<span data-relative-time="{{ e.last_attempt }}">{{ e.last_attempt }}</span>{% endif %}</td>
+                <td>{{ e.last_error }}</td>
             </tr>
         {% endfor %}
         </tbody>
@@ -48,9 +53,15 @@
         <tr><th>Ran</th><td><span data-relative-time="{{ built_at }}">{{ built_at }}</span></td></tr>
         <tr><th>Stash</th><td>{{ state.rse }} at {{ state.door }}</td></tr>
         <tr><th>Catalogued</th><td>{{ state.catalogued }}</td></tr>
+        <tr><th>Brought home</th><td>{{ state.moved }} to {{ state.destination_rse }}</td></tr>
+        <tr><th>Deferred to a later pass</th><td>{{ state.deferred }}</td></tr>
         <tr><th>Reported but not at the stash</th>
             <td class="{% if state.missing_at_stash %}failed_fill{% endif %}">{{ state.missing_at_stash }}</td></tr>
     </table>
+    {% if state.home %}
+    <p class="mb-1"><strong>Brought home on this pass</strong></p>
+    <ul class="mb-2">{% for d in state.home %}<li>{{ d }}</li>{% endfor %}</ul>
+    {% endif %}
     {% if state.failed %}
     <p class="mb-1"><strong>What it could not do</strong></p>
     <ul class="mb-2">{% for f in state.failed %}<li>{{ f }}</li>{% endfor %}</ul>
@@ -62,7 +73,11 @@
        unreachable, the catalog refusing — the job writes it to a BNL dCache space
        and exits on its physics, rather than losing finished work for want of a
        destination. The drain catalogues each stashed file at the stash RSE with
-       what it owes, and brings it home when JLab answers. Nothing listed here is
-       lost; it is owed.</p>
+       what it owes and, when JLab answers, brings it home: a copy to the
+       destination RSE at the path its logical name maps to, verified by size and
+       checksum, registered in the catalog of record with its event count, and
+       only then removed from the stash. A file that will not move is tried again
+       hourly, a bounded number of times, with its last error shown here.
+       Nothing listed here is lost; it is owed.</p>
 </div>
 {% endblock %}
