@@ -379,6 +379,20 @@ JLab work area. Registered under `/EVGEN/DIS/CC/…` in JLab Rucio they
 are external inputs to the ordinary path, which is the ask to the
 group. That release carries no 18×275.
 
+The trial ran as JEDI task 39370 (job 2721385, BNL_OSG_PanDA_1, payload
+0.9.0, 2026-09-07) and passed: every stage ok, the geometry stage
+resolving `epic_craterlake_18x275.xml`, the generation stage 67 s wall
+for 100 events including the DJANGOH build and the conversion,
+simulation 1627 s (charged-current events at 18×275 carry far more
+energy into the detector than the 10×100 neutral-current ones, whose
+simulation took 640 s), reconstruction 122 s, 100 events simulated and
+reconstructed, the log uploaded to EIC-XRD-LOG, and the generated sample
+and the RECO output registered with their event counts under
+`epic:/TEST/trial/group.EIC.26.07.1.epic_craterlake.p2452.e51.s1.r1.trial/`
+in the DIS layout (`DIS/DJANGOH4.6.21/CC/Rad/ep/18x275/q2_100to1000`).
+Pilot to finish, 33 minutes. The first configuration produced end to
+end with a generator built from Fortran source in the job.
+
 ### Kaon structure function (eicMesonSFGen)
 
 Composed as one configuration on the Internal EVGEN production config:
