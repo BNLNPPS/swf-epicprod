@@ -5817,6 +5817,11 @@ def trials_list(request):
             # job-generation failure on the first trial ever run.
             'panda_status': (state or {}).get('status') or '',
             'panda_error': (state or {}).get('error') or '',
+            # The trial's state: PanDA's once it has a task, since the PCS
+            # record stays 'submitted' (the terminal transition PCS_DATASET_
+            # REQUEST_WORKFLOW.md assigns to PanDA is not built); the PCS
+            # status before that.
+            'state': (state or {}).get('status') or t.status,
             **_trial_site(t, md, state),
         })
     # Newest first at both levels: the configurations by their most recent

@@ -49,8 +49,8 @@
       <td>{{ r.created|fmt_dt }}</td>
       <td class="text-end">{{ r.events|default_if_none:"" }}</td>
       <td>{{ r.site }}</td>
-      <td class="{{ r.task.status|state_class }}">{{ r.task.status }}</td>
-      <td>{% if r.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' jeditaskid=r.jedi_task_id %}">{{ r.jedi_task_id }}</a>{% if r.panda_status %} <span class="{{ r.panda_status|state_class }}">{{ r.panda_status }}</span>{% endif %}{% endif %}</td>
+      <td class="{{ r.state|state_class }}">{{ r.state }}</td>
+      <td>{% if r.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' jeditaskid=r.jedi_task_id %}">{{ r.jedi_task_id }}</a>{% endif %}</td>
     </tr>
     {% endfor %}
   {% endfor %}
