@@ -5741,7 +5741,8 @@ def physics_description(dataset):
     p = dataset.physics_tag.parameters or {}
     e = (dataset.evgen_tag.parameters or {}) if dataset.evgen_tag_id else {}
     process = str(p.get('process') or '')
-    words = [PROCESS_WORDS.get(process.upper(), process)]
+    words = [PROCESS_WORDS.get(process.upper(),
+                               process.replace('_', ' ').lower())]
     if p.get('state'):
         words[0] += f" ({str(p['state']).upper()})"
     if p.get('mechanism'):
