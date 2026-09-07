@@ -6008,6 +6008,121 @@ def resolve_campaign(value):
     return campaign
 
 
+def _publish_prodops(msg):
+    """One message on the ops agent's queue; the web tier holds no
+    credential and does the work through no path of its own."""
+    from monitor_app.activemq_connection import ActiveMQConnectionManager
+    try:
+        ActiveMQConnectionManager().send_message('/queue/epicprod.ops', _json.dumps(msg))
+    except Exception as e:
+        raise ServiceError(f'Could not reach the prod-ops agent queue: {e}', status=503)
+
+
+def prodtask_check_content_request(*, task, changed_by=''):
+    """Ask the ops agent to reconcile this task's datasets against the
+    production record now (EPICPROD_VALIDATION.md, Content validation).
+    The finding lands in the store the compose page reads, and
+    content_validated is pushed when it does."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    name = task.composed_name or task.name
+    _publish_prodops({'msg_type': 'content_validate', 'namespace': 'prodops',
+                      'task': name, 'created_by': changed_by})
+    log_epicprod_action(
+        'web', 'content_check_requested',
+        subject_type='campaign_task', subject_key=name,
+        username=changed_by, sublevel='low', live_default=False)
+    return {'task': name, 'queued': True}
+
+
+def prodtask_accept_content_request(*, task, dataset, changed_by):
+    """Queue the operator's acceptance of one dataset's content: detach
+    what does not belong, affirm the record, count the recorded events.
+    Refused from the stored finding when acceptance would be refused, so a
+    click whose outcome is known is never fired; the doer reconciles live
+    before it acts in any case."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from . import content_validation
+    name = task.composed_name or task.name
+    dataset = str(dataset or '').split(':', 1)[-1]
+    if not dataset:
+        raise ServiceError('dataset is required')
+    state = content_validation.stored_findings(task)
+    finding = next((f for f in state['findings']
+                    if f.get('dataset') == dataset), None)
+    if finding is None:
+        raise ServiceError(
+            f'no stored finding for {dataset}; check the content first', status=409)
+    plan = finding['plan']
+    if not plan['acceptable']:
+        raise ServiceError('acceptance refused: ' + '; '.join(plan['refusals']),
+                           status=409)
+    _publish_prodops({'msg_type': 'content_accept', 'namespace': 'prodops',
+                      'task_name': name, 'dataset': dataset,
+                      'owner': task.created_by, 'requested_by': changed_by})
+    log_epicprod_action(
+        'web', 'content_accept_requested',
+        subject_type='campaign_task', subject_key=name,
+        username=changed_by, sublevel='normal', live_default=True,
+        dataset=dataset, detach=len(plan['detach']),
+        delivered_events=plan['delivered_events'])
+    return {'task': name, 'dataset': dataset, 'queued': True, 'plan': plan}
+
+
+def prodtask_record_content_acceptance(*, task, dataset, delivered_events,
+                                       units=0, affirmed=0, detached=None,
+                                       checked_at='', accepted_by='',
+                                       changed_by=''):
+    """Record an acceptance on the sample's dataset rows, beside the
+    validation stamp, keyed by dataset because a task's outputs span try
+    namespaces. This endpoint is the single writer of the acceptance; the
+    doer posts here after the detach is verified in the catalog."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    name = task.composed_name or task.name
+    dataset = str(dataset or '').split(':', 1)[-1]
+    if not dataset:
+        raise ServiceError('dataset is required')
+    try:
+        events = int(delivered_events)
+    except (TypeError, ValueError):
+        raise ServiceError('delivered_events must be an integer')
+    stamp = {
+        'accepted_at': _timezone.now().isoformat(),
+        'accepted_by': str(accepted_by or changed_by),
+        'delivered_events': events,
+        'units': int(units or 0),
+        'affirmed': int(affirmed or 0),
+        'detached': [str(d) for d in (detached or [])],
+        'checked_at': str(checked_at or ''),
+    }
+    rows = (Dataset.objects.filter(composed_name=name) if task.composed_name
+            else Dataset.objects.filter(pk=task.dataset_id))
+    with transaction.atomic():
+        for ds in rows:
+            md = ds.get_metadata()
+            content = dict(md.get('content') or {})
+            content[dataset] = stamp
+            md['content'] = content
+            Dataset.objects.filter(pk=ds.pk).update(metadata=md)
+    log_epicprod_action(
+        'web', 'content_accepted',
+        subject_type='campaign_task', subject_key=name,
+        username=stamp['accepted_by'], sublevel='normal', live_default=True,
+        dataset=dataset, delivered_events=events,
+        detached=len(stamp['detached']), affirmed=stamp['affirmed'])
+    return {'task': name, 'dataset': dataset, 'acceptance': stamp}
+
+
+def _sample_accepted_events(task):
+    """The sum of recorded per-file counts over the sample's accepted
+    datasets, or None when no dataset of the sample has been accepted
+    (EPICPROD_VALIDATION.md, Content validation)."""
+    from . import content_validation
+    acceptances = content_validation.acceptances_of(task)
+    if not acceptances:
+        return None
+    return sum(int(a.get('delivered_events') or 0) for a in acceptances.values())
+
+
 def _sample_unique_outputs(task):
     """Unique produced outputs by DID, most recently checked record wins —
     the delivery accounting rule (snapper_delivery)."""
@@ -6061,6 +6176,12 @@ def sample_completion_payload(task, *, projection=None, latest_result=...):
     files = sum(_to_int(o.get('file_count'), 0) for o in outputs)
     events_per_file = _sample_events_per_file(task)
     events = files * events_per_file if events_per_file else None
+    events_source = 'configured' if events is not None else ''
+    # An accepted sample's count is the sum of recorded per-file counts;
+    # files times the configured events per job stands only until then.
+    accepted = _sample_accepted_events(task)
+    if accepted is not None:
+        events, events_source = accepted, 'accepted'
     target, target_source = _sample_event_target(head, projection)
     if latest_result is ...:
         latest_result = (ValidationResult.objects.filter(sample=composed)
@@ -6077,6 +6198,7 @@ def sample_completion_payload(task, *, projection=None, latest_result=...):
         'campaign': family,
         'revision': latest_result.revision if latest_result else 1,
         'events_delivered': events,
+        'events_delivered_source': events_source,
         'event_target': target,
         'event_target_source': target_source,
         'complete': complete,

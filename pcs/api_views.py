@@ -647,6 +647,73 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         data['prod_config_name'] = result['config']
         return Response(data)
 
+    @action(detail=True, methods=['get'], url_path='content')
+    def content(self, request, name=None):
+        """The stored content finding per dataset with its acceptance plan,
+        and the acceptance on record (EPICPROD_VALIDATION.md, Content
+        validation). Reads the store, never the catalog."""
+        from . import content_validation
+        task = self.get_object()
+        return Response(content_validation.content_state(task))
+
+    @action(detail=True, methods=['post'], url_path='check-content')
+    def check_content(self, request, name=None):
+        """Ask the ops agent to reconcile this task's datasets against the
+        production record now; the finding is pushed to the page when stored."""
+        task = self.get_object()
+        try:
+            result = services.prodtask_check_content_request(
+                task=task,
+                changed_by=getattr(request.user, 'username', '') or 'operator')
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(result, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['post'], url_path='accept-content')
+    def accept_content(self, request, name=None):
+        """The operator's one action on a dataset's content: detach what
+        does not belong, affirm the record, count the recorded events.
+        Body: dataset. Refuses with the reason when acceptance would be."""
+        task = self.get_object()
+        try:
+            result = services.prodtask_accept_content_request(
+                task=task, dataset=request.data.get('dataset'),
+                changed_by=getattr(request.user, 'username', '') or 'operator')
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(result, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=False, methods=['post'], url_path='record-content-acceptance')
+    def record_content_acceptance(self, request):
+        """Record a verified acceptance on the sample (the doer's post-back;
+        the single writer of the acceptance record). Query: name. Body:
+        dataset, delivered_events, units, affirmed, detached, checked_at,
+        accepted_by."""
+        name = request.query_params.get('name') or request.data.get('name')
+        if not name:
+            return Response({'detail': 'Missing ?name='},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            task = services.resolve_prodtask(name, self.get_queryset())
+        except ProdTask.DoesNotExist:
+            return Response({'detail': f"No task named '{name}'"},
+                            status=status.HTTP_404_NOT_FOUND)
+        self.check_object_permissions(request, task)
+        try:
+            result = services.prodtask_record_content_acceptance(
+                task=task,
+                dataset=request.data.get('dataset'),
+                delivered_events=request.data.get('delivered_events'),
+                units=request.data.get('units') or 0,
+                affirmed=request.data.get('affirmed') or 0,
+                detached=request.data.get('detached') or [],
+                checked_at=request.data.get('checked_at') or '',
+                accepted_by=request.data.get('accepted_by') or '',
+                changed_by=getattr(request.user, 'username', '') or '')
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(result)
+
     @action(detail=False, methods=['post'], url_path='rucio-snapshot-update')
     def rucio_snapshot_update(self, request):
         """Request a JLab Rucio snapshot refresh for the current campaign — the

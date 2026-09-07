@@ -604,6 +604,7 @@
                 if (d.trial_site !== undefined) t.trial_site = d.trial_site;
                 if (d.config_fills !== undefined) t.config_fills = d.config_fills;
                 if (d.effective_config !== undefined) t.effective_config = d.effective_config;
+                if (d.content !== undefined) t.content = d.content;
                 t._hydrated = true;
             }
         } catch (e) { /* leave light */ }
@@ -1316,6 +1317,7 @@
             const editionLink = `<a class="small ms-2" href="${EDITION_DATA_URL}${encodeURIComponent(taskComposedName(t))}/" title="the edition's datasets, DIDs, replicas">edition data</a>`;
             html += `<div class="mb-2"><strong>Produced data</strong>${editionLink}${outRows}</div>`;
         }
+        html += contentHtml(t);
 
         // Submit-readiness. Empty list means the task can produce a submission spec.
         if ((t.status === 'draft' || t.status === 'ready') && Array.isArray(readinessProblems)) {
@@ -1623,6 +1625,149 @@
             btnTrialTask.textContent = was;
             btnTrialTask.disabled = false;
         }
+    });
+    // Content: each dataset of the task against the production record, as
+    // last reconciled; what acceptance would do; the acceptance on record
+    // (EPICPROD_VALIDATION.md, Content validation). Rendered from the store.
+    // The check and the acceptance run on the ops agent and push back over
+    // the SSE relay; the page never reaches the catalog.
+    function contentFileList(label, items, nameOf) {
+        if (!items || !items.length) return '';
+        const shown = items.slice(0, 50).map(nameOf).map(htmlEscape).join('<br>');
+        const more = items.length > 50 ? `<br>and ${items.length - 50} more` : '';
+        return `<details class="small"><summary>${htmlEscape(label)}: ${items.length}</summary>`
+            + `<div style="word-break:break-all;">${shown}${more}</div></details>`;
+    }
+    function contentHtml(t) {
+        if (!('content' in t)) return '';
+        const c = t.content || {};
+        const findings = Array.isArray(c.findings) ? c.findings : [];
+        const canOperate = !!currentUser;
+        const checked = c.built_at ? String(c.built_at).replace('T', ' ').slice(0, 16) + ' UTC' : '';
+        let html = `<div class="mb-2 pcs-content"><strong>Content</strong>`
+            + ` <button type="button" class="btn btn-primary btn-sm ms-2" data-content-check="${t.id}"`
+            + `${canOperate ? '' : ' disabled title="Sign in to operate production tasks."'}>Check content</button>`
+            + (checked ? `<span class="text-muted small ms-2">checked ${htmlEscape(checked)}</span>` : '');
+        if (!findings.length) {
+            html += `<div class="small">${checked
+                ? 'The record names no registered output for this task.'
+                : 'Not yet reconciled. Check content reads each dataset against the production record.'}</div></div>`;
+            return html;
+        }
+        findings.forEach(f => {
+            const name = String(f.dataset || '');
+            const link = `<a href="${RUCIO_DID_URL}epic/${name.replace(/^\/+/, '')}/" title="live Rucio detail">${htmlEscape(name)}</a>`;
+            const plan = f.plan || {};
+            const acc = f.acceptance || null;
+            html += `<div class="small mt-1" style="word-break:break-all;">${link}</div>`;
+            if (f.error) {
+                html += `<div class="alert alert-warning py-1 px-2 mb-1 small"><strong>Not reconciled</strong> ${htmlEscape(f.error)}</div>`;
+            } else if (f.sound) {
+                html += `<div class="small" style="color:#198754;">Sound: ${f.matched.length} files, ${f.delivered_events} events recorded, ${f.units} work units.</div>`;
+            } else {
+                html += `<div class="small">${f.matched.length} files match the record, ${f.delivered_events} events recorded, ${f.units} work units.</div>`;
+                html += contentFileList('Files with no work unit behind them', f.orphan_files, x => x.file);
+                html += contentFileList('Work units with no delivered file', f.units_without_file, x => x.unit);
+                html += contentFileList('Work units with several files', f.units_with_several, x => `${x.unit}: ${(x.files || []).map(s => s.split('/').pop()).join(', ')}`);
+                html += contentFileList('Files with no recorded event count', f.files_without_events, x => x.file);
+            }
+            if (acc) {
+                html += `<div class="small"><span class="badge bg-success">Accepted</span> by ${htmlEscape(acc.accepted_by || '')} `
+                    + `${htmlEscape(String(acc.accepted_at || '').replace('T', ' ').slice(0, 16))} UTC: `
+                    + `${acc.delivered_events} events, ${acc.affirmed} files affirmed, ${(acc.detached || []).length} detached.</div>`;
+            }
+            // Acceptance is offered until one is on record, and again when
+            // an accepted dataset has drifted from the record since.
+            if (!f.error && (!acc || !f.sound)) {
+                if (plan.acceptable) {
+                    const what = plan.detach.length
+                        ? `detaches ${plan.detach.length} file(s) from the dataset and `
+                        : '';
+                    html += `<div class="mt-1"><button type="button" class="btn btn-success btn-sm" data-content-accept="${t.id}" data-dataset="${htmlEscape(name)}"`
+                        + `${canOperate ? '' : ' disabled title="Sign in to operate production tasks."'}>Accept content</button>`
+                        + `<span class="small text-muted ms-2">${what}affirms ${plan.affirm} files, ${plan.delivered_events} events</span></div>`;
+                } else if (plan.refusals && plan.refusals.length) {
+                    html += `<div class="alert alert-warning py-1 px-2 mb-1 small"><strong>Not acceptable</strong> ${plan.refusals.map(htmlEscape).join('; ')}</div>`;
+                }
+            }
+        });
+        html += '</div>';
+        return html;
+    }
+    let contentES = null, contentTimeout = null, contentPoll = null;
+    function closeContentStream() {
+        if (contentTimeout) { clearTimeout(contentTimeout); contentTimeout = null; }
+        if (contentPoll) { clearInterval(contentPoll); contentPoll = null; }
+        if (contentES) { contentES.close(); contentES = null; }
+    }
+    async function refreshContent(taskId) {
+        const t = allTasks.find(x => x.id === taskId);
+        if (!t) return null;
+        try {
+            const r = await fetch(taskApiUrl(t, 'content/'));
+            if (r.ok) t.content = await r.json();
+        } catch (e) { /* the store did not answer; the pane keeps what it had */ }
+        if (selectedItemId === taskId) showTaskDetail(taskId);
+        return t.content;
+    }
+    // Short-lived: opened on the click, closed on the matching event, on the
+    // timeout, or on unload; a slow poll of the store is the backstop for a
+    // missed event (SSE_PUSH.md, Reliability backstop).
+    function subscribeContentOutcomes(t, before) {
+        closeContentStream();
+        const taskName = taskComposedName(t);
+        const types = 'content_validated,content_accepted,content_accept_failed';
+        const es = contentES = new EventSource(`{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=${types}`);
+        const settle = (failed, d) => {
+            closeContentStream();
+            if (failed) alert(`Acceptance ${d.refused ? 'refused' : 'failed'}: ${d.reason || 'unknown'}`);
+            refreshContent(t.id);
+        };
+        const onEvent = failed => ev => {
+            let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
+            if (d.task_name && d.task_name !== taskName) return;
+            settle(failed, d);
+        };
+        es.addEventListener('content_validated', onEvent(false));
+        es.addEventListener('content_accepted', onEvent(false));
+        es.addEventListener('content_accept_failed', onEvent(true));
+        contentPoll = setInterval(async () => {
+            const c = await refreshContent(t.id);
+            if (c && JSON.stringify(c) !== before) closeContentStream();
+        }, 20000);
+        contentTimeout = setTimeout(() => { closeContentStream(); refreshContent(t.id); }, 310000);
+    }
+    window.addEventListener('beforeunload', closeContentStream);
+    browseContent.addEventListener('click', async e => {
+        const btn = e.target.closest('[data-content-check],[data-content-accept]');
+        if (!btn || btn.disabled) return;
+        const t = allTasks.find(x => x.id === selectedItemId);
+        if (!t) return;
+        const accepting = btn.hasAttribute('data-content-accept');
+        let suffix = 'check-content/', body = {};
+        if (accepting) {
+            const dataset = btn.dataset.dataset;
+            if (!confirm(`Accept the content of ${dataset}? Files that do not belong are detached from the dataset (never deleted), the delivered output of each work unit is affirmed, and the sample's delivered event count becomes the sum of recorded counts.`)) return;
+            suffix = 'accept-content/';
+            body = {dataset};
+        }
+        const held = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = accepting ? 'Accepting...' : 'Checking...';
+        const before = JSON.stringify(t.content || null);
+        const resp = await fetch(taskApiUrl(t, suffix), {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json().catch(() => null);
+        if (!resp.ok) {
+            btn.disabled = false;
+            btn.textContent = held;
+            alert(`${accepting ? 'Acceptance' : 'Check'} refused: ${(data && data.detail) || resp.status}`);
+            return;
+        }
+        subscribeContentOutcomes(t, before);
     });
     let pendingPandaOperation = null;
     browseContent.addEventListener('click', async e => {

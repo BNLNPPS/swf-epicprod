@@ -112,8 +112,14 @@ def reconcile(task, dataset_did=''):
                 {'unit': unit, 'expected': names})
             continue
         if len(present) > 1:
+            # Which of the several the record calls the unit's delivered
+            # output (status delivered, against diverted): acceptance keeps
+            # that one and detaches the rest, or refuses when the record
+            # names more than one.
             finding['units_with_several'].append(
-                {'unit': unit, 'files': present})
+                {'unit': unit, 'files': present,
+                 'delivered': [s for r, s in zip(unit_rows, stems)
+                               if s in held and r.status == 'delivered']})
         for row, stem in zip(unit_rows, stems):
             if stem not in held:
                 continue
@@ -123,16 +129,17 @@ def reconcile(task, dataset_did=''):
                 # file carrying none would have its count inferred from its
                 # size, which is a guess wearing a number's clothes.
                 finding['files_without_events'].append(
-                    {'file': stem.rsplit('/', 1)[-1], 'record_events': row.events})
+                    {'file': stem.rsplit('/', 1)[-1], 'did': stem,
+                     'record_events': row.events})
                 continue
             finding['matched'].append({'file': stem.rsplit('/', 1)[-1],
-                                       'events': int(recorded)})
+                                       'did': stem, 'events': int(recorded)})
             finding['delivered_events'] += int(recorded)
 
     for stem in sorted(held):
         if stem not in recorded_names:
             finding['orphan_files'].append(
-                {'file': stem.rsplit('/', 1)[-1],
+                {'file': stem.rsplit('/', 1)[-1], 'did': stem,
                  'bytes': held[stem].get('bytes')})
 
     finding['sound'] = not (finding['orphan_files']
@@ -172,3 +179,86 @@ def datasets_of(task):
 def reconcile_all(task):
     """The finding for every dataset the record names for this task."""
     return [reconcile(task, dataset_did=name) for name in datasets_of(task)]
+
+
+def acceptance_plan(finding):
+    """What accepting this finding would do, or why it is refused.
+
+    Acceptance is one action (docs/EPICPROD_VALIDATION.md, Content
+    validation): files that do not belong are detached from the dataset,
+    the delivered output of each work unit is affirmed, and the delivered
+    event count becomes the sum of recorded counts. It never deletes.
+
+    Two cases are refused rather than decided here. A file whose event
+    count was never recorded cannot be counted, and the count is what the
+    signal is made of, so the count is recorded first. A work unit with
+    more than one file in delivered status is a genuine divergence, which
+    is a person's decision (RUCIO_RESILIENCE.md, Measure 3).
+    """
+    plan = {'acceptable': False, 'refusals': [], 'detach': [],
+            'affirm': 0, 'delivered_events': 0}
+    if finding.get('error'):
+        plan['refusals'].append(finding['error'])
+    missing = finding.get('files_without_events') or []
+    if missing:
+        plan['refusals'].append(
+            f'{len(missing)} file(s) carry no recorded event count; the '
+            f'count is recorded before the content can be accepted')
+    dataset = finding.get('dataset') or ''
+    for orphan in finding.get('orphan_files') or []:
+        plan['detach'].append(orphan.get('did') or f"{dataset}/{orphan['file']}")
+    for unit in finding.get('units_with_several') or []:
+        delivered = unit.get('delivered') or []
+        if len(delivered) != 1:
+            plan['refusals'].append(
+                f"work unit {unit['unit']} has {len(delivered)} files in "
+                f"delivered status; which is the output is a person's call")
+            continue
+        plan['detach'].extend(d for d in unit.get('files') or []
+                              if d != delivered[0])
+    detach = set(plan['detach'])
+    kept = [m for m in finding.get('matched') or []
+            if (m.get('did') or f"{dataset}/{m['file']}") not in detach]
+    plan['affirm'] = len(kept)
+    plan['delivered_events'] = sum(int(m.get('events') or 0) for m in kept)
+    plan['acceptable'] = not plan['refusals']
+    return plan
+
+
+def stored_findings(task):
+    """The findings the validation doer last stored for this task, with the
+    acceptance plan of each, for pages. A read of the store and nothing
+    else: no page reaches the catalog (CACHED_PRODUCTS.md)."""
+    from monitor_app.models import CachedProduct
+    key = f'content_validation:{task.composed_name or task.name}'
+    row = CachedProduct.objects.filter(key=key).first()
+    if not row or not row.value:
+        return {'findings': [], 'built_at': None}
+    findings = list((row.value or {}).get('findings') or [])
+    for finding in findings:
+        finding['plan'] = acceptance_plan(finding)
+    return {'findings': findings,
+            'built_at': (row.value or {}).get('built_at')
+            or (row.built_at.isoformat() if row.built_at else None)}
+
+
+def acceptances_of(task):
+    """The acceptances recorded for this task's sample, by dataset: the
+    stamp the record endpoint wrote on the dataset rows' metadata."""
+    head = task.dataset
+    if head is None:
+        return {}
+    return dict((head.get_metadata() or {}).get('content') or {})
+
+
+def content_state(task):
+    """What the compose page shows in its Content section: each dataset's
+    stored finding with its plan, and the acceptance on record for it."""
+    state = stored_findings(task)
+    acceptances = acceptances_of(task)
+    for finding in state['findings']:
+        finding['acceptance'] = acceptances.get(finding.get('dataset') or '')
+    state['accepted_events'] = sum(
+        int(a.get('delivered_events') or 0) for a in acceptances.values())
+    state['accepted_datasets'] = sorted(acceptances)
+    return state

@@ -90,6 +90,24 @@ per-file counts. In the return direction the same record makes invalidation
 exact: a failed sample loses the event counts of the work units invalidated,
 and production knows which units to run again.
 
+In place since 2026-09-07. The reconciliation is `pcs/content_validation.py`,
+run by the production operations agent (`content_validate`, doer
+`content-validate.py`), one finding per dataset of the task, since a task's
+outputs span try namespaces; the finding is stored where the compose page
+reads it. The task pane's Content section shows each finding with its
+exceptions named by file, and carries two operator actions on the agent
+pattern: Check content, which reconciles now, and Accept content, which
+performs the acceptance above for one dataset (`content_accept`, doer
+`content-accept.py`): a live reconciliation first, the detach through the
+production account, the dataset listing verified, then the acceptance
+recorded on the sample's dataset rows under `metadata.content[dataset]` with
+who, when, the detached names and the count. Two cases are refused for a
+person rather than decided: a file with no recorded event count, and a work
+unit with more than one file in delivered status. The completion endpoints
+below report the accepted count once any dataset of the sample is accepted,
+and say which in `events_delivered_source` (`accepted`, else `configured`
+for files times the configured events per job).
+
 When a sample is complete, epicprod signals its availability for validation by
 calling a REST endpoint provided by Hydra. Separately, epicprod serves the
 campaign catalog: a complete machine-readable description of a campaign — for

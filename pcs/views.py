@@ -5675,6 +5675,7 @@ def prod_task_compose_task_detail(request, name):
     # The panel disables the Trial action and carries this as its reason, so
     # the button states the blocker instead of failing on click.
     trial_config, trial_blocked = services.prodtask_runnable_config(task)
+    from . import content_validation
     return JsonResponse({
         'task_params_json': task_params_json,
         'task_params_error': task_params_error,
@@ -5699,6 +5700,10 @@ def prod_task_compose_task_detail(request, name):
         # for a Placeholder-bound task are empty and would misreport the run.
         'effective_config': {k: _jsonable(v)
                              for k, v in task.get_effective_config().items()},
+        # The dataset against the production record, as last reconciled, with
+        # what acceptance would do and the acceptance on record; a read of
+        # the store (EPICPROD_VALIDATION.md, Content validation).
+        'content': content_validation.content_state(task),
     })
 
 
