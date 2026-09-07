@@ -1820,6 +1820,12 @@ def evgen_inputs(request):
     # tasks, and only for the coverage view that offers the filter.
     blocking_paths = set()
     if view == 'coverage':
+        from .models import (evgen_paths_by_tags, evgen_paths_for_tags,
+                             evgen_paths_for)
+        # The tag map is one query and must be built ONCE: reading it through
+        # the task property instead rebuilt it per task and took this page to
+        # fifteen seconds.
+        tag_map = evgen_paths_by_tags()
         waiting = (ProdTask.objects
                    .select_related('dataset', 'dataset__simu_tag',
                                    'dataset__reco_tag')
@@ -1836,7 +1842,9 @@ def evgen_inputs(request):
                 continue
             if wt.inputs:
                 continue
-            blocking_paths.update(wt.evgen_paths or [])
+            paths = (evgen_paths_for(wt.inputs, wt.input_source_location)
+                     or evgen_paths_for_tags(wds, tag_map))
+            blocking_paths.update(paths or [])
     filters = []
     cls_counts = Counter(x['cls'] for x in population if x.get('cls'))
     filters.append({
