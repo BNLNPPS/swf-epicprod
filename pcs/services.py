@@ -5524,6 +5524,17 @@ def prodtask_compose_trial(*, task, events=None, site='', created_by='',
         task, require_input=not input_did)
     if blocked:
         raise ServiceError(blocked, status=409)
+    # We trial a ready task. A trial proves the run you are about to make, so
+    # the source has to be able to make it; trialling a task that could not
+    # run proves a configuration the task does not have. Where the caller
+    # supplies the input the source lacks, that is the readiness gap being
+    # closed at composition, and the source's own readiness is not the test.
+    if not input_did:
+        problems = prodtask_readiness_problems(task)
+        if problems:
+            raise ServiceError(
+                'not ready to run, so there is nothing to trial yet: '
+                + ' '.join(problems), status=409)
     with transaction.atomic():
         trial = trials.compose_trial(
             task, events=events or trials.DEFAULT_TRIAL_EVENTS,

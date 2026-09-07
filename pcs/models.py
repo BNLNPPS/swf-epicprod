@@ -1004,7 +1004,17 @@ class ProdTask(models.Model):
         # carries nothing — every field of the Placeholder, an empty key on a
         # real config — the campaign's Standard Production supplies it. The
         # fill only ever reaches what is empty; overrides always win over both.
-        placeholder = getattr(config, 'name', '') == PLACEHOLDER_PRODCONFIG_NAME
+        #
+        # The fill describes what WOULD run, so it stops at the point work has
+        # run. A task with a recorded PanDA submission is history, and its
+        # executed software is whatever PanDA recorded, not what the campaign
+        # standardised afterwards — which is the reason the Placeholder exists
+        # at all (EPICPROD_TASK_CATALOG.md). Such a task gets a real
+        # configuration by being adopted, which records the truth; never by a
+        # display-time fill that would quietly restate its history.
+        ran = self.panda_task_id is not None or self.status not in ('draft', 'ready')
+        placeholder = (not ran
+                       and getattr(config, 'name', '') == PLACEHOLDER_PRODCONFIG_NAME)
         overrides = self.overrides or {}
         result, fills = {}, {}
         for field in config._meta.get_fields():
@@ -1017,7 +1027,7 @@ class ProdTask(models.Model):
             if name in overrides:
                 result[name] = overrides[name]
                 continue
-            if placeholder or own in (None, ''):
+            if not ran and (placeholder or own in (None, '')):
                 if standard is None:
                     standard = self.campaign_standard_config() or False
                 if standard and hasattr(standard, name):
@@ -1029,13 +1039,13 @@ class ProdTask(models.Model):
             result[name] = own
         # data merges key by key, campaign first, so a key the task's own
         # config sets always beats the campaign's.
-        if standard is None:
+        if standard is None and not ran:
             standard = self.campaign_standard_config() or False
-        std_data = (standard.data or {}) if standard else {}
+        std_data = (standard.data or {}) if (standard and not ran) else {}
         base_data = config.data or {}
         if placeholder:
             base_data = {**std_data, **base_data}
-        else:
+        elif std_data:
             base_data = {**{k: v for k, v in std_data.items()
                             if base_data.get(k) in (None, '')},
                          **base_data}
