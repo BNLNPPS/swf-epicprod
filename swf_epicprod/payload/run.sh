@@ -240,6 +240,35 @@ LOG_DIR=LOG/${TAG}
 LOG_TEMP=${TMPDIR}/${LOG_DIR}
 mkdir -p ${LOG_TEMP}
 
+# Landing check, before any work: can this worker reach the catalog of
+# record and the input door at all. A worker that cannot reach the Rucio
+# server does the whole simulation and dies at registration hours later
+# with nothing delivered (trial 39305, job 2721306: 3,015 s to a TLS
+# handshake timeout after the physics was done). A definite negative,
+# twice, in the first seconds costs seconds instead: the payload
+# declines the landing with its own exit code, the reason in the stage
+# log and the report, and PanDA sends the job elsewhere. Doubt proceeds
+# (site-canary DESIGN.md, the carrier that declines its landing;
+# swf-epicprod docs/EPICPROD_PAYLOAD.md, exit code 80).
+stage landing start
+if LANDING_OUT=$(python $SCRIPT_DIR/landing_check.py 2>&1); then
+  LANDING_RC=0
+else
+  LANDING_RC=$?
+fi
+echo "${LANDING_OUT}"
+if [ "${LANDING_RC}" -eq 4 ]; then
+  LANDING_REASON=$(echo "${LANDING_OUT}" | grep FAILED | head -1)
+  stage landing decline "${LANDING_REASON}"
+  REPORT_NOTE="landing declined: ${LANDING_REASON}"
+  echo "ERROR: landing declined; no work started. ${LANDING_REASON}"
+  exit 80
+elif [ "${LANDING_RC}" -ne 0 ]; then
+  stage landing ok "check did not run (exit ${LANDING_RC}); proceeding"
+else
+  stage landing ok
+fi
+
 stage input start
 if [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
   # Define location on xrootd from where to stream input file from

@@ -35,6 +35,7 @@ The stages of run.sh, as cloned:
 |---|---|---|
 | Environment | sources `environment*.sh` from the working directory by glob; prints host, site, disk, condor ads | the sandbox env file |
 | Software | sources the detector setup for `DETECTOR_VERSION`; sets `RUCIO_CONFIG` to its own `rucio.cfg`, account `eicprod` | the container |
+| Landing | `landing_check.py`: a TLS handshake with the Rucio server named in `rucio.cfg` and a TCP connect to the input door, each with a short timeout and one retry; a definite negative exits 80 in seconds with the reason in the stage log and the report, doubt proceeds | `RUCIO_CONFIG`, `XRDRURL` |
 | Input | streams `hepmc3.tree.root` input from the JLab door, copies other inputs with `xrdcp` | `XRDRURL`, `XRDRBASE` |
 | Background | merges signal and background with `SignalBackgroundMerger` from `BG_FILES`, rate-scaled skips and a seed mixed from the input name | the container, staged `BG_FILES` |
 | Simulation | `npsim` under `prmon`, seeded per chunk | the container |
@@ -211,6 +212,7 @@ path adds one rather than exiting 1.
 | 66 | The podio metadata was not produced as JSON, so nothing could be registered with it. |
 | 78 | Registration in the catalog of record failed after the output was produced. |
 | 79 | The output name is held by a failed earlier attempt of this job and cannot be regenerated under it; the residual rerun as a new try is the route. |
+| 80 | The landing was declined: the Rucio server or the input door could not be reached from this worker, twice, in the payload's first seconds, so no work was started. The reason is in the stage log and the report; PanDA's retry sends the job elsewhere. |
 
 Codes 65, 78 and 79 also appear in the run script's stage log and in
 the payload report, so a job that dies before its report is sent is
@@ -261,15 +263,33 @@ In order, each a committed step on the clone:
    to the pilot's ePIC plugin, without which no ePIC job records
    events at all. The job and task pages read the report; the scout
    gate follows.
-4. **PanDA-only shape.** The condor branches go: the bearer-token
+4. **The landing check** (2026-09-07, payload 0.4.0). Before any
+   work, `landing_check.py` asks whether this worker can reach the
+   Rucio server named in `rucio.cfg` (a TLS handshake) and the input
+   door (a TCP connect), each with a 15 s timeout and one retry after
+   10 s. Both reachable: the `landing` stage is ok and the run
+   proceeds. Either unreachable twice: the stage records the reason,
+   the report carries it as its note, and the payload exits 80 having
+   started nothing. A check that cannot be formed proceeds, since
+   doubt proceeds and a definite negative is the only thing that
+   declines. Why: trial 39305's job 2721306 at BNL_OSG_PanDA_1 ran the
+   whole simulation and reconstruction, then spent ten minutes on each
+   log upload and 3,015 s on registration before a TLS handshake to
+   rucio-server.jlab.org timed out, and delivered nothing. The same
+   endpoint answered from pandaserver02 and from AWS in under 0.2 s,
+   so the worker's own egress was the problem, and it was already the
+   problem in the job's first second. The exit code makes declines
+   countable per queue from the PanDA record alone; the ePIC queues
+   page shows them (swf-monitor, ePIC Compute Queues, Declined).
+5. **PanDA-only shape.** The condor branches go: the bearer-token
    discovery, the `xrdcp` fallbacks, the ad dumps. The environment is
    the one file the doer writes, read by name; exits carry reasons in
    the report; the software stack is the only thing taken from the
    container.
-5. **Inputs.** Streaming from the JLab door stays. Rucio-resident
+6. **Inputs.** Streaming from the JLab door stays. Rucio-resident
    input by DID (JEDI_INTEGRATION.md § Payload-staged external EVGEN)
    follows once the EVGEN registration coverage is complete.
-6. **Internal EVGEN stage** as a payload stage ahead of simulation
+7. **Internal EVGEN stage** as a payload stage ahead of simulation
    (PCS_DATASET_REQUEST_WORKFLOW.md § Workflow modes), when a
    generator run becomes an epicprod task.
 
