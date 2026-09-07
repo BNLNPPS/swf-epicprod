@@ -157,6 +157,12 @@ gateway, bearer-authenticated, carrying `outcome` (`ok`, `partial` or
 job ids), `deleted_read` and `deleted_unread` (the object keys).
 Anything else it carries is kept verbatim.
 
+`window` is `{"from": <ISO-8601>, "to": <ISO-8601>}`. The shape is
+stated here because it is a contract between two hosts and neither can
+read the other's payload after a pass is applied: the sweep first sent
+`since` and `until`, the gateway's index read `from` and `to`, and five
+passes recorded a null window before the mismatch was noticed.
+
 What the reply means decides the retry, and only one code means the
 record is delivered:
 
