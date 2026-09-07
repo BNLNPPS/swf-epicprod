@@ -167,6 +167,45 @@ def compile_driver(workdir, log):
     return binary
 
 
+AB_SOURCE = os.path.join(HERE, 'afterburner-cpp.tgz')
+AB_SOURCE_VERSION = os.path.join(HERE, 'afterburner-cpp.VERSION')
+
+
+def afterburner_binary(workdir, log, preset):
+    """The abconv to run: the image's own for a numbered preset, else the
+    shipped afterburner source built in the job. The campaign images
+    carry afterburner 0.1.3, whose configurations stop at the five
+    nominal ep energies; the repository's current source knows the 9 GeV
+    electron configurations, so a named preset (ip6_ep_130x9 and the
+    like), or EVGEN_AB_BUILD=true, builds it here: a few minutes on one
+    core, once per job (docs/EPICPROD_INTERNAL_EVGEN.md)."""
+    build = env_value('EVGEN_AB_BUILD', '').lower() in ('1', 'true', 'yes')
+    if not build and not preset.isdigit():
+        build = True
+    if not build:
+        return 'abconv', 'image'
+    if not os.path.exists(AB_SOURCE):
+        fail(f'the afterburner source {AB_SOURCE} is not in the payload')
+    src = os.path.join(workdir, 'afterburner-src')
+    bld = os.path.join(workdir, 'afterburner-build')
+    os.makedirs(src, exist_ok=True)
+    if run(['tar', 'xzf', AB_SOURCE, '-C', src], log) != 0:
+        fail('could not unpack the afterburner source:\n' + tail(log))
+    jobs = str(max(1, min(4, os.cpu_count() or 1)))
+    if run(['cmake', '-S', os.path.join(src, 'cpp'), '-B', bld,
+            '-DCMAKE_BUILD_TYPE=Release'], log) != 0:
+        fail('afterburner cmake configuration failed:\n' + tail(log))
+    if run(['cmake', '--build', bld, '-j', jobs, '--target', 'abconv'], log) != 0:
+        fail('afterburner build failed:\n' + tail(log))
+    for root, _dirs, files in os.walk(bld):
+        if 'abconv' in files:
+            binary = os.path.join(root, 'abconv')
+            if os.access(binary, os.X_OK):
+                version = tail(AB_SOURCE_VERSION, 1).strip() or 'shipped source'
+                return binary, f'sandbox build of {version}'
+    fail('the afterburner build produced no abconv binary')
+
+
 def count_tree_events(path):
     """Entries of the hepmc3_tree in a treeroot file, via ROOT when it is
     importable; None otherwise (the count is then abconv's own)."""
@@ -246,9 +285,12 @@ def main():
     # divergence 220 urad, electron 145/105 urad, read back from a
     # registered file); 1 is high acceptance.
     preset = env_value('EVGEN_AB_PRESET', '0')
+    t0 = time.time()
+    abconv, ab_source = afterburner_binary(args.workdir, log, preset)
+    ab_build_s = round(time.time() - t0, 1)
     ab_stem = os.path.join(args.workdir, f'{stem}.ab')
     t0 = time.time()
-    if run(['abconv', '-p', preset, '-f', 'treeroot', '--plot-off',
+    if run([abconv, '-p', preset, '-f', 'treeroot', '--plot-off',
             '-o', ab_stem, ascii_path], log) != 0:
         fail('afterburner failed:\n' + tail(log))
     afterburner_s = round(time.time() - t0, 1)
@@ -274,7 +316,8 @@ def main():
         'beam_species': env_value('EVGEN_BEAM_SPECIES', 'ep'),
         'ebeam': env_value('EBEAM', ''), 'pbeam': env_value('PBEAM', ''),
         'radiative': env_value('EVGEN_RADIATIVE', 'off'),
-        'afterburner_preset': preset, 'seed': seed,
+        'afterburner_preset': preset, 'afterburner': ab_source,
+        'afterburner_build_seconds': ab_build_s, 'seed': seed,
         'events_requested': args.events, 'events': events,
         'card': card_path, 'output': args.out,
         'output_bytes': os.path.getsize(args.out),

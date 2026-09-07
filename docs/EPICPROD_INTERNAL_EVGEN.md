@@ -55,9 +55,17 @@ when the job environment carries `EVGEN_INTERNAL=true`:
    names, energies read from the file) and writes `hepmc3.tree.root`.
    The image's afterburner (0.1.3 in the 26.07 images) carries beam
    parameters for ep 18×275, 10×275, 10×100, 5×100 and 5×41, with
-   approximate 10×250 and 10×130; the 9 GeV-electron configurations
-   are in the afterburner repository (v0.2) but not in the images, and
-   no version has 5×130 (Trials, below).
+   approximate 10×250 and 10×130, selected by number; the 9 GeV-electron
+   configurations are in the afterburner repository (main after v0.2.1)
+   but not in the images, and no version has 5×130 (Trials, below). So
+   the payload ships the repository's C++ source
+   (`payload/afterburner-cpp.tgz`; the commit it was taken from is in
+   `afterburner-cpp.VERSION`) and, when the preset is a name such as
+   `ip6_ep_130x9` rather than a number, or `EVGEN_AB_BUILD=true`, builds
+   `abconv` from it in the job (cmake, one core, 30 to 40 s in the
+   26.07.1 image) and runs that build; a numbered preset runs the
+   image's own `abconv`. The stage summary records which afterburner
+   ran and the build time.
 3. The file is placed at the path and name an externally supplied
    sample would have had:
    `EVGEN/<process path>/<generator>_<process>_<rad>_<species>_<beams>_<q2 bin>_run<NNN>.hepmc3.tree.root`.
@@ -153,7 +161,7 @@ generation environment to the payload environment:
 | `EVGEN_RADIATIVE` | EvGen tag `radiative` |
 | `EVGEN_PROCESS`, `EVGEN_Q2_RANGE`, `EVGEN_BEAM_SPECIES` | physics tag |
 | `EBEAM`, `PBEAM` | physics tag (already carried) |
-| `EVGEN_AB_PRESET` | production config `data['afterburner_preset']`, default 0 (IP6 high divergence) |
+| `EVGEN_AB_PRESET` | production config `data['afterburner_preset']`, default 0 (IP6 high divergence); a number selects a configuration of the image's afterburner, a name builds the shipped source (The stage, above) |
 | `COPYEVGEN` | production config `copy_evgen`, default false; a trial sets true |
 
 The sample path and name follow the production team's EVGEN layout:
@@ -179,16 +187,21 @@ the log uploaded to EIC-XRD-LOG, and the generated sample and the RECO
 output registered in the catalog with their event counts, under the
 trial root. Pilot to finish, 14 minutes.
 
-The 5×130 request is composed the same way and its trial is ready to
-submit the moment the afterburner can treat it: no version of the
-afterburner has a 130×5 beam configuration (the 130×9 one it has is
-the 10×100 parameters relabelled, "no official numbers"), and the
-26.07 images carry 0.1.3, which has no 130 GeV configuration at all.
-The two asks that unblock it: a 130×5 configuration in the afterburner,
-or agreement to a stand-in like the 130×9 one; and an afterburner in
-the campaign image that carries it, or a sandbox build of the
-afterburner in the stage. The steering card used for the registered
-pythia8 samples is the third ask, for every pythia8 request.
+The 5×130 request is composed the same way
+(`group.EIC.26.07.1.epic_craterlake.p2445.e49.s1.r1.trial`). No version
+of the afterburner has a 130×5 beam configuration, and the 26.07 images
+carry 0.1.3, which has no 130 GeV configuration at all; so its trial
+runs the afterburner built in the job from the shipped source (payload
+0.7.1) with the stand-in configuration `ip6_ep_130x9`, the 10×100 beam
+parameters relabelled ("no official numbers" in the afterburner
+source), set on the task and its trial through
+`overrides.data.afterburner_preset`. The beam effects in that sample
+are known to be wrong; it is a trial of the path, not a physics
+sample. The asks that retire the stand-in: a 130×5 configuration in
+the afterburner, and an afterburner in the campaign image that carries
+it and the 9 GeV configurations. The steering card used for the
+registered pythia8 samples is the third ask, for every pythia8
+request.
 
 ## Related
 
