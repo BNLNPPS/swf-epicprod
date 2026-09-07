@@ -19,25 +19,34 @@
   scale.
 </p>
 
-{% if rows %}
-<table class="table table-sm table-bordered table-striped w-auto align-middle swf-sortable">
+{% if groups %}
+{# Grouped by the configuration a trial qualifies, its trials numbered      #}
+{# beneath it; the grouping is the order, so the table is not sortable.    #}
+<table class="table table-sm table-bordered w-auto align-middle swf-latch-head">
   <thead>
     <tr>
-      <th>Trial</th><th class="text-end">#</th><th class="text-end">Events</th>
-      <th>Site</th><th>Status</th><th>PanDA task</th><th>Qualifies</th>
+      <th>Configuration</th><th>Trial</th><th>Created</th><th class="text-end">Events</th>
+      <th>Site</th><th>Status</th><th>PanDA task</th>
     </tr>
   </thead>
   <tbody>
-  {% for r in rows %}
+  {% for g in groups %}
+    {% for r in g.trials %}
     <tr>
-      <td><a href="{% url 'pcs:trial_detail' name=r.task.composed_name %}">{{ r.task.composed_name }}</a></td>
-      <td class="text-end">{{ r.number }}</td>
-      <td class="text-end">{{ r.events|default_if_none:"—" }}</td>
+      {% if forloop.first %}
+      <td rowspan="{{ g.span }}">
+        <div>{{ g.physics }}</div>
+        <div class="small text-muted"><a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&selected={{ g.subject|urlencode }}">{{ g.subject }}</a></div>
+      </td>
+      {% endif %}
+      <td><a href="{% url 'pcs:trial_detail' name=r.task.composed_name %}" title="{{ r.task.composed_name }}">{{ r.suffix }}</a></td>
+      <td>{{ r.created|fmt_dt }}</td>
+      <td class="text-end">{{ r.events|default_if_none:"" }}</td>
       <td>{{ r.site }}{% if not r.site_chosen %} <span class="text-danger" title="nobody chose this site; it is the configuration's default">(default)</span>{% endif %}</td>
       <td class="{{ r.task.status|state_class }}">{{ r.task.status }}</td>
-      <td>{% if r.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' jeditaskid=r.jedi_task_id %}">{{ r.jedi_task_id }}</a>{% if r.panda_status %} <span class="{{ r.panda_status|state_class }}">{{ r.panda_status }}</span>{% endif %}{% if r.panda_error %}<div class="text-danger small">{{ r.panda_error }}</div>{% endif %}{% else %}—{% endif %}</td>
-      <td class="small">{{ r.subject }}</td>
+      <td>{% if r.jedi_task_id %}<a href="{% url 'monitor_app:panda_task_detail' jeditaskid=r.jedi_task_id %}">{{ r.jedi_task_id }}</a>{% if r.panda_status %} <span class="{{ r.panda_status|state_class }}">{{ r.panda_status }}</span>{% endif %}{% if r.panda_error %}<div class="text-danger small">{{ r.panda_error }}</div>{% endif %}{% endif %}</td>
     </tr>
+    {% endfor %}
   {% endfor %}
   </tbody>
 </table>
