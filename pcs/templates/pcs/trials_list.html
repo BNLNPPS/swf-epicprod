@@ -22,6 +22,11 @@
 {% if groups %}
 {# Grouped by the configuration a trial qualifies, its trials numbered      #}
 {# beneath it; the grouping is the order, so the table is not sortable.    #}
+<style>
+  /* The most recent trial of a set: a light grey on its own cells, so a
+     failure with a later success in its set is never the grey row. */
+  .swf-latest td:not(.swf-config) { background-color: rgba(128, 128, 128, 0.12); }
+</style>
 <table class="table table-sm table-bordered w-auto align-middle swf-latch-head">
   <thead>
     <tr>
@@ -32,9 +37,9 @@
   <tbody>
   {% for g in groups %}
     {% for r in g.trials %}
-    <tr>
+    <tr{% if forloop.first %} class="swf-latest"{% endif %}>
       {% if forloop.first %}
-      <td rowspan="{{ g.span }}">
+      <td rowspan="{{ g.span }}" class="swf-config">
         <div>{{ g.physics }}</div>
         <div class="small text-muted"><a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&selected={{ g.subject|urlencode }}">{{ g.subject }}</a></div>
       </td>
