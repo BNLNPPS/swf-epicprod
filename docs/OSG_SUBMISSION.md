@@ -243,7 +243,7 @@ host is advertised bare or fully qualified; both forms occur.
 Applied 2026-09-07 on the evidence of thirty days of job records: every
 node listed had zero finished jobs and at least fifty failures, and
 together they account for 14,480 failed jobs and 9,997 core-hours. The
-eleven named nodes sit at sites that otherwise deliver — Nebraska,
+twelve named nodes sit at sites that otherwise deliver — Nebraska,
 UConn, Rhodes-HPC, GREX and ComputeCanada-Fir — which is what makes
 node granularity the right instrument for them. Alabama-CHPC is
 excluded as a site instead: all nineteen of its nodes appearing in the
