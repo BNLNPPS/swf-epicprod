@@ -5845,3 +5845,27 @@ def trial_detail(request, name):
         'attempts': attempts,
         'outputs': list(task.delivered_outputs.all()) if task.pk else [],
     })
+
+
+def stash_page(request):
+    """The failover stash: what is waiting at BNL, and what it owes JLab.
+
+    An output the catalog of record would not take is written to a BNL
+    dCache space and reported; the drain catalogues it and, when JLab
+    answers, brings it home (docs/RUCIO_FAILOVER_STASH.md). This page is
+    the record of what is waiting. It reads the drain's own account and
+    never the catalog: a page that reaches Rucio to render is a page that
+    hangs when Rucio does.
+    """
+    # Read the stored row, never get_product: that builds on a miss, and a
+    # page must not build — the drain is the only builder of this record.
+    from monitor_app.models import CachedProduct
+    row = CachedProduct.objects.filter(key='stash_state').first()
+    state = (row.value if row else None) or {}
+    entries = state.get('entries') or []
+    return render(request, 'pcs/stash.html', {
+        'state': state,
+        'entries': entries,
+        'built_at': state.get('built_at'),
+        'never_run': not state,
+    })

@@ -72,6 +72,7 @@ urlpatterns = [
     # offer is a link they can open.
     path('trials/', views.trials_list, name='trials_list'),
     path('trials/<path:name>/', views.trial_detail, name='trial_detail'),
+    path('stash/', views.stash_page, name='stash_page'),
     path('storage/', views.storage_listings_home, name='storage_listings_home'),
     path('storage/<str:listing>/', views.storage_listings, name='storage_listings'),
     path('ingest/', views.pc_ingest, name='pc_ingest'),
