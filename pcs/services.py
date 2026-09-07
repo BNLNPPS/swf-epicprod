@@ -6452,6 +6452,13 @@ def campaign_plan_entries_set(campaign_name, entries, comment, *,
 
 STANDARD_CONFIG_TEMPLATE = '26.03.0 Standard Production'
 STANDARD_CONFIG_RSE = 'BNL-XRD'
+# The log store production writes to, paired with the output RSE above in the
+# production line PCS ingested (OUT_RSE=BNL-XRD LOG_RSE=EIC-XRD-LOG). Named
+# here rather than left to the template row: unset, it reached the payload
+# empty, which spent every job's first log upload on a placeholder that is not
+# a storage element. Verified writable 2026-09-07 from the production
+# container with the job's own eicprod proxy.
+STANDARD_CONFIG_LOG_RSE = 'EIC-XRD-LOG'
 STANDARD_CONFIG_CLONE_FIELDS = (
     'bg_mixing', 'bg_cross_section', 'bg_evtgen_file',
     'copy_reco', 'copy_full', 'copy_log', 'use_rucio',
@@ -6488,6 +6495,11 @@ def standard_prodconfig_values(edition):
                          f'eic_xl:{edition}-stable'),
         rucio_rse=STANDARD_CONFIG_RSE,
     )
+    # The cloned data block carries the template's keys; the log store is
+    # named here so a new campaign's configuration cannot inherit an unset
+    # one from whatever row happens to be the template.
+    values['data'] = {**(values.get('data') or {}),
+                      'log_rse': STANDARD_CONFIG_LOG_RSE}
     return values
 
 
