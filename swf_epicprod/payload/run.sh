@@ -553,18 +553,32 @@ if [ "${COPYLOG:-false}" == "true" ] ; then
     # for want of a log. So: try the log store, and if it refuses, put
     # the log beside the science data instead, and if that refuses too,
     # say so and carry on to deliver the physics.
-    if ! monitor logs python $SCRIPT_DIR/register_to_rucio.py \
-        -f "${LOG_TEMP}/${TASKNAME}.log.tar.gz" \
-        -d "/${LOG_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
-        -s epic -r ${LOG_RSE:-isLogRSE} --noregister; then
-      echo "WARNING: log upload to ${LOG_RSE:-isLogRSE} failed; trying the output store."
+    # An unset LOG_RSE used to fall through to the literal string
+    # "isLogRSE", which is not a storage element and never was: every job
+    # on a configuration with no log_rse spent an upload attempt, and the
+    # timeout behind it, on a certainty. A configuration that names no log
+    # store goes straight to the output store instead.
+    LOG_UPLOADED=0
+    if [ -n "${LOG_RSE:-}" ]; then
+      if monitor logs python $SCRIPT_DIR/register_to_rucio.py \
+          -f "${LOG_TEMP}/${TASKNAME}.log.tar.gz" \
+          -d "/${LOG_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
+          -s epic -r "${LOG_RSE}" --noregister; then
+        LOG_UPLOADED=1
+      else
+        echo "WARNING: log upload to ${LOG_RSE} failed; trying the output store."
+      fi
+    else
+      echo "No log RSE configured (log_rse unset on the production config); writing the log beside the science data."
+    fi
+    if [ "${LOG_UPLOADED}" -eq 0 ]; then
       if monitor logs_fallback python $SCRIPT_DIR/register_to_rucio.py \
           -f "${LOG_TEMP}/${TASKNAME}.log.tar.gz" \
           -d "/${RECO_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
           -s epic -r ${OUT_RSE:-EIC-XRD} --noregister; then
         stage logs fallback "log written beside the science data at ${OUT_RSE:-EIC-XRD}"
       else
-        stage logs fail "log upload failed at ${LOG_RSE:-isLogRSE} and at ${OUT_RSE:-EIC-XRD}; the job's physics is unaffected"
+        stage logs fail "log upload failed${LOG_RSE:+ at ${LOG_RSE}} and at ${OUT_RSE:-EIC-XRD}; the job's physics is unaffected"
         echo "WARNING: no log upload succeeded. The payload continues; the report carries this."
       fi
     fi
