@@ -735,7 +735,11 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False):
         'vo': data.get('vo', 'epic'),
         'userName': task.created_by,
         'workingGroup': cfg.get('panda_working_group') or 'EIC',
-        'site': cfg.get('panda_site') or EVGEN_DEFAULT_SITE,
+        # A trial's site is the destination it was fired at to qualify, so it
+        # outranks the configuration's: a trial that records GREX and submits
+        # to OSG qualifies the wrong path and reports success for it.
+        'site': (str((ds.metadata or {}).get('trial_site') or '')
+                 or cfg.get('panda_site') or EVGEN_DEFAULT_SITE),
         'prodSourceLabel': data.get('prod_source_label', 'test'),
         'taskType': data.get('task_type', 'prod'),
         'processingType': data.get('processing_type', 'epicproduction'),
