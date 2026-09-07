@@ -1,0 +1,61 @@
+diff -ruN a/EIC_mesonMC.h b/EIC_mesonMC.h
+--- a/EIC_mesonMC.h	2026-09-07 15:57:16.425251830 -0400
++++ b/EIC_mesonMC.h	2026-09-07 15:57:16.523255798 -0400
+@@ -828,6 +828,7 @@
+ 
+   double x = Q2/(2.0*Mp*nu);
+   double y = nu/ebeam;
++  return 0.0;   /* epicprod: the function body computes nothing it returns; ROOT's compiler treats the missing return as an error */
+ }
+ 
+ // for the JLEIC collider : it needs an input as x, y_D, q2, nu, nucl instead of ebeam, theta_e, eprime 
+diff -ruN a/EIC_mesonMC_Lambda.cpp b/EIC_mesonMC_Lambda.cpp
+--- a/EIC_mesonMC_Lambda.cpp	2026-09-07 15:57:16.428251952 -0400
++++ b/EIC_mesonMC_Lambda.cpp	2026-09-07 15:57:16.517255555 -0400
+@@ -163,7 +163,7 @@
+   char tTitle[80], tName[18], rName[67];
+   
+   sprintf(tTitle,"p(e,e'K\u039B)X Event Generation %3.1f GeV/c x%4.1f GeV/c",kBeam, PBeam);
+-  sprintf(rName,"/w/eic-scshelf2104/users/singhav/EIC_mesonsf_generator/OUTPUTS/kaon_lambda_v2/k_lambda_crossing_%.3f-%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f.root", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max);
++  sprintf(rName,"k_lambda_crossing_%.3f-%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f.root", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max);
+ 
+   TFile fRoot(rName,"Recreate", tTitle);
+   sprintf(tName,"k_lambda");
+@@ -354,9 +354,9 @@
+   double pS_rest, csThRecoil, phiRecoil;
+ 
+   //name of output lund file for GEANT4 use
+-  ofstream OUT_lund (Form("/w/eic-scshelf2104/users/singhav/EIC_mesonsf_generator/OUTPUTS/kaon_lambda_v2/k_lambda_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_lund.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
+-  ofstream OUT_pythia (Form("/w/eic-scshelf2104/users/singhav/EIC_mesonsf_generator/OUTPUTS/kaon_lambda_v2/k_lambda_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_pythia.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
+-  ofstream OUT_hepmc (Form("/w/eic-scshelf2104/users/singhav/EIC_mesonsf_generator/OUTPUTS/kaon_lambda_v2/k_lambda_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_hepmc.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
++  ofstream OUT_lund (Form("k_lambda_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_lund.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
++  ofstream OUT_pythia (Form("k_lambda_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_pythia.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
++  ofstream OUT_hepmc (Form("k_lambda_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_hepmc.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
+ 
+   // // Pythia output header
+   // OUT_pythia << setiosflags(ios::left)  << setiosflags(ios::fixed)  << "SIMPLE Event FILE" << endl;
+diff -ruN a/EIC_mesonMC_n.cpp b/EIC_mesonMC_n.cpp
+--- a/EIC_mesonMC_n.cpp	2026-09-07 15:57:16.434252195 -0400
++++ b/EIC_mesonMC_n.cpp	2026-09-07 15:57:16.521255717 -0400
+@@ -170,7 +170,7 @@
+   char tTitle[80], tName[18], rName[62];
+   
+   sprintf(tTitle,"p(e,e'\u03C0n)X Event Generation %3.1f GeV/c x%4.1f GeV/c",kBeam, PBeam);
+-  sprintf(rName,"/w/eic-scshelf2104/users/singhav/EIC_mesonsf_generator/OUTPUTS/pion_neutron_v2/pion_neutron_crossing_%.3f-%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f.root", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max);
++  sprintf(rName,"pion_neutron_crossing_%.3f-%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f.root", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max);
+ 
+   TFile fRoot(rName,"Recreate", tTitle);
+   sprintf(tName,"pi_n");
+@@ -365,9 +365,9 @@
+   double pS_rest, csThRecoil, phiRecoil;
+ 
+   //name of output lund file for GEANT4 use
+-  ofstream OUT_lund (Form("/w/eic-scshelf2104/users/singhav/EIC_mesonsf_generator/OUTPUTS/pion_neutron_v2/pion_neutron_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_lund.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
+-  ofstream OUT_pythia (Form("/w/eic-scshelf2104/users/singhav/EIC_mesonsf_generator/OUTPUTS/pion_neutron_v2/pion_neutron_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_pythia.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
+-  ofstream OUT_hepmc (Form("/w/eic-scshelf2104/users/singhav/EIC_mesonsf_generator/OUTPUTS/pion_neutron_v2/pion_neutron_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_hepmc.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
++  ofstream OUT_lund (Form("pion_neutron_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_lund.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
++  ofstream OUT_pythia (Form("pion_neutron_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_pythia.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
++  ofstream OUT_hepmc (Form("pion_neutron_crossing_%.3f_%.1fon%.1f_x%.4f-%.4f_q%.1f-%.1f_hepmc.dat", CrossingTheta, kBeam, PBeam,xMin,xMax,Q2Min,Q2Max), ios::trunc);
+ 
+   // Adjusted LUND header
+   OUT_lund << setiosflags(ios::left)  << setiosflags(ios::fixed)  << "Adjusted LUND Type" << endl;

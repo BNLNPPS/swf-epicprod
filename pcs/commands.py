@@ -602,7 +602,8 @@ def _internal_evgen_env(task):
         'COPYEVGEN': 'true' if data.get('copy_evgen') else 'false',
     }
     for key, name in (('q2_range', 'EVGEN_Q2_RANGE'), ('state', 'EVGEN_STATE'),
-                      ('mechanism', 'EVGEN_MECHANISM'),
+                      ('mechanism', 'EVGEN_MECHANISM'), ('channel', 'EVGEN_CHANNEL'),
+                      ('x_range', 'EVGEN_X_RANGE'),
                       ('beam_config', 'EVGEN_BEAM_CONFIG')):
         if str(physics.get(key) or '').strip():
             env[name] = str(physics[key])
@@ -647,7 +648,8 @@ def internal_evgen_sample(task):
         stem = '_'.join([generator, current, rad, species, beams, q2])
         return path, stem
     area = str(ds.physics_tag.category.name or 'Exclusive').upper().replace(' ', '_')
-    qualifier = '_'.join(str(physics[key]) for key in ('state', 'mechanism', 'beam_config')
+    qualifier = '_'.join(str(physics[key])
+                         for key in ('state', 'mechanism', 'channel', 'beam_config')
                          if physics.get(key))
     path = '/'.join([area, process.upper(), generator, species, beams]
                     + ([qualifier] if qualifier else []))

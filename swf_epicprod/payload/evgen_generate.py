@@ -28,6 +28,7 @@ Usage::
         --events 100 --workdir /tmp/evgen --summary evgen-summary.json
 """
 import argparse
+import glob
 import json
 import os
 import re
@@ -273,10 +274,51 @@ def djangoh_dis_cc_card(events, seed):
     return '\n'.join(lines) + '\n'
 
 
+MESONSF_CHANNELS = {'k_lambda': 'EIC_mesonMC_Lambda.cpp', 'pi_n': 'EIC_mesonMC_n.cpp'}
+X_RANGE_RE = re.compile(r'x_(\d*\.?\d+)to(\d*\.?\d+)', re.IGNORECASE)
+
+
+def mesonsf_card(events, seed):
+    """The meson structure-function generator (eicMesonSFGen, JeffersonLab
+    eic_mesonsf_generator 1.0.0): tagged DIS on the proton's meson cloud,
+    e p -> e' K+ Lambda for the kaon structure function (channel
+    k_lambda) or e p -> e' pi+ n for the pion one (pi_n). It takes its
+    steering as the arguments of its mainx() entry point, so this card
+    records them as key=value lines the runner reads: the x and Q^2
+    windows from the physics tag (EVGEN_X_RANGE x_<lo>to<hi>, 0.001 to
+    1 by default; EVGEN_Q2_RANGE), the beams, the seed, the trials (this
+    version yields one event per trial), no beam smearing, and the
+    generator's zero crossing angle, the afterburner supplying it."""
+    channel = env_value('EVGEN_CHANNEL', required=True).lower()
+    if channel not in MESONSF_CHANNELS:
+        fail(f'EVGEN_CHANNEL {channel!r}: eicMesonSFGen channels composed are '
+             f'{sorted(MESONSF_CHANNELS)}')
+    ebeam = env_value('EBEAM', required=True)
+    pbeam = env_value('PBEAM', required=True)
+    lo, hi = q2_bounds(env_value('EVGEN_Q2_RANGE', required=True))
+    if hi is None:
+        fail('EVGEN_Q2_RANGE needs an upper bound for eicMesonSFGen')
+    m = X_RANGE_RE.fullmatch(env_value('EVGEN_X_RANGE', 'x_0.001to1'))
+    if not m:
+        fail('EVGEN_X_RANGE is not of the form x_<lo>to<hi>')
+    if env_value('EVGEN_BEAM_SPECIES', 'ep').lower() != 'ep':
+        fail('only ep is composed for eicMesonSFGen')
+    lines = [
+        '# epicprod internal EVGEN: eicMesonSFGen arguments, read by the runner',
+        f'script={MESONSF_CHANNELS[channel]}', f'channel={channel}',
+        f'xmin={m.group(1)}', f'xmax={m.group(2)}', f'q2min={lo}', f'q2max={hi}',
+        f'seed={seed}', f'trials={events}', f'pbeam={pbeam}', f'kbeam={ebeam}',
+        'smear=false',
+    ]
+    return '\n'.join(lines) + '\n'
+
+
 CARDS = {('pythia8', 'DIS_NC'): pythia8_dis_nc_card,
          ('estarlight', 'UPSILON'): estarlight_upsilon_card,
-         ('djangoh', 'DIS_CC'): djangoh_dis_cc_card}
-CARD_SUFFIX = {'pythia8': '.cmnd', 'estarlight': '.in', 'djangoh': '.in'}
+         ('djangoh', 'DIS_CC'): djangoh_dis_cc_card,
+         ('eicmesonsfgen', 'MESON_SF'): mesonsf_card}
+CARD_SUFFIX = {'pythia8': '.cmnd', 'estarlight': '.in', 'djangoh': '.in',
+               'eicmesonsfgen': '.args'}
 
 
 def run(cmd, log, **kwargs):
@@ -373,6 +415,65 @@ def generate_djangoh(card_path, ascii_path, workdir, log, seed, events):
         fail('the DJANGOH event file did not convert:\n' + tail(log))
 
 
+MESONSF_SOURCE = os.path.join(HERE, 'mesonsf-1.0.0.tgz')
+MESONSF_PATCH = os.path.join(HERE, 'mesonsf-epicprod.patch')
+
+
+def trim_hepmc3(src, dst, events):
+    """The first `events` events of a HepMC3 ASCII file to dst, the header
+    and the end marker kept; the count written."""
+    written = 0
+    with open(src) as inp, open(dst, 'w') as out:
+        for line in inp:
+            if line.startswith('E '):
+                if written == events:
+                    break
+                written += 1
+            if line.startswith('HepMC::Asciiv3-END_EVENT_LISTING'):
+                break
+            out.write(line)
+        out.write('HepMC::Asciiv3-END_EVENT_LISTING\n')
+    return written
+
+
+def generate_mesonsf(card_path, ascii_path, workdir, log, seed, events):
+    """The requested events to HepMC3 ASCII through eicMesonSFGen compiled
+    in the job: the shipped source (mesonsf.VERSION) unpacked and patched
+    (mesonsf-epicprod.patch: outputs in the working directory, a missing
+    return), the channel's script compiled by ROOT's ACLiC and its
+    mainx() called with the card's arguments. The generator writes HepMC3
+    itself, the beams as status 4, one event per trial in this version;
+    the file is trimmed to the requested count."""
+    for needed in (MESONSF_SOURCE, MESONSF_PATCH):
+        if not os.path.exists(needed):
+            fail(f'{needed} is not in the payload')
+    card = {}
+    with open(card_path) as handle:
+        for line in handle:
+            if '=' in line and not line.startswith('#'):
+                key, _, value = line.strip().partition('=')
+                card[key] = value
+    rundir = os.path.join(workdir, 'mesonsf')
+    os.makedirs(rundir, exist_ok=True)
+    if run(['tar', 'xzf', MESONSF_SOURCE, '-C', rundir], log) != 0:
+        fail('could not unpack the eicMesonSFGen source:\n' + tail(log))
+    src = os.path.join(rundir, 'mesonsf')
+    if run(['patch', '-p1', '-i', MESONSF_PATCH], log, cwd=src) != 0:
+        fail('the eicMesonSFGen patch did not apply:\n' + tail(log))
+    call = (f"mainx({card['xmin']},{card['xmax']},{card['q2min']},{card['q2max']},"
+            f"{card['seed']},{card['trials']},{card['pbeam']},{card['kbeam']},{card['smear']})")
+    rc = run(['root', '-l', '-b', '-q', '-e', f".L {card['script']}+", '-e', call],
+             log, cwd=src)
+    produced = sorted(glob.glob(os.path.join(src, '*_hepmc.dat')))
+    if not produced:
+        fail(f'eicMesonSFGen wrote no HepMC3 file (root exit {rc}):\n' + tail(log))
+    if rc != 0:
+        print(f'root exited {rc} but eicMesonSFGen wrote {produced[0]}; proceeding')
+    written = trim_hepmc3(produced[0], ascii_path, events)
+    if written < events:
+        fail(f'eicMesonSFGen produced {written} events, {events} requested')
+
+
 def generate_estarlight(card_path, ascii_path, workdir, log, seed, events):
     """The requested events to HepMC3 ASCII through the image's
     e_starlight, which reads slight.in from its working directory and
@@ -390,7 +491,7 @@ def generate_estarlight(card_path, ascii_path, workdir, log, seed, events):
 
 
 GENERATORS = {'pythia8': generate_pythia8, 'estarlight': generate_estarlight,
-              'djangoh': generate_djangoh}
+              'djangoh': generate_djangoh, 'eicmesonsfgen': generate_mesonsf}
 
 
 AB_SOURCE = os.path.join(HERE, 'afterburner-cpp.tgz')
