@@ -774,6 +774,7 @@ def _trial_spec(ds):
     the composed name is derived from them, so this reads the record
     rather than parsing the name.
     """
+    from .trials import trial_output_root  # late import: avoid cycle
     md = (ds.metadata or {}) if ds is not None else {}
     number = md.get('trial')
     if not number:
@@ -781,7 +782,8 @@ def _trial_spec(ds):
     return {'trial': {
         'number': int(number),
         'events': int(md.get('trial_events') or 100),
-        'outputRoot': str(md.get('trial_output_root') or 'TEST/trial'),
+        'outputRoot': str(md.get('trial_output_root')
+                          or trial_output_root(ds.composed_name)),
         'lifetimeDays': int(md.get('trial_lifetime_days') or 14),
         'site': str(md.get('trial_site') or ''),
     }}

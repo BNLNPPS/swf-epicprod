@@ -27,10 +27,16 @@ _log = logging.getLogger(__name__)
 # chain and see concurrency behave, few enough to finish in minutes.
 DEFAULT_TRIAL_EVENTS = 100
 
-# Trial outputs land here, beside the canary's own root, with the
-# production substructure beneath so a physics group reads them in the
-# shape real data has and nothing can mistake them for production.
+# Trial outputs land here, beside the canary's own root, each trial under
+# its own composed name with the production substructure beneath, so a
+# physics group reads them in the shape real data has, nothing can
+# mistake them for production, and no two trials share a DID.
 TRIAL_OUTPUT_ROOT = 'TEST/trial'
+
+
+def trial_output_root(name):
+    """Where the trial named ``name`` lands its outputs, its own root."""
+    return f'{TRIAL_OUTPUT_ROOT}/{name}'
 
 # Long enough for a group to look, short enough that nobody curates it:
 # what survives a trial is the acceptance and the record, not the data.
@@ -100,7 +106,6 @@ def compose_trial(source_task, events=DEFAULT_TRIAL_EVENTS, site='',
             'trial': number,
             'trial_events': events,
             'trial_site': site or '',
-            'trial_output_root': TRIAL_OUTPUT_ROOT,
             'trial_lifetime_days': TRIAL_LIFETIME_DAYS,
             'source': {'kind': 'trial', 'location': source.composed_name},
             **({'rucio': {'matched': matched}} if matched else {}),
@@ -113,6 +118,11 @@ def compose_trial(source_task, events=DEFAULT_TRIAL_EVENTS, site='',
     edition.dataset_name = name
     edition.composed_name = name
     edition.did = f'{edition.scope}:{name}.b1'
+    # The output root carries the trial's own name, so its files and its
+    # dataset are its own: the payload names an output by directory and
+    # input file, and a root shared by every trial of a configuration
+    # gave them all one DID.
+    edition.metadata['trial_output_root'] = trial_output_root(name)
     edition.save()
 
     # inputs and input_source_location are derived properties, not
