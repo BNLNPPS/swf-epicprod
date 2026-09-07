@@ -371,9 +371,10 @@ The agent is a systemd service like the `swf-*-bot` units — reference unit
 `StartLimitIntervalSec=120`), `enable`d for boot. A persistent agent that keeps
 exiting is sick whatever its exit code, so the burst cap lets it land in `failed`
 (visible) instead of flapping forever. `KillMode=mixed` confines a stop signal
-to the agent process, so its doer subprocesses are never signalled directly and
-finish under the agent's drain (below); `TimeoutStopSec=3900` gives the drain the
-longest doer timeout (the storage sweep, 3600 s) plus a margin. It runs from the deploy tree
+to the agent process, so its doer subprocesses are ended by the agent's own
+bounded stop (below) and whatever they left in the control group is killed when
+the main process exits; `TimeoutStopSec=120` sits a little above the stop's
+hard-exit limit, so systemd is the last resort. It runs from the deploy tree
 (`/opt/swf-monitor/current`) off `production.env`, which supplies everything it
 needs — `REQUESTS_CA_BUNDLE` (the combined BNL+public bundle, for the doer's Rucio
 REST), `X509_USER_PROXY`, and the `ACTIVEMQ_*` / `SWF_*` vars. `SWF_MONITOR_URL`
@@ -389,23 +390,28 @@ web view share. Bring it back manually with `sudo systemctl restart
 epicprod-ops-agent`. Being a `BaseAgent` it registers and heartbeats to the
 monitor and logs to the monitor DB, so it appears in the agent list.
 
-**Deploys and restarts** — a stop never kills work in flight. On SIGTERM the
-agent drains: it keeps consuming and working until no background task is in
-flight, then unsubscribes from the queue (what arrives next waits for the
-successor), closes the pool, reports EXITED and exits; a second SIGTERM during
-the drain changes nothing. The deploy script moves the agent to the new release
-on every deploy without killing work: an idle agent (`READY` in the agent
-registry at `/api/systemagents/`) is restarted at once; a working agent, or one
-whose state cannot be read, is signalled alone to step down (`systemctl kill
---kill-who=main`), drains, and is started again by systemd (`Restart=always`)
-from the new release, while the previous release stays on disk (the deploy keeps
-five). The agent dispatches its doer scripts (`submit-evgen-task.py` →
-`evgen_panda_submit.py`, `cache-payload-log.py`, `storage-sweep.py`, …) as fresh
-subprocesses by absolute path into the release it started from, so doer changes,
-like changes to the agent module itself (`agents/epicprod_ops_agent.py`) and its
-startup inputs (`prodops.toml`, `production.env`), reach the agent at that
-restart. A hand restart is `sudo systemctl restart epicprod-ops-agent`; it drains
-the same way, bounded by the unit's stop timeout.
+**Deploys and restarts** — a stop is bounded end to end, whatever a doer is
+doing. On SIGTERM the agent stops consuming (what arrives next waits in the
+queue for the successor), waits for work in flight up to the drain limit
+(`SWF_AGENT_DRAIN_LIMIT_S`, 60 s), ends the doer processes still running
+(SIGTERM, a grace period, SIGKILL) so their threads return and record their
+outcomes, reports EXITED and releases the bus; a second SIGTERM ends the work at
+once, and a hard-exit guard ends the process at about 105 s if any step blocks
+(swf-common-lib README, BaseAgent). A doer pass ended this way reruns on its own
+schedule; the sweeps and captures are idempotent, and a submission takes seconds,
+inside the limit. The deploy script restarts the unit on every deploy
+(`systemctl restart`), logging the agent's state so a lost pass is visible; the
+previous release stays on disk (the deploy keeps five). On 2026-09-07 the
+earlier design, a stop that waited for work without bound with the queue still
+consumed and a deploy that signalled the process outside a systemd stop job,
+left the agent wedged for twelve minutes in a storage sweep, accepting a
+submission after its SIGTERM and publishing nothing. The agent dispatches its
+doer scripts (`submit-evgen-task.py` → `evgen_panda_submit.py`,
+`cache-payload-log.py`, `storage-sweep.py`, …) as fresh subprocesses by absolute
+path into the release it started from, so doer changes, like changes to the
+agent module itself (`agents/epicprod_ops_agent.py`) and its startup inputs
+(`prodops.toml`, `production.env`), reach the agent at that restart. A hand
+restart is `sudo systemctl restart epicprod-ops-agent`; it stops the same way.
 
 **Deliberate stop** — two back doors, neither counted as a failure: `sudo
 systemctl stop epicprod-ops-agent` (host-level; SIGTERM unwinds BaseAgent's
