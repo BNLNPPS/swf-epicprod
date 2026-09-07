@@ -340,17 +340,42 @@ fi
 # replica) cannot be regenerated under this name: it stops here with its
 # own exit code, and the residual rerun as a new try is the route
 # (epicprod payload: swf-epicprod docs/EPICPROD_PAYLOAD.md).
+# The check is authoritative, not merely existential: it carries the event
+# count this job is to produce, so a registered replica holding a different
+# count is not this job's delivered output and the work goes ahead. Both
+# produced outputs are asked about; the job has nothing to do only when
+# everything it would deliver is already delivered
+# (docs/RUCIO_RESILIENCE.md, Measure 3).
 RECO_DID=/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root
-OUTPUT_STATE=$(python $SCRIPT_DIR/check_output.py epic ${RECO_DID} || echo UNKNOWN)
+FULL_DID=/${FULL_DIR}/${TASKNAME}.edm4hep.root
+# Where a diverted registration leaves the name it actually used.
+export DIVERTED_OUT=${TMPDIR}/${TASKNAME}.diverted
+OUTPUT_STATE=$(python $SCRIPT_DIR/check_output.py epic ${RECO_DID} "${EVENTS_PER_TASK:-}" || echo UNKNOWN)
+FULL_STATE=SKIPPED
+if [ "${COPYFULL:-false}" == "true" ] && [ "${USERUCIO:-false}" == "true" ]; then
+  FULL_STATE=$(python $SCRIPT_DIR/check_output.py epic ${FULL_DID} "${EVENTS_PER_TASK:-}" || echo UNKNOWN)
+  echo "FULL output ${FULL_DID}: ${FULL_STATE}"
+fi
 case "${OUTPUT_STATE}" in
   AVAILABLE)
-    echo "Output ${RECO_DID} is registered with an available replica: delivered by an earlier attempt of this job; nothing to do."
-    REPORT_NOTE="output delivered by an earlier attempt of this job"
-    exit 0 ;;
+    if [ "${FULL_STATE}" == "SKIPPED" ] || [ "${FULL_STATE}" == "AVAILABLE" ]; then
+      echo "Output ${RECO_DID} is registered with an available replica: delivered by an earlier attempt of this job; nothing to do."
+      REPORT_NOTE="output delivered by an earlier attempt of this job"
+      exit 0
+    fi
+    echo "RECO is delivered but FULL is ${FULL_STATE}: the work unit is incomplete, proceeding."
+    ;;
   HELD)
     echo "ERROR: output name ${RECO_DID} is held by a failed earlier attempt (registered, no available replica) and cannot be regenerated under this name; rerun the residual as a new try."
     REPORT_NOTE="output name held by a failed earlier attempt"
     exit 79 ;;
+  MISMATCH)
+    # Registered, available, and not what this job is to produce. The work
+    # goes ahead and registration diverts to a derived name rather than
+    # discarding validated data over a naming rule.
+    echo "Output ${RECO_DID} is registered with different content (event count differs); proceeding, and registration will divert to a derived name."
+    REPORT_NOTE="the output name holds different content; registering under a derived name"
+    ;;
   *)
     echo "Output ${RECO_DID} not registered (${OUTPUT_STATE}); proceeding." ;;
 esac
@@ -715,7 +740,11 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     # step above and docs/RUCIO_RESILIENCE.md, Measure 2.
     monitor registration_reco python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}
     REG_RC=$?
-    if [ ${REG_RC} -eq 0 ]; then
+    if [ ${REG_RC} -eq 0 ] && [ -s "${DIVERTED_OUT}" ]; then
+      DIVERTED_DID=$(cat "${DIVERTED_OUT}")
+      echo "RECO registered under a derived name: ${DIVERTED_DID}"
+      stage registration diverted "${DIVERTED_DID}"
+    elif [ ${REG_RC} -eq 0 ]; then
       stage registration ok "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
     elif [ ${REG_RC} -eq 81 ]; then
       echo "WARNING: catalog unreachable for RECO; registration pending."

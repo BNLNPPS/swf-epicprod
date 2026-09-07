@@ -218,6 +218,25 @@ Codes 65, 78 and 79 also appear in the run script's stage log and in
 the payload report, so a job that dies before its report is sent is
 still classified by its code alone.
 
+The delivered-output check before any work is authoritative rather than
+existential: it carries the event count the job is to produce, and asks
+about both produced outputs where both are registered. A registered
+replica whose recorded count is absent or different is not this job's
+delivered output, so the work goes ahead and the registration diverts
+(see below). A job has nothing to do only when everything it would
+deliver is already delivered.
+
+Registration adopts or diverts, and never discards validated data. An
+available replica under the owed name carrying the same event count is
+the same work: the job adopts it and exits success. One carrying
+different content is a genuine clash, and the file registers under a
+derived name — the original name with the attempt's own mark — with the
+divergence left for content validation and a person, rather than the
+job throwing away physics to protect a naming rule. A diverted
+registration is recorded as the registration stage's outcome with the
+name it actually used, so the production record carries a diverted row
+rather than a delivered one.
+
 78 now means what it says and no more: the catalog answered, and the
 output is not registered. When the catalog cannot be reached at all —
 neither to register the output nor to say whether it is already there —

@@ -451,10 +451,49 @@ if __name__ == "__main__":
                 "registrar completes it.", probe)
             sys.exit(PENDING_EXIT)
         if delivered and len(delivered) == len(dids):
-            logger.warning(
-                "Output already registered with an available replica, "
-                "delivered by an earlier attempt: %s", delivered)
-            sys.exit(0)
+            # Adopt, but only what is the same work. An available replica
+            # under this name carrying a different event count is other
+            # content, and adopting it would report someone else's file as
+            # this job's delivery (docs/RUCIO_RESILIENCE.md, Measure 3).
+            same = True
+            if args.events is not None:
+                for did_name in did_names:
+                    try:
+                        recorded = client.get_metadata(scope, did_name).get('events')
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error("events unreadable on %s:%s: %s",
+                                     scope, did_name, exc)
+                        recorded = None
+                    if recorded is None or int(recorded) != int(args.events):
+                        logger.warning(
+                            "%s:%s carries %s events, this job made %s: not the "
+                            "same work", scope, did_name, recorded, args.events)
+                        same = False
+                        break
+            if same:
+                logger.warning(
+                    "Output already registered with an available replica, "
+                    "delivered by an earlier attempt: %s", delivered)
+                sys.exit(0)
+            # Different content under the name we owe. Validated data is
+            # never discarded to protect a naming rule: it registers under a
+            # derived name and the divergence is a human's to resolve
+            # through content validation.
+            diverted = _register_diverted(client, scope, upload_items, args)
+            if diverted:
+                # To a file, never to stdout: this script runs under prmon
+                # and a caller reading its output is the trap that once
+                # polluted the metadata JSON and killed a canary.
+                marker = os.environ.get('DIVERTED_OUT')
+                if marker:
+                    try:
+                        with open(marker, 'w') as handle:
+                            handle.write(diverted)
+                    except OSError as exc:  # noqa: BLE001
+                        logger.error("diverted marker not written: %s", exc)
+                sys.exit(0)
+            logger.error("the output name holds different content and the "
+                         "derived name could not be registered either")
 
         # Get replicas for all DIDs in the rse
         try:
