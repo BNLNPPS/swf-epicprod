@@ -1254,10 +1254,44 @@ def evgen_paths_by_tags():
     return {'exact': exact, 'loose': loose}
 
 
+_EVGEN_MATCHED_CACHE = {'built_at': 0.0, 'exact': None, 'loose': None}
+_EVGEN_MATCHED_TTL = 60.0
+
+
+def evgen_matched_by_tags():
+    """The matched Rucio EVGEN entries of every evgen-stage dataset, keyed the
+    two ways ``evgen_paths_by_tags`` keys paths: by (physics, evgen, sample)
+    and, as the fallback, by (physics, evgen).
+
+    ONE query, memoised briefly. A list page annotates a thousand tasks and a
+    query per task turned the compose page into a nine-second render; the
+    assimilation writes these entries a few times a day, so a short cache
+    cannot show anything meaningfully stale.
+    """
+    import time as _time
+    now = _time.monotonic()
+    if (_EVGEN_MATCHED_CACHE['exact'] is not None
+            and now - _EVGEN_MATCHED_CACHE['built_at'] < _EVGEN_MATCHED_TTL):
+        return _EVGEN_MATCHED_CACHE
+    exact, loose = {}, {}
+    for ds in (Dataset.objects.filter(metadata__stage='evgen')
+               .only('physics_tag_id', 'evgen_tag_id', 'sample_name',
+                     'metadata')):
+        entries = ((ds.metadata or {}).get('rucio') or {}).get('matched')
+        if not isinstance(entries, list) or not entries:
+            continue
+        exact.setdefault((ds.physics_tag_id, ds.evgen_tag_id,
+                          ds.sample_name or ''), entries)
+        loose.setdefault((ds.physics_tag_id, ds.evgen_tag_id), entries)
+    _EVGEN_MATCHED_CACHE.update({'built_at': now, 'exact': exact,
+                                 'loose': loose})
+    return _EVGEN_MATCHED_CACHE
+
+
 def evgen_matched_for_tags(dataset):
     """The matched Rucio EVGEN entries of the evgen-stage dataset that names
     this dataset's EVGEN sample — same physics and evgen tags, and sample name
-    where one distinguishes it, exactly as ``evgen_paths_by_tags`` keys them.
+    where one distinguishes it.
 
     A production edition's own dataset is its output, so nothing writes the
     input onto it; the sample it consumes is named by its tags. Returns [] when
@@ -1265,18 +1299,11 @@ def evgen_matched_for_tags(dataset):
     """
     if dataset is None or not dataset.physics_tag_id or not dataset.evgen_tag_id:
         return []
-    base = (Dataset.objects
-            .filter(metadata__stage='evgen',
-                    physics_tag_id=dataset.physics_tag_id,
-                    evgen_tag_id=dataset.evgen_tag_id)
-            .only('sample_name', 'metadata'))
-    sample = dataset.sample_name or ''
-    exact = [d for d in base if (d.sample_name or '') == sample]
-    for candidate in (exact or list(base)):
-        entries = ((candidate.metadata or {}).get('rucio') or {}).get('matched')
-        if isinstance(entries, list) and entries:
-            return entries
-    return []
+    table = evgen_matched_by_tags()
+    key = (dataset.physics_tag_id, dataset.evgen_tag_id,
+           dataset.sample_name or '')
+    return list(table['exact'].get(key)
+                or table['loose'].get(key[:2]) or [])
 
 
 def evgen_paths_for_tags(dataset, tag_map):
