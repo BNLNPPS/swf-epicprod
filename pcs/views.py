@@ -5772,7 +5772,8 @@ def physics_description(dataset):
 def trials_list(request):
     """Every trial, grouped by the configuration it qualifies — the index
     behind a trial's own page. A configuration's trials sit together,
-    numbered, newest configuration first.
+    latest at the top; the configurations are ordered by their most
+    recent trial, newest first.
 
     Read-open like the rest of the catalog: a trial is offered to the
     physics group whose configuration it is, so its pages are somewhere
@@ -5806,6 +5807,9 @@ def trials_list(request):
             'number': trial_number_from_name(t.composed_name),
             'suffix': t.composed_name[len(subject):].lstrip('.') or 'trial',
             'created': t.created_at,
+            # When it ran: the latest submission, or the minting when it
+            # never ran. The sets are ordered by this.
+            'ran': last.created_at if last and last.created_at else t.created_at,
             'events': md.get('trial_events'),
             'jedi_task_id': last.jedi_task_id if last else None,
             # Live PanDA state, never the stored snapshot: a snapshot is
@@ -5815,10 +5819,14 @@ def trials_list(request):
             'panda_error': (state or {}).get('error') or '',
             **_trial_site(t, md, state),
         })
+    # Newest first at both levels: the configurations by their most recent
+    # trial, and within a configuration the latest trial at the top.
     for group in groups.values():
-        group['trials'].sort(key=lambda r: (r['number'] or 0, r['task'].id))
+        group['trials'].sort(key=lambda r: (r['ran'], r['number'] or 0),
+                             reverse=True)
+        group['latest'] = group['trials'][0]['ran']
         group['span'] = len(group['trials'])
-    ordered = sorted(groups.values(), key=lambda g: -g['latest_id'])
+    ordered = sorted(groups.values(), key=lambda g: g['latest'], reverse=True)
     return render(request, 'pcs/trials_list.html', {'groups': ordered})
 
 
