@@ -406,6 +406,17 @@ there unchanged. Proven locally in the image before submission: 100
 events in 41 s including the compilation, the afterburner applied, the
 sample at `EVGEN/EXCLUSIVE/MESON_SF/eicMesonSFGen1.0.0/ep/10x100/k_lambda/`.
 
+The trial ran as JEDI task 39371 (job 2721386, BNL_OSG_PanDA_1, payload
+0.10.0, 2026-09-07) and passed: every stage ok, the geometry stage
+resolving `epic_craterlake_10x100.xml`, the generation stage 317 s wall
+for 100 events at 5 per cent CPU efficiency (ROOT's compilation of the
+generator reading its headers from cvmfs on that worker; 34 s here),
+simulation 661 s, reconstruction 84 s, 100 events simulated and
+reconstructed, the log uploaded to EIC-XRD-LOG, and the generated
+sample and the RECO output registered with their event counts under
+`epic:/TEST/trial/group.EIC.26.07.1.epic_craterlake.p5454.e25.s1.r1.trial/`
+in the exclusive layout. Pilot to finish, 22 minutes.
+
 ### BeAGLE eAg 9×115
 
 Composed as a record only: physics tag DIS_NC eAg (Ag107) 9×115
