@@ -221,6 +221,34 @@ def output_record(path, events):
     return rec
 
 
+def stash_record(path):
+    """What the job stashed at BNL when JLab would not take it.
+
+    One line per file, written by run.sh: the flat name it took at the
+    stash, the path it sits at, the DID it owes the catalog of record, and
+    why it went there. The registrar reads this and owes JLab that
+    registration (docs/RUCIO_FAILOVER_STASH.md).
+    """
+    if not path:
+        return []
+    entries = []
+    try:
+        with open(path) as handle:
+            for line in handle:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 3:
+                    continue
+                entries.append({
+                    "stashed_as": parts[0],
+                    "path": parts[1],
+                    "owes": parts[2],
+                    "reason": parts[3] if len(parts) > 3 else "",
+                })
+    except OSError:
+        return []
+    return entries
+
+
 def registration_record(stages):
     """The registration outcome from the stage log: registered with its
     DIDs, failed with what failed, or not reached."""
@@ -317,6 +345,7 @@ def build_report(args):
             "reco": output_record(args.reco, reco_events),
         },
         "registration": registration_record(stages),
+        "stash": stash_record(args.stash),
     }
     if args.note:
         report["note"] = args.note
@@ -331,6 +360,8 @@ def main():
                     help="the payload's exit code; absent for the refresh at "
                          "each stage, where the run has not ended")
     ap.add_argument("--stages", required=True, help="the stage log")
+    ap.add_argument("--stash", default="",
+                    help="the stash record run.sh wrote, if it stashed")
     ap.add_argument("--version", required=True, help="the payload VERSION file")
     ap.add_argument("--requested", default="")
     ap.add_argument("--prmon-dir", default="")

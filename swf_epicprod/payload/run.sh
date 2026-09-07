@@ -92,6 +92,7 @@ payload_report() {
     ${ended[@]+"${ended[@]}"} "$@" \
     --job-report "${PAYLOAD_JOB_REPORT:-jobReport.json}" \
     --stages "${PAYLOAD_STAGES_LOG:-payload-stages.log}" --version "${here}/VERSION" \
+    --stash "${STASH_OUT:-}" \
     --requested "${EVENTS_PER_TASK:-}" --prmon-dir "${LOG_TEMP:-}" --taskname "${TASKNAME:-}" \
     --full "${FULL_TEMP:+${FULL_TEMP}/${TASKNAME:-}.edm4hep.root}" \
     --reco "${RECO_TEMP:+${RECO_TEMP}/${TASKNAME:-}.eicrecon.edm4eic.root}" \
@@ -350,6 +351,45 @@ RECO_DID=/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root
 FULL_DID=/${FULL_DIR}/${TASKNAME}.edm4hep.root
 # Where a diverted registration leaves the name it actually used.
 export DIVERTED_OUT=${TMPDIR}/${TASKNAME}.diverted
+
+# The failover stash (docs/RUCIO_FAILOVER_STASH.md). When the JLab upload
+# path itself fails — the door unreachable, the catalog refusing to
+# authenticate — the output has nowhere to go and finished physics is lost
+# for want of a destination. The stash is a BNL dCache space the job can
+# reach with the credential it already carries: the file is written to the
+# door by xrdcp, and the catalog work is left to the registrar, which holds
+# the BNL credential and does it the way the drain does.
+#
+# The DID is flat, not path-like: the BNL instance parses a '/' as a scope
+# separator and refuses a path-like name as too long (proved 2026-09-07).
+# The destination path travels in the report instead, which is where the
+# registrar reads it from anyway.
+STASH_DOOR=${STASH_DOOR:-"root://dcintdoor.sdcc.bnl.gov:1094"}
+STASH_BASE=${STASH_BASE:-"/pnfs/sdcc.bnl.gov/eic/epic/disk/group/EIC/stash"}
+STASH_OUT=${TMPDIR}/${TASKNAME}.stash
+
+stash_output() {
+  # $1 local file, $2 the DID it owes JLab, $3 why we are stashing
+  local file=$1 destination=$2 reason=$3
+  local flat="swf.stash.${PANDAID:-nopandaid}.$(basename "${file}")"
+  local target="${STASH_BASE}/${flat}"
+  stage stash start "$(basename "${file}")"
+  if [ ! -f "${file}" ]; then
+    stage stash fail "the output is not on disk to stash: ${file}"
+    return 1
+  fi
+  if timeout "${STASH_TIMEOUT:-600}" xrdcp -f "${file}" "${STASH_DOOR}/${target}"; then
+    # The report is what the registrar reads: the stashed name, where it
+    # owes its registration, and why it went here.
+    printf '%s\t%s\t%s\t%s\n' "${flat}" "${target}" "${destination}" "${reason}" \
+      >> "${STASH_OUT}"
+    stage stash ok "${flat} owes ${destination}"
+    echo "stashed ${file} at ${STASH_DOOR}/${target}; it owes ${destination}"
+    return 0
+  fi
+  stage stash fail "xrdcp to ${STASH_DOOR}/${target} failed"
+  return 1
+}
 OUTPUT_STATE=$(python $SCRIPT_DIR/check_output.py epic ${RECO_DID} "${EVENTS_PER_TASK:-}" || echo UNKNOWN)
 FULL_STATE=SKIPPED
 if [ "${COPYFULL:-false}" == "true" ] && [ "${USERUCIO:-false}" == "true" ]; then
@@ -691,8 +731,12 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
     elif [ ${REG_RC} -eq 81 ]; then
       echo "WARNING: catalog unreachable for FULL; registration pending."
       stage registration pending "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
+    elif stash_output "${FULL_TEMP}/${TASKNAME}.edm4hep.root" \
+           "${FULL_DID}" "JLab registration failed (exit ${REG_RC})"; then
+      echo "FULL could not be registered at JLab and is stashed at BNL."
+      REPORT_NOTE="output stashed at BNL; the registrar owes its JLab registration"
     else
-      echo "ERROR: Rucio registration failed for FULL file."
+      echo "ERROR: Rucio registration failed for FULL file and the stash refused it too."
       stage registration fail FULL
       exit 78
     fi
@@ -749,8 +793,12 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     elif [ ${REG_RC} -eq 81 ]; then
       echo "WARNING: catalog unreachable for RECO; registration pending."
       stage registration pending "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
+    elif stash_output "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" \
+           "${RECO_DID}" "JLab registration failed (exit ${REG_RC})"; then
+      echo "RECO could not be registered at JLab and is stashed at BNL."
+      REPORT_NOTE="output stashed at BNL; the registrar owes its JLab registration"
     else
-      echo "ERROR: Rucio registration failed for RECO file."
+      echo "ERROR: Rucio registration failed for RECO file and the stash refused it too."
       stage registration fail RECO
       exit 78
     fi
