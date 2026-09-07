@@ -910,6 +910,19 @@ class ProdTask(models.Model):
         ``outputs``; see EPICPROD_EVGEN_INPUTS.md."""
         md = (self.dataset.metadata or {}) if self.dataset_id else {}
         matched = (md.get('rucio') or {}).get('matched')
+        if isinstance(matched, list) and matched:
+            return matched
+        # A RECO or FULL edition's own dataset is its OUTPUT, so the EVGEN
+        # assimilation never writes matched inputs onto it: it resolves
+        # evgen-stage datasets only. The input is the evgen dataset carrying
+        # the same physics and evgen tags (and sample) — the same rule
+        # ``evgen_paths`` already uses to name a production task's EVGEN
+        # sample, applied to the matched entries themselves so the task can
+        # resolve a manifest rather than merely name its input.
+        if self.dataset_id:
+            entries = evgen_matched_for_tags(self.dataset)
+            if entries:
+                return entries
         return matched if isinstance(matched, list) else []
 
     @property
@@ -1239,6 +1252,31 @@ def evgen_paths_by_tags():
                           ds.sample_name or ''), paths)
         loose.setdefault((ds.physics_tag_id, ds.evgen_tag_id), paths)
     return {'exact': exact, 'loose': loose}
+
+
+def evgen_matched_for_tags(dataset):
+    """The matched Rucio EVGEN entries of the evgen-stage dataset that names
+    this dataset's EVGEN sample — same physics and evgen tags, and sample name
+    where one distinguishes it, exactly as ``evgen_paths_by_tags`` keys them.
+
+    A production edition's own dataset is its output, so nothing writes the
+    input onto it; the sample it consumes is named by its tags. Returns [] when
+    no evgen dataset carries those tags or none of them is matched yet.
+    """
+    if dataset is None or not dataset.physics_tag_id or not dataset.evgen_tag_id:
+        return []
+    base = (Dataset.objects
+            .filter(metadata__stage='evgen',
+                    physics_tag_id=dataset.physics_tag_id,
+                    evgen_tag_id=dataset.evgen_tag_id)
+            .only('sample_name', 'metadata'))
+    sample = dataset.sample_name or ''
+    exact = [d for d in base if (d.sample_name or '') == sample]
+    for candidate in (exact or list(base)):
+        entries = ((candidate.metadata or {}).get('rucio') or {}).get('matched')
+        if isinstance(entries, list) and entries:
+            return entries
+    return []
 
 
 def evgen_paths_for_tags(dataset, tag_map):
