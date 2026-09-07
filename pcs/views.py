@@ -5930,6 +5930,9 @@ def trial_detail(request, name):
         'dataset': task.dataset,
         'number': trial_number_from_name(task.composed_name),
         'events': md.get('trial_events'),
+        # The trial's state, as on the index: PanDA's once it has a task,
+        # the PCS status before that.
+        'state': (last_state or {}).get('status') or task.status,
         **_trial_site(task, md, last_state),
         'queues': ', '.join((last_state or {}).get('queues') or []),
         'output_root': md.get('trial_output_root') or '',

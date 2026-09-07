@@ -39,7 +39,7 @@
     <tr><th>Site</th>
         <td>{{ site }}</td></tr>
     <tr><th>Queue</th><td>{{ queues|default:"—" }}</td></tr>
-    <tr><th>Status</th><td class="{{ task.status|state_class }}">{{ task.status }}</td></tr>
+    <tr><th>Status</th><td class="{{ state|state_class }}">{{ state }}</td></tr>
     <tr><th>Input</th>
         <td>{% for i in inputs %}{{ i.did }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td></tr>
   </tbody>
