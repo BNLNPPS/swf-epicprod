@@ -157,6 +157,11 @@ gateway, bearer-authenticated, carrying `outcome` (`ok`, `partial` or
 job ids), `deleted_read` and `deleted_unread` (the object keys).
 Anything else it carries is kept verbatim.
 
+The window is six hours against an hourly cadence, and the overlap is
+deliberate: re-reading an object costs a GET, and missing one costs the
+account of a failure. A reader comparing the window to the cadence should
+not read the difference as passes being missed.
+
 `window` is `{"from": <ISO-8601>, "to": <ISO-8601>}`. The shape is
 stated here because it is a contract between two hosts and neither can
 read the other's payload after a pass is applied: the sweep first sent
