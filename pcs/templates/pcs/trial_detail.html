@@ -38,6 +38,7 @@
     <tr><th>Events</th><td>{{ events|default:"—" }}</td></tr>
     <tr><th>Site</th>
         <td>{{ site }}{% if not site_chosen %} <span class="text-danger">— nobody chose this; it is the configuration's default</span>{% endif %}</td></tr>
+    <tr><th>Queue</th><td>{{ queues|default:"—" }}</td></tr>
     <tr><th>Status</th><td class="{{ task.status|state_class }}">{{ task.status }}</td></tr>
     <tr><th>Input</th>
         <td>{% for i in inputs %}{{ i.did }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td></tr>
@@ -47,7 +48,7 @@
 <h4>Submission</h4>
 {% if attempts %}
 <table class="table table-sm table-bordered table-striped w-auto align-middle mb-3">
-  <thead><tr><th>Try</th><th>PanDA task</th><th>Status</th><th>Site</th><th>Submitted</th></tr></thead>
+  <thead><tr><th>Try</th><th>PanDA task</th><th>Status</th><th>Site</th><th>Queue</th><th>Submitted</th></tr></thead>
   <tbody>
   {% for a in attempts %}
     <tr>
@@ -56,6 +57,7 @@
       <td class="{{ a.live_status|state_class }}">{{ a.live_status|default:"—" }}
           {% if a.live_error %}<div class="text-danger small">{{ a.live_error }}</div>{% endif %}</td>
       <td>{{ a.live_site|default:"—" }}</td>
+      <td>{{ a.live_queues|default:"—" }}</td>
       <td class="text-nowrap">{{ a.created_at|fmt_dt }} ET</td>
     </tr>
   {% endfor %}

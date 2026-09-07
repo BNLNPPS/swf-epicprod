@@ -5746,11 +5746,27 @@ def _live_task_state(jedi_task_ids):
     from monitor_app.panda.constants import PANDA_SCHEMA
     sql = (f'SELECT jeditaskid, status, errordialog, site '
            f'FROM "{PANDA_SCHEMA}".jedi_tasks WHERE jeditaskid = ANY(%s)')
+    # The task's site is what was asked for and can name a group of queues;
+    # the queue a job actually ran on is computingsite on the job. A trial
+    # qualifies the path it really took, so the page states both.
+    queue_sql = (
+        f'SELECT jeditaskid, computingsite FROM "{PANDA_SCHEMA}"."jobsactive4" '
+        f'WHERE jeditaskid = ANY(%s) AND computingsite IS NOT NULL '
+        f'UNION '
+        f'SELECT jeditaskid, computingsite FROM "{PANDA_SCHEMA}"."jobsarchived4" '
+        f'WHERE jeditaskid = ANY(%s) AND computingsite IS NOT NULL')
     try:
         with connections['panda'].cursor() as cursor:
             cursor.execute(sql, [ids])
-            return {r[0]: {'status': r[1], 'error': r[2] or '', 'site': r[3]}
-                    for r in cursor.fetchall()}
+            state = {r[0]: {'status': r[1], 'error': r[2] or '', 'site': r[3],
+                            'queues': []}
+                     for r in cursor.fetchall()}
+            cursor.execute(queue_sql, [ids, ids])
+            for task_id, queue in cursor.fetchall():
+                row = state.get(task_id)
+                if row is not None and queue not in row['queues']:
+                    row['queues'].append(queue)
+            return state
     except Exception as e:                                    # noqa: BLE001
         logger.error(f'trial page: live PanDA state unavailable: {e}')
         return {}
@@ -5805,12 +5821,14 @@ def trial_detail(request, name):
         a.live_status = state.get('status') or ''
         a.live_error = state.get('error') or ''
         a.live_site = state.get('site') or ''
+        a.live_queues = ', '.join(state.get('queues') or [])
     return render(request, 'pcs/trial_detail.html', {
         'task': task,
         'dataset': task.dataset,
         'number': trial_number_from_name(task.composed_name),
         'events': md.get('trial_events'),
         **_trial_site(task, md, last_state),
+        'queues': ', '.join((last_state or {}).get('queues') or []),
         'output_root': md.get('trial_output_root') or '',
         'lifetime_days': md.get('trial_lifetime_days'),
         'inputs': task.inputs,
