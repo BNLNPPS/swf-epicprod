@@ -72,7 +72,18 @@ pilots (2026-09-01):
 request_cpus = {nCoreTotal}; request_memory = {requestRam}; request_disk = {requestDisk}
 Requirements = (HAS_CVMFS_atlas_cern_ch == True) && (OSGVO_OS_STRING == "RHEL 9")
                && (HAS_UNPRIVILEGED_USER_NAMESPACES =?= "enabled")
-+UNDESIRED_Sites = "UCSD, FNAL, MI-HORUS, GREX, BNL-SDCC"
+               && !( (GLIDEIN_Site =?= "Nebraska"
+                      && regexp("^(red-c0823|red-c7228|red-c0831)([.]|$)", Machine) =?= True)
+                  || (GLIDEIN_Site =?= "UConn"
+                      && regexp("^(nod58)([.]|$)", Machine) =?= True)
+                  || (GLIDEIN_Site =?= "Rhodes-HPC"
+                      && regexp("^(compute05)([.]|$)", Machine) =?= True)
+                  || (GLIDEIN_Site =?= "GREX"
+                      && regexp("^(n358)([.]|$)", Machine) =?= True)
+                  || (GLIDEIN_Site =?= "ComputeCanada-Fir"
+                      && regexp("^(fc30438|fc20637|fc20621|fc20667|fc20624|fc30416)([.]|$)",
+                                Machine) =?= True) )
++UNDESIRED_Sites = "UCSD, FNAL, MI-HORUS, GREX, BNL-SDCC, Alabama-CHPC"
 periodic_remove = (JobStatus == 2 && (CurrentTime - EnteredCurrentStatus) > 604800)
 ```
 
@@ -214,6 +225,42 @@ CVMFS nor CRIC involved, from a `--piloturl` set in the pilot-test
 template and pointing at a tarball served from a host in hand (osgsub01
 serves its log directory over HTTPS). The template accepts the
 argument; the served-tarball route has not yet been exercised.
+
+### Excluding what delivers nothing
+
+Two levers, at two granularities, both in the submit description that
+`BNL_OSG_EPIC_PROD_1` and `BNL_OSG_PanDA_1` share. `+UNDESIRED_Sites`
+excludes a site. A `Requirements` clause excludes an individual worker
+node, and it names the node together with its site: `GLIDEIN_Site`
+identifies the site and `Machine` the execute host. A node is only ever
+identified by the pair, because node names recur across sites — the
+pool advertises bare names such as `compute05`, `n358` and `fc20621`
+alongside fully qualified ones, and a name alone would ban a healthy
+machine elsewhere with no indication that it had. The regular
+expression anchors each name with `([.]|$)` so it binds whether the
+host is advertised bare or fully qualified; both forms occur.
+
+Applied 2026-09-07 on the evidence of thirty days of job records: every
+node listed had zero finished jobs and at least fifty failures, and
+together they account for 14,480 failed jobs and 9,997 core-hours. The
+eleven named nodes sit at sites that otherwise deliver — Nebraska,
+UConn, Rhodes-HPC, GREX and ComputeCanada-Fir — which is what makes
+node granularity the right instrument for them. Alabama-CHPC is
+excluded as a site instead: all nineteen of its nodes appearing in the
+record are in the same state, 13,218 failed and none finished, so the
+site is the unit and a node list there would need upkeep as machines
+appear. The clause was checked against the live pool before it was
+written: it excluded the banned host and no other, a healthy node at
+the same site survived it, and `condor_submit -dry-run` confirmed the
+expression survives submit-file expansion.
+
+Trial 39305 is the case that prompted it: the job simulated and
+reconstructed 100 events on `chpc-compute001`, validated them, and then
+lost all of it to three consecutive ten-minute timeouts against the
+JLab catalog, which that node cannot reach although it reached S3 in
+AWS throughout. The payload's landing check now declines such a node in
+seconds ([EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md), exit code 80);
+exclusion keeps the pilots away from it in the first place.
 
 ### Targeting a site
 
