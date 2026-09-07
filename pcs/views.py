@@ -5707,8 +5707,71 @@ def prod_task_compose_task_detail(request, name):
     })
 
 
+PROCESS_WORDS = {
+    'DIS_NC': 'DIS neutral current', 'DIS_CC': 'DIS charged current', 'DIS': 'DIS',
+    'UPSILON': 'Upsilon', 'MESON_SF': 'meson structure function',
+    'DVCS': 'DVCS', 'DVMP': 'DVMP', 'SIDIS': 'SIDIS', 'DEMP': 'DEMP',
+    'DIFFRACTIVE_JPSI': 'diffractive J/psi', 'SINGLE': 'single particle',
+}
+MECHANISM_WORDS = {'photo': 'photoproduction', 'threshold': 'threshold production'}
+CHANNEL_WORDS = {'k_lambda': 'kaon with Lambda', 'k_sigma': 'kaon with Sigma',
+                 'pi_n': 'pion with neutron', 'pi_p': 'pion with proton'}
+BEAM_CONFIG_WORDS = {'hiacc': 'high acceptance', 'hidiv': 'high divergence'}
+
+
+def _range_words(value, symbol):
+    """'Q2 10 to 100' from 'q2_10to100', 'Q2 > 1' from 'minQ2=1', 'x 0.001
+    to 1' from 'x_0.001to1'; the raw value when it is neither."""
+    text = str(value or '')
+    m = re.fullmatch(r'(?:q2|x)_([\d.]+)to([\d.]+|INF)', text, re.IGNORECASE)
+    if m:
+        return (f'{symbol} > {m.group(1)}' if m.group(2).upper() == 'INF'
+                else f'{symbol} {m.group(1)} to {m.group(2)}')
+    m = re.fullmatch(r'minQ2=([\d.]+)', text)
+    if m:
+        return f'{symbol} > {m.group(1)}'
+    return f'{symbol} {text}' if text else ''
+
+
+def physics_description(dataset):
+    """One line a physicist reads for a composed configuration: the
+    process, its state, mechanism or channel, the beams, the kinematic
+    window, the beam configuration, and the generator with its version,
+    all from the physics and EvGen tags' parameters."""
+    p = dataset.physics_tag.parameters or {}
+    e = (dataset.evgen_tag.parameters or {}) if dataset.evgen_tag_id else {}
+    process = str(p.get('process') or '')
+    words = [PROCESS_WORDS.get(process.upper(), process)]
+    if p.get('state'):
+        words[0] += f" ({str(p['state']).upper()})"
+    if p.get('mechanism'):
+        words.append(MECHANISM_WORDS.get(str(p['mechanism']).lower(), str(p['mechanism'])))
+    if p.get('channel'):
+        words.append(CHANNEL_WORDS.get(str(p['channel']).lower(), str(p['channel'])))
+    if p.get('particle'):
+        words.append(str(p['particle']))
+    beams = ''
+    if p.get('beam_energy_electron') and p.get('beam_energy_hadron'):
+        beams = f"{p['beam_energy_electron']}x{p['beam_energy_hadron']} GeV"
+    words.append(' '.join(x for x in (str(p.get('beam_species') or ''), beams) if x))
+    if p.get('x_range'):
+        words.append(_range_words(p['x_range'], 'x'))
+    if p.get('q2_range'):
+        words.append(_range_words(p['q2_range'], 'Q2'))
+    if p.get('beam_config'):
+        words.append(BEAM_CONFIG_WORDS.get(str(p['beam_config']).lower(), str(p['beam_config'])))
+    if e.get('generator'):
+        gen = f"{e['generator']} {e.get('generator_version') or ''}".strip()
+        if str(e.get('radiative') or '').lower() == 'on':
+            gen += ', radiative corrections on'
+        words.append(gen)
+    return ', '.join(w for w in words if w)
+
+
 def trials_list(request):
-    """Every trial, newest first — the index behind a trial's own page.
+    """Every trial, grouped by the configuration it qualifies — the index
+    behind a trial's own page. A configuration's trials sit together,
+    numbered, newest configuration first.
 
     Read-open like the rest of the catalog: a trial is offered to the
     physics group whose configuration it is, so its pages are somewhere
@@ -5717,23 +5780,32 @@ def trials_list(request):
     from .name_tokens import trial_number_from_name, trial_subject_name
     trials = list(ProdTask.objects
                   .filter(dataset__metadata__has_key='trial')
-                  .select_related('dataset', 'prod_config')
+                  .select_related('dataset', 'dataset__physics_tag',
+                                  'dataset__evgen_tag', 'prod_config')
                   .prefetch_related('panda_tasks')
                   .order_by('-id')[:200])
     live = _live_task_state(
         [a.jedi_task_id for t in trials for a in t.panda_tasks.all()
          if a.jedi_task_id])
-    rows = []
+    groups = {}
     for t in trials:
         md = t.dataset.metadata or {}
         attempts = list(t.panda_tasks.all())
         last = attempts[-1] if attempts else None
         state = live.get(last.jedi_task_id) if last else None
-        rows.append({
+        subject = trial_subject_name(t.composed_name)
+        group = groups.setdefault(subject, {
+            'subject': subject,
+            'physics': physics_description(t.dataset),
+            'latest_id': t.id,
+            'trials': [],
+        })
+        group['trials'].append({
             'task': t,
             'number': trial_number_from_name(t.composed_name),
+            'suffix': t.composed_name[len(subject):].lstrip('.') or 'trial',
+            'created': t.created_at,
             'events': md.get('trial_events'),
-            'subject': trial_subject_name(t.composed_name),
             'jedi_task_id': last.jedi_task_id if last else None,
             # Live PanDA state, never the stored snapshot: a snapshot is
             # empty on a fresh association and stale after, which hid a
@@ -5742,7 +5814,11 @@ def trials_list(request):
             'panda_error': (state or {}).get('error') or '',
             **_trial_site(t, md, state),
         })
-    return render(request, 'pcs/trials_list.html', {'rows': rows})
+    for group in groups.values():
+        group['trials'].sort(key=lambda r: (r['number'] or 0, r['task'].id))
+        group['span'] = len(group['trials'])
+    ordered = sorted(groups.values(), key=lambda g: -g['latest_id'])
+    return render(request, 'pcs/trials_list.html', {'groups': ordered})
 
 
 def _live_task_state(jedi_task_ids):
@@ -5868,9 +5944,13 @@ def stash_page(request):
     row = CachedProduct.objects.filter(key='stash_state').first()
     state = (row.value if row else None) or {}
     entries = state.get('entries') or []
+    # An entry brought home on the last pass is listed once as such and
+    # is not waiting; the headline counts what still is.
+    waiting = [e for e in entries if e.get('outcome') != 'home']
     return render(request, 'pcs/stash.html', {
         'state': state,
         'entries': entries,
+        'waiting': waiting,
         'built_at': state.get('built_at'),
         'never_run': not state,
     })
