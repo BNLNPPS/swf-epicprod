@@ -171,6 +171,14 @@ ordinary one — the payload report's stages all ok, the reconstructed
 event count equal to the request, the registrations confirmed in the
 catalog — plus the comparison above on the generated sample.
 
+That trial ran as JEDI task 39358 (job 2721360, BNL_OSG_PanDA_1,
+2026-09-07, payload 0.7.0) and passed: every stage ok, the generation
+stage 40 s wall for 100 events including the driver build, simulation
+639 s, reconstruction 107 s, 100 events simulated and reconstructed,
+the log uploaded to EIC-XRD-LOG, and the generated sample and the RECO
+output registered in the catalog with their event counts, under the
+trial root. Pilot to finish, 14 minutes.
+
 The 5×130 request is composed the same way and its trial is ready to
 submit the moment the afterburner can treat it: no version of the
 afterburner has a 130×5 beam configuration (the 130×9 one it has is
