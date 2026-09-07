@@ -251,6 +251,17 @@ image that carries it and the 9 GeV configurations; a 5×130 detector
 geometry. The steering card used for the registered pythia8 samples is
 the standing ask for every pythia8 request.
 
+The second trial, JEDI task 39366 (job 2721378, BNL_OSG_PanDA_1, payload
+0.8.0, 2026-09-07), passed: every stage ok, the geometry stage recording
+`epic_craterlake_5x100.xml, a stand-in for beams 5x130`, the generation
+stage 50 s wall for 100 events including the afterburner build,
+simulation 728 s, reconstruction 113 s, 100 events simulated and
+reconstructed, the log uploaded to EIC-XRD-LOG, and the generated sample
+and the RECO output registered with their event counts under
+`epic:/TEST/trial/group.EIC.26.07.1.epic_craterlake.p2445.e49.s1.r1.trial2/`.
+Pilot to finish, 17 minutes. The first request on the priority list
+produced end to end, both stand-ins on record.
+
 ### Upsilon photoproduction (eSTARlight)
 
 The exclusive group's Upsilon request (1S, 2S, 3S at 9×275 and 9×130)
