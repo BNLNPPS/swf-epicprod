@@ -41,7 +41,7 @@ The stages of run.sh, as cloned:
 | Simulation | `npsim` under `prmon`, seeded per chunk | the container |
 | Reconstruction | `eicrecon` under `prmon` | the container |
 | Metadata | `parse_podio_metadata.py` reads geometry, beams and gun parameters from the FULL file; the software release from `eic-info` | PyROOT |
-| Logs | tars the stage logs and prmon outputs; uploads with `register_to_rucio.py --noregister` when `COPYLOG` | the proxy |
+| Logs | tars the stage logs and prmon outputs; uploads with `register_to_rucio.py --noregister` when `COPYLOG`, to `LOG_RSE` and on failure to the output store. Every path through the block records a stage outcome — started, uploaded, fell back, failed, copied by xrootd, or skipped by configuration — so a successful upload is distinguishable from a block that never ran, and a job killed mid-upload reports the stage as unfinished rather than not at all | the proxy |
 | Outputs | validates each output (`validate_rootfile.py`, exit 65 on failure); uploads and registers FULL and RECO with dataset tag metadata through `register_to_rucio.py` (exit 78 on failure) | the proxy, JLab Rucio |
 | Condor branches | bearer-token discovery under `_CONDOR_CREDS`, `xrdcp` fallbacks when Rucio is off, `.job.ad` and `.machine.ad` dumps | the condor path |
 

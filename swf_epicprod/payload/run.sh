@@ -546,6 +546,14 @@ stage metadata ok
 
 if [ "${COPYLOG:-false}" == "true" ] ; then
   if [ "${USERUCIO:-false}" == "true" ] ; then
+    # Every path through this block leaves a mark in the stage log. The
+    # block used to record only its failures, so a successful upload, a
+    # block never entered, and a configuration that skips logs all read
+    # as the same absence: a trial could not say whether it had
+    # exercised the log path it exists to prove, and a job killed during
+    # an upload reported no log stage and none of the time it spent
+    # there. Job 2721306 spent twenty minutes here, ten on each attempt.
+    stage logs start
     TIME_TAG=$(date --iso-8601=second)
     TARFILE="${LOG_TEMP}/${TASKNAME}.log.tar.gz"
 
@@ -594,6 +602,7 @@ if [ "${COPYLOG:-false}" == "true" ] ; then
           -d "/${LOG_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
           -s epic -r "${LOG_RSE}" --noregister; then
         LOG_UPLOADED=1
+        stage logs ok "log uploaded to ${LOG_RSE}"
       else
         echo "WARNING: log upload to ${LOG_RSE} failed; trying the output store."
       fi
@@ -623,7 +632,10 @@ if [ "${COPYLOG:-false}" == "true" ] ; then
     echo "Running: xrdcp --debug 2 --force --recursive ${LOG_TEMP}/${TASKNAME}.* ${XRDWURL}/${XRDWBASE}/${LOG_DIR}"
     xrdcp --debug 2 --force --recursive ${LOG_TEMP}/${TASKNAME}.* ${XRDWURL}/${XRDWBASE}/${LOG_DIR} || echo "ERROR: xrdcp failed with exit code $?"
     echo "=== DEBUG: LOG copy attempt completed ==="
+    stage logs xrootd "logs copied to ${XRDWURL}/${XRDWBASE}/${LOG_DIR}"
   fi
+else
+  stage logs skipped "copy_log is false on this configuration"
 fi
 
 if [ "${COPYFULL:-false}" == "true" ] ; then
