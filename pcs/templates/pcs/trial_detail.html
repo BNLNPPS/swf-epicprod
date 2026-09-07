@@ -37,7 +37,7 @@
     <tr><th>Campaign</th><td>{{ task.campaign }}</td></tr>
     <tr><th>Events</th><td>{{ events|default:"—" }}</td></tr>
     <tr><th>Site</th>
-        <td>{{ site }}{% if not site_chosen %} <span class="text-danger">— nobody chose this; it is the configuration's default</span>{% endif %}</td></tr>
+        <td>{{ site }}</td></tr>
     <tr><th>Queue</th><td>{{ queues|default:"—" }}</td></tr>
     <tr><th>Status</th><td class="{{ task.status|state_class }}">{{ task.status }}</td></tr>
     <tr><th>Input</th>
