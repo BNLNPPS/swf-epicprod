@@ -1417,7 +1417,10 @@ def prodtask_readiness_problems(task):
     cfg = task.get_effective_config()
     if not (cfg.get('copy_reco') or cfg.get('copy_full')):
         problems.append('No physics output configured (enable copy of reco or full).')
-    if not task.has_input:
+    # An internal-EVGEN task generates its own input in the job
+    # (docs/EPICPROD_INTERNAL_EVGEN.md); it has no input to match.
+    internal = str((cfg.get('data') or {}).get('workflow_mode') or '') == 'internal_evgen'
+    if not internal and not task.has_input:
         problems.append('No matched Rucio EVGEN input (run the EVGEN matcher first).')
 
     ds = task.dataset
@@ -5423,7 +5426,10 @@ def prodtask_runnable_config(task, require_input=True):
                       f'alarm dashboard creates it.')
     if not int((config.data or {}).get('events_per_job') or 0):
         return config, f'configuration {config.name} carries no events_per_job.'
-    if require_input and not task.inputs:
+    # An internal-EVGEN configuration generates the input in the job
+    # (docs/EPICPROD_INTERNAL_EVGEN.md), so no matched input is needed.
+    internal = str((config.data or {}).get('workflow_mode') or '') == 'internal_evgen'
+    if require_input and not internal and not task.inputs:
         paths = ', '.join(task.evgen_paths or []) or 'the EVGEN input'
         return config, (f'{paths} is not matched in JLab Rucio, so no manifest '
                         f'can be resolved. Register it on the EVGEN inputs '

@@ -553,7 +553,93 @@ def _evgen_env(task):
         'PBEAM': str(physics.get('beam_energy_hadron', '')),
     }
     _add_background_env(env, task)
+    if str(data.get('workflow_mode') or 'external_evgen') == 'internal_evgen':
+        env.update(_internal_evgen_env(task))
     return {k: v for k, v in env.items() if v != ''}
+
+
+def _internal_evgen_env(task):
+    """The generation environment of an internal-EVGEN task
+    (docs/EPICPROD_INTERNAL_EVGEN.md § PCS): what the payload's
+    evgen_generate.py composes the steering from, read from the tags
+    and the production config. Every value the steering needs is here
+    or the spec refuses: a job that starts without them would fail in
+    its first minute for a reason known at submission."""
+    ds = task.dataset
+    cfg = task.get_effective_config()
+    data = cfg.get('data') or {}
+    physics = ds.physics_tag.parameters or {}
+    evgen = ds.evgen_tag.parameters or {}
+    missing = [name for name, value in (
+        ('physics tag process', physics.get('process')),
+        ('physics tag q2_range', physics.get('q2_range')),
+        ('physics tag beam_energy_electron', physics.get('beam_energy_electron')),
+        ('physics tag beam_energy_hadron', physics.get('beam_energy_hadron')),
+        ('evgen tag generator', evgen.get('generator')),
+        ('evgen tag generator_version', evgen.get('generator_version')),
+    ) if not str(value or '').strip()]
+    if missing:
+        raise ValueError(
+            'internal EVGEN needs ' + ', '.join(missing) + ' on the composed tags')
+    return {
+        'EVGEN_INTERNAL': 'true',
+        'EVGEN_GENERATOR': str(evgen.get('generator')),
+        'EVGEN_GENERATOR_VERSION': str(evgen.get('generator_version')),
+        'EVGEN_RADIATIVE': str(evgen.get('radiative') or 'off'),
+        'EVGEN_PROCESS': str(physics.get('process')),
+        'EVGEN_Q2_RANGE': str(physics.get('q2_range')),
+        'EVGEN_BEAM_SPECIES': str(physics.get('beam_species') or 'ep'),
+        'EVGEN_AB_PRESET': str(data.get('afterburner_preset') or '1'),
+        'COPYEVGEN': 'true' if data.get('copy_evgen') else 'false',
+    }
+
+
+def internal_evgen_sample(task):
+    """The generated sample's path below EVGEN/ and its file stem, in the
+    production team's EVGEN layout, from the composed tags:
+    ``DIS/pythia8.316-1.0/NC/noRad/ep/10x100/q2_10to100`` and
+    ``pythia8.316-1.0_NC_noRad_ep_10x100_q2_10to100``. The name a job
+    generates under is this stem with ``_run<NNN>`` for its row."""
+    ds = task.dataset
+    physics = ds.physics_tag.parameters or {}
+    evgen = ds.evgen_tag.parameters or {}
+    process = str(physics.get('process') or '')
+    category, _, current = process.partition('_')
+    current = current or 'NC'
+    # The generator token as the layout writes it, the inverse of the
+    # catalog grammar (pcs/physics_match.py _split_gen_token): pythia8
+    # with version 8.316-1.0 is 'pythia8.316-1.0', the major digit shared
+    # by family and version; any other generator is name and version
+    # joined as they came apart.
+    gen_name = str(evgen.get('generator') or '')
+    gen_version = str(evgen.get('generator_version') or '')
+    m = re.fullmatch(r'pythia(\d)', gen_name.lower())
+    if m and gen_version.startswith(m.group(1)):
+        generator = f'pythia{gen_version}'
+    else:
+        generator = f'{gen_name}{gen_version}'
+    rad = 'noRad' if str(evgen.get('radiative') or 'off').lower() == 'off' else 'rad'
+    species = str(physics.get('beam_species') or 'ep')
+    beams = f"{physics.get('beam_energy_electron')}x{physics.get('beam_energy_hadron')}"
+    q2 = str(physics.get('q2_range') or '')
+    path = '/'.join([category, generator, current, rad, species, beams, q2])
+    stem = '_'.join([generator, current, rad, species, beams, q2])
+    return path, stem
+
+
+def _evgen_manifest_internal(task, events_per_job):
+    """One manifest row per job for an internal-EVGEN task: the sample
+    the job generates, named as an external one would be, so the
+    payload's naming and registration run unchanged. The job count is
+    the config's ``n_jobs``; a trial takes the first row."""
+    cfg = task.get_effective_config()
+    data = cfg.get('data') or {}
+    n_jobs = int(data.get('n_jobs') or 1)
+    if n_jobs <= 0:
+        raise ValueError('n_jobs on the config must be positive for internal EVGEN')
+    path, stem = internal_evgen_sample(task)
+    return [f'{path}/{stem}_run{i:03d},hepmc3.tree.root,{events_per_job},0000'
+            for i in range(n_jobs)]
 
 
 RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4})\.eicrecon\.edm4eic\.root$')
@@ -697,7 +783,14 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False):
         raise ValueError(
             'set events_per_job on the config (per-job event count; Rucio '
             'carries no per-file event count)')
-    csv_rows = _evgen_manifest_from_inputs(task, n_events)
+    if str(data.get('workflow_mode') or 'external_evgen') == 'internal_evgen':
+        # Internal EVGEN (docs/EPICPROD_INTERNAL_EVGEN.md): the job
+        # generates its own sample, so the manifest names the sample each
+        # job would have read, one row per job, and the generation
+        # environment travels with the payload environment.
+        csv_rows = _evgen_manifest_internal(task, n_events)
+    else:
+        csv_rows = _evgen_manifest_from_inputs(task, n_events)
     residual_coverage = None
     if residual:
         # Residual rerun: the workload is the undelivered remainder

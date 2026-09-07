@@ -213,6 +213,7 @@ path adds one rather than exiting 1.
 | 78 | Registration in the catalog of record failed after the output was produced. |
 | 79 | The output name is held by a failed earlier attempt of this job and cannot be regenerated under it; the residual rerun as a new try is the route. |
 | 80 | The landing was declined: the Rucio server or the input door could not be reached from this worker, twice, in the payload's first seconds, so no work was started. The reason is in the stage log and the report; PanDA's retry sends the job elsewhere. |
+| 82 | Event generation failed (internal EVGEN, EPICPROD_INTERNAL_EVGEN.md): the steering could not be composed, the driver did not build or run, or the afterburner refused the beams. Nothing downstream ran; the step that refused is the last ERROR line of the evgen stage log. |
 
 Codes 65, 78 and 79 also appear in the run script's stage log and in
 the payload report, so a job that dies before its report is sent is
@@ -319,9 +320,10 @@ In order, each a committed step on the clone:
 6. **Inputs.** Streaming from the JLab door stays. Rucio-resident
    input by DID (JEDI_INTEGRATION.md § Payload-staged external EVGEN)
    follows once the EVGEN registration coverage is complete.
-7. **Internal EVGEN stage** as a payload stage ahead of simulation
-   (PCS_DATASET_REQUEST_WORKFLOW.md § Workflow modes), when a
-   generator run becomes an epicprod task.
+7. **Internal EVGEN stage** as a payload stage ahead of the input
+   stage (EPICPROD_INTERNAL_EVGEN.md): the generator in the campaign
+   image writes the sample the job then simulates, at the path an
+   external sample would have had, so nothing downstream changes.
 
 ## Container contract
 

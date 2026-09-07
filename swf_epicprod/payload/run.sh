@@ -233,6 +233,9 @@ INPUT_PREFIX=${INPUT_DIR/\/*/}
 TAG=${INPUT_DIR/${INPUT_PREFIX}\//}
 INPUT_DIR=${BASEDIR}/EVGEN/${TAG}
 mkdir -p ${INPUT_DIR}
+# The sample's own path below EVGEN/, before the detector segments join
+# it: where a generated sample registers (docs/EPICPROD_INTERNAL_EVGEN.md).
+SAMPLE_TAG=${TAG}
 TAG=${DETECTOR_VERSION:-main}/${DETECTOR_CONFIG}/${TAG_PREFIX:+${TAG_PREFIX}/}${TAG}
 
 # The log directory holds every stage's prmon output, so it exists before
@@ -270,8 +273,41 @@ else
   stage landing ok
 fi
 
+# Internal EVGEN (docs/EPICPROD_INTERNAL_EVGEN.md): the job generates the
+# sample it simulates, at the path an externally supplied one would have
+# had, so the input stage and everything after it run unchanged. The
+# steering is composed from the generation environment the submission
+# wrote; the stage records the events generated and the seed. A
+# generation that fails is its own exit code (82): nothing downstream
+# has run and the report says which step refused.
+EVGEN_SUMMARY=""
+if [ "${EVGEN_INTERNAL:-false}" == "true" ]; then
+  stage evgen start
+  EVGEN_LOCAL=${INPUT_DIR}/$(basename ${INPUT_FILE})
+  EVGEN_WORK=${TMPDIR}/evgen
+  EVGEN_SUMMARY=${EVGEN_WORK}/evgen-summary.json
+  mkdir -p ${EVGEN_WORK}
+  if monitor evgen python $SCRIPT_DIR/evgen_generate.py \
+       --out "${EVGEN_LOCAL}" --events "${EVENTS_PER_TASK}" \
+       --workdir "${EVGEN_WORK}" --log "${LOG_TEMP}/${TASKNAME}.evgen.log" \
+       --summary "${EVGEN_SUMMARY}"; then
+    EVGEN_EVENTS=$(jq -r '.events // .events_requested' "${EVGEN_SUMMARY}" 2>/dev/null || true)
+    EVGEN_SEED=$(jq -r '.seed' "${EVGEN_SUMMARY}" 2>/dev/null || true)
+    stage evgen ok "${EVGEN_EVENTS:-?} events, seed ${EVGEN_SEED:-?}, $(basename ${EVGEN_LOCAL})"
+  else
+    EVGEN_RC=$?
+    stage evgen fail "evgen_generate.py exit ${EVGEN_RC}"
+    REPORT_NOTE="event generation failed (evgen_generate.py exit ${EVGEN_RC})"
+    echo "ERROR: event generation failed; nothing downstream has run."
+    exit 82
+  fi
+fi
+
 stage input start
-if [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
+if [ "${EVGEN_INTERNAL:-false}" == "true" ]; then
+  # The sample generated above, in the place a streamed one is read from.
+  INPUT_FILE=${EVGEN_LOCAL}
+elif [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
   # Define location on xrootd from where to stream input file from
   INPUT_FILE=${XRDRURL}/${XRDRBASE}/${INPUT_FILE}
 else
@@ -289,6 +325,10 @@ mkdir -p ${FULL_TEMP}
 RECO_DIR=RECO/${TAG}
 RECO_TEMP=${TMPDIR}/${RECO_DIR}
 mkdir -p ${RECO_TEMP}
+#
+# A generated sample registers in the EVGEN layout, without the detector
+# segments: the sample is what it is whatever simulates it.
+EVGEN_DIR=EVGEN/${SAMPLE_TAG}
 
 # Canary payload run (site-canary IMPLEMENTATION.md, Payload canaries):
 # the FULL and RECO files go to one flat dataset under epic:/TEST/, named
@@ -301,6 +341,7 @@ if [[ -n "${CANARY_OUTPUT_DATASET:-}" ]]; then
   FULL_TEMP=${TMPDIR}/${FULL_DIR}
   RECO_DIR=${CANARY_OUTPUT_DATASET}
   RECO_TEMP=${TMPDIR}/${RECO_DIR}
+  EVGEN_DIR=${CANARY_OUTPUT_DATASET}
   mkdir -p ${FULL_TEMP} ${RECO_TEMP}
   COPYLOG=false
   # An array, not an unquoted expansion: IFS above holds no space, so
@@ -325,8 +366,15 @@ if [[ -n "${TRIAL_OUTPUT_ROOT:-}" ]]; then
   RECO_DIR=${TRIAL_OUTPUT_ROOT}/RECO/${TAG}
   RECO_TEMP=${TMPDIR}/${RECO_DIR}
   LOG_DIR=${TRIAL_OUTPUT_ROOT}/LOG/${TAG}
+  EARLY_LOG_TEMP=${LOG_TEMP}
   LOG_TEMP=${TMPDIR}/${LOG_DIR}
+  EVGEN_DIR=${TRIAL_OUTPUT_ROOT}/EVGEN/${SAMPLE_TAG}
   mkdir -p ${FULL_TEMP} ${RECO_TEMP} ${LOG_TEMP}
+  # The stages that ran before this point (generation) logged under the
+  # production log directory; their logs belong with the trial's.
+  if [ -d "${EARLY_LOG_TEMP}" ] && [ "${EARLY_LOG_TEMP}" != "${LOG_TEMP}" ]; then
+    find "${EARLY_LOG_TEMP}" -maxdepth 1 -type f -exec mv -t "${LOG_TEMP}/" {} + 2>/dev/null || true
+  fi
   if [[ -n "${TRIAL_LIFETIME_S:-}" ]]; then
     LIFETIME_ARGS=(--lifetime "${TRIAL_LIFETIME_S}")
   fi
@@ -627,6 +675,8 @@ if [ "${COPYLOG:-false}" == "true" ] ; then
 
     # List of expected files
     for FILE in \
+      "${LOG_TEMP}/${TASKNAME}.evgen.log" \
+      "${LOG_TEMP}/${TASKNAME}.evgen.prmon.txt" \
       "${LOG_TEMP}/${TASKNAME}.npsim.prmon.txt" \
       "${LOG_TEMP}/${TASKNAME}.npsim.log" \
       "${LOG_TEMP}/${TASKNAME}.eicrecon.prmon.txt" \
@@ -814,6 +864,33 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     echo "Running: xrdcp --debug 2 --force --recursive ${RECO_TEMP}/${TASKNAME}*.edm4eic.root ${XRDWURL}/${XRDWBASE}/${RECO_DIR}"
     xrdcp --debug 2 --force --recursive ${RECO_TEMP}/${TASKNAME}*.edm4eic.root ${XRDWURL}/${XRDWBASE}/${RECO_DIR} || echo "ERROR: xrdcp failed with exit code $?"
     echo "=== DEBUG: RECO copy attempt completed ==="
+  fi
+fi
+
+# A generated sample is an output when the configuration says so
+# (docs/EPICPROD_INTERNAL_EVGEN.md): registered under EVGEN/ in the
+# output layout with its event count and the same lifetime treatment as
+# the physics, so a PCS-produced generator sample is an ordinary dataset
+# with stage evgen. It never fails the job: the physics is delivered by
+# this point, and a sample that could not be registered is said in the
+# stage log and the report.
+if [ "${EVGEN_INTERNAL:-false}" == "true" ] && [ "${COPYEVGEN:-false}" == "true" ] && [ "${USERUCIO:-false}" == "true" ] ; then
+  EVGEN_NAME=$(basename ${EVGEN_LOCAL})
+  EVGEN_EVENTS_ARGS=()
+  if [ -n "${EVGEN_EVENTS:-}" ] && [ "${EVGEN_EVENTS}" != "null" ]; then
+    EVGEN_EVENTS_ARGS=(--events "${EVGEN_EVENTS}")
+  fi
+  stage registration start EVGEN
+  monitor registration_evgen python $SCRIPT_DIR/register_to_rucio.py -f "${EVGEN_LOCAL}" -d "/${EVGEN_DIR}/${EVGEN_NAME}" -s epic -r ${OUT_RSE:-EIC-XRD} ${EVGEN_EVENTS_ARGS[@]+"${EVGEN_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}
+  REG_RC=$?
+  if [ ${REG_RC} -eq 0 ]; then
+    stage registration ok "/${EVGEN_DIR}/${EVGEN_NAME}"
+  elif [ ${REG_RC} -eq 81 ]; then
+    echo "WARNING: catalog unreachable for EVGEN; registration pending."
+    stage registration pending "/${EVGEN_DIR}/${EVGEN_NAME}"
+  else
+    echo "WARNING: the generated sample could not be registered (exit ${REG_RC}); the job's physics is unaffected."
+    stage registration fail "EVGEN exit ${REG_RC}"
   fi
 fi
 
