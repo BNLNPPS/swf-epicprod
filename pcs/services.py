@@ -408,6 +408,12 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
         else:
             row_physics_tag, _ = find_or_create_physics_tag(
                 derived, created_by=created_by)
+        # The software tags are never placeholders: the release pair from
+        # the version in the name, and the evgen tag the task name supports
+        # or the sentinel that says nothing recorded it.
+        row_simu, row_reco = campaign_stage_tags(det_version, created_by=created_by)
+        row_evgen_tag = evgen_tag_for_source(
+            taskname_remainder_path(remainder), created_by=created_by)
 
         # Composed-identity guard (docs/PCS_COMPOSED_NAME_INTEGRITY.md
         # step 2): a new dataset whose composed name already exists gets
@@ -424,7 +430,7 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
             probe = Dataset(
                 scope='group.EIC', detector_version=det_version,
                 detector_config=det_config, physics_tag=row_physics_tag,
-                evgen_tag=evgen, simu_tag=simu, reco_tag=reco)
+                evgen_tag=row_evgen_tag, simu_tag=row_simu, reco_tag=row_reco)
             probe_name = probe.build_dataset_name()
             if Dataset.objects.filter(composed_name=probe_name).exists():
                 candidate = _intake_sample_candidate(remainder, derived)
@@ -463,9 +469,9 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
                     'detector_config': det_config,
                     'campaign': campaign,
                     'physics_tag': row_physics_tag,
-                    'evgen_tag': evgen,
-                    'simu_tag': simu,
-                    'reco_tag': reco,
+                    'evgen_tag': row_evgen_tag,
+                    'simu_tag': row_simu,
+                    'reco_tag': row_reco,
                     'sample_name': sample_name,
                     'description': 'Auto-intake of direct PanDA submission',
                     'metadata': {
@@ -1363,6 +1369,15 @@ def resolve_prodtask(name, queryset=None):
         return matches[0]
     if len(matches) > 1:
         raise AmbiguousIdentity(key, matches)
+    # A name an edition wore before a tag rebind (its metadata['rebind']
+    # history records every former name), so a link or key issued before
+    # the rebind still lands.
+    matches = list(qs.filter(
+        dataset__metadata__rebind__contains=[{'name_before': key}])[:20])
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise AmbiguousIdentity(key, matches)
     if key.isdigit():
         t = qs.filter(pk=int(key)).first()
         if t is not None:
@@ -1388,6 +1403,10 @@ def resolve_dataset(name, queryset=None):
         d = qs.filter(**{lookup: key}).first()
         if d is not None:
             return d
+    # A former name from a tag rebind, as resolve_prodtask honours it.
+    d = qs.filter(metadata__rebind__contains=[{'name_before': key}]).first()
+    if d is not None:
+        return d
     raise Dataset.DoesNotExist(f"No Dataset matches {name!r}")
 
 
@@ -2156,17 +2175,18 @@ def import_default_datasets_csv(csv_path=None, *, created_by='csv_import'):
                     derived, created_by=created_by)
                 summary['tag_actions'][action] = summary['tag_actions'].get(action, 0) + 1
 
-            # Resolve the generator (evgen) from path/gen_version. Unresolved
-            # (ambiguous/underspecified) rows keep the placeholder anchor and are
-            # left for manual association — never guessed. See the curated
-            # derive_evgen and docs (campaign->tag mapping).
-            row_evgen_tag = evgen
+            # Resolve the generator (evgen) from path/gen_version. An
+            # unresolved (ambiguous/underspecified) row wears the unrecorded
+            # sentinel, which says so, and is left for manual association —
+            # never guessed, and never a real tag's version.
             ev_params = derive_evgen(task_name, gen_ver)
             if ev_params:
                 row_evgen_tag, ev_action = find_or_create_evgen_tag(
                     ev_params, created_by=created_by)
                 ev_key = f'evgen-{ev_action}'
                 summary['tag_actions'][ev_key] = summary['tag_actions'].get(ev_key, 0) + 1
+            else:
+                row_evgen_tag = evgen_unrecorded_tag('', created_by=created_by)
 
             raw_priority = (row.get('Priority') or '').strip()
             try:
@@ -2762,6 +2782,261 @@ def _ensure_s0_stage_tag(created_by='csv_import'):
     return tag
 
 
+UNRECORDED = 'unrecorded'
+
+
+def campaign_stage_tags(detector_version, *, created_by='intake'):
+    """The simulation and reconstruction tags of a release: the pair whose
+    parameters name the npsim and eicrecon version the release carries,
+    minted in the release ladder's form when absent.
+
+    A production edition never wears a placeholder pair. The campaign is
+    known at every intake, from the detector version in the name, and the
+    pair follows from it; s0 and r0 keep their one meaning, EVGEN-stage
+    request material.
+    """
+    version = str(detector_version or '').strip()
+    if not version:
+        raise ServiceError('campaign_stage_tags: no detector version')
+    simu = (SimuTag.objects.filter(parameters__sim_version=version,
+                                   parameters__detector_sim='npsim')
+            .order_by('tag_number').first())
+    if simu is None:
+        simu = SimuTag(tag_number=SimuTag.allocate_next(), status='draft',
+                       description=f'npsim {version}, standard filters',
+                       parameters={'sim_version': version,
+                                   'detector_sim': 'npsim'},
+                       created_by=created_by)
+        simu.save()
+    reco = (RecoTag.objects.filter(parameters__reco_version=version,
+                                   parameters__reco_config='standard')
+            .order_by('tag_number').first())
+    if reco is None:
+        reco = RecoTag(tag_number=RecoTag.allocate_next(), status='draft',
+                       description=f'eicrecon {version}, standard',
+                       parameters={'reco_config': 'standard',
+                                   'reco_version': version},
+                       created_by=created_by)
+        reco.save()
+    return simu, reco
+
+
+def evgen_unrecorded_tag(generator='', *, created_by='intake'):
+    """The evgen tag of an edition whose generator version nothing
+    recorded: it says so, in its parameters and on every page, rather than
+    wearing a real tag's version. One per generator, and one more for a
+    generator that was not recorded either.
+    """
+    generator = (generator or '').strip()
+    params = {'generator': generator or UNRECORDED,
+              'generator_version': UNRECORDED}
+    tag = (EvgenTag.objects
+           .filter(parameters__generator=params['generator'],
+                   parameters__generator_version=UNRECORDED)
+           .order_by('tag_number').first())
+    if tag is None:
+        tag = EvgenTag(
+            tag_number=EvgenTag.allocate_next(), status='draft',
+            description=(f'{generator}, version not recorded at production'
+                         if generator else
+                         'generator not recorded at production'),
+            parameters=params, created_by=created_by)
+        tag.save()
+    return tag
+
+
+def evgen_tag_for_source(path, gen_version='', *, created_by='intake'):
+    """The evgen tag a source path supports: the derived generator and
+    version where the path or release names them, the unrecorded sentinel
+    where it does not."""
+    params = derive_evgen(path, gen_version)
+    if params:
+        tag, _ = find_or_create_evgen_tag(params, created_by=created_by)
+        return tag
+    return evgen_unrecorded_tag('', created_by=created_by)
+
+
+def _source_path_for_evgen(ds):
+    """The path an edition's evgen identity can be derived from, by the
+    kind of source its record names."""
+    source = (ds.metadata or {}).get('source') or {}
+    kind = source.get('kind') or ''
+    location = str(source.get('location') or '')
+    if kind == 'csv_manifest':
+        return location, str(source.get('gen_version') or '')
+    if kind == 'panda_taskname':
+        # The remainder past the scope, version and config prefix, less a
+        # trailing attempt or block suffix — what the intake derived from.
+        remainder = _re.sub(r'^group\.EIC\.\d+\.\d+\.\d+\.[^.]+\.', '', location)
+        remainder = _re.sub(r'(\.try\d+|\.b\d+)+$', '', remainder)
+        return taskname_remainder_path(remainder), ''
+    if kind == 'rucio_did':
+        # epic:/RECO/<version>/<config>/<path below the config>
+        tail = location.split(':', 1)[-1].lstrip('/').split('/')
+        return '/'.join(tail[3:]) if len(tail) > 3 else '', ''
+    return location, ''
+
+
+def rebind_anchor_editions(family, *, changed_by, dry_run=True):
+    """Repair: every edition of a campaign family still wearing the import
+    and intake anchors — e1, s1, r1, placeholders that read as real
+    software — takes the tags the binding rule gives an intake today: the
+    release's simulation and reconstruction pair, and the evgen tag its
+    source supports or the unrecorded sentinel. r0 keeps its meaning.
+
+    Each rebound edition records the change in ``metadata['rebind']``;
+    its composed name and physics configuration follow from the tags on
+    save. Requests anchored on a renamed edition and campaign-plan entries
+    keyed on a configuration the rebind emptied are carried to the new
+    names. An edition whose new name another edition already holds is
+    skipped and reported. One action-stream record per run.
+    """
+    from django.utils import timezone as _tz
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    prefix = f'{family}.'
+    editions = list(
+        Dataset.objects.filter(detector_version__startswith=prefix)
+        .select_related('evgen_tag', 'simu_tag', 'reco_tag', 'physics_config')
+        .order_by('composed_name', 'pk'))
+    pairs = {}
+    report = {'family': family, 'dry_run': dry_run, 'examined': len(editions),
+              'rebound': 0, 'unchanged': 0, 'skipped_collision': [],
+              'simu': 0, 'reco': 0, 'evgen_derived': 0, 'evgen_unrecorded': 0,
+              'renamed': [], 'pc_moved': [], 'requests_carried': 0,
+              'plan_entries_carried': []}
+    renames = {}
+    pc_before = {}
+    now = _tz.now().isoformat(timespec='seconds')
+    for ds in editions:
+        change = {}
+        version = ds.detector_version
+        if version not in pairs:
+            pairs[version] = campaign_stage_tags(version, created_by=changed_by)
+        simu, reco = pairs[version]
+        if ds.simu_tag.tag_number == 1 and ds.simu_tag_id != simu.pk:
+            change['simu'] = (ds.simu_tag.tag_label, simu.tag_label)
+        if ds.reco_tag.tag_number == 1 and ds.reco_tag_id != reco.pk:
+            change['reco'] = (ds.reco_tag.tag_label, reco.tag_label)
+        new_evgen = None
+        if ds.evgen_tag.tag_number == 1:
+            path, gen_version = _source_path_for_evgen(ds)
+            params = derive_evgen(path, gen_version) if path else None
+            if params:
+                new_evgen, _ = find_or_create_evgen_tag(
+                    params, created_by=changed_by, dry_run=dry_run)
+                if new_evgen is None:
+                    change['evgen'] = (ds.evgen_tag.tag_label, 'new tag')
+                    report['evgen_derived'] += 1
+                elif new_evgen.pk != ds.evgen_tag_id:
+                    change['evgen'] = (ds.evgen_tag.tag_label, new_evgen.tag_label)
+                    report['evgen_derived'] += 1
+            else:
+                new_evgen = (evgen_unrecorded_tag('', created_by=changed_by)
+                             if not dry_run else None)
+                change['evgen'] = (ds.evgen_tag.tag_label,
+                                   new_evgen.tag_label if new_evgen else 'unrecorded')
+                report['evgen_unrecorded'] += 1
+        if not change:
+            report['unchanged'] += 1
+            continue
+        old_name = ds.composed_name
+        old_pc = ds.physics_config.label if ds.physics_config_id else ''
+        if 'simu' in change:
+            ds.simu_tag = simu
+            report['simu'] += 1
+        if 'reco' in change:
+            ds.reco_tag = reco
+            report['reco'] += 1
+        if 'evgen' in change and new_evgen is not None:
+            ds.evgen_tag = new_evgen
+        new_name = ds.build_dataset_name()
+        if new_name != old_name and Dataset.objects.filter(
+                composed_name=new_name).exclude(pk=ds.pk).exists():
+            report['skipped_collision'].append(
+                {'edition': old_name, 'would_be': new_name})
+            continue
+        report['rebound'] += 1
+        if new_name != old_name:
+            renames[old_name] = new_name
+            report['renamed'].append({'from': old_name, 'to': new_name})
+        if dry_run:
+            continue
+        history = list((ds.metadata or {}).get('rebind') or [])
+        history.append({'from': {k: v[0] for k, v in change.items()},
+                        'to': {k: v[1] for k, v in change.items()},
+                        'name_before': old_name, 'by': changed_by, 'at': now,
+                        'reason': 'import and intake anchors replaced by the '
+                                  'binding rule'})
+        ds.metadata = dict(ds.metadata or {}, rebind=history)
+        ds.save()
+        new_pc = ds.physics_config.label if ds.physics_config_id else ''
+        if old_pc and new_pc and old_pc != new_pc:
+            pc_before.setdefault(old_pc, set()).add(new_pc)
+            report['pc_moved'].append({'edition': new_name, 'from': old_pc,
+                                       'to': new_pc})
+    if dry_run:
+        return report
+
+    # Requests anchored on a renamed edition follow it.
+    if renames:
+        for req in ProdRequest.objects.filter(
+                data__physics_config_anchor__in=list(renames)):
+            data = dict(req.data or {})
+            data['physics_config_anchor'] = renames[data['physics_config_anchor']]
+            req.data = data
+            req.save(update_fields=['data'])
+            report['requests_carried'] += 1
+
+    # A plan entry keyed on a configuration the rebind emptied moves to
+    # the configuration its edition went to; an entry the target already
+    # has stands.
+    campaign = Campaign.objects.filter(name=family).first()
+    if campaign is not None and pc_before:
+        plan = campaign_plan_get(campaign.name)
+        moves = {}
+        for old_pc, targets in pc_before.items():
+            if old_pc not in plan or len(targets) != 1:
+                continue
+            still = Dataset.objects.filter(
+                detector_version__startswith=prefix,
+                physics_config__label=old_pc).exists()
+            if still:
+                continue
+            new_pc = next(iter(targets))
+            if new_pc in plan:
+                continue
+            moves[old_pc] = new_pc
+        if moves:
+            entries = {}
+            for old_pc, new_pc in moves.items():
+                entries[old_pc] = None
+                entries[new_pc] = plan[old_pc]
+            campaign_plan_entries_set(
+                campaign.name, entries,
+                'plan entries carried with their editions by the anchor rebind',
+                changed_by=changed_by)
+            report['plan_entries_carried'] = [
+                {'from': a, 'to': b} for a, b in moves.items()]
+
+    log_epicprod_action(
+        'pcs', 'edition_rebind', outcome='ok', sublevel='high',
+        live_default=True, subject_type='campaign', subject_key=family,
+        username=changed_by,
+        message=(f'edition_rebind {family}: {report["rebound"]} of '
+                 f'{report["examined"]} editions rebound'),
+        examined=report['examined'], rebound=report['rebound'],
+        simu=report['simu'], reco=report['reco'],
+        evgen_derived=report['evgen_derived'],
+        evgen_unrecorded=report['evgen_unrecorded'],
+        skipped_collision=len(report['skipped_collision']),
+        requests_carried=report['requests_carried'],
+        pc_moved=len(report['pc_moved']),
+        plan_entries_carried=report['plan_entries_carried'],
+        renamed=report['renamed'])
+    return report
+
+
 _ARRIVAL_POL_RE = _re.compile(r'^e[mp]h[LT][mp]$')
 _ARRIVAL_DVCS_VARIANTS = ('BH_ONLY', 'DVCS_BH', 'DVCS_ONLY')
 _ARRIVAL_EPIC_VERSION_RE = _re.compile(r'^EpIC(?:_v)?([\d.\-]+)$')
@@ -2973,7 +3248,12 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                     disc = _past_arrival_discrimination(remainder, derived)
                     row_background_tag = None
                     row_sample = disc.get('sample', '')
-                    row_evgen_tag = evgen
+                    # Never a placeholder: the release pair for this version,
+                    # and the unrecorded sentinel where the archive path names
+                    # no generator.
+                    row_simu, row_reco = campaign_stage_tags(
+                        version, created_by=created_by)
+                    row_evgen_tag = evgen_unrecorded_tag('', created_by=created_by)
                     if disc.get('background_params'):
                         row_background_tag, _ = find_or_create_background_tag(
                             disc['background_params'], created_by=created_by)
@@ -2992,12 +3272,12 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                         # archive path. Attach it to the holder — current
                         # location, refreshed counts, prior path retained —
                         # and create nothing.
-                        row_reco_tag = r0 if stage == 'FULL' else reco
+                        row_reco_tag = r0 if stage == 'FULL' else row_reco
                         prospective = (
                             f"group.EIC.{version}."
                             f"{decomposed.get('detector_config', '')}."
                             f"{row_physics_tag.tag_label}.{row_evgen_tag.tag_label}."
-                            f"{simu.tag_label}.{row_reco_tag.tag_label}")
+                            f"{row_simu.tag_label}.{row_reco_tag.tag_label}")
                         if row_background_tag is not None:
                             prospective += f'.{row_background_tag.tag_label}'
                         if row_sample:
@@ -3030,8 +3310,8 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                             detector_config=decomposed.get('detector_config', ''),
                             campaign=campaign,
                             physics_tag=row_physics_tag, evgen_tag=row_evgen_tag,
-                            simu_tag=simu,
-                            reco_tag=(r0 if stage == 'FULL' else reco),
+                            simu_tag=row_simu,
+                            reco_tag=(r0 if stage == 'FULL' else row_reco),
                             background_tag=row_background_tag,
                             sample_name=row_sample,
                             file_count=block['file_count'],
@@ -3056,7 +3336,7 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                             ds.background_tag = row_background_tag
                         if row_sample and not ds.sample_name:
                             ds.sample_name = row_sample
-                        if stage == 'FULL' and ds.reco_tag_id == reco.pk:
+                        if stage == 'FULL' and ds.reco_tag_id in (reco.pk, row_reco.pk):
                             ds.reco_tag = r0
                         ds.save()
 
