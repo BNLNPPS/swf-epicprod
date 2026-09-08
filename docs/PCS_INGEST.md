@@ -172,6 +172,15 @@ event (`pc_ingest_request`).
 | Analyze | `POST /pcs/api/ingest/analyze/`, body `{"text": "<lines>"}` → rows, counts, definitions stamp |
 | Accept | `POST /pcs/api/ingest/accept/`, body `{"lines": ["<line>", ...], "allow_near_miss": false}` → per-line results; signed-in users only |
 | Create request | `POST /pcs/api/ingest/request/`, body `{"lines": ["<line>", ...]}` → per-line results with `request_id` and `task_name`; signed-in users only |
+| Update definitions | `POST /pcs/api/ingest/sweep-definitions/` → `{"status": "queued"}`; the prod-ops agent pulls the `simulation_campaign_datasets` clone and runs the definitions sweep, then pushes `definitions_sweep_ready`; signed-in users only |
+
+A line whose definition is not in the inventory is the usual first
+sight of a new sample: the production team's repository has it and
+the nightly sweep has not. The page's Update definitions button runs
+the sweep now, and the line re-analyzes against the definition rather
+than the file-name fallback. The nightly repository pull runs at 02:00,
+ahead of the 02:47 chain, so a definition pushed in the day is in the
+inventory the next morning without the button.
 
 The endpoints are JSON in and out on the `/pcs/api/` surface, so the
 page works alike on the internal face and through the swf-remote

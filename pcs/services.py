@@ -5646,6 +5646,20 @@ def brains_event_request(*, conversation_id, username, query):
             status=503)
 
 
+def definitions_sweep_request(*, created_by='definitions_sweep'):
+    """Publish a dataset_definitions_sweep request to the prod-ops agent: it
+    pulls the simulation_campaign_datasets clone and runs the same sweep the
+    nightly chain runs, then pushes definitions_sweep_ready over the SSE
+    relay (the PC ingest page's Update definitions button; docs/PCS_INGEST.md).
+    Raises ServiceError if the queue is unreachable."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    _publish_prodops({'msg_type': 'dataset_definitions_sweep',
+                      'namespace': 'prodops', 'created_by': created_by})
+    log_epicprod_action('web', 'definitions_sweep_request',
+                        username=created_by, sublevel='low', live_default=False)
+    return {'status': 'queued'}
+
+
 def evgen_rucio_update_request(*, created_by='evgen_rucio'):
     """Publish an evgen_rucio_update request to the prod-ops agent, which
     assimilates the JLab Rucio EVGEN inventory (epic:/EVGEN/*) and resolves each

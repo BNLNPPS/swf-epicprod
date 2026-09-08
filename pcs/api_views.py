@@ -1536,3 +1536,22 @@ def delivered_outputs_receive(request):
         # Never silent: a row we could not store is named in the reply.
         body['refused'] = refused
     return Response(body, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def pc_ingest_sweep_definitions(request):
+    """Run the dataset definitions sweep now — the PC ingest page's Update
+    definitions button. The web tier only queues dataset_definitions_sweep
+    to the prod-ops agent, which pulls the simulation_campaign_datasets
+    clone, runs the sweep, and pushes definitions_sweep_ready over the SSE
+    relay; the page reloads on it. Signed-in users only. See
+    docs/PCS_INGEST.md."""
+    user = getattr(request.user, 'username', '') or 'definitions_sweep'
+    try:
+        result = services.definitions_sweep_request(created_by=user)
+    except ServiceError as e:
+        return Response({'detail': e.detail}, status=e.status)
+    return Response(result, status=status.HTTP_202_ACCEPTED)

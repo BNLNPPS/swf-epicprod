@@ -9,7 +9,8 @@ from .api_views import (
     validation_sample_completion, validation_campaign_completion,
     validation_campaign_catalog, validation_results_receive,
     evgen_mark, evgen_register, pc_ingest_analyze, pc_ingest_accept,
-    pc_ingest_request, storage_listing, delivered_outputs_receive,
+    pc_ingest_request, pc_ingest_sweep_definitions, storage_listing,
+    delivered_outputs_receive,
 )
 
 router = DefaultRouter()
@@ -46,6 +47,8 @@ urlpatterns = [
     path('ingest/analyze/', pc_ingest_analyze, name='pc_ingest_analyze'),
     path('ingest/accept/', pc_ingest_accept, name='pc_ingest_accept'),
     path('ingest/request/', pc_ingest_request, name='pc_ingest_request'),
+    path('ingest/sweep-definitions/', pc_ingest_sweep_definitions,
+         name='pc_ingest_sweep_definitions'),
     # Storage record listings (STORAGE.md § Retrieval)
     path('storage/<str:listing>/', storage_listing, name='storage_listing'),
     # What a task's jobs delivered, from the payload's own reports

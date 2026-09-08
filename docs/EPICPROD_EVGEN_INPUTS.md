@@ -252,7 +252,9 @@ a CI that measures each dataset's cost (real per-file event counts,
 initialization and per-event walltime, per-event output sizes), and the
 background-mixing configurations under `config_data/`. The nightly
 dataset definitions sweep (`pcs/definitions_sweep.py`, a `catalog_sync`
-chain step) assimilates this third namespace onto the catalog: each
+chain step, and on demand from the PC ingest page's Update definitions
+button, which pulls the clone first; PCS_INGEST.md) assimilates this
+third namespace onto the catalog: each
 definition is matched exactly against the registered EVGEN Rucio
 inventory and, through the request-side input matcher above, against the
 catalog's evgen datasets. The resulting populations — defined, requested,

@@ -35,7 +35,10 @@
     the physics configuration. Creating the request records the dataset request
     on that configuration and the draft task in the campaign; the task is
     readied and submitted from its own page.
-    <span class="text-muted">Dataset definitions inventory: {{ definitions_count }} definitions{% if definitions_stamp %} as of {{ definitions_stamp }}{% endif %}.</span></p>
+    <span class="text-muted">Dataset definitions inventory: {{ definitions_count }} definitions{% if definitions_stamp %} as of {{ definitions_stamp }}{% endif %}.</span>
+    {% if user.is_authenticated %}<button type="button" id="pcs-ingest-sweep" class="btn btn-sm btn-primary ms-2"
+        title="Pull the simulation_campaign_datasets repository and sweep its definitions into the inventory now; the nightly chain does the same at 02:47">Update definitions</button>
+    <span id="pcs-ingest-sweep-status" class="text-muted ms-1"></span>{% endif %}</p>
 
   <textarea id="pcs-ingest-text" rows="8" placeholder="EBEAM=9 PBEAM=100_Au197 DETECTOR_VERSION=26.07.1 DETECTOR_CONFIG=epic_craterlake JUG_XL_TAG=26.07.1-stable ... scripts/submit_csv.sh osg_csv hepmc3 DIS/eAu/9x100/BeAGLE1.03.02-3.1_DIS_eAu_9x100_q2_1to10.csv 2"></textarea>
   <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
@@ -214,6 +217,33 @@
       render();
     } catch (err) {
       statusEl.textContent = 'Analysis failed: ' + err.message;
+    }
+  });
+  // Update definitions: the sweep on demand through the prod-ops agent, the
+  // page reloading on definitions_sweep_ready. The push stream opens only
+  // after the click, never on page load; a timeout reloads regardless so a
+  // missed event cannot strand the button.
+  const sweepBtn = document.getElementById('pcs-ingest-sweep');
+  if (sweepBtn) sweepBtn.addEventListener('click', async function () {
+    const status = document.getElementById('pcs-ingest-sweep-status');
+    sweepBtn.disabled = true;
+    sweepBtn.textContent = 'Updating…';
+    status.textContent = 'pulling the repository and sweeping; the page reloads when done';
+    try {
+      await post('sweep-definitions/', {});
+      const es = new EventSource('{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=definitions_sweep_ready');
+      const timer = setTimeout(function () { es.close(); window.location.reload(); }, 900000);
+      es.addEventListener('definitions_sweep_ready', function (ev) {
+        let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
+        clearTimeout(timer); es.close();
+        if (d.ok === false) {
+          sweepBtn.disabled = false; sweepBtn.textContent = 'Update definitions';
+          status.textContent = 'the sweep failed: ' + (d.pull && d.pull !== 'pulled' ? d.pull : 'see the action stream');
+        } else { window.location.reload(); }
+      });
+    } catch (err) {
+      sweepBtn.disabled = false; sweepBtn.textContent = 'Update definitions';
+      status.textContent = 'could not queue the sweep: ' + err.message;
     }
   });
   document.getElementById('pcs-ingest-clear').addEventListener('click', function () {
