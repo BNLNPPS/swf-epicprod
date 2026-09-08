@@ -3037,6 +3037,74 @@ def rebind_anchor_editions(family, *, changed_by, dry_run=True):
     return report
 
 
+def merge_duplicate_edition(duplicate, survivor, *, changed_by, drop_tasks=()):
+    """Fold a duplicate edition — a second record of an identity the
+    catalog already holds — into the record that holds it. Its tasks move
+    to the survivor; its own record rides in the survivor's
+    ``metadata['merged_from']``; the duplicate row goes. A task named in
+    ``drop_tasks`` (by pk) is deleted rather than moved: a draft with no
+    attempt and nothing delivered is redundant beside the survivor's own
+    task, and moving it would give one identity two drafts.
+
+    Refuses a survivor and duplicate of different identity (physics,
+    evgen and sample), and refuses to drop a task that is not a bare
+    draft. One ``edition_merge`` action record.
+    """
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    dup = resolve_dataset(duplicate)
+    surv = resolve_dataset(survivor)
+    if dup.pk == surv.pk:
+        raise ServiceError('merge_duplicate_edition: the same edition twice')
+    same = (dup.physics_tag_id == surv.physics_tag_id
+            and dup.evgen_tag_id == surv.evgen_tag_id
+            and dup.background_tag_id == surv.background_tag_id
+            and dup.sample_name == surv.sample_name
+            and dup.detector_version == surv.detector_version)
+    if not same:
+        raise ServiceError(
+            f'merge_duplicate_edition: {dup.composed_name} and '
+            f'{surv.composed_name} are not one identity')
+    moved, dropped = [], []
+    with transaction.atomic():
+        for task in list(dup.prod_tasks.all()):
+            if task.pk in set(drop_tasks):
+                if task.status != 'draft' or task.panda_tasks.exists():
+                    raise ServiceError(
+                        f'merge_duplicate_edition: task {task.name} is not a '
+                        f'bare draft and cannot be dropped')
+                dropped.append(task.name)
+                task.delete()
+                continue
+            task.dataset = surv
+            task.save(update_fields=['dataset', 'updated_at'])
+            moved.append(task.name)
+        record = {
+            'composed_name': dup.composed_name, 'id': dup.pk,
+            'created_by': dup.created_by,
+            'created_at': dup.created_at.isoformat(timespec='seconds'),
+            'file_count': dup.file_count, 'data_size': dup.data_size,
+            'metadata': dup.metadata or {},
+            'tasks_moved': moved, 'tasks_dropped': dropped,
+            'by': changed_by,
+            'at': _timezone.now().isoformat(timespec='seconds'),
+        }
+        history = list((surv.metadata or {}).get('merged_from') or [])
+        history.append(record)
+        surv.metadata = dict(surv.metadata or {}, merged_from=history)
+        surv.save()
+        dup_name = dup.composed_name
+        dup.delete()
+    log_epicprod_action(
+        'pcs', 'edition_merge', outcome='ok', sublevel='high',
+        live_default=True, subject_type='dataset', subject_key=surv.composed_name,
+        username=changed_by,
+        message=f'edition_merge: {dup_name} folded into {surv.composed_name}',
+        duplicate=dup_name, tasks_moved=moved, tasks_dropped=dropped)
+    return {'survivor': surv.composed_name, 'duplicate': dup_name,
+            'tasks_moved': moved, 'tasks_dropped': dropped}
+
+
 _ARRIVAL_POL_RE = _re.compile(r'^e[mp]h[LT][mp]$')
 _ARRIVAL_DVCS_VARIANTS = ('BH_ONLY', 'DVCS_BH', 'DVCS_ONLY')
 _ARRIVAL_EPIC_VERSION_RE = _re.compile(r'^EpIC(?:_v)?([\d.\-]+)$')
