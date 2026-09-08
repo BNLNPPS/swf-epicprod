@@ -3032,8 +3032,8 @@ def rebind_anchor_editions(family, *, changed_by, dry_run=True):
                 {'from': a, 'to': b} for a, b in moves.items()]
 
     log_epicprod_action(
-        'pcs', 'edition_rebind', outcome='ok', sublevel='high',
-        live_default=True, subject_type='campaign', subject_key=family,
+        'pcs', 'edition_rebind', outcome='ok', sublevel='low',
+        live_default=False, subject_type='campaign', subject_key=family,
         username=changed_by,
         message=(f'edition_rebind {family}: {report["rebound"]} of '
                  f'{report["examined"]} editions rebound'),
@@ -3350,8 +3350,8 @@ def merge_duplicate_edition(duplicate, survivor, *, changed_by, drop_tasks=()):
         dup_name = dup.composed_name
         dup.delete()
     log_epicprod_action(
-        'pcs', 'edition_merge', outcome='ok', sublevel='high',
-        live_default=True, subject_type='dataset', subject_key=surv.composed_name,
+        'pcs', 'edition_merge', outcome='ok', sublevel='low',
+        live_default=False, subject_type='dataset', subject_key=surv.composed_name,
         username=changed_by,
         message=f'edition_merge: {dup_name} folded into {surv.composed_name}',
         duplicate=dup_name, tasks_moved=moved, tasks_dropped=dropped)
