@@ -67,8 +67,9 @@
 </div>
 
 {% if user.is_authenticated %}
-<div class="container-fluid pcs-ingest-results mt-4">
-  <p class="mb-2 d-flex align-items-center gap-2 flex-wrap">
+<div class="container-fluid pcs-ingest-results">
+  {# The base stylesheet zeroes a top-level container's top margin; the space lives inside. #}
+  <p class="mb-2 d-flex align-items-center gap-2 flex-wrap" style="padding-top: 2.5rem;">
     <button type="button" id="pcs-ingest-sweep" class="btn btn-sm btn-primary">Update definitions</button>
     <span>Pulls the production team's dataset definitions repository and sweeps new or changed definitions into the inventory; the nightly chain does the same at 02:47.</span>
     <span id="pcs-ingest-sweep-status" class="text-muted"></span>
