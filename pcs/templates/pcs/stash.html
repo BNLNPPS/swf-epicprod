@@ -18,7 +18,7 @@
     <p class="mb-3">
         <strong>{{ waiting|length }}</strong> output{{ waiting|length|pluralize }}
         waiting at {{ state.rse }}{% if waiting %}, owed to the catalog of record{% endif %}.
-        {% if state.moved %}<strong>{{ state.moved }}</strong> brought home to {{ state.destination_rse }} on the last pass.{% endif %}
+        {% if state.moved %}<strong>{{ state.moved }}</strong> registered at {{ state.destination_rse }} on the last pass.{% endif %}
         JLab is
         <strong class="{% if state.jlab_reachable %}finished_fill{% else %}failed_fill{% endif %}">{% if state.jlab_reachable %}answering{% else %}not answering{% endif %}</strong>.
         Last pass <span data-relative-time="{{ built_at }}">{{ built_at }}</span>.
@@ -28,7 +28,7 @@
     {% if waiting %}
     <table class="table table-striped table-bordered table-sm align-middle w-auto mb-2 swf-sortable">
         <thead><tr><th>Job</th><th>Stashed as</th><th>Owed to the catalog of record</th>
-            <th>Why it went here</th><th>Move</th><th>Attempts</th><th>Last attempt</th><th>Last error</th></tr></thead>
+            <th>Why it went here</th><th>Registration</th><th>Attempts</th><th>Last attempt</th><th>Last error</th></tr></thead>
         <tbody>
         {% for e in waiting %}
             <tr>
@@ -36,7 +36,7 @@
                 <td>{{ e.stashed_as }}</td>
                 <td>{{ e.owes }}</td>
                 <td>{{ e.reason }}</td>
-                <td class="{% if e.outcome == 'home' %}finished_fill{% elif e.outcome == 'failed' %}failed_fill{% elif e.outcome == 'registered' %}running_fill{% endif %}">{% if e.outcome == 'home' %}home{% elif e.outcome == 'registered' %}home, stash entry not yet removed{% elif e.outcome == 'failed' %}failed{% else %}waiting{% endif %}</td>
+                <td class="{% if e.outcome == 'home' %}finished_fill{% elif e.outcome == 'failed' %}failed_fill{% endif %}">{% if e.outcome == 'home' %}registered{% elif e.outcome == 'failed' %}failed{% else %}waiting{% endif %}</td>
                 <td>{{ e.attempts }}</td>
                 <td>{% if e.last_attempt %}<span data-relative-time="{{ e.last_attempt }}">{{ e.last_attempt }}</span>{% endif %}</td>
                 <td>{{ e.last_error }}</td>
@@ -53,13 +53,13 @@
         <tr><th>Ran</th><td><span data-relative-time="{{ built_at }}">{{ built_at }}</span></td></tr>
         <tr><th>Stash</th><td>{{ state.rse }} at {{ state.door }}</td></tr>
         <tr><th>Catalogued</th><td>{{ state.catalogued }}</td></tr>
-        <tr><th>Brought home</th><td>{{ state.moved }} to {{ state.destination_rse }}</td></tr>
+        <tr><th>Registered</th><td>{{ state.moved }} at {{ state.destination_rse }}</td></tr>
         <tr><th>Deferred to a later pass</th><td>{{ state.deferred }}</td></tr>
         <tr><th>Reported but not at the stash</th>
             <td class="{% if state.missing_at_stash %}failed_fill{% endif %}">{{ state.missing_at_stash }}</td></tr>
     </table>
     {% if state.home %}
-    <p class="mb-1"><strong>Brought home on this pass</strong></p>
+    <p class="mb-1"><strong>Registered on this pass</strong></p>
     <ul class="mb-2">{% for d in state.home %}<li>{{ d }}</li>{% endfor %}</ul>
     {% endif %}
     {% if state.failed %}
@@ -69,15 +69,16 @@
     {% endif %}
 
     <h2 id="what-this-is" class="stash-section">What this is</h2>
-    <p class="mb-0">When the catalog of record will not take an output — the door
-       unreachable, the catalog refusing — the job writes it to a BNL dCache space
-       and exits on its physics, rather than losing finished work for want of a
-       destination. The drain catalogues each stashed file at the stash RSE with
-       what it owes and, when JLab answers, brings it home: a copy to the
-       destination RSE at the path its logical name maps to, verified by size and
-       checksum, registered in the catalog of record with its event count, and
-       only then removed from the stash. A file that will not move is tried again
-       hourly, a bounded number of times, with its last error shown here.
-       Nothing listed here is lost; it is owed.</p>
+    <p class="mb-0">When the catalog of record will not take an output, the door
+       unreachable or the catalog refusing, the job writes it to BNL-XRD, the BNL
+       science-data storage of that catalog, at the path its logical name maps
+       to, and exits on its physics rather than losing finished work for want of
+       a destination. The file is then already where a replica of it belongs;
+       what the catalog is owed is its entry. When JLab answers, the drain
+       confirms each file at the door by size and checksum and registers it in
+       the catalog of record with its event count. Nothing is copied or removed.
+       A file that will not register is tried again hourly, a bounded number of
+       times, with its last error shown here. Nothing listed here is lost; it
+       is owed.</p>
 </div>
 {% endblock %}
