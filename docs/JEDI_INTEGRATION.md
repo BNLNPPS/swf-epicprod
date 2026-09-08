@@ -519,9 +519,15 @@ per manifest row.
   their files over the public `eicread` read, and emits one manifest row
   (`file,ext,nevents,ichunk`) per file. A Rucio file's name is the xrootd path
   below `EVGEN/` — the payload prepends `root://…/volatile/eic/EPIC/` to
-  `EVGEN/<file>`. The EVGEN files are registered without their per-file event counts
-  (Rucio's native `events` field is unpopulated), so `nevents` is the
-  configured per-job count (`events_per_job`) and there is one job per file.
+  `EVGEN/<file>`. A file registered with its event count (every registration
+  counts them, RUCIO_REGISTRATION_CONTRACT.md) is chunked against the per-job
+  count by the production team's rule: ceil(total / per-job) equal chunks of
+  total // chunks events, equal because the payload seeks to
+  `ichunk × nevents` with the row's own count. A file registered without a
+  count is one job at the per-job count. The per-job count is the config's
+  `events_per_job`, bounded by the task's own override where it carries one:
+  `overrides['max_events_per_job']` set by hand, or the `MAX_EVENTS_PER_CHUNK`
+  of the legacy line it was ingested from (`commands.events_per_job_override`).
   `outDS` is the physical PanDA attempt name: the PCS composed identity for the
   first try, or that identity plus `.tryN` for later tries; under `noOutput` it is
   the PanDA task name only.

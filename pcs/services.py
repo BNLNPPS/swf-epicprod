@@ -3037,6 +3037,72 @@ def rebind_anchor_editions(family, *, changed_by, dry_run=True):
     return report
 
 
+def prodtask_bind_release_tags(task, *, changed_by=''):
+    """Bind the release's software tags to a task's edition before it runs.
+
+    An ingested or imported request row carries s0.r0, request material
+    not yet simulated or reconstructed. The moment it is submitted it is
+    about to be, so the edition takes the pair whose parameters name the
+    release in its version segment — s9.r9 for 26.07.1 — and its composed
+    name, the PanDA task name and the produced dataset's name, says so.
+    r0 stays where the task produces no reconstruction. The change is
+    recorded in ``metadata['rebind']`` like every other tag change, and
+    the former name still resolves. Refuses when the name the edition
+    would take is already another edition's: that edition is the one to
+    submit. Returns the change made, or None.
+    """
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    ds = task.dataset
+    if ds is None:
+        return None
+    cfg = task.get_effective_config()
+    simu, reco = campaign_stage_tags(ds.detector_version,
+                                     created_by=changed_by or 'submit')
+    change = {}
+    if ds.simu_tag.tag_number == 0 and ds.simu_tag_id != simu.pk:
+        change['simu'] = (ds.simu_tag.tag_label, simu.tag_label)
+    if (ds.reco_tag.tag_number == 0 and cfg.get('copy_reco')
+            and ds.reco_tag_id != reco.pk):
+        change['reco'] = (ds.reco_tag.tag_label, reco.tag_label)
+    if not change:
+        return None
+    old_name = ds.composed_name
+    if 'simu' in change:
+        ds.simu_tag = simu
+    if 'reco' in change:
+        ds.reco_tag = reco
+    new_name = ds.build_dataset_name()
+    holder = (Dataset.objects.filter(composed_name=new_name)
+              .exclude(pk=ds.pk).first())
+    if holder is not None:
+        raise ServiceError(
+            f'{old_name} would become {new_name}, which edition '
+            f'{holder.pk} already is; submit that edition', status=409)
+    history = list((ds.metadata or {}).get('rebind') or [])
+    history.append({'from': {k: v[0] for k, v in change.items()},
+                    'to': {k: v[1] for k, v in change.items()},
+                    'name_before': old_name, 'by': changed_by,
+                    'at': _timezone.now().isoformat(timespec='seconds'),
+                    'reason': 'release tags bound at submission'})
+    ds.metadata = dict(ds.metadata or {}, rebind=history)
+    ds.save()
+    for req in ProdRequest.objects.filter(
+            data__physics_config_anchor=old_name):
+        data = dict(req.data or {})
+        data['physics_config_anchor'] = ds.composed_name
+        req.data = data
+        req.save(update_fields=['data'])
+    log_epicprod_action(
+        'pcs', 'edition_bind', outcome='ok', sublevel='normal',
+        live_default=True, subject_type='dataset', subject_key=ds.composed_name,
+        username=changed_by,
+        message=f'edition_bind: {old_name} -> {ds.composed_name} at submission',
+        name_before=old_name, change={k: list(v) for k, v in change.items()})
+    return {'name_before': old_name, 'composed_name': ds.composed_name,
+            'change': change}
+
+
 def merge_duplicate_edition(duplicate, survivor, *, changed_by, drop_tasks=()):
     """Fold a duplicate edition — a second record of an identity the
     catalog already holds — into the record that holds it. Its tasks move
@@ -5582,7 +5648,8 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
     return task
 
 
-def prodtask_submit_request(*, task, residual=False, residual_of=None):
+def prodtask_submit_request(*, task, residual=False, residual_of=None,
+                            changed_by=''):
     """Publish a submit_task request for a locked (ready) task to the prod-ops
     agent. The web tier holds no PanDA credential — it only asks the agent to
     run the submission, which records the jediTaskID back. Gates mirror
@@ -5602,6 +5669,11 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None):
     # noInput+noOutput, payload-staged EVGEN, self-registered RECO. The prun
     # doer ('submit_task', build_panda_command, submit-prod-task.py) is kept but
     # sidelined — not wired to the button. See docs/JEDI_INTEGRATION.md.
+    # The edition takes the release's software tags now, before the attempt
+    # is named from its composed name: nothing submits as s0.r0.
+    if not residual:
+        prodtask_bind_release_tags(task, changed_by=changed_by or task.created_by)
+        task.refresh_from_db()
     panda_tasks = prodtask_allocate_panda_tasks(
         task=task,
         source='pcs_rerun_residual' if residual else 'pcs_submit_request')
@@ -5900,6 +5972,10 @@ def prodtask_compose_trial(*, task, events=None, site='', created_by='',
                 'not ready to run, so there is nothing to trial yet: '
                 + ' '.join(problems), status=409)
     with transaction.atomic():
+        # A trial proves the run about to be made, under the tags that run
+        # will carry: the source edition takes the release's pair first.
+        if prodtask_bind_release_tags(task, changed_by=created_by or 'operator'):
+            task.refresh_from_db()
         trial = trials.compose_trial(
             task, events=events or trials.DEFAULT_TRIAL_EVENTS,
             site=site or '', created_by=created_by or 'operator',

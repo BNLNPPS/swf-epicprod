@@ -51,7 +51,10 @@ _JOB_ENV = ('PANDATE', 'PANDA_SITE', 'PANDA_QUEUE', 'PANDA_MEMORY',
             'PANDA_DISK', 'PANDA_WALLTIME', 'PANDA_MAX_ATTEMPT',
             'PANDA_SKIP_SCOUT', 'PANDA_NCORE', 'OUT_RSE', 'LOG_RSE',
             'COPYRECO', 'COPYFULL', 'COPYLOG', 'USERUCIO', 'BG_FILES',
-            'SIGNAL_FREQ', 'SIGNAL_STATUS', 'TAG_PREFIX', 'TAG_SUFFIX')
+            'SIGNAL_FREQ', 'SIGNAL_STATUS', 'TAG_PREFIX', 'TAG_SUFFIX',
+            # The production team's chunking bypass: a fixed events-per-job
+            # that the manifest builder honours (JEDI_INTEGRATION.md).
+            'MAX_EVENTS_PER_CHUNK')
 
 #: Physics axes that define a family; everything else the physics tag
 #: carries (Q² range above all) discriminates within it.

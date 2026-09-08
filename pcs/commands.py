@@ -487,6 +487,40 @@ def _split_evgen_ext(basename):
         f'(known: {", ".join(_EVGEN_EXTS)})')
 
 
+def events_per_job_override(task):
+    """A fixed events-per-job the task carries, or None: a hand-set
+    ``overrides['max_events_per_job']``, else the ``MAX_EVENTS_PER_CHUNK``
+    of the legacy line it was ingested from — the production team's
+    bypass of the timing formula, honoured as an upper bound."""
+    overrides = task.overrides or {}
+    for value in (overrides.get('max_events_per_job'),
+                  ((overrides.get('ingest') or {}).get('job') or {})
+                  .get('MAX_EVENTS_PER_CHUNK')):
+        try:
+            n = int(str(value).strip())
+        except (TypeError, ValueError):
+            continue
+        if n > 0:
+            return n
+    return None
+
+
+def _chunk_rows(file_col, ext, file_events, events_per_job):
+    """The manifest rows of one input file: one job when its events fit
+    the per-job count, otherwise equal chunks — ceil(total / per-job)
+    of them, each total // chunks events, the production team's
+    chunking rule (csv_to_chunks.sh). Chunks are equal because the
+    payload seeks to ``ichunk × nevents`` with the row's own count, so
+    an unequal last chunk would read the wrong events. A file whose
+    count is unknown is one job at the per-job count."""
+    if not file_events or file_events <= events_per_job:
+        nevents = file_events if file_events else events_per_job
+        return [f'{file_col},{ext},{nevents},0000']
+    chunks = -(-file_events // events_per_job)
+    nevents = file_events // chunks
+    return [f'{file_col},{ext},{nevents},{i:04d}' for i in range(chunks)]
+
+
 def _evgen_manifest_from_inputs(task, events_per_job):
     """Resolve the task's matched JLab Rucio EVGEN DID(s) to per-job manifest
     rows ``file,ext,nevents,ichunk``.
@@ -495,9 +529,10 @@ def _evgen_manifest_from_inputs(task, events_per_job):
     (``task.inputs``), written by the EVGEN assimilation. A Rucio file's name IS
     the xrootd path below ``EVGEN/`` — the payload prepends
     ``root://…/volatile/eic/EPIC/`` to ``EVGEN/<file>`` and streams it; nothing
-    is read from local disk. Rucio carries no per-file event count, so
-    ``nevents`` is the configured per-job count and there is one job (row) per
-    file (``ichunk`` 0). Resolution is a public ``eicread`` read of JLab Rucio.
+    is read from local disk. A file registered with its event count (every
+    registration counts them now) is chunked against the per-job count; a
+    file registered without one is one job at that count. Resolution is a
+    public ``eicread`` read of JLab Rucio.
 
     Raises ValueError if the task has no matched input or it resolves to no
     files — a task with no real input must fail loudly, never submit empty.
@@ -519,7 +554,11 @@ def _evgen_manifest_from_inputs(task, events_per_job):
             head, _, base = rel.rpartition('/')
             stem, ext = _split_evgen_ext(base)
             file_col = f'{head}/{stem}' if head else stem
-            rows.append(f'{file_col},{ext},{events_per_job},0000')
+            try:
+                file_events = int(f.get('events') or 0)
+            except (TypeError, ValueError):
+                file_events = 0
+            rows.extend(_chunk_rows(file_col, ext, file_events, events_per_job))
     if not rows:
         raise ValueError(
             'matched Rucio EVGEN DID(s) resolved to no files: '
@@ -834,14 +873,18 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
             task, manifests.format_rows(rows), delivered)
         residual_coverage['manifest'] = manifests.to_json(info)
     else:
-        # Per-job manifest (file,ext,nevents,ichunk), one row per matched
-        # Rucio EVGEN file; PanDA's %RNDM→${SEQNUMBER} selects the row
-        # in-job. nevents is the configured per-job count (Rucio has none).
+        # Per-job manifest (file,ext,nevents,ichunk), one row per job over
+        # the matched Rucio EVGEN files; PanDA's %RNDM→${SEQNUMBER} selects
+        # the row in-job. The per-job count is the config's events_per_job,
+        # bounded by the task's own override where it carries one.
         n_events = int(data.get('events_per_job') or 0)
+        override = events_per_job_override(task)
+        if override:
+            n_events = min(n_events, override) if n_events > 0 else override
         if n_events <= 0:
             raise ValueError(
-                'set events_per_job on the config (per-job event count; '
-                'Rucio carries no per-file event count)')
+                'set events_per_job on the config, or max_events_per_job on '
+                'the task (the per-job event count)')
         if str(data.get('workflow_mode') or 'external_evgen') == 'internal_evgen':
             # Internal EVGEN (docs/EPICPROD_INTERNAL_EVGEN.md): the job
             # generates its own sample, so the manifest names the sample

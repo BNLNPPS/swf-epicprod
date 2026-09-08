@@ -513,7 +513,8 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         agent."""
         task = self.get_object()
         try:
-            services.prodtask_submit_request(task=task)
+            services.prodtask_submit_request(
+                task=task, changed_by=getattr(request.user, 'username', '') or '')
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
         data = dict(self.get_serializer(task).data)
