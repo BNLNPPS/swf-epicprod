@@ -476,7 +476,8 @@ The second line is the storage record's incremental pass, every four
 hours (STORAGE.md); the agent runs one storage pass at a time, and the
 doer records `skipped` when another pass holds the store.
 
-The chain runs credential expiry check → PanDA sandbox keepalive (touches
+The chain runs credential expiry check → credential ping proposer →
+certificate ping proposer → PanDA sandbox keepalive (touches
 the sandbox tarball of every task worth keeping retryable, against the
 server's seven-day cache purge) → csv import → epic-prod past import →
 questionnaire import → association sweep with auto-intake of direct
@@ -509,10 +510,36 @@ production depends on — the PanDA OIDC token
 (`$PANDA_CONFIG_ROOT/.token`), the BNL Rucio proxy
 (`$X509_USER_PROXY`), and the EVGEN output proxy
 (`$EVGEN_X509_PROXY`) — and records one `credential_expiry_check`
-action carrying the days left per credential. A credential inside the
-warning window (`CREDENTIAL_EXPIRY_WARN_DAYS`, default 7 days),
-expired, missing, unreadable, or whose environment variable is unset
-raises the record to the live stream: automation that dies with a
-credential must not die silently. Standalone run:
+action carrying the days left per credential. A credential expired,
+missing, unreadable, or whose environment variable is unset raises the
+record to the live stream: automation that dies with a credential must
+not die silently. A credential inside the warning window
+(`CREDENTIAL_EXPIRY_WARN_DAYS`, default 7 days) is recorded but not
+raised, because the ping the credential proposer entered on that expiry
+is the reminder. Standalone run:
 `python -m swf_epicprod.credential_check` (exit 0 healthy, 3 warning,
 4 expired/missing/unreadable).
+
+### Expiry ping proposers
+
+The two steps after the check turn the same expiries into dated
+obligations in the alarm system, through the AI proposal subsystem
+(swf-monitor [PINGS.md](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/PINGS.md)):
+a ping due on each expiry with a seven-day lead, proposed once per
+credential and date, and a fulfilment proposal for an open ping whose
+credential or certificate has since been renewed. Nothing is entered
+without a person accepting it on the alarm dashboard, where the due date
+is editable.
+
+`credential_ping_propose` covers the three credentials above.
+`certificate_ping_propose` covers the certificate each production
+service host serves, read from the served chain: the PanDA server, its
+monitor, this host's web face, and the OSG submit host, overridable with
+`CERTIFICATE_HOSTS`. It carries a second obligation, a certificate
+served without its issuing intermediate, which a client outside the grid
+trust configuration cannot verify. Standalone runs:
+`python -m swf_epicprod.certificate_check` (exit 0 healthy, 3 expiring
+or no intermediate, 4 expired/unreachable), and either doer with no
+`--apply` for the findings without proposing:
+`python scripts/propose-credential-pings.py`,
+`python scripts/propose-certificate-pings.py`.
