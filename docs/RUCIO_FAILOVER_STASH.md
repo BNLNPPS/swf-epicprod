@@ -27,7 +27,7 @@ As of 2026-09-07 the measure is implemented and running, and the asks
 below were not needed to get there — the space, the credential and the
 client were already in hand.
 
-- **The payload stashes** (epicprod-payload 0.6.0): when a JLab
+- **The payload stashes** (since epicprod-payload 0.6.0): when a JLab
   registration fails outright, the output is written to the stash door
   with `xrdcp` and recorded in the payload report — the flat name it took,
   the path, the DID it owes, and why. The job exits on its physics. A
@@ -54,14 +54,19 @@ client were already in hand.
   dashboard): what is waiting and what it owes, how far each entry got,
   attempts and last error, what the last pass brought home, and the JLab
   probe state, from the drain's own account.
-- **Proved end to end on 2026-09-07**, against production, with no ask to
-  anyone: authenticated to the BNL instance as `panda`; `BNL_PROD_DISK_1`
-  writable over the wide area; a file written and verified on the door;
-  the replica registered and reading AVAILABLE; `staging`, `owes` and
-  `stash_reason` read back under the JSON plugin; the same file copied to
-  the BNL-XRD write door with the production account's credential and
-  read back with its size and checksum.
-- **Not built yet**: the storage record's stash block and the alarms.
+- **The catalog and door path proved on 2026-09-07**, against production
+  with a hand-placed stash file and no ask to anyone: authenticated to the
+  BNL instance as `panda`; `BNL_PROD_DISK_1` writable over the wide area;
+  a file written and verified on the door; the replica registered and
+  reading AVAILABLE; `staging`, `owes` and `stash_reason` read back under
+  the JSON plugin; the file copied to the BNL-XRD write door with the
+  production account's credential, read back with its size and checksum,
+  registered in the catalog of record by logical name and verified there.
+  The payload-triggered path — a job that finds JLab unreachable and
+  stashes its own output — is coded but not yet exercised; it is the
+  acceptance of step 3 below.
+- **Not built yet**: the storage record's stash block, the alarms, and the
+  SysConfig keys they read.
 
 Implementation facts, each measured rather than assumed. Rucio's upload
 client needs gfal2, which the ops-agent host does not have, so writes go
@@ -127,9 +132,9 @@ retry in the job. Three outcomes:
   success on good physics plus a completed stash upload.
 
 A job spends no more than its bounded attempt on JLab before falling
-back. A SysConfig switch, `stash_force`, makes every job stash without
-attempting JLab during a declared outage, so a known outage costs no
-per-job timeouts.
+back. A SysConfig switch, `stash_force`, is to make every job stash
+without attempting JLab during a declared outage, so a known outage
+costs no per-job timeouts; it is not present yet.
 
 ### The stash
 
@@ -195,12 +200,13 @@ cron and on demand from the pending view, on the prod-ops pattern
    for a person.
 
 Retries live only in the registrar (RUCIO_RESILIENCE.md, Measure 2).
-The third-party copy is the open technical question: xrootd
-third-party copy between the two dCache doors with the production
-credentials. If the doors do not support it, the fallback is a streamed
-copy through the ops-agent host, which is bandwidth-bound and acceptable
-only for small backlogs. The throughput target is a day's backlog
-drained in a day: 5 TB per day is about 60 MB/s sustained.
+Third-party copy was the open technical question and is answered: xrootd
+third-party copy is refused at the destination write door, which offers
+it only over HTTPS, so the copy is streamed through the ops-agent host
+(What is built). That is bandwidth-bound, and the throughput target is a
+day's backlog drained in a day: 5 TB per day is about 60 MB/s sustained.
+A backlog approaching a week is the case for trying the HTTPS
+third-party copy, which needs gfal2 or davix on the host.
 
 ### The pending view
 
@@ -219,9 +225,11 @@ Served from the registrar's store; no remote call in render.
 - Alarms (alarms.md): stash age over `stash_stale_hours` at warning;
   stash growth while the JLab probe fails beyond `stash_outage_hours`
   at warning; failed entries at alarm.
-- SysConfig keys, present at their defaults: `stash_force`,
-  `stash_stale_hours`, `stash_outage_hours`, `stash_max_attempts`,
-  `stash_drain_concurrency`.
+- SysConfig keys, to arrive with the alarms that read them:
+  `stash_force`, `stash_stale_hours`, `stash_outage_hours`,
+  `stash_max_attempts`, `stash_drain_concurrency`. The drain today takes
+  its attempt ceiling from the environment (`STASH_MAX_ATTEMPTS`,
+  default 8).
 
 ## Capacity
 
@@ -246,28 +254,40 @@ fill fraction can be watched.
    canary payload run with the JLab RSE made unreachable to the job
    stashes its outputs and the registrar drains them to JLab.
 4. The pending view, the drain button, the hourly enqueue.
-5. The storage record's stash block and the alarms.
+5. The storage record's stash block, the alarms, and their SysConfig
+   keys.
+
+Steps 1 to 4 were completed by 2026-09-07, step 1 by measurement rather
+than by the asks it names. Step 3's acceptance, a canary payload run
+with the JLab RSE unreachable to the job, has not been run. Step 5 is
+outstanding.
 
 ## Asks and open items
 
-- BNL storage operations: the space for the stash, temporary
-  science-data overflow of the order of 30 TB, with `BNL_PROD_DISK_1`
-  as the candidate; third-party copy from its dCache door to the JLab
-  door with the production credentials; the RSE's total-capacity
-  figure.
-- JLab storage and Rucio operations: third-party copy into the JLab
-  door; registration of an existing replica by logical file name for
-  the `eicprod` account; confirmation that the copy lands on the path
-  the catalog's deterministic algorithm expects.
-- BNL Rucio administration: the `panda` account writing science-sized
-  stash datasets in `group.EIC`; the `_stash` dataset convention;
-  path-like DID names under the BNL instance's naming policy; and the
-  `panda` account deleting file replicas on `BNL_PROD_DISK_1`, which it
-  may not today (measured 2026-09-07), so a stash entry brought home
-  keeps its catalog row, marked `staging: false` and `home: <RSE>`, with
-  no file behind it.
+Open:
+
+- BNL storage operations: the total capacity of `BNL_PROD_DISK_1`, so
+  the fill fraction can be watched, and awareness that an outage stashes
+  temporary science-data overflow of the order of 30 TB there.
+- BNL Rucio administration: the `panda` account deleting file replicas
+  on `BNL_PROD_DISK_1`, which it may not today (measured 2026-09-07), so
+  a stash entry brought home keeps its catalog row, marked
+  `staging: false` and `home: <RSE>`, with no file behind it.
 - The production team: agreement that a job with a stashed output exits
   success, the contract change of Measure 2.
+
+Answered by measurement, and so never asked:
+
+- The space. `BNL_PROD_DISK_1` takes the stash with the credential and
+  client every job already carries, and needed no allocation.
+- Third-party copy, at either door. It is refused over xrootd and the
+  streamed copy through the ops-agent host carries the data instead.
+- Registration of an existing replica by logical file name for the
+  `eicprod` account, and the path the deterministic algorithm expects:
+  both proved on the 2026-09-07 probe.
+- The naming policy. The BNL instance refuses a path-like DID, so the
+  stash name is flat and the destination travels in metadata (§ The
+  stash).
 
 ## Related
 
