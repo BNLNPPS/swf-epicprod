@@ -279,6 +279,8 @@ This is deliberately unlike a payload canary, which flattens its output into one
 
 **Submission.** `submit-evgen-task.py --trial` submits it as one job with the trial settings riding as an environment prefix on the dispatcher command; the dispatcher passes them to the payload, which routes the outputs and applies the lifetime. The processing type and owner stay production's, and the trial records its PanDA task back to PCS like any other task. Only PCS knows it is a trial, from the suffix in its name.
 
+**Cost.** A trial is one job at a known event count through the production path, so its payload report is the measurement the production team's timing script takes by hand, from the run itself: the fixed seconds a job spends before simulation, the seconds per event across simulation and reconstruction, and the FULL and RECO kilobytes per event. When the report is swept in, the cost lands on the edition the trial proves, `metadata['cost']`, naming the trial and the job (`record_trial_cost`, a `trial_cost` record). The manifest builder derives events per job from it and the config's target job length, (3600 × hours − fixed) / per event, where the config sets no `events_per_job`; a task's own override bounds the result either way.
+
 ### Sample Variants
 
 The tags carry the physics. They do not distinguish samples that share a physics configuration but are produced as separate datasets. Single-particle production illustrates this: a particle and energy define the physics tag (`particle`, `gun_energy`), while each angular range (`3to50deg`, `45to135deg`, `130to177deg`) is generated as its own dataset and task. The angular range is a production discriminator, not a physics parameter, so it is not a tag.

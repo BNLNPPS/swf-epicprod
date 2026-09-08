@@ -2919,7 +2919,19 @@ def rebind_anchor_editions(family, *, changed_by, dry_run=True):
         if ds.reco_tag.tag_number == 1 and ds.reco_tag_id != reco.pk:
             change['reco'] = (ds.reco_tag.tag_label, reco.tag_label)
         new_evgen = None
-        if ds.evgen_tag.tag_number == 1:
+        source_kind = (((ds.metadata or {}).get('source') or {}).get('kind') or '')
+        if source_kind == 'trial':
+            # A trial carries its source edition's tags: it follows the
+            # source, whatever the source resolved to.
+            try:
+                src = resolve_dataset(
+                    ((ds.metadata or {}).get('source') or {}).get('location') or '')
+            except Dataset.DoesNotExist:
+                src = None
+            if src is not None and src.evgen_tag_id != ds.evgen_tag_id:
+                new_evgen = src.evgen_tag
+                change['evgen'] = (ds.evgen_tag.tag_label, src.evgen_tag.tag_label)
+        elif ds.evgen_tag.tag_number == 1:
             path, gen_version = _source_path_for_evgen(ds)
             params = derive_evgen(path, gen_version) if path else None
             if params:
@@ -3101,6 +3113,172 @@ def prodtask_bind_release_tags(task, *, changed_by=''):
         name_before=old_name, change={k: list(v) for k, v in change.items()})
     return {'name_before': old_name, 'composed_name': ds.composed_name,
             'change': change}
+
+
+def cost_from_report(report):
+    """The cost a payload report measures, in the production team's terms:
+    the fixed seconds a job spends before simulation (input staging,
+    landing, internal generation), the seconds per event across simulation
+    and reconstruction, and the FULL and RECO kilobytes per event. None
+    when the report carries no simulated events or no stage walls.
+    """
+    events = report.get('events') or {}
+    stages = report.get('stages') or {}
+    outputs = report.get('outputs') or {}
+
+    def wall(name):
+        try:
+            return float((stages.get(name) or {}).get('wall_s') or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    simulated = int(events.get('simulated') or 0)
+    reconstructed = int(events.get('reconstructed') or 0)
+    processed = reconstructed or simulated
+    per_event_wall = wall('simulation') + wall('reconstruction')
+    if processed <= 0 or per_event_wall <= 0:
+        return None
+    init_s = sum(wall(name) for name in ('evgen', 'input', 'landing'))
+    cost = {'init_s': round(init_s, 2),
+            'per_event_s': round(per_event_wall / processed, 4),
+            'events': processed}
+    for stage, key in (('full', 'full_kb_per_event'),
+                       ('reco', 'reco_kb_per_event')):
+        out = outputs.get(stage) or {}
+        try:
+            n = int(out.get('events') or 0)
+            b = int(out.get('bytes') or 0)
+        except (TypeError, ValueError):
+            n = b = 0
+        if n > 0 and b > 0:
+            cost[key] = round(b / 1024.0 / n, 2)
+    return cost
+
+
+def record_trial_cost(pandaid, report, jeditaskid=None):
+    """Record a trial job's measured cost on the edition the trial proves.
+
+    A trial is one job at a known event count through the production path,
+    so its report is the measurement the production team's timing script
+    takes by hand: the same numbers, from the run itself. The cost lands
+    on the source edition's ``metadata['cost']``, naming the trial and the
+    job it came from, and the manifest builder derives events per job
+    from it when the config sets none. Nothing is written for a job that
+    is not a trial's, or whose report measures nothing. Returns the cost
+    recorded, or None.
+    """
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    if not jeditaskid:
+        return None
+    attempt = (PandaTasks.objects.filter(jedi_task_id=jeditaskid)
+               .select_related('prod_task', 'prod_task__dataset').first())
+    if attempt is None or attempt.prod_task is None:
+        return None
+    trial = attempt.prod_task.dataset
+    source = ((trial.metadata or {}).get('source') or {}) if trial else {}
+    if source.get('kind') != 'trial' or not source.get('location'):
+        return None
+    cost = cost_from_report(report or {})
+    if cost is None:
+        return None
+    try:
+        edition = resolve_dataset(source['location'])
+    except Dataset.DoesNotExist:
+        return None
+    cost.update({'measured_by': trial.composed_name, 'pandaid': int(pandaid),
+                 'jeditaskid': int(jeditaskid),
+                 'at': _timezone.now().isoformat(timespec='seconds')})
+    edition.metadata = dict(edition.metadata or {}, cost=cost)
+    edition.save()
+    log_epicprod_action(
+        'pcs', 'trial_cost', outcome='ok', sublevel='normal', live_default=True,
+        subject_type='dataset', subject_key=edition.composed_name,
+        message=(f'trial_cost: {cost["per_event_s"]} s/event, {cost["init_s"]} s '
+                 f'fixed, from {trial.composed_name}'),
+        **{k: v for k, v in cost.items() if k != 'at'})
+    return cost
+
+
+def record_trial_costs_pending(limit=50):
+    """Record the cost of every finished trial whose edition does not carry
+    it yet, from PanDA's own record of the finished job.
+
+    PanDA keeps a finished job's metadata, the payload report among it, in
+    the metatable; the report sweep files failed jobs' reports only, so a
+    successful trial's measurement is read from here. One trial is one
+    job, so the first finished job with a measurable report is the trial's
+    measurement. Returns {'examined', 'recorded', 'unmeasured'}.
+    """
+    import json as _json
+    from django.db import connections as _connections
+    from monitor_app.panda.constants import PANDA_SCHEMA
+
+    out = {'examined': 0, 'recorded': 0, 'unmeasured': []}
+    attempts = (PandaTasks.objects
+                .filter(jedi_task_id__isnull=False,
+                        prod_task__dataset__metadata__source__kind='trial')
+                .select_related('prod_task', 'prod_task__dataset')
+                .order_by('-pk')[:limit])
+    for attempt in attempts:
+        trial = attempt.prod_task.dataset
+        source = ((trial.metadata or {}).get('source') or {})
+        try:
+            edition = resolve_dataset(source.get('location') or '')
+        except Dataset.DoesNotExist:
+            continue
+        have = ((edition.metadata or {}).get('cost') or {})
+        if have.get('jeditaskid') == attempt.jedi_task_id:
+            continue
+        out['examined'] += 1
+        rows = []
+        try:
+            with _connections['panda'].cursor() as cursor:
+                cursor.execute(
+                    f'SELECT m."pandaid", m."metadata" FROM "{PANDA_SCHEMA}"."metatable" m '
+                    f'JOIN "{PANDA_SCHEMA}"."jobsarchived4" j ON j."pandaid" = m."pandaid" '
+                    f'WHERE j."jeditaskid" = %s AND j."jobstatus" = %s LIMIT 5',
+                    [attempt.jedi_task_id, 'finished'])
+                rows = cursor.fetchall()
+        except Exception as e:                                # noqa: BLE001
+            _log.error('trial cost: PanDA metatable read failed for task %s: %s',
+                       attempt.jedi_task_id, e)
+            continue
+        recorded = False
+        for pandaid, metadata in rows:
+            if isinstance(metadata, str):
+                try:
+                    metadata = _json.loads(metadata)
+                except ValueError:
+                    continue
+            report = (metadata or {}).get('payload') if isinstance(metadata, dict) else None
+            if not isinstance(report, dict):
+                continue
+            if record_trial_cost(pandaid, report, attempt.jedi_task_id):
+                out['recorded'] += 1
+                recorded = True
+                break
+        if not recorded:
+            out['unmeasured'].append(
+                {'trial': trial.composed_name, 'jeditaskid': attempt.jedi_task_id,
+                 'finished_jobs_with_metadata': len(rows)})
+    return out
+
+
+def events_per_job_from_cost(edition, target_hours):
+    """Events per job the production team's formula gives from a measured
+    cost and a target job length: (3600 × hours − fixed seconds) / seconds
+    per event, at least one. None without a cost or a target."""
+    cost = ((edition.metadata or {}).get('cost') or {}) if edition else {}
+    try:
+        per_event = float(cost.get('per_event_s') or 0)
+        init_s = float(cost.get('init_s') or 0)
+        hours = float(target_hours or 0)
+    except (TypeError, ValueError):
+        return None
+    if per_event <= 0 or hours <= 0:
+        return None
+    return max(1, int((3600.0 * hours - init_s) / per_event))
 
 
 def merge_duplicate_edition(duplicate, survivor, *, changed_by, drop_tasks=()):
