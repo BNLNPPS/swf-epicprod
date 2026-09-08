@@ -35,10 +35,14 @@
     the physics configuration. Creating the request records the dataset request
     on that configuration and the draft task in the campaign; the task is
     readied and submitted from its own page.
-    <span class="text-muted">Dataset definitions inventory: {{ definitions_count }} definitions{% if definitions_stamp %} as of {{ definitions_stamp|fmt_dt }} ET{% endif %}.</span>
-    {% if user.is_authenticated %}<button type="button" id="pcs-ingest-sweep" class="btn btn-sm btn-primary ms-2"
-        title="Pull the simulation_campaign_datasets repository and sweep its definitions into the inventory now; the nightly chain does the same at 02:47">Update definitions</button>
-    <span id="pcs-ingest-sweep-status" class="text-muted ms-1"></span>{% endif %}</p>
+    <span class="text-muted">Dataset definitions inventory: {{ definitions_count }} definitions{% if definitions_stamp_iso %}, swept <span data-relative-time="{{ definitions_stamp_iso }}" title="{{ definitions_stamp|fmt_dt }} ET">{{ definitions_stamp|fmt_dt }} ET</span>{% endif %}.</span></p>
+  {% if user.is_authenticated %}
+  <p class="mb-2 d-flex align-items-center gap-2 flex-wrap">
+    <button type="button" id="pcs-ingest-sweep" class="btn btn-sm btn-primary">Update definitions</button>
+    <span>Pulls the production team's dataset definitions repository and sweeps new or changed definitions into the inventory; the nightly chain does the same at 02:47.</span>
+    <span id="pcs-ingest-sweep-status" class="text-muted"></span>
+  </p>
+  {% endif %}
 
   <textarea id="pcs-ingest-text" rows="8" placeholder="EBEAM=9 PBEAM=100_Au197 DETECTOR_VERSION=26.07.1 DETECTOR_CONFIG=epic_craterlake JUG_XL_TAG=26.07.1-stable ... scripts/submit_csv.sh osg_csv hepmc3 DIS/eAu/9x100/BeAGLE1.03.02-3.1_DIS_eAu_9x100_q2_1to10.csv 2"></textarea>
   <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">

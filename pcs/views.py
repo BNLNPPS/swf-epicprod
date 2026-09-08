@@ -2204,6 +2204,9 @@ def pc_ingest(request):
     return render(request, 'pcs/pc_ingest.html', {
         'definitions_count': len(_defs),
         'definitions_stamp': stamp_dt,
+        # The house relative-time ticker takes an aware ISO stamp.
+        'definitions_stamp_iso': (stamp_dt.isoformat()
+                                  if hasattr(stamp_dt, 'isoformat') else ''),
     })
 
 
