@@ -696,16 +696,32 @@ For external-EVGEN tasks (one manifest row per EVGEN file):
    60 s limit). Output names derive from the input stem by the payload's
    convention, extracted from the working payload (`run.sh`, the condor
    reference basis).
-2. **Residual manifest** — the rows whose output is absent.
-   `build_evgen_task_params` gains a residual mode emitting only those
+2. **The attempt's manifest** — the rows the attempt being completed
+   actually ran, at their own `nevents` and `ichunk`: the payload skips
+   `ichunk × nevents` events into the input, so a rerun job regenerates
+   the same chunk only with the same row (`pcs/manifests.py`). Three
+   sources, in the order of the evidence: the compact record on the
+   `PandaTasks` row, written at submission for PCS attempts and
+   harvested nightly from the cache for the rest; the attempt's sandbox
+   in the PanDA cache, the exact CSV the jobs read; and reconstruction
+   from the definition's per-file event totals and the attempt's row
+   count (`nEvents` in its task parameters), which under the chunking
+   rule fixes every file's chunk count uniquely, verified against the
+   delivered outputs and never assumed. Whenever an exact manifest and
+   the reconstruction are both in hand they are compared, and a
+   disagreement is stated on the preview. The attempt completed is the
+   one with the most rows, the latest of equals. No per-job event count
+   is asked of the configuration: a residual is defined by what ran.
+   `build_evgen_task_params` in residual mode emits only the undelivered
    rows; job count follows as today.
 3. **Identity** — the next `.tryN` is allocated as today. The `PandaTasks`
    association records `residual_of` and the row coverage ("M of N rows",
    with the registered and unarrived file counts per checked DID) in its
    metadata, so every surface can state what the attempt covers.
 4. **Refusals, never guesses** — no recorded outputs to diff against,
-   an input resolving differently than at first submission, or a zero
-   residual each refuse with the reason instead of submitting.
+   an input resolving differently than at first submission, a zero
+   residual, or an attempt whose manifest none of the three sources can
+   establish each refuse with the reason instead of submitting.
 
 For generation-only tasks: residual events = target − delivered, with
 delivered taken from registered outputs and the event-measurement store
@@ -726,12 +742,14 @@ The action needs the task to be a PCS submission in every respect, which a
 task linked from an outside submission by name match is not until made so:
 a PanDA association recorded on the task itself (`panda_task_id`, the
 refusal otherwise reads "no recorded PanDA submission"); a bound production
-configuration in place of the import placeholder, carrying `events_per_job`
-and the campaign's container; and the task's dataset matched to its EVGEN
-input in JLab Rucio (`metadata['rucio']['matched']`, written by the EVGEN
-assimilation), which requires the EVGEN files registered there
-(EPICPROD_EVGEN_INPUTS.md § Registration) since the manifest is resolved
-from the matched DIDs. Only the recorded outputs, which the arrivals sweep
+configuration in place of the import placeholder, carrying the campaign's
+container and submission settings; and the task's dataset matched to its
+EVGEN input in JLab Rucio (`metadata['rucio']['matched']`, written by the
+EVGEN assimilation), which requires the EVGEN files registered there
+(EPICPROD_EVGEN_INPUTS.md § Registration), since a full submission resolves
+its manifest from the matched DIDs. A per-job event count on the
+configuration is not among the requirements: the residual runs the
+attempt's own rows. Only the recorded outputs, which the arrivals sweep
 fills for matched tasks, come free.
 
 The compose page carries this as one control on such a task, **Move this

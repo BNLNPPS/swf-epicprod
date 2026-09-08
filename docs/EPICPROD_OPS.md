@@ -479,7 +479,8 @@ doer records `skipped` when another pass holds the store.
 The chain runs credential expiry check → credential ping proposer →
 certificate ping proposer → PanDA sandbox keepalive (touches
 the sandbox tarball of every task worth keeping retryable, against the
-server's seven-day cache purge) → csv import → epic-prod past import →
+server's seven-day cache purge, and records the manifest of every
+attempt still lacking one) → csv import → epic-prod past import →
 questionnaire import → association sweep with auto-intake of direct
 group.EIC submissions → Rucio output snapshot → Rucio arrivals sweep →
 EVGEN assimilation → dataset definitions sweep (the

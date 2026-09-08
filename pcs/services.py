@@ -5123,7 +5123,8 @@ def rename_pcs_current_campaign(new_name, *, created_by='operator'):
 
 def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
                                panda_tasks_id=None, task_name=None,
-                               residual=None, payload_version=None):
+                               residual=None, payload_version=None,
+                               manifest_rows=None):
     """
     Record outcome of a JEDI submission.
 
@@ -5131,6 +5132,8 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
     history lives in PandaTasks, so recording a different id is a new association,
     not an overwrite error. ``payload_version`` is the epicprod payload the
     submission shipped (EPICPROD_PAYLOAD.md), kept on the PandaTasks row.
+    ``manifest_rows`` are the rows the attempt runs, kept on the row in the
+    compact form of ``pcs.manifests`` as the basis of a later residual.
     """
     try:
         incoming = int(jedi_task_id)
@@ -5207,6 +5210,11 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
             meta['residual'] = residual
         if payload_version:
             meta['payload_version'] = str(payload_version)
+        if manifest_rows:
+            from . import manifests
+            parsed = manifests.parse_rows('\n'.join(str(r) for r in manifest_rows))
+            if parsed:
+                meta['manifest'] = manifests.make_record(parsed, 'submission')
         row.metadata = meta
         if not row.out_ds:
             row.out_ds = row.task_name
@@ -5403,8 +5411,9 @@ def prodtask_runnable_config(task, require_input=True):
     Placeholder anchors rows PCS adopted rather than composed
     (EPICPROD_TASK_CATALOG.md) and carries nothing to run with, so the
     edition's Standard Production stands in for it. Beyond a configuration,
-    running needs a per-job event count, because Rucio carries no per-file
-    count, and a matched EVGEN input to resolve the manifest from.
+    running needs a matched EVGEN input to resolve the manifest from; the
+    per-job event count is not required here, since a trial and a residual
+    each carry their own.
 
     Database reads only, safe in a page. Shared by the adopt control and by
     trial composition so the two cannot drift on what "runnable" means.
@@ -5424,8 +5433,9 @@ def prodtask_runnable_config(task, require_input=True):
         return None, (f'no production configuration for this task: {wanted} '
                       f'does not exist. The campaign configuration ping on the '
                       f'alarm dashboard creates it.')
-    if not int((config.data or {}).get('events_per_job') or 0):
-        return config, f'configuration {config.name} carries no events_per_job.'
+    # A configuration without a per-job event count is runnable: a trial
+    # takes its own count, a residual takes each row's own, and a full
+    # submission states the requirement at build time. It is not a gate.
     # An internal-EVGEN configuration generates the input in the job
     # (docs/EPICPROD_INTERNAL_EVGEN.md), so no matched input is needed.
     internal = str((config.data or {}).get('workflow_mode') or '') == 'internal_evgen'

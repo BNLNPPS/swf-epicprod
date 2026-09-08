@@ -143,6 +143,11 @@ Detail worth knowing:
   a failure of the pass. API and authentication failures are errors.
 - The same pass refreshes the BNL log datasets' lifetimes when they
   would expire inside the retention window.
+- The same pass records the manifest of every candidate attempt still
+  lacking one, read once from its sandbox and kept compactly on the
+  `PandaTasks` row, so the attempt's work units outlive the cache (see
+  Residual rerun). A hundred per night at most, spreading the one-time
+  catch-up over a few nights.
 
 ## The task-state gates
 
@@ -210,9 +215,26 @@ PCS-side. Design and derivation:
 AVAILABLE replica on at least one RSE, so a catalog entry whose data
 never landed — a ghost — falls into the residual and is rerun.
 
+**The residual is over the rows the attempt actually ran.** Each row
+names its input file, its per-job event count and its chunk index, and
+the payload skips chunk × count events into the file, so the rerun job
+regenerates the missing chunk only with the same row. The rows come,
+in the order of the evidence, from the record on the attempt's
+`PandaTasks` row (written at submission for PCS attempts, harvested
+nightly from the cache for the rest), from the attempt's sandbox in the
+PanDA cache, or by reconstruction from the definition's per-file event
+totals and the attempt's row count, verified against the delivered
+outputs. When an exact manifest and the reconstruction are both in
+hand they are compared and a disagreement is stated on the preview.
+Nothing is asked of the configuration's per-job event count. The
+attempt completed is the one with the most rows, the latest of equals;
+when a task's attempts were cut differently, the preview names the one
+it counts against ("M of the N jobs of attempt 2").
+
 The `PandaTasks` association records what the attempt covers:
-`residual_of`, the row coverage ("M of N rows"), and the registered and
-unarrived file counts per checked DID, so every surface can state it.
+`residual_of`, the row coverage ("M of N rows"), the registered and
+unarrived file counts per checked DID, and how the manifest was
+established, so every surface can state it.
 
 **It refuses rather than guesses.** The refusals, each with its reason:
 
@@ -222,7 +244,11 @@ unarrived file counts per checked DID, so every surface can state it.
 - zero residual, every row registered and arrived;
 - a background-mixed task, where `TAG_PREFIX` already shapes the output
   path (rerun the entire task instead);
-- no recorded PanDA submission on the task itself.
+- no recorded PanDA submission on the task itself;
+- an attempt whose manifest none of the three sources can establish:
+  no record, sandbox gone from the cache, and a reconstruction that
+  the delivered outputs contradict or that the definition cannot
+  supply. The attempt's job logs remain as evidence in that case.
 
 **Rerun Residual** is preview-then-confirm: the preview
 (`residual-preview`) performs the JLab listing on demand and returns

@@ -746,19 +746,22 @@ def _delivered_row_keys(task):
     return keys, dids, arrival
 
 
-def _residual_rows(task, csv_rows):
+def _residual_rows(task, csv_rows, delivered=None):
     """The manifest rows whose RECO output is not delivered — not
     registered, or registered without an available replica — with the
-    coverage record. Raises ValueError with the refusal reason when the
-    residual cannot be established honestly (design:
-    JEDI_INTEGRATION.md § Residual rerun)."""
+    coverage record. ``delivered`` is the precomputed
+    ``_delivered_row_keys`` result when the caller already has it.
+    Raises ValueError with the refusal reason when the residual cannot
+    be established honestly (design: JEDI_INTEGRATION.md § Residual
+    rerun)."""
     env = _evgen_env(task)
     if env.get('TAG_PREFIX'):
         raise ValueError(
             'residual rerun is not supported for background-mixed tasks '
             '(TAG_PREFIX changes the output path shape); rerun the '
             'entire task instead')
-    keys, dids, arrival = _delivered_row_keys(task)
+    keys, dids, arrival = (delivered if delivered is not None
+                           else _delivered_row_keys(task))
     if keys is None:
         raise ValueError(
             'no recorded RECO outputs to diff against — run the Rucio '
@@ -786,7 +789,8 @@ def _residual_rows(task, csv_rows):
     }
 
 
-def build_evgen_task_params(task, panda_tasks=None, residual=False):
+def build_evgen_task_params(task, panda_tasks=None, residual=False,
+                            residual_of=None):
     """Build the client-API EVGEN production submission spec from a ProdTask.
 
     This is the production reproduction of the proven condor-side recipe
@@ -806,28 +810,46 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False):
     cfg = task.get_effective_config()
     data = cfg.get('data') or {}
 
-    # Per-job manifest (file,ext,nevents,ichunk), one row per matched Rucio EVGEN
-    # file; PanDA's %RNDM→${SEQNUMBER} selects the row in-job. nevents is the
-    # configured per-job count (Rucio has none).
-    n_events = int(data.get('events_per_job') or 0)
-    if n_events <= 0:
-        raise ValueError(
-            'set events_per_job on the config (per-job event count; Rucio '
-            'carries no per-file event count)')
-    if str(data.get('workflow_mode') or 'external_evgen') == 'internal_evgen':
-        # Internal EVGEN (docs/EPICPROD_INTERNAL_EVGEN.md): the job
-        # generates its own sample, so the manifest names the sample each
-        # job would have read, one row per job, and the generation
-        # environment travels with the payload environment.
-        csv_rows = _evgen_manifest_internal(task, n_events)
-    else:
-        csv_rows = _evgen_manifest_from_inputs(task, n_events)
     residual_coverage = None
     if residual:
-        # Residual rerun: the workload is the undelivered remainder
-        # (JEDI_INTEGRATION.md § Residual rerun); refusal reasons
+        # Residual rerun: the workload is the undelivered remainder of the
+        # attempt being completed, over the rows that attempt actually ran
+        # (pcs/manifests.py; JEDI_INTEGRATION.md § Residual rerun). Each
+        # row carries its own nevents and ichunk, so nothing is asked of
+        # the configuration's per-job event count. Refusal reasons
         # propagate as ValueError.
-        csv_rows, residual_coverage = _residual_rows(task, csv_rows)
+        from . import manifests
+        delivered = _delivered_row_keys(task)
+        if delivered[0] is None:
+            raise ValueError(
+                'no recorded RECO outputs to diff against — run the Rucio '
+                'update first, or rerun the entire task')
+        try:
+            attempt = manifests.choose_attempt(task, residual_of)
+            rows, info = manifests.attempt_manifest(
+                task, attempt, delivered_keys=delivered[0])
+        except manifests.ManifestUnavailable as e:
+            raise ValueError(str(e))
+        csv_rows, residual_coverage = _residual_rows(
+            task, manifests.format_rows(rows), delivered)
+        residual_coverage['manifest'] = manifests.to_json(info)
+    else:
+        # Per-job manifest (file,ext,nevents,ichunk), one row per matched
+        # Rucio EVGEN file; PanDA's %RNDM→${SEQNUMBER} selects the row
+        # in-job. nevents is the configured per-job count (Rucio has none).
+        n_events = int(data.get('events_per_job') or 0)
+        if n_events <= 0:
+            raise ValueError(
+                'set events_per_job on the config (per-job event count; '
+                'Rucio carries no per-file event count)')
+        if str(data.get('workflow_mode') or 'external_evgen') == 'internal_evgen':
+            # Internal EVGEN (docs/EPICPROD_INTERNAL_EVGEN.md): the job
+            # generates its own sample, so the manifest names the sample
+            # each job would have read, one row per job, and the
+            # generation environment travels with the payload environment.
+            csv_rows = _evgen_manifest_internal(task, n_events)
+        else:
+            csv_rows = _evgen_manifest_from_inputs(task, n_events)
 
     # The composed PCS identity is the logical campaign task. The physical
     # PanDA task/outDS name is attempt-specific when this is a retry or site race

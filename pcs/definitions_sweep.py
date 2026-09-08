@@ -54,6 +54,11 @@ SNAPSHOT_NAME = 'dataset-definitions.json'
 # One artifact request is small; a host that does not answer one in ten
 # seconds will not answer the next, and the run stops asking after two.
 FETCH_TIMEOUT = 10
+# Costed records from before the artifact rows were kept (the cost's
+# 'files': what a residual reconstruction needs) are refreshed this many
+# per run, paced like every other fetch: 359 such records at the field's
+# introduction, covered in about two weeks, never a burst.
+COST_BACKFILL_PER_RUN = 25
 FETCH_FAILURE_LIMIT = 2
 FETCH_PACE_S = 1.0
 POPULATION_CAP = 100
@@ -147,6 +152,10 @@ def _fetch_cost(rel_path, errors):
             'n_files': len(rows),
             'nevents_total': sum(int(r[2]) for r in rows),
             'nevents_per_file': [int(r[2]) for r in rows],
+            # The rows themselves, file, ext and per-file total: what a
+            # residual needs to reconstruct an attempt's manifest when its
+            # sandbox is gone (pcs/manifests.py). About 110 bytes a file.
+            'files': [[r[0], r[1], int(r[2])] for r in rows],
             'init_s': float(rows[0][3]),
             'per_event_s': float(rows[0][4]),
         }
@@ -189,15 +198,21 @@ def sweep_dataset_definitions(*, apply=False, refresh_costs=False,
         except Exception as e:
             errors.append(f'previous snapshot read: {e}')
 
-    fetched = reused = skipped = 0
+    fetched = reused = skipped = backfilled = 0
     consecutive_failures = 0
     for d in definitions:
         prior = previous.get(d['path'])
         if prior is not None and (not prior.get('csv_sha1')
                                   or prior['csv_sha1'] == d['csv_sha1']):
-            d['cost'], d['cost_status'] = prior.get('cost'), prior['cost_status']
-            reused += 1
-            continue
+            prior_cost = prior.get('cost')
+            if (isinstance(prior_cost, dict) and not prior_cost.get('files')
+                    and backfilled < COST_BACKFILL_PER_RUN
+                    and consecutive_failures < FETCH_FAILURE_LIMIT):
+                backfilled += 1  # falls through to the paced fetch
+            else:
+                d['cost'], d['cost_status'] = prior_cost, prior['cost_status']
+                reused += 1
+                continue
         if consecutive_failures >= FETCH_FAILURE_LIMIT:
             # The host is not answering: keep what the last snapshot said
             # and stop asking, rather than a timeout per definition.
@@ -286,6 +301,7 @@ def sweep_dataset_definitions(*, apply=False, refresh_costs=False,
         'definitions': len(definitions),
         'with_cost': sum(1 for d in definitions if d['cost']),
         'costs_fetched': fetched,
+        'costs_backfilled': backfilled,
         'costs_reused': reused,
         'costs_skipped': skipped,
         'cost_absent': sum(1 for d in definitions

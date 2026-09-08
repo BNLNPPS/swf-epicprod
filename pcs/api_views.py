@@ -867,6 +867,7 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
                 task_name=request.data.get('panda_task_name') or request.data.get('task_name'),
                 payload_version=request.data.get('payload_version'),
                 residual=request.data.get('residual'),
+                manifest_rows=request.data.get('manifest_rows'),
             )
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)

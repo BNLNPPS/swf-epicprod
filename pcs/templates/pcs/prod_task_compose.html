@@ -1840,11 +1840,25 @@
                 alert(`Residual rerun refused: ${preview && (preview.refusal || preview.detail) || 'no preview'}`);
                 return;
             }
+            const mf = preview.manifest || {};
+            const at = mf.attempt || {};
+            const cons = mf.consistency;
+            let basis = `The job list was read from: ${mf.source || 'unknown'}.`;
+            if (cons && cons.agree) {
+                basis += ' The reconstruction from the definition agrees.';
+            } else if (cons) {
+                basis += ` WARNING: the reconstruction from the definition disagrees`
+                    + ` (${cons.only_a} jobs only in the list, ${cons.only_b} only in the reconstruction).`;
+            } else if (mf.reconstruction) {
+                basis += ` Reconstruction from the definition: ${mf.reconstruction}.`;
+            }
             confirmText = `Rerun the residual as a new PanDA task attempt? `
-                + `${preview.rows_residual} of ${preview.rows_total} manifest rows have no `
-                + `RECO output registered and arrived at JLab and will be resubmitted `
+                + `${preview.rows_residual} of the ${preview.rows_total} jobs of attempt ${at.try_number || '?'}`
+                + (at.jedi_task_id ? ` (PanDA task ${at.jedi_task_id})` : '')
+                + ` produced no RECO output registered and arrived at JLab and will run again, `
+                + `each over the same input chunk `
                 + `(${preview.files_unarrived} of ${preview.files_registered} registered files `
-                + `not yet arrived); delivered rows are not regenerated.`;
+                + `not yet arrived). ${basis} Delivered jobs are not regenerated.`;
         } else {
             return;
         }
