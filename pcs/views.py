@@ -2192,9 +2192,18 @@ def pc_ingest(request):
     """
     from .ingest import _definitions_by_path
     _defs, stamp = _definitions_by_path()
+    # The sweep stamps the snapshot in UTC; the page shows Eastern through
+    # the house filter, which treats a naive time as Eastern.
+    stamp_dt = ''
+    if stamp:
+        try:
+            from datetime import datetime as _dt, timezone as _tz
+            stamp_dt = _dt.fromisoformat(stamp).replace(tzinfo=_tz.utc)
+        except ValueError:
+            stamp_dt = stamp
     return render(request, 'pcs/pc_ingest.html', {
         'definitions_count': len(_defs),
-        'definitions_stamp': stamp or '',
+        'definitions_stamp': stamp_dt,
     })
 
 

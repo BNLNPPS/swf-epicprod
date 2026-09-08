@@ -35,7 +35,7 @@
     the physics configuration. Creating the request records the dataset request
     on that configuration and the draft task in the campaign; the task is
     readied and submitted from its own page.
-    <span class="text-muted">Dataset definitions inventory: {{ definitions_count }} definitions{% if definitions_stamp %} as of {{ definitions_stamp }}{% endif %}.</span>
+    <span class="text-muted">Dataset definitions inventory: {{ definitions_count }} definitions{% if definitions_stamp %} as of {{ definitions_stamp|fmt_dt }} ET{% endif %}.</span>
     {% if user.is_authenticated %}<button type="button" id="pcs-ingest-sweep" class="btn btn-sm btn-primary ms-2"
         title="Pull the simulation_campaign_datasets repository and sweep its definitions into the inventory now; the nightly chain does the same at 02:47">Update definitions</button>
     <span id="pcs-ingest-sweep-status" class="text-muted ms-1"></span>{% endif %}</p>

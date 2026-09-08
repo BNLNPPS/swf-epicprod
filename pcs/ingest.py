@@ -504,13 +504,16 @@ def accept_line(raw, *, created_by, allow_near_miss=False):
 
     row = resolve_line(parse_line(raw))
     row['accepted'] = False
-    if row['state'] == 'identified':
-        row['refusal'] = f"already defined as {row['pc']}"
+    if row['state'] == 'identified' and row.get('edition'):
+        row['refusal'] = f"already defined as {row['pc']}, edition {row['edition']}"
         return row
+    # An identified configuration with no edition in the line's campaign
+    # accepts: the edition is composed for it, binding the configuration it
+    # already has (Torre, 2026-09-08).
     if row['state'] == 'near_miss' and not allow_near_miss:
         row['refusal'] = 'near miss; accept individually after review'
         return row
-    if row['state'] not in ('new', 'near_miss'):
+    if row['state'] not in ('new', 'near_miss', 'identified'):
         row['refusal'] = row['reason'] or row['state']
         return row
     env = parse_line(raw)['env']

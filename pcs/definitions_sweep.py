@@ -32,6 +32,7 @@ the summary's ``errors`` and surfaced in the printed JSON; they never
 abort the remaining definitions.
 """
 
+import hashlib
 import json
 import os
 import subprocess
@@ -50,7 +51,11 @@ ARTIFACTS_BASEURL = os.environ.get(
 DATASET_TAG = os.environ.get('DATASET_TAG', 'main')
 DETECTOR_CONFIG = os.environ.get('DETECTOR_CONFIG', 'epic_craterlake')
 SNAPSHOT_NAME = 'dataset-definitions.json'
-FETCH_TIMEOUT = 30
+# One artifact request is small; a host that does not answer one in ten
+# seconds will not answer the next, and the run stops asking after two.
+FETCH_TIMEOUT = 10
+FETCH_FAILURE_LIMIT = 2
+FETCH_PACE_S = 1.0
 POPULATION_CAP = 100
 
 
@@ -81,7 +86,8 @@ def _inventory(repo_dir, errors):
                 continue
             rel = os.path.normpath(os.path.join(rel_root, f))
             try:
-                first = open(os.path.join(root, f)).readline().strip()
+                content = open(os.path.join(root, f), 'rb').read()
+                first = content.decode(errors='replace').splitlines()[0].strip() if content else ''
                 if ',' not in first and first.endswith('.csv'):
                     # An index file listing other definition CSVs (e.g.
                     # EXCLUSIVE/OMEGA.csv); its members are inventoried
@@ -92,7 +98,10 @@ def _inventory(repo_dir, errors):
             except Exception as e:
                 errors.append(f'parse {rel}: {e}')
                 continue
-            defs.append({'path': rel, 'ext': ext, 'tail': tail})
+            # The CSV's content hash is what says a definition changed: a
+            # later run re-asks the artifact host only when it differs.
+            defs.append({'path': rel, 'ext': ext, 'tail': tail,
+                         'csv_sha1': hashlib.sha1(content).hexdigest()})
     defs.sort(key=lambda d: d['path'])
     return defs
 
@@ -167,17 +176,44 @@ def sweep_dataset_definitions(*, apply=False, refresh_costs=False,
     bg_configs = _bg_registry(REPO_DIR)
 
     snap_path = os.path.join(RUCIO_SNAPSHOT_DIR, SNAPSHOT_NAME)
-    previous_costs = {}
+    # Incremental: the previous snapshot's verdict on a definition stands,
+    # cost or "no artifact" alike, until its CSV changes. A run therefore
+    # asks the artifact host only for definitions that are new or changed,
+    # never again for the ones it already knows.
+    previous = {}
     if os.path.exists(snap_path) and not refresh_costs:
         try:
             for d in json.load(open(snap_path)).get('definitions', []):
-                if d.get('cost'):
-                    previous_costs[d['path']] = d['cost']
+                if d.get('cost_status') in ('ok', 'absent'):
+                    previous[d['path']] = d
         except Exception as e:
             errors.append(f'previous snapshot read: {e}')
 
+    fetched = reused = skipped = 0
+    consecutive_failures = 0
     for d in definitions:
-        cost = previous_costs.get(d['path']) or _fetch_cost(d['path'], errors)
+        prior = previous.get(d['path'])
+        if prior is not None and (not prior.get('csv_sha1')
+                                  or prior['csv_sha1'] == d['csv_sha1']):
+            d['cost'], d['cost_status'] = prior.get('cost'), prior['cost_status']
+            reused += 1
+            continue
+        if consecutive_failures >= FETCH_FAILURE_LIMIT:
+            # The host is not answering: keep what the last snapshot said
+            # and stop asking, rather than a timeout per definition.
+            d['cost'] = prior.get('cost') if prior else None
+            d['cost_status'] = prior['cost_status'] if prior else 'skipped'
+            skipped += 1
+            continue
+        if fetched:
+            # Paced: one request a second, never a burst at the host.
+            time.sleep(FETCH_PACE_S)
+        cost = _fetch_cost(d['path'], errors)
+        fetched += 1
+        consecutive_failures = 0 if (cost or cost == 'absent') else consecutive_failures + 1
+        if consecutive_failures >= FETCH_FAILURE_LIMIT:
+            errors.append(f'artifact host not answering after {consecutive_failures} '
+                          f'failures; the remaining definitions keep their last verdict')
         if cost == 'absent':
             d['cost'], d['cost_status'] = None, 'absent'
         elif cost:
@@ -249,6 +285,9 @@ def sweep_dataset_definitions(*, apply=False, refresh_costs=False,
         'repo_head': head,
         'definitions': len(definitions),
         'with_cost': sum(1 for d in definitions if d['cost']),
+        'costs_fetched': fetched,
+        'costs_reused': reused,
+        'costs_skipped': skipped,
         'cost_absent': sum(1 for d in definitions
                            if d.get('cost_status') == 'absent'),
         'bg_configs': len(bg_configs),

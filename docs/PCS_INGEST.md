@@ -58,7 +58,7 @@ they stay in the table with their reason until addressed.
 
 | State | Meaning | Accept |
 |---|---|---|
-| identified | A physics configuration with this identity exists. The row names it and its edition in the line's campaign, if any. | refused |
+| identified | A physics configuration with this identity exists. The row names it and its edition in the line's campaign, if any. | refused when that edition exists; otherwise accepting composes the edition for the configuration it already has |
 | new | No configuration has this identity. | per row, or all at once |
 | near miss | The physics tag exists with configurations that differ only in generator version, radiation, background tag, or sample; each is named with the differing axis. | per row, after review |
 | unresolved | The physics is derived but the generator is not (a merged background definition names no generator, a bare generator name carries no version). Left for manual association, never guessed. | refused |
