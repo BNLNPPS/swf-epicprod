@@ -3107,7 +3107,7 @@ def prodtask_bind_release_tags(task, *, changed_by=''):
         req.save(update_fields=['data'])
     log_epicprod_action(
         'pcs', 'edition_bind', outcome='ok', sublevel='normal',
-        live_default=True, subject_type='dataset', subject_key=ds.composed_name,
+        live_default=False, subject_type='dataset', subject_key=ds.composed_name,
         username=changed_by,
         message=f'edition_bind: {old_name} -> {ds.composed_name} at submission',
         name_before=old_name, change={k: list(v) for k, v in change.items()})
@@ -3192,7 +3192,7 @@ def record_trial_cost(pandaid, report, jeditaskid=None):
     edition.metadata = dict(edition.metadata or {}, cost=cost)
     edition.save()
     log_epicprod_action(
-        'pcs', 'trial_cost', outcome='ok', sublevel='normal', live_default=True,
+        'pcs', 'trial_cost', outcome='ok', sublevel='low', live_default=False,
         subject_type='dataset', subject_key=edition.composed_name,
         message=(f'trial_cost: {cost["per_event_s"]} s/event, {cost["init_s"]} s '
                  f'fixed, from {trial.composed_name}'),
