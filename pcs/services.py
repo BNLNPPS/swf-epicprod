@@ -3323,6 +3323,15 @@ def merge_duplicate_edition(duplicate, survivor, *, changed_by, drop_tasks=()):
             task.dataset = surv
             task.save(update_fields=['dataset', 'updated_at'])
             moved.append(task.name)
+        # A request anchored on the duplicate's name follows the identity.
+        carried = 0
+        for req in ProdRequest.objects.filter(
+                data__physics_config_anchor=dup.composed_name):
+            data = dict(req.data or {})
+            data['physics_config_anchor'] = surv.composed_name
+            req.data = data
+            req.save(update_fields=['data'])
+            carried += 1
         record = {
             'composed_name': dup.composed_name, 'id': dup.pk,
             'created_by': dup.created_by,
@@ -3330,6 +3339,7 @@ def merge_duplicate_edition(duplicate, survivor, *, changed_by, drop_tasks=()):
             'file_count': dup.file_count, 'data_size': dup.data_size,
             'metadata': dup.metadata or {},
             'tasks_moved': moved, 'tasks_dropped': dropped,
+            'requests_carried': carried,
             'by': changed_by,
             'at': _timezone.now().isoformat(timespec='seconds'),
         }
