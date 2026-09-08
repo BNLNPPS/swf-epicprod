@@ -108,11 +108,11 @@ def propose_campaign_configs(*, created_by='', batch_id='', apply=True):
     if ping_items:
         result['pings'] = propose_pings(
             ping_items, proposer=PROPOSER, batch_id=batch_id,
-            created_by=created_by)
+            created_by=created_by, rule=True)
     if remedy_items:
         result['remedies'] = propose_standard_configs(
             remedy_items, proposer=PROPOSER, batch_id=batch_id,
-            created_by=created_by)
+            created_by=created_by, rule=True)
     # Findings that no longer hold: withdraw this proposer's pending rows.
     live_titles = {f['title'] for f in findings}
     live_names = {standard_prodconfig_name(f['edition']) for f in findings}

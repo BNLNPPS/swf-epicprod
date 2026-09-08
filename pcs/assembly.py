@@ -164,7 +164,8 @@ def propose_campaign_assembly(source_campaign, target_campaign, *,
     built = build_assembly_items(source_campaign, target_campaign)
     result = propose_campaign_plan(
         target_campaign, built['items'],
-        proposer=PROPOSER, batch_id=batch_id, created_by=created_by)
+        proposer=PROPOSER, batch_id=batch_id, created_by=created_by,
+        rule=True)
     result['built'] = len(built['items'])
     result['source_campaign'] = source_campaign
     return result

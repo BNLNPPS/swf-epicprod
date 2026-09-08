@@ -116,7 +116,7 @@ def propose_certificate_pings(*, created_by='', batch_id='', apply=True):
                         propose_ping_fulfil(
                             ping['id'], _fulfil_comment(finding, ping['due']),
                             proposer=PROPOSER, batch_id=batch_id,
-                            created_by=created_by)
+                            created_by=created_by, rule=True)
                         result['fulfil_proposed'].append(ping['title'])
                     except Exception as e:  # ServiceError and friends
                         result['errors'].append(f'{ping["title"]}: {e}')
@@ -148,7 +148,7 @@ def propose_certificate_pings(*, created_by='', batch_id='', apply=True):
     if ping_items:
         result['pings'] = propose_pings(
             ping_items, proposer=PROPOSER, batch_id=batch_id,
-            created_by=created_by)
+            created_by=created_by, rule=True)
 
     now = timezone.now()
     for row in Proposal.objects.filter(proposer=PROPOSER, status='proposed',
