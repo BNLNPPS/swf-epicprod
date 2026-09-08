@@ -878,13 +878,20 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         # the row in-job. The per-job count is the config's events_per_job,
         # bounded by the task's own override where it carries one.
         n_events = int(data.get('events_per_job') or 0)
+        if n_events <= 0:
+            # No configured count: the measured cost of a trial of this
+            # edition and the config's target job length give it, by the
+            # production team's own formula.
+            from .services import events_per_job_from_cost
+            n_events = events_per_job_from_cost(
+                task.dataset, cfg.get('target_hours_per_job')) or 0
         override = events_per_job_override(task)
         if override:
             n_events = min(n_events, override) if n_events > 0 else override
         if n_events <= 0:
             raise ValueError(
-                'set events_per_job on the config, or max_events_per_job on '
-                'the task (the per-job event count)')
+                'set events_per_job on the config, max_events_per_job on the '
+                'task, or run a trial so the cost gives the per-job count')
         if str(data.get('workflow_mode') or 'external_evgen') == 'internal_evgen':
             # Internal EVGEN (docs/EPICPROD_INTERNAL_EVGEN.md): the job
             # generates its own sample, so the manifest names the sample
