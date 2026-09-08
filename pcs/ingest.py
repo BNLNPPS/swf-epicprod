@@ -614,16 +614,6 @@ def create_request_line(raw, *, created_by):
     if edition is None:
         row['refusal'] = f'edition {row["edition"]} names no dataset'
         return row
-    existing = pc_request_projection([edition]).get(edition.composed_name) or []
-    if existing:
-        first = existing[0]
-        row['request_id'] = first.pk
-        row['request_existing'] = [
-            {'id': r.pk, 'requestor': r.requestor, 'status': r.status}
-            for r in existing]
-        row['refusal'] = (f'already requested: req#{first.pk}'
-                          + (f' by {first.requestor}' if first.requestor else ''))
-        return row
     campaign = edition.campaign or Campaign.objects.filter(
         name=row['campaign_name']).first()
     if campaign is None:
@@ -632,6 +622,26 @@ def create_request_line(raw, *, created_by):
     # The task carries the EVGEN path as its name, the CSV import's own
     # form (the catalog path minus its volatile prefix).
     task_name = row['evgen_path'] or f'ingest:{row["csv_path"]}'
+    existing = pc_request_projection([edition]).get(edition.composed_name) or []
+    if existing:
+        first = existing[0]
+        row['request_id'] = first.pk
+        row['request_existing'] = [
+            {'id': r.pk, 'requestor': r.requestor, 'status': r.status}
+            for r in existing]
+        # A request is fulfilled through its draft task. One that stands
+        # without a task in this campaign is not a duplicate to refuse
+        # but a request still owed its task, so the task is created for
+        # it below; only a request already carried by a task is refused.
+        carried = ProdTask.objects.filter(
+            request__in=[r.pk for r in existing], campaign=campaign
+        ).order_by('pk').first()
+        if carried is not None:
+            row['task_name'] = carried.name
+            row['refusal'] = (f'already requested: req#{first.pk}'
+                              + (f' by {first.requestor}' if first.requestor else '')
+                              + f'; draft task {carried.name}')
+            return row
     task = ProdTask.objects.filter(name=task_name).first()
     if task is not None:
         row['refusal'] = f'task {task_name} already exists'
@@ -648,7 +658,10 @@ def create_request_line(raw, *, created_by):
     source_row = f'ingest:{row["csv_path"]}'
     description = f'PC ingest from a legacy submission line ({row["csv_path"]})'
     with transaction.atomic():
-        req = ProdRequest.objects.filter(source_row=source_row).first()
+        # The request the configuration already carries, whatever made it;
+        # then the idempotency key of this path; only then a new one.
+        req = (existing[0] if existing
+               else ProdRequest.objects.filter(source_row=source_row).first())
         if req is None:
             req = ProdRequest.objects.create(
                 requestor='',

@@ -125,7 +125,11 @@
     }
     let t = '';
     if (r.request_existing && r.request_existing.length) {
-      t += `<div class="small-muted">requested already: ` + r.request_existing.map(q => `req#${esc(q.id)}${q.requestor ? ' (' + esc(q.requestor) + ')' : ''} ${esc(q.status)}`).join(', ') + `</div>`;
+      // The request lives on its configuration's page; its draft task,
+      // when one carries it, is the thing to open next.
+      t += `<div class="small-muted">requested already: ` + r.request_existing.map(q => `<a href="${PC_URL}${esc(r.pc)}/">req#${esc(q.id)}</a>${q.requestor ? ' (' + esc(q.requestor) + ')' : ''} ${esc(q.status)}`).join(', ');
+      if (r.task_name) t += ` · draft task <a href="${TASK_URL}${encodeURIComponent(r.task_name)}/">${esc(r.task_name)}</a>`;
+      t += `</div>`;
     } else if (r.refusal) {
       t += `<div class="small-muted">refused: ${esc(r.refusal)}</div>`;
     }

@@ -3224,6 +3224,7 @@ def _campaign_plan_state(campaign, query, pc_view):
     gen_case = _generator_display_case()
     withdrawn_marks = (services.campaign_withdrawn_editions(campaign.name)
                        if campaign is not None else {})
+    task_by_pc = _campaign_task_by_pc(campaign)
     rows = []
     for head in heads:
         params = (head.physics_tag.parameters or {}) if head.physics_tag_id \
@@ -3258,6 +3259,8 @@ def _campaign_plan_state(campaign, query, pc_view):
             'sample': head.sample_name,
             'pc_label': (head.physics_config.label
                          if head.physics_config_id else ''),
+            'task': (task_by_pc.get(head.physics_config.label)
+                     if head.physics_config_id else None),
             'requestors': (list(head.physics_config.requestors or [])
                            if head.physics_config_id else []),
             'propagation': head.propagation,
@@ -3350,6 +3353,24 @@ def campaign_plan_pc_filter(campaign_name, query):
             {r['pc_label'] for r in state['rows'] if r['pc_label']})
 
 
+def _campaign_task_by_pc(campaign):
+    """The campaign's task per physics configuration, by composed name:
+    the thing to open from a plan row, since a configuration in the plan
+    is worked on through its task on the compose page, not through the
+    configuration's own page. One task per configuration is the rule;
+    where several exist the first by pk stands in."""
+    out = {}
+    if campaign is None:
+        return out
+    rows = (ProdTask.objects.filter(campaign=campaign,
+                                    dataset__physics_config__isnull=False)
+            .select_related('dataset', 'dataset__physics_config')
+            .order_by('pk'))
+    for t in rows:
+        out.setdefault(t.dataset.physics_config.label, t.composed_name)
+    return out
+
+
 def _campaign_assembly_context(campaign):
     """The assembly (proposal-build) context for a future campaign with
     no editions (CONTINUOUS_PRODUCTION.md, Campaign assembly): the
@@ -3430,6 +3451,9 @@ def _campaign_assembly_context(campaign):
         by_disposition[row['disposition']] = (
             by_disposition.get(row['disposition'], 0) + 1)
         rows.append(row)
+    task_by_pc = _campaign_task_by_pc(campaign)
+    for row in rows:
+        row['task'] = task_by_pc.get(row['pc'])
     rows.sort(key=lambda r: (r['priority'] if r['priority'] is not None
                              else 99, r['pc']))
     return {
@@ -5476,9 +5500,20 @@ def prod_task_compose(request):
             ],
         })
 
-    # Datasets: only those used by the in-scope tasks — campaign-coherent, and
-    # keeps the past_output archive datasets off the page.
+    # Datasets: those used by the in-scope tasks — campaign-coherent, and
+    # keeps the past_output archive datasets off the page — plus the
+    # campaign family's editions that no task uses yet. An edition composed
+    # on the datasets page has no task by construction, and this page is
+    # where its task is made; without it here, nothing could be.
     dataset_ids = {t.dataset_id for t in tasks_list}
+    if campaign is not None:
+        from .name_tokens import campaign_family
+        family = campaign_family(campaign.name)
+        dataset_ids.update(
+            Dataset.objects.filter(
+                Q(campaign=campaign) | Q(detector_version__startswith=family + '.'),
+                prod_tasks__isnull=True,
+            ).values_list('id', flat=True))
     datasets_qs = Dataset.objects.filter(id__in=dataset_ids).select_related(
         'physics_tag', 'evgen_tag', 'simu_tag', 'reco_tag', 'background_tag',
     ).order_by('-created_at')

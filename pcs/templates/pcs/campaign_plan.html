@@ -111,7 +111,7 @@
         {% for r in assembly.rows_filtered %}
             <tr {% if r.proposal_id %}data-proposal-id="{{ r.proposal_id }}" data-orig-target="{{ r.target_events|default_if_none:'' }}" data-orig-priority="{{ r.priority|default_if_none:'' }}" data-orig-dispo="{{ r.disposition }}"{% endif %}{% if r.undo_id %} data-undo-id="{{ r.undo_id }}"{% endif %}>
                 <td><input type="checkbox" class="form-check-input asm-tick"></td>
-                <td><a href="{% url 'pcs:pcs_config_detail' label=r.pc %}">{{ r.pc }}</a></td>
+                <td>{% if r.task %}<a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ r.task|urlencode }}" title="This configuration's task in the campaign, on the compose page">{{ r.pc }}</a>{% else %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc %}" title="No task in this campaign yet; the physics configuration page">{{ r.pc }}</a>{% endif %}</td>
                 <td>{{ r.sample }}</td>
                 <td class="text-end" data-order="{{ r.target_events|default_if_none:'-1' }}">{% if r.proposal_id %}<input type="number" min="0" class="form-control form-control-sm asm-target" style="width: 11em; display: inline-block;" value="{{ r.target_events|default_if_none:'' }}">{% else %}{{ r.target_events|default_if_none:'' }}{% endif %}</td>
                 <td class="text-end" data-order="{{ r.priority|default_if_none:'99' }}">{% if r.proposal_id %}<input type="number" class="form-control form-control-sm asm-priority" style="width: 5em; display: inline-block;" value="{{ r.priority|default_if_none:'' }}">{% else %}{{ r.priority|default_if_none:'' }}{% endif %}</td>
@@ -481,7 +481,7 @@
         {% for r in rows %}
             <tr data-name="{{ r.name }}">
                 {% if view_mode == 'edition' %}<td><input type="checkbox" class="form-check-input plan-tick"></td>{% endif %}
-                <td>{% if r.pc_label %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc_label %}" title="The physics configuration page: identity, associations, editions, requests">{{ r.pc_label }}</a>{% endif %}</td>
+                <td>{% if r.pc_label %}{% if r.task %}<a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ r.task|urlencode }}" title="This configuration's task in the campaign, on the compose page">{{ r.pc_label }}</a>{% else %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc_label %}" title="No task in this campaign yet; the physics configuration page: identity, associations, editions, requests">{{ r.pc_label }}</a>{% endif %}{% endif %}</td>
                 <td><a href="{% url 'pcs:pcs_catalog' %}?q={{ r.name|urlencode }}" title="{{ r.name }}">{{ r.physics }}</a></td>
                 <td>{{ r.process }}</td>
                 <td>{{ r.beam }}</td>
