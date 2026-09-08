@@ -427,36 +427,32 @@ export DIVERTED_OUT=${TMPDIR}/${TASKNAME}.diverted
 # The failover stash (docs/RUCIO_FAILOVER_STASH.md). When the JLab upload
 # path itself fails — the door unreachable, the catalog refusing to
 # authenticate — the output has nowhere to go and finished physics is lost
-# for want of a destination. The stash is a BNL dCache space the job can
-# reach with the credential it already carries: the file is written to the
-# door by xrdcp, and the catalog work is left to the registrar, which holds
-# the BNL credential and does it the way the drain does.
-#
-# The DID is flat, not path-like: the BNL instance parses a '/' as a scope
-# separator and refuses a path-like name as too long (proved 2026-09-07).
-# The destination path travels in the report instead, which is where the
-# registrar reads it from anyway.
-STASH_DOOR=${STASH_DOOR:-"root://dcintdoor.sdcc.bnl.gov:1094"}
-STASH_BASE=${STASH_BASE:-"/pnfs/sdcc.bnl.gov/eic/epic/disk/group/EIC/stash"}
+# for want of a destination. The stash is BNL-XRD, the BNL science-data
+# RSE of the catalog of record, written by xrdcp with the production
+# credential the job already carries, at the path the RSE's deterministic
+# naming gives the file's logical name. The file is therefore already
+# home; the catalog work, the replica row, is left to the registrar, which
+# adds it where the file lies when JLab answers. Nothing is moved.
+STASH_DOOR=${STASH_DOOR:-"root://epicxrd1.sdcc.bnl.gov:1094"}
+STASH_PREFIX=${STASH_PREFIX:-"/eic/EPIC"}
 STASH_OUT=${TMPDIR}/${TASKNAME}.stash
 
 stash_output() {
   # $1 local file, $2 the DID it owes JLab, $3 why we are stashing
   local file=$1 destination=$2 reason=$3
-  local flat="swf.stash.${PANDAID:-nopandaid}.$(basename "${file}")"
-  local target="${STASH_BASE}/${flat}"
+  local target="${STASH_PREFIX}/${destination#/}"
   stage stash start "$(basename "${file}")"
   if [ ! -f "${file}" ]; then
     stage stash fail "the output is not on disk to stash: ${file}"
     return 1
   fi
   if timeout "${STASH_TIMEOUT:-600}" xrdcp -f "${file}" "${STASH_DOOR}/${target}"; then
-    # The report is what the registrar reads: the stashed name, where it
-    # owes its registration, and why it went here.
-    printf '%s\t%s\t%s\t%s\n' "${flat}" "${target}" "${destination}" "${reason}" \
+    # The report is what the registrar reads: the logical name, the path
+    # it sits at, what it owes (the same name, registered), and why.
+    printf '%s\t%s\t%s\t%s\n' "${destination}" "${target}" "${destination}" "${reason}" \
       >> "${STASH_OUT}"
-    stage stash ok "${flat} owes ${destination}"
-    echo "stashed ${file} at ${STASH_DOOR}/${target}; it owes ${destination}"
+    stage stash ok "${destination} at BNL-XRD, registration owed"
+    echo "stashed ${file} at ${STASH_DOOR}/${target}; its registration is owed"
     return 0
   fi
   stage stash fail "xrdcp to ${STASH_DOOR}/${target} failed"
