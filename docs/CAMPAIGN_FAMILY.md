@@ -52,6 +52,13 @@ ePIC's real one.
 - **Family derivation single source**: `campaign_family(name)` in
   `pcs.name_tokens` (the assessment bundle's private copy retires onto
   it).
+- **A task always has a campaign** (2026-09-09): `ProdTask.save` derives
+  it from the dataset, the dataset's own campaign or else the campaign
+  named by its version family, and refuses a task that resolves to none.
+  Every creation path inherits this; the task API answers the refusal
+  with a 400. A task outside every campaign was invisible on the
+  campaign-scoped pages rather than visibly wrong, which is how two of
+  the production team's tasks vanished on 2026-09-08.
 - **Writers produce family rows**: direct-PanDA intake resolves
   `Campaign` by family of the parsed version; the past ingest keys its
   campaign row by family and its totals by edition; the arrivals sweep

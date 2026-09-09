@@ -782,6 +782,42 @@ class ProdTask(models.Model):
     def __str__(self):
         return self.name
 
+    @staticmethod
+    def campaign_for(dataset):
+        """The campaign a task on ``dataset`` belongs to: the dataset's own,
+        else the campaign named by the dataset's version family (26.07.1
+        belongs to 26.07, CAMPAIGN_FAMILY.md). None when neither resolves."""
+        from .name_tokens import campaign_family
+        if dataset is None:
+            return None
+        if dataset.campaign_id:
+            return dataset.campaign
+        family = campaign_family(dataset.detector_version)
+        return Campaign.objects.filter(name=family).first() if family else None
+
+    def save(self, *args, **kwargs):
+        # No task without a campaign. The compose page, the task list and
+        # the campaign record are all scoped to one, so a task outside every
+        # campaign is invisible rather than visibly wrong: two of the
+        # production team's tasks vanished that way on 2026-09-08, saved
+        # through the one creation path that named no campaign. A caller
+        # that names the campaign keeps it; otherwise it is derived from the
+        # dataset here, and a task that resolves to none is refused rather
+        # than saved silently.
+        if self.campaign_id is None:
+            campaign = self.campaign_for(self.dataset if self.dataset_id else None)
+            if campaign is None:
+                version = self.dataset.detector_version if self.dataset_id else ''
+                raise ValidationError(
+                    f'task {self.name!r} has no campaign: its dataset names '
+                    f'none and no campaign record matches the version '
+                    f'{version!r}')
+            self.campaign = campaign
+            update_fields = kwargs.get('update_fields')
+            if update_fields is not None and 'campaign' not in update_fields:
+                kwargs['update_fields'] = list(update_fields) + ['campaign']
+        super().save(*args, **kwargs)
+
     @cached_property
     def composed_name(self):
         """The task's canonical identity: its dataset's composed tag name

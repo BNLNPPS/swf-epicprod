@@ -475,33 +475,24 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         self.check_object_permissions(self.request, task)
         return task
 
+    # The task's campaign is the model's business (ProdTask.save derives
+    # it from the dataset and refuses a task that resolves to none); the API
+    # turns that refusal into a 400 with the reason, never a 500.
     @staticmethod
-    def _campaign_of(dataset):
-        """The campaign a task belongs to: its dataset's, else the campaign
-        named by the dataset's version family. The compose page and the
-        task list are scoped to a campaign, so a task saved without one
-        is invisible on them."""
-        from .models import Campaign
-        from .name_tokens import campaign_family
-        if dataset is None:
-            return None
-        if dataset.campaign_id:
-            return dataset.campaign
-        return Campaign.objects.filter(
-            name=campaign_family(dataset.detector_version)).first()
+    def _save_or_refuse(serializer, **extra):
+        from django.core.exceptions import ValidationError as ModelRefusal
+        from rest_framework.exceptions import ValidationError
+        try:
+            serializer.save(**extra)
+        except ModelRefusal as e:
+            raise ValidationError({'campaign': e.messages})
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user.username,
-                        campaign=self._campaign_of(
-                            serializer.validated_data.get('dataset')))
+        self._save_or_refuse(serializer,
+                             created_by=self.request.user.username)
 
     def perform_update(self, serializer):
-        task = serializer.instance
-        extra = {}
-        if task.campaign_id is None:
-            extra['campaign'] = self._campaign_of(
-                serializer.validated_data.get('dataset') or task.dataset)
-        serializer.save(**extra)
+        self._save_or_refuse(serializer)
 
     @action(detail=True, methods=['post'], url_path='generate-commands')
     def generate_commands(self, request, name=None):
