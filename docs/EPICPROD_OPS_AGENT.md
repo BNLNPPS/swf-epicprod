@@ -193,15 +193,97 @@ credential in the web tier.
 
 ## Current capabilities
 
-Verified against `agents/epicprod_ops_agent.py` and its doers, 2026-06-02:
+Verified against `agents/epicprod_ops_agent.py` and its doers, 2026-09-09. The
+agent accepts the forty `msg_type` values in `KNOWN_TYPES`; a message of any
+other type is logged and dropped. Doers hold the credentials (see *Credential
+boundary*) and run on the background pool unless noted. Timeouts are the
+`EPICPROD_*_TIMEOUT` environment defaults, in seconds.
 
-| `msg_type` | Doer | Credential | Outcome | Timeout |
-|---|---|---|---|---|
-| `fetch_payload_log` | `cache-payload-log.py` | Rucio proxy + xrootd | extracted log members in `$SWF_TMP_DIR/panda-logs/<jeditaskid>/<pandaid>/`, `.done` on success / `.error` on failure | 180s |
-| `submit_task` | `submit-prod-task.py` | PanDA OIDC token (operator) | `jediTaskID` recorded on the `ProdTask` (`panda_task_id` + `status='submitted'`) via `record-submission` | 300s |
-| `rucio_snapshot_update` | `rucio-snapshot-update.py` | JLab Rucio userpass (public `eicread`) | current+last snapshot refreshed, produced datasets matched onto each task's `overrides['outputs']`; `rucio_snapshot_ready` pushed (ok true/false) | 900s |
-| `health_ping` | — | — | `pong` to `reply_to` | — |
-| `shutdown` | — | — | deliberate stop; exits `EXIT_DELIBERATE=100` so systemd leaves it down | — |
+Several handlers are steps of the nightly `catalog_sync` chain that are also
+invokable on their own, so a single step can be rerun without the chain.
+
+### Production operations
+
+| `msg_type` | Doer | Purpose | Timeout |
+|---|---|---|---|
+| `submit_task` | `submit-prod-task.py` | Submit one PCS ProdTask to PanDA. Deduped per task, so near-simultaneous triggers cannot fire two submissions. | 300 |
+| `submit_evgen_task` | `submit-evgen-task.py` | Submit one PCS ProdTask by the client-API EVGEN path — the live Submit-button route. | 300 |
+| `panda_task_operation` | `panda-task-operation.py` | Run one PanDA-native operation on an existing JEDI task. | 120 |
+| `panda_task_operations` | `panda-task-operation.py` | Run one paced batch of scalar PanDA pause/resume commands. | 120 |
+| `panda_sandbox_keepalive` | `panda-sandbox-keepalive.py` | Keep retryable tasks' sandbox tarballs alive in the PanDA server cache. | 600 |
+
+### Rucio and storage
+
+| `msg_type` | Doer | Purpose | Timeout |
+|---|---|---|---|
+| `rucio_snapshot_update` | `rucio-snapshot-update.py` | Refresh the JLab Rucio output snapshot and rematch every task's outputs. | 900 |
+| `rucio_arrivals_sweep` | `rucio-arrivals-sweep.py` | Detect new files landing in JLab Rucio. | 300 |
+| `evgen_rucio_update` | `import_evgen_rucio.py` | Assimilate the JLab Rucio EVGEN inventory into PCS. | 900 |
+| `evgen_register` | `register-evgen-rucio.py` | Register one EVGEN input directory in JLab Rucio: door listing, per-file checksums, and the Rucio writes. | 3600 |
+| `storage_sweep` | `storage-sweep.py` | The storage pass: placement state of production data on the JLab RSEs. Full pass nightly, incremental four-hourly. | 3600 |
+| `stash_drain` | `stash-drain.py` | Drain the failover stash, registering stashed outputs where they lie. | 1800 |
+
+### Production record
+
+| `msg_type` | Doer | Purpose | Timeout |
+|---|---|---|---|
+| `outputs_ingest` | `outputs-ingest.py` | Write the production record of what tasks produced. Runs hourly, before the registrar. | 900 |
+| `registrar` | `registrar.py` | Complete the registrations the payload left pending. Hourly. | 1800 |
+| `content_validate` | `content-validate.py` | Reconcile a sample's dataset against the record. | 1800 |
+| `content_accept` | `content-accept.py` | Accept one dataset's content as a single operator action. | 900 |
+| `node_measure_ingest` | `node-measure-ingest.py` | Fold finished jobs' measures into the node measurement store. Hourly. | 1800 |
+| `file_events_measure` | `measure-file-events.py` | Per-file event measurement for delivered data. | 3600 |
+| `report_sweep` | `report-sweep.py` | Sweep failed jobs' payload reports out of the store. Hourly. | 900 |
+
+### Catalog and questionnaires
+
+| `msg_type` | Doer | Purpose | Timeout |
+|---|---|---|---|
+| `catalog_sync` | in-process chain | Nightly composite sync in dependency order: association sweep, Rucio snapshot, EVGEN assimilation, questionnaire match, progress refresh. Logs a chain summary — the catalog-freshness timestamp the alarm system watches. | per step |
+| `catalog_import` | `pcs-catalog-import.py` | Run a PCS catalog import (csv or epic-prod). The epic-prod walk covers some 4900 datasets. | 1800 |
+| `association_sweep` | `sweep_panda_associations` | Batch-associate recent PanDA tasks with PCS campaign tasks. | 600 |
+| `questionnaire_import` | `import-questionnaires.py` | Import new production-request form responses; the nightly sweep reads the CSV URL from SysConfig `questionnaire_csv_url`. | 120 |
+| `questionnaire_automatch` | `match-questionnaires.py` | LLM-assisted matching of questionnaires to catalog tasks. | 1800 |
+| `questionnaire_match_update` | `update-questionnaire-matches.py` | Rebuild task-local questionnaire-match caches, then push completion so the catalog button reloads. | 300 |
+| `epic_prod_past_import` | `epic-prod-past-import.py` | Past-campaign output ingest. | 600 |
+| `dataset_definitions_sweep` | in-process | The definitions sweep on demand, behind the PC ingest page's Update definitions button. The clone is pulled first, so the result reflects the repository as it stands. | 900 |
+
+### Caches and status
+
+| `msg_type` | Doer | Purpose | Timeout |
+|---|---|---|---|
+| `campaign_progress_refresh` | `refresh-campaign-progress.py` | Rebuild current campaign progress data and the progress table cache. | 300 |
+| `delivery_daily_rebuild` | `delivery-daily-rebuild.py` | Rebuild the campaign delivered-data record. | 3600 |
+| `sync_epicprod_inventory` | in-process | Refresh one job or task inventory record, keyed by pandaid, jeditaskid, or task name. | 180 |
+| `refresh_system_status` | `refresh-system-status.py` | Refresh cached System status rows. The dedup key carries the selection, so a targeted retry is not swallowed by a broad refresh. | 60 |
+| `capture_system_snap` | `capture-system-snap.py` | Evaluate one coherent Snapper capture opportunity for the SWF scopes. | 30 |
+
+### Batch records
+
+| `msg_type` | Doer | Purpose | Timeout |
+|---|---|---|---|
+| `batch_log_capture` | `batch-log-capture.py` | Capture condor event logs while they exist. | 1800 |
+| `batch_log_learn` | `batch-log-learn.py` | Mine the batch-record corpus before it ages out. | 1800 |
+
+### Proposals
+
+Each proposer creates a proposal for human decision on the alarm dashboard; none
+of them enacts its own remedy. See [PINGS.md](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/PINGS.md).
+
+| `msg_type` | Doer | Purpose | Timeout |
+|---|---|---|---|
+| `campaign_config_propose` | `propose-campaign-configs.py` | Campaign configuration proposer. | 300 |
+| `credential_ping_propose` | `propose-credential-pings.py` | Credential expiry proposer. | 300 |
+| `certificate_ping_propose` | `propose-certificate-pings.py` | Host certificate proposer. | 300 |
+
+### Assessment, retrieval, and control
+
+| `msg_type` | Doer | Purpose | Timeout |
+|---|---|---|---|
+| `assessment_completed` | `swf_epicprod.assessment.enforce` | Apply the outcome of a completed assessment job. Deduped per job id. | 300 |
+| `fetch_payload_log` | `cache-payload-log.py` | Fetch and cache the payload log for one PanDA job. Deduped per job, so two requests do not extract into one cache directory at once. | 180 |
+| `health_ping` | — | Liveness probe: reply `pong` to the caller's `reply_to` queue. Handled inline. | — |
+| `shutdown` | — | Deliberate-shutdown back door: the singleton steps down over the bus and exits `EXIT_DELIBERATE=100`, so systemd leaves it down. Handled inline. | — |
 
 **`fetch_payload_log`** resolves the log DID's replica (Rucio REST, x509,
 account `panda`), `xrdcp`s the tarball, extracts the members into the cache, and
