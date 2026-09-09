@@ -302,7 +302,10 @@ while a login lasts.
 
 First exercised on 2026-09-04 with `pilot3-3.14.2.2.tar.gz`; second on
 2026-09-09 with `pilot3-3.14.3.3-epic1.tar.gz`, the released 3.14.3.3
-plus pilot3 PR 220 (NODE_EVENT_DISPATCHER.md), flag at 19:48 ET.
+plus pilot3 PR 220 (NODE_EVENT_DISPATCHER.md): flag at 19:48 ET, the
+flag gone within 5 minutes, revision 9739 visible on this host 8
+minutes after the flag with the file, the symlink and the checksum as
+written.
 
 **What consumes it is not recorded.** A queue takes the canary pilot
 only through the mechanisms above — a CRIC `pilot_url` on the queue or
