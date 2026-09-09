@@ -177,15 +177,17 @@ is why production has never seen this.
 
 | where | now | fix |
 |---|---|---|
-| `pilot/control/payloads/eventservice.py:80` | `user.get_payload_command(job)` | `user.get_payload_command(job, args=self.__args)` |
+| `pilot/control/payloads/eventservice.py:80` | `user.get_payload_command(job)` | `user.get_payload_command(job, args=self.get_args())` |
 | `pilot/eventservice/workexecutor/plugins/baseexecutor.py:174` | `user.get_payload_command(job)` | `user.get_payload_command(job, args=self.args)` |
 
 The first mirrors the working line in the generic payload path. It
-reads the parent class's private attribute, which resolves because
-subclass and parent are both named `Executor` and Python's name
-mangling therefore produces the same attribute; that resolution is
-proved by test rather than assumed. The second class already holds
-`self.args` and uses it two lines above.
+reaches the arguments through a new `get_args()` on the parent
+executor, beside that class's existing `get_job()`: the subclass could
+have read the parent's private attribute directly, which resolves only
+because both classes are named `Executor`, and an accessor removes a
+rename that would break event-service payload construction silently.
+The second class already holds `self.args` and uses it two lines
+above.
 
 Verified on 2026-09-09 against the released 3.14.3.3 by driving the
 event-service executor with the user module replaced by a recorder:
