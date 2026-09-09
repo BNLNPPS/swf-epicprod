@@ -6078,11 +6078,16 @@ def prodtask_runnable_config(task, require_input=True):
 
 
 # ── moving a name-matched legacy task into PCS ──────────────────────────
-# JEDI_INTEGRATION.md § Residual rerun: a task associated by name match
-# alone is not a PCS submission until it carries a recorded PanDA id, a
-# bound production configuration and a matched EVGEN input. The compose
-# page's "Move this task to PCS" control does the first two and names, on
-# the page, what blocks it when the third is missing.
+# EPICPROD_RETRIES.md § Recovery levels: a task associated by name match
+# alone is not a PCS submission until it carries a recorded PanDA id and
+# a bound production configuration. The compose page's "Move this task
+# to PCS" control does both and submits nothing. A matched EVGEN input is
+# not a condition of adoption: the residual rerun runs the attempt's own
+# rows, which the payload reads from the JLab door by path, and the
+# operations that build new work from the input (Rerun Entire Task, a
+# trial) state that requirement themselves. Gating adoption on the match
+# blocked 136 of the 177 July legacy tasks whose inputs were never
+# registered in Rucio (2026-09-09).
 
 def prodtask_adopt_readiness(task):
     """What "Move this task to PCS" would do for ``task``, or why it cannot.
@@ -6099,7 +6104,7 @@ def prodtask_adopt_readiness(task):
         return out
     out['applicable'] = True
     out['jedi_task_id'] = latest.jedi_task_id
-    config, blocked = prodtask_runnable_config(task)
+    config, blocked = prodtask_runnable_config(task, require_input=False)
     if config is not None:
         out['config'] = config.name
     if blocked:

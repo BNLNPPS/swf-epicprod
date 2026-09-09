@@ -265,12 +265,18 @@ refuses when delivered events cannot be established.
 
 A task linked to PCS only by name match is not a PCS submission and
 cannot be rerun until it is made one. It lacks a PanDA association
-recorded on the task itself, a bound production configuration in place
-of the import placeholder, and its dataset matched to its EVGEN input
-in JLab Rucio. The compose page carries this as one control, **Move
-this task to PCS**, which records the task's latest PanDA try as the
-submission and binds the edition's Standard Production configuration.
-It states what it will do or why it is blocked, and submits nothing.
+recorded on the task itself and a bound production configuration in
+place of the import placeholder. The compose page carries this as one
+control, **Move this task to PCS**, which records the task's latest
+PanDA try as the submission and binds the edition's Standard Production
+configuration. It states what it will do or why it is blocked, and
+submits nothing. A matched EVGEN input in JLab Rucio is not a condition
+of the move: the residual runs the attempt's own rows, which the payload
+reads from the JLab door by path, and the operations that build new work
+from the input, Rerun Entire Task and a trial, state that requirement
+themselves. Most of the July campaign's inputs were never registered in
+Rucio, and until 2026-09-09 the move was blocked on that for 136 of its
+177 legacy tasks.
 
 ## Surfaces
 
