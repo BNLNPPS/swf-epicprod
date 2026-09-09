@@ -3352,7 +3352,16 @@ def merge_duplicate_edition(duplicate, survivor, *, changed_by, drop_tasks=()):
         }
         history = list((surv.metadata or {}).get('merged_from') or [])
         history.append(record)
-        surv.metadata = dict(surv.metadata or {}, merged_from=history)
+        # The identity's provenance follows it: an evgen-stage duplicate
+        # composed by the ingest carries the stage, the source location
+        # and the ingest record that the input matcher and the submission
+        # read. A survivor composed by hand has none of them, and would
+        # lose its EVGEN input with the merge.
+        merged = dict(surv.metadata or {}, merged_from=history)
+        for key in ('stage', 'source', 'ingest'):
+            if key not in merged and key in (dup.metadata or {}):
+                merged[key] = dup.metadata[key]
+        surv.metadata = merged
         surv.save()
         dup_name = dup.composed_name
         dup.delete()
@@ -4053,9 +4062,12 @@ def fetch_jlab_rucio_unarrived_files(scope, file_names):
 
 
 def _request_input_tail(ds_path):
-    """Return the comparable tail of a CSV input dataset path.
+    """Return the comparable tail of an EVGEN input location.
 
-    /volatile/eic/EPIC/EVGEN/<TAIL>  ->  '<TAIL>'  (lower-cased)
+    /volatile/eic/EPIC/EVGEN/<TAIL>  ->  '<TAIL>'  (lower-cased): the CSV
+    import's form, the door path.
+    EVGEN/<TAIL> or /EVGEN/<TAIL>    ->  '<TAIL>': the ingest's form, the
+    dataset definition's EVGEN path (PCS_INGEST.md).
     anything else                    ->  '' (no match)
     """
     if not ds_path:
@@ -4063,6 +4075,8 @@ def _request_input_tail(ds_path):
     parts = ds_path.strip('/').split('/')
     if len(parts) >= 5 and parts[:4] == ['volatile', 'eic', 'EPIC', 'EVGEN']:
         return '/'.join(parts[4:]).lower()
+    if len(parts) >= 2 and parts[0] == 'EVGEN':
+        return '/'.join(parts[1:]).lower()
     return ''
 
 

@@ -74,6 +74,10 @@ the Q² token**. Two consequences follow, and they are the whole point:
 - **Fan-out for every axis the request omits.** An abstract DIS request states
   no generator, radiation, or charge, so it matches every Rucio dataset that
   agrees on the axes it does state. One request resolves to several datasets.
+- **Two location forms, one tail.** A CSV-imported request names the door
+  path (`/volatile/eic/EPIC/EVGEN/…`); an edition composed by the ingest
+  (PCS_INGEST.md) names the dataset definition's EVGEN path (`EVGEN/…`).
+  Both reduce to the same tail before matching.
 
 ### Q² semantics
 
