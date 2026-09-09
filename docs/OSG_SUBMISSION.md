@@ -239,21 +239,70 @@ we want to run ahead of the production default — and where the
 `pilot3-3.14.1.31.tar.gz` and `pilot3-3.14.2.2.tar.gz` as of
 2026-09-09, the symlink on the latter.
 
-Publication is ours to perform. The write host is `cvmfswrite06`,
-where the canary directory is owned `wenauseic:eic`; it mounts CERN
-CVMFS, so a released pilot can be copied from there rather than
-fetched. One publication:
+Publication is ours to perform, on the SDCC write hosts
+`cvmfswrite06` and `cvmfswrite07` (the SDCC stratum-zero page,
+<https://docs.sdcc.bnl.gov/services/cvmfs/stratum-zero/>). There the
+repository is a writable NFS mount of the stratum-zero staging area
+(`cvmfsnfs01:/cvmfst0/eic.opensciencegrid.org`, 15 TB), and the canary
+directory is owned `wenauseic:eic`; SDCC enabled the account on both
+write hosts on 2026-09-04 at our request. The rest of `panda/` is the
+PanDA team's, owner `xzhao`, and we do not write there.
 
-1. Place the tarball in the canary directory on the write host and
-   verify its checksum against the source.
-2. Repoint `canary/pilot3.tar.gz` at it, leaving the previous version
-   in place: a pilot we have run under is never removed, so a bad
-   pilot is undone by moving the symlink back.
-3. Create an empty `CVMFSRELEASE` in the directory. That file is what
-   triggers publication; nothing reaches the read-only mount until it
-   exists.
+**Reaching the write host.** Every route was tried on 2026-09-09 and
+exactly one works: ssh from pandaserver02 *through an SDCC gateway*
+(`ssh01.sdcc.bnl.gov` or `ssh04.sdcc.bnl.gov`), authenticating with the
+ssh key SDCC holds for the account in LDAP, the one that logs in to the
+gateways, presented from the ssh agent that a live gateway login
+forwards to pandaserver02. The write hosts accept that key only when
+the connection arrives from a gateway; the same key offered directly
+from pandaserver02 is refused. Not routes: a key in
+`~/.ssh/authorized_keys` (the write hosts do not read it), a Kerberos
+ticket (the gateway login is by key and issues none), the SDCC key
+portal (needs a second factor the account does not have). The
+configuration that encodes the route, in `~/.ssh/config` on
+pandaserver02:
 
-First exercised on 2026-09-04 with `pilot3-3.14.2.2.tar.gz`.
+```
+Host cvmfswrite06 cvmfswrite07 cvmfswrite06.sdcc.bnl.gov cvmfswrite07.sdcc.bnl.gov
+    ProxyJump ssh04.sdcc.bnl.gov
+    IdentitiesOnly no
+    StrictHostKeyChecking accept-new
+```
+
+The agent is whichever gateway login of Torre's is alive: its socket
+is `/tmp/ssh-*/agent.<pid>` on pandaserver02, `ls -t` picks the
+newest, and a session started from a login shell inherits
+`SSH_AUTH_SOCK` already. Nothing else is needed, and nothing expires
+while a login lasts.
+
+**One publication**, as run on 2026-09-09 for `pilot3-3.14.3.3-epic1`:
+
+1. Build the tarball on pandaserver02: extract the released
+   `pilot3-<version>.tar.gz` from the production directory, apply the
+   change, confirm that only the intended files differ, repack with
+   the same top-level `pilot3/` layout, and name it
+   `pilot3-<version>-epicN.tar.gz`, `N` counting our patches on that
+   base. `PILOTVERSION` inside stays the base version; the name
+   carries the patch.
+2. Before writing, on the write host: no `CVMFSRELEASE` anywhere in
+   the first three levels of the repository, and the `panda/pilot`
+   listing there equal to the published mount's, so a publication
+   carries nothing of anyone else's in flight; free space.
+3. `scp` the tarball into the canary directory and compare its sha256
+   there with the source.
+4. `ln -sfn <tarball> pilot3.tar.gz` in that directory. The previous
+   version stays: a pilot we have run under is never removed, so a
+   bad pilot is undone by moving the symlink back.
+5. `touch CVMFSRELEASE` there. That file triggers publication; the
+   flag must sit within the first three levels of the repository, and
+   `panda/pilot/canary` is the third.
+6. Watch this host's mount: the new file and the symlink appear, the
+   repository revision (`attr -g revision /cvmfs/eic.opensciencegrid.org`)
+   advances, and the flag is gone from the write host.
+
+First exercised on 2026-09-04 with `pilot3-3.14.2.2.tar.gz`; second on
+2026-09-09 with `pilot3-3.14.3.3-epic1.tar.gz`, the released 3.14.3.3
+plus pilot3 PR 220 (NODE_EVENT_DISPATCHER.md), flag at 19:48 ET.
 
 **What consumes it is not recorded.** A queue takes the canary pilot
 only through the mechanisms above — a CRIC `pilot_url` on the queue or
