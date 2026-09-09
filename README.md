@@ -133,7 +133,8 @@ Submission and execution:
   direct-submission proposal.
 - [OSG_SUBMISSION.md](docs/OSG_SUBMISSION.md) — how production reaches
   the OSG pool: hosts, harvester, submit description, container
-  layering, levers.
+  layering, levers; which pilot a queue runs, and our own canary pilot
+  directory in CVMFS with the procedure for publishing to it.
 - [PANDA_USER_JOBS.md](docs/PANDA_USER_JOBS.md) — user jobs and the
   analysis share.
 - [PANDA_CAPABILITIES.md](docs/PANDA_CAPABILITIES.md) — PanDA

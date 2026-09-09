@@ -226,6 +226,44 @@ template and pointing at a tarball served from a host in hand (osgsub01
 serves its log directory over HTTPS). The template accepts the
 argument; the served-tarball route has not yet been exercised.
 
+That test directory belongs to the PanDA team at BNL and we do not
+write to it. Ours is the canary directory below.
+
+### Our canary pilot directory, and publishing to it
+
+`/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/` is the ePIC
+production team's own pilot area: where we place a pilot of our own
+build — a patched pilot carrying a fix not yet released, or a release
+we want to run ahead of the production default — and where the
+`pilot3.tar.gz` symlink names the one currently offered. It held
+`pilot3-3.14.1.31.tar.gz` and `pilot3-3.14.2.2.tar.gz` as of
+2026-09-09, the symlink on the latter.
+
+Publication is ours to perform. The write host is `cvmfswrite06`,
+where the canary directory is owned `wenauseic:eic`; it mounts CERN
+CVMFS, so a released pilot can be copied from there rather than
+fetched. One publication:
+
+1. Place the tarball in the canary directory on the write host and
+   verify its checksum against the source.
+2. Repoint `canary/pilot3.tar.gz` at it, leaving the previous version
+   in place: a pilot we have run under is never removed, so a bad
+   pilot is undone by moving the symlink back.
+3. Create an empty `CVMFSRELEASE` in the directory. That file is what
+   triggers publication; nothing reaches the read-only mount until it
+   exists.
+
+First exercised on 2026-09-04 with `pilot3-3.14.2.2.tar.gz`.
+
+**What consumes it is not recorded.** A queue takes the canary pilot
+only through the mechanisms above — a CRIC `pilot_url` on the queue or
+a `--piloturl` in a submit template — and neither is in this
+repository. `NERSC_Perlmutter_epic` in particular carries pilot
+manager `local` and an environment pointing into the NERSC project
+software area, which is the site's own harvester installation, so on
+the queue record alone a canary pilot does not reach Perlmutter.
+Establishing and recording that route is open work.
+
 ### Excluding what delivers nothing
 
 Two levers, at two granularities, both in the submit description that
