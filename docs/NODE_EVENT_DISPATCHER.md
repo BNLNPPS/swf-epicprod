@@ -168,6 +168,36 @@ exercised.
   is an unfinished stub with no ePIC implementation.
 - The pilot defect the probe died on, above.
 
+**The defect and its fix (2026-09-09).** Two call sites build the
+payload command without passing the pilot's arguments, and the ePIC
+user module dereferences them, so an ePIC event-service job dies before
+any event-service code runs. Both are on the event-service path alone;
+the ordinary payload path passes the arguments and is unaffected, which
+is why production has never seen this.
+
+| where | now | fix |
+|---|---|---|
+| `pilot/control/payloads/eventservice.py:80` | `user.get_payload_command(job)` | `user.get_payload_command(job, args=self.__args)` |
+| `pilot/eventservice/workexecutor/plugins/baseexecutor.py:174` | `user.get_payload_command(job)` | `user.get_payload_command(job, args=self.args)` |
+
+The first mirrors the working line in the generic payload path. It
+reads the parent class's private attribute, which resolves because
+subclass and parent are both named `Executor` and Python's name
+mangling therefore produces the same attribute; that resolution is
+proved by test rather than assumed. The second class already holds
+`self.args` and uses it two lines above.
+
+Verified on 2026-09-09 against the released 3.14.3.3 by driving the
+event-service executor with the user module replaced by a recorder:
+unpatched, the user plugin is handed `args=None`, which is the
+failure; patched, it is handed the pilot arguments object. The pilot's
+own event-service test needs a live PanDA server and is no gate.
+
+The fix is [pilot3 PR 220](https://github.com/PanDAWMS/pilot3/pull/220),
+against the pilot's `next` branch, and goes into our canary pilot in
+CVMFS ([OSG_SUBMISSION.md](OSG_SUBMISSION.md)) so it can be run before
+a release carries it.
+
 The pilot/harness boundary is therefore open (Open questions). The
 rule for settling it is to resolve maximally in house: in the payload
 and the ePIC user module we own, with the smallest change to the pilot
