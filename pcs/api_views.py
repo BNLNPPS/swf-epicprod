@@ -192,13 +192,92 @@ class DatasetViewSet(viewsets.ModelViewSet):
     serializer_class = DatasetSerializer
     authentication_classes = [TunnelAuthentication, SessionAuthentication, TokenAuthentication]
     permission_classes = [IsAuthenticatedOrReadOnly]
-    http_method_names = ['get', 'post', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         instance = serializer.save(created_by=request.user.username)
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+
+    _TAG_FIELDS = ('physics_tag', 'evgen_tag', 'simu_tag', 'reco_tag',
+                   'background_tag', 'sample_name', 'detector_version',
+                   'detector_config')
+
+    def partial_update(self, request, *args, **kwargs):
+        """Edit an edition from the datasets compose page.
+
+        The tags compose the name, so a tag change renames the edition and
+        rebinds its physics configuration. That is allowed while nothing
+        has run under the name: an edition with a PanDA attempt keeps the
+        tags its data was produced under. The former name is recorded in
+        ``metadata['rebind']`` and still resolves, and a request anchored
+        on it follows. A name another edition already holds is refused.
+        """
+        from django.utils import timezone as _tz
+        from monitor_app.epicprod_logging import log_epicprod_action
+        from .models import PandaTasks, ProdRequest
+
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        changing = [f for f in self._TAG_FIELDS
+                    if f in serializer.validated_data
+                    and serializer.validated_data[f] != getattr(instance, f)]
+        old_name = instance.composed_name
+        if changing and PandaTasks.objects.filter(
+                prod_task__dataset=instance, jedi_task_id__isnull=False).exists():
+            return Response(
+                {'detail': f'{old_name} has run under this name; its tags cannot '
+                           f'change. Compose a new edition for the corrected tags.'},
+                status=status.HTTP_409_CONFLICT)
+        if changing:
+            probe = Dataset(
+                scope=instance.scope,
+                detector_version=serializer.validated_data.get(
+                    'detector_version', instance.detector_version),
+                detector_config=serializer.validated_data.get(
+                    'detector_config', instance.detector_config),
+                physics_tag=serializer.validated_data.get('physics_tag', instance.physics_tag),
+                evgen_tag=serializer.validated_data.get('evgen_tag', instance.evgen_tag),
+                simu_tag=serializer.validated_data.get('simu_tag', instance.simu_tag),
+                reco_tag=serializer.validated_data.get('reco_tag', instance.reco_tag),
+                background_tag=serializer.validated_data.get(
+                    'background_tag', instance.background_tag),
+                sample_name=serializer.validated_data.get('sample_name', instance.sample_name),
+                metadata=instance.metadata)
+            new_name = probe.build_dataset_name()
+            holder = Dataset.objects.filter(composed_name=new_name).exclude(pk=instance.pk).first()
+            if holder is not None:
+                return Response(
+                    {'detail': f'{new_name} is already edition {holder.pk}; '
+                               f'edit or use that one.'},
+                    status=status.HTTP_409_CONFLICT)
+            if new_name != old_name:
+                history = list((instance.metadata or {}).get('rebind') or [])
+                history.append({
+                    'from': {f: str(getattr(instance, f)) for f in changing},
+                    'to': {f: str(serializer.validated_data[f]) for f in changing},
+                    'name_before': old_name, 'by': request.user.username,
+                    'at': _tz.now().isoformat(timespec='seconds'),
+                    'reason': 'edited on the datasets compose page'})
+                serializer.validated_data['metadata'] = dict(
+                    serializer.validated_data.get('metadata', instance.metadata) or {},
+                    rebind=history)
+        instance = serializer.save()
+        if changing and instance.composed_name != old_name:
+            for req in ProdRequest.objects.filter(data__physics_config_anchor=old_name):
+                data = dict(req.data or {})
+                data['physics_config_anchor'] = instance.composed_name
+                req.data = data
+                req.save(update_fields=['data'])
+            log_epicprod_action(
+                'web', 'dataset_edit', subject_type='dataset',
+                subject_key=instance.composed_name, username=request.user.username,
+                sublevel='normal', live_default=False,
+                message=f'dataset_edit: {old_name} -> {instance.composed_name}',
+                name_before=old_name, fields=changing)
+        return Response(self.get_serializer(instance).data)
 
     @action(detail=False, methods=['post'], url_path='intake')
     def intake(self, request):
