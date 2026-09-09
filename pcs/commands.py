@@ -10,6 +10,7 @@ Reference repos:
 - eic/simulation_campaign_datasets — CSV input files
 """
 
+import os
 import re
 import shlex
 
@@ -81,9 +82,9 @@ def build_condor_command(task):
     data = cfg.get('data') or {}
 
     env = {}
-    # Beam energies from physics tag
-    env['EBEAM'] = str(physics.get('beam_energy_electron', ''))
-    env['PBEAM'] = str(physics.get('beam_energy_hadron', ''))
+    # Beams from the physics tag, PBEAM carrying the ion isotope the
+    # geometry name needs (payload_beams).
+    env['EBEAM'], env['PBEAM'], _problem = payload_beams(task)
 
     # Detector from dataset
     env['DETECTOR_VERSION'] = ds.detector_version
@@ -211,9 +212,10 @@ def _build_env_string(task):
     cfg = task.get_effective_config()
     physics = ds.physics_tag.parameters
 
+    ebeam, pbeam, _problem = payload_beams(task)
     env = {
-        'EBEAM': str(physics.get('beam_energy_electron', '')),
-        'PBEAM': str(physics.get('beam_energy_hadron', '')),
+        'EBEAM': ebeam,
+        'PBEAM': pbeam,
         'DETECTOR_VERSION': ds.detector_version,
         'DETECTOR_CONFIG': ds.detector_config,
         'JUG_XL_TAG': cfg.get('jug_xl_tag') or '',
@@ -521,6 +523,89 @@ def _chunk_rows(file_col, ext, file_events, events_per_job):
     return [f'{file_col},{ext},{nevents},{i:04d}' for i in range(chunks)]
 
 
+EPIC_CONFIGURATIONS_DIR = os.environ.get(
+    'EPIC_CONFIGURATIONS_DIR', '/data/wenauseic/github/epic/configurations')
+
+
+def known_beam_geometries(detector_config):
+    """The beam-specific geometries the detector repository defines for a
+    configuration, ``{'10x100': ['', 'Au197'], '18x110': ['', 'Au', 'He3', ...]}``:
+    the ion token each beam pair has a compact file for, the empty token
+    the ep one. Read from the repository clone the nightly pull keeps;
+    empty when the clone is absent, which the caller reports as unknown
+    rather than as no geometry."""
+    out = {}
+    try:
+        names = os.listdir(EPIC_CONFIGURATIONS_DIR)
+    except OSError:
+        return out
+    prefix = f'{detector_config.replace("epic_", "")}_'
+    for name in names:
+        if not name.startswith(prefix) or not name.endswith('.yml'):
+            continue
+        body = name[len(prefix):-len('.yml')]
+        beams, _, token = body.partition('_')
+        if 'x' not in beams:
+            continue
+        out.setdefault(beams, []).append(token)
+    return out
+
+
+def payload_beams(task):
+    """The EBEAM and PBEAM the payload composes its detector geometry from.
+
+    The payload picks ``<config>_<EBEAM>x<PBEAM>.xml``, and for an ion beam
+    the geometry name carries the isotope — ``10x100_Au197``, ``5x41_He3``
+    — so PBEAM must, as the production team's lines do (``PBEAM=100_Au197``).
+    A bare energy would select the electron-proton geometry, which exists,
+    and the ion sample would simulate silently against the wrong one.
+
+    The isotope comes, in order, from the line the edition was ingested
+    from (its environment is on the edition), from ``overrides['ion_isotope']``
+    set by hand, and from the detector repository's own geometry names for
+    the beam pair when exactly one ion geometry of the species' element
+    exists. Returns ``(ebeam, pbeam, problem)``; ``problem`` names what
+    readiness must report when an ion beam's isotope cannot be settled,
+    and PBEAM then carries the element so the payload refuses the job at
+    its geometry check rather than running the wrong geometry.
+    """
+    ds = task.dataset
+    physics = (ds.physics_tag.parameters or {}) if ds and ds.physics_tag_id else {}
+    ebeam = str(physics.get('beam_energy_electron') or '').strip()
+    energy = str(physics.get('beam_energy_hadron') or '').strip()
+    species = str(physics.get('beam_species') or 'ep').strip()
+    if species in ('', 'ep') or not species.startswith('e') or not energy:
+        return ebeam, energy, ''
+    element = species[1:]
+
+    ingested = (((ds.metadata or {}).get('ingest') or {}).get('env') or {})
+    line_pbeam = str(ingested.get('PBEAM') or '').strip()
+    if '_' in line_pbeam and line_pbeam.split('_', 1)[0] == energy:
+        return ebeam, line_pbeam, ''
+    by_hand = str(((task.overrides or {}).get('ion_isotope')) or '').strip()
+    if by_hand:
+        return ebeam, f'{energy}_{by_hand}', ''
+    geometries = known_beam_geometries(ds.detector_config)
+    candidates = [t for t in geometries.get(f'{ebeam}x{energy}', [])
+                  if t and t.startswith(element)]
+    if len(candidates) == 1:
+        return ebeam, f'{energy}_{candidates[0]}', ''
+    if not geometries:
+        problem = (f'Ion beam {species}: the isotope for the geometry is not '
+                   f'recorded and the detector repository clone is not '
+                   f'readable to look it up; set ion_isotope on the task '
+                   f'(e.g. Au197).')
+    elif candidates:
+        problem = (f'Ion beam {species} at {ebeam}x{energy}: the detector '
+                   f'repository has {len(candidates)} geometries '
+                   f'({", ".join(candidates)}); set ion_isotope on the task.')
+    else:
+        problem = (f'Ion beam {species} at {ebeam}x{energy}: the detector '
+                   f'repository defines no {element} geometry for this beam '
+                   f'pair; set ion_isotope on the task if the image carries one.')
+    return ebeam, f'{energy}_{element}', problem
+
+
 def _evgen_manifest_from_inputs(task, events_per_job):
     """Resolve the task's matched JLab Rucio EVGEN DID(s) to per-job manifest
     rows ``file,ext,nevents,ichunk``.
@@ -588,8 +673,8 @@ def _evgen_env(task):
         'LOG_RSE': data.get('log_rse') or '',
         'DETECTOR_VERSION': ds.detector_version,
         'DETECTOR_CONFIG': ds.detector_config,
-        'EBEAM': str(physics.get('beam_energy_electron', '')),
-        'PBEAM': str(physics.get('beam_energy_hadron', '')),
+        'EBEAM': payload_beams(task)[0],
+        'PBEAM': payload_beams(task)[1],
         # The beams whose detector geometry the job simulates with, when
         # they are not the physics tag's own: a trial's declared stand-in
         # for a beam pair the image has no compact file for.

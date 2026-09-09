@@ -1474,6 +1474,13 @@ def prodtask_readiness_problems(task):
                 f'Wrong physics tag: this sample is {catalog_beam} but it is '
                 f'tagged {pt.tag_label} ({tag_beam}). Assign the matching '
                 f'physics tag.')
+    # An ion beam's geometry is named with its isotope; a job whose PBEAM
+    # cannot carry it would simulate against the wrong geometry.
+    if task.dataset_id and task.dataset.physics_tag_id:
+        from .commands import payload_beams
+        _e, _p, beam_problem = payload_beams(task)
+        if beam_problem:
+            problems.append(beam_problem)
     return problems
 
 

@@ -528,6 +528,15 @@ per manifest row.
   `events_per_job`, bounded by the task's own override where it carries one:
   `overrides['max_events_per_job']` set by hand, or the `MAX_EVENTS_PER_CHUNK`
   of the legacy line it was ingested from (`commands.events_per_job_override`).
+  The beams the payload composes its geometry from (`<config>_<EBEAM>x<PBEAM>.xml`)
+  come from the physics tag, and for an ion beam PBEAM carries the isotope the
+  geometry name needs, `100_Au197`, as the production team's lines do: from
+  the ingested line's own PBEAM, from `overrides['ion_isotope']`, or from the
+  detector repository's geometry names when the beam pair has exactly one
+  geometry of the species' element (`commands.payload_beams`). An ion beam
+  whose isotope cannot be settled is a readiness problem, and PBEAM then
+  carries the element so the payload refuses at its geometry check rather
+  than simulating against the electron-proton geometry, which exists.
   `outDS` is the physical PanDA attempt name: the PCS composed identity for the
   first try, or that identity plus `.tryN` for later tries; under `noOutput` it is
   the PanDA task name only.
