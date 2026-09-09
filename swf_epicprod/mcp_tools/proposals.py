@@ -10,7 +10,7 @@ interpretation.
 from asgiref.sync import sync_to_async
 
 from monitor_app.mcp import mcp
-from monitor_app.mcp.common import _monitor_url
+from monitor_app.mcp.common import _monitor_url, requires_authority
 
 # The label a human reads for each proposal category.
 ACTION_LABELS = {'propagation': 'campaign propagation',
@@ -175,6 +175,7 @@ async def ai_list_proposals(status: str = 'proposed', limit: int = 50) -> dict:
 
 
 @mcp.tool()
+@requires_authority
 async def ai_decide_proposal(ref: str, decision: str,
                              username: str, quality: str = '') -> dict:
     """
@@ -247,6 +248,7 @@ def _propose_ping_sync(title, due, comment, proposer, owner, note, url,
 
 
 @mcp.tool()
+@requires_authority
 async def ai_propose_ping(title: str, due: str, comment: str, proposer: str,
                           owner: str = '', note: str = '', url: str = '',
                           lead_days: int = 0) -> dict:

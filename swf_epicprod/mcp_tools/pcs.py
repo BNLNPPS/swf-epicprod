@@ -8,6 +8,7 @@ from asgiref.sync import sync_to_async
 from ai.assessments import ai_content_retrieval_guidance
 from monitor_app.epicprod_logging import log_epicprod_action
 from monitor_app.mcp import mcp
+from monitor_app.mcp.common import requires_authority
 
 
 def _list_tags_sync(tag_type, category=None, status=None, creator=None,
@@ -485,6 +486,7 @@ def _dataset_intake_sync(*, source_location, source_kind, scope, stage,
 
 
 @mcp.tool()
+@requires_authority
 async def pcs_dataset_intake(
     source_location: str,
     source_kind: str = 'csv_manifest',
@@ -730,6 +732,7 @@ def _prodtask_set_status_sync(task_name, new_status):
 
 
 @mcp.tool()
+@requires_authority
 async def pcs_prodtask_intake(
     public_catalog_issue: int = None,
     public_catalog_csv_path: str = None,
@@ -776,6 +779,7 @@ async def pcs_prodtask_intake(
 
 
 @mcp.tool()
+@requires_authority
 async def pcs_prodtask_link_input(
     task_name: str,
     did: str = None,
@@ -797,6 +801,7 @@ async def pcs_prodtask_link_input(
 
 
 @mcp.tool()
+@requires_authority
 async def pcs_prodtask_set_status(task_name: str, status: str) -> dict:
     """
     Transition a ProdTask to a new lifecycle state.
