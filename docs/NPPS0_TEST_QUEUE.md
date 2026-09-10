@@ -95,7 +95,15 @@ Each step runs here before it is asked of any other queue. In order:
    payload outside the container unless the executor is the ATLAS Ray
    one (`pilot/util/container.py`). Both facts are recorded in
    [NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md); the first is
-   a CRIC change on the queue, the second shapes the harness.
+   a CRIC change on the queue, the second shapes the harness. The
+   round trip followed the same evening under `pilot3-3.14.3.3-epic3`,
+   built by `tools/pilot/build-canary-pilot.sh` and run from the
+   configuration directory with `PILOTURL=local`: ten ranges acquired,
+   processed, staged to S3 and done on the server (task 39579). The
+   facts it established and the pilot fixes it needed
+   ([pilot3 PR 221](https://github.com/PanDAWMS/pilot3/pull/221)) are
+   in [NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md) § The round
+   trip.
 3. **The pilot/harness boundary, settled in house.** Both shapes of
    the boundary ([NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md)
    § Open questions) can be built and run on this host: an ePIC

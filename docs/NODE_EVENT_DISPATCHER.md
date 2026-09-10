@@ -197,6 +197,44 @@ server failed it on the `jobseed` gate above and cancelled the job's
 one range (the probe task declared one event; the later probes declare
 100, ten ranges of ten).
 
+**The round trip (2026-09-09, task 39579, job 2722565).** With a
+payload that speaks the channel (swf-monitor
+`scripts/es-probe/es_range_client.py`) and two pilot fixes, the pilot
+acquired ten ranges from the server, the payload processed and reported
+each, the pilot tarred and staged the outputs to the queue's S3 store
+and reported the ranges finished: all ten reached status done, the job
+record carries ten events. Facts established on the way:
+
+- The released pilot cannot obtain a range from a server with the
+  refactored API (panda-server 1.0.0): its event service communicator
+  calls `getEventRanges` and `updateEventRanges`, which no longer exist
+  ("method getEventRanges is forbidden"). The communicator is ported to
+  `api/v1/event/acquire_event_ranges` and `update_event_ranges` on the
+  production team's pilot branch, with the api/v1 response envelope.
+- The generic executor's event service stage-out raised a TypeError on
+  every call since the `es_data.py` refactor of 2026-02 (positional
+  argument to a keyword-only constructor); fixed on the same branch.
+  Both fixes are [pilot3 PR 221](https://github.com/PanDAWMS/pilot3/pull/221),
+  independent of PR 220.
+- The server's bulk `update_event_ranges` builds its response as a set
+  literal (`event_api.py`), so the response fails to serialize after the
+  database update has landed; the pilot logs a warning and the ranges
+  are updated. A one-line server fix.
+- The pilot hands the channel to a non-Athena payload by string match:
+  the payload command must contain `PILOT_EVENTRANGECHANNEL` (the
+  pilot then prefixes the export); any other command is given the
+  AthenaMP `--preExec` form.
+- Event service stage-out needs the `es_events` activity declared on
+  the queue with a copytool that reaches the store; undeclared, the
+  pilot forces the `objectstore` copytool, a Rucio upload, which a
+  non-RSE store refuses.
+- A `noInput` task never reaches a finished job: the server's
+  post-processing looks for done ranges on files of type `input` only
+  (`job_complex_module.py`, `ppEventServiceJob`), so a pseudo-input
+  task ends "all event ranges failed" with every range done. The
+  production shape, ranges over the job's EVGEN input files, is the
+  shape that finishes; it is the next probe.
+
 **The defect and its fix (2026-09-09).** Two call sites build the
 payload command without passing the pilot's arguments, and the ePIC
 user module dereferences them, so an ePIC event-service job dies before
