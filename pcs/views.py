@@ -3466,6 +3466,14 @@ def _campaign_assembly_context(campaign):
     }
 
 
+def user_view_home(request):
+    """The user view home: the reduced epicprod face's landing page. Its
+    content is not yet specified; the page carries the user-view nav
+    and nothing else."""
+    return render(request, 'pcs/user_view_home.html',
+                  {'nav_mode': 'production'})
+
+
 def pcs_campaign_plan(request):
     """The campaign plan list (CAMPAIGN_DELIVERY.md surface 1): one
     active or future campaign's physics configurations with the
