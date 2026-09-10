@@ -4750,14 +4750,14 @@ def dataset_expected_events_set(entries, comment, *, changed_by='',
     target (source must then be empty). One append-only history entry
     lands on the identity's head row — first by (block, pk) — under
     ``metadata['expected_events']['history']``: value, previous, source,
-    previous_source when it changed, comment (required), changed_by,
+    previous_source when it changed, comment (optional), changed_by,
     changed_at. The columns mirror the newest entry on every block row.
 
     Exactly one ``dataset_expected_events_set`` action-stream event is
     logged per call, carrying the changed count and the comment — never
     one event per dataset. Unknown names and no-op sets are counted and
     returned, never silently dropped. Raises ServiceError on an invalid
-    source, a negative value, an empty comment, or malformed entries.
+    source, a negative value, or malformed entries.
 
     ``origin`` marks an AI-proposed change approved by a human, as in
     ``dataset_propagation_set``.
@@ -4765,10 +4765,8 @@ def dataset_expected_events_set(entries, comment, *, changed_by='',
     from monitor_app.epicprod_logging import log_epicprod_action
     from monitor_app.models import UserPreference
 
+    # The comment is optional (2026-09-10); an empty one is recorded empty.
     comment = (comment or '').strip()
-    if not comment:
-        raise ServiceError(
-            'comment is required on every expected-events change')
     if not entries:
         raise ServiceError('no entries supplied')
     cleaned = []

@@ -360,10 +360,10 @@ class DatasetViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='expected-events')
     def expected_events(self, request):
-        """Single or bulk expected-events target set with required comment.
+        """Single or bulk expected-events target set, comment optional.
 
         Body: ``entries`` (list of ``{name, expected_events, source}``;
-        ``expected_events: null`` clears), ``comment`` (required). Thin
+        ``expected_events: null`` clears), ``comment`` (optional). Thin
         wrapper over ``services.dataset_expected_events_set``; one
         action-stream event per call. CAMPAIGN_DELIVERY.md extension 1.
         """
