@@ -444,6 +444,7 @@
             </div>
         </div>
     </div>
+    {% if may_set_priority %}
     <div class="card mb-2">
         <div class="card-body py-2">
             <div class="d-flex align-items-center flex-wrap gap-2">
@@ -460,6 +461,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
     <!-- Row selection is table infrastructure: a plain line right above the table, not a panel. -->
     <div class="d-flex align-items-center gap-2 mb-1">
         <button type="button" id="plan-select-all" class="btn btn-sm btn-secondary">Select all</button>
@@ -501,7 +503,7 @@
                 <td>{% if r.requestors %}{{ r.requestors|join:", " }}{% endif %}</td>
                 <td class="text-end text-nowrap plan-priority-cell" data-current="{{ r.priority|default_if_none:'' }}" data-requests="{{ r.request_ids|join:',' }}">
                     <span class="plan-priority-value">{% if r.priority is not None %}{{ r.priority }}{% endif %}</span>
-                    {% if r.request_ids %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit plan-priority-edit" title="Set the priority of this configuration's request{{ r.request_ids|length|pluralize }}" aria-label="Set priority"><i class="bi bi-pencil-square"></i></button>{% else %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit plan-edit-disabled" disabled title="No request is anchored to this configuration; priority is a property of requests" aria-label="No request to set priority on"><i class="bi bi-pencil-square"></i></button>{% endif %}
+                    {% if may_set_priority %}{% if r.request_ids %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit plan-priority-edit" title="Set the priority of this configuration's request{{ r.request_ids|length|pluralize }}" aria-label="Set priority"><i class="bi bi-pencil-square"></i></button>{% else %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit plan-edit-disabled" disabled title="No request is anchored to this configuration; priority is a property of requests" aria-label="No request to set priority on"><i class="bi bi-pencil-square"></i></button>{% endif %}{% endif %}
                 </td>
                 <td class="text-end text-nowrap plan-target-cell" data-current="{{ r.expected_events|default_if_none:'' }}" data-suggest="{{ r.requested_events|default_if_none:'' }}">
                     <span class="plan-target-value">{% if r.expected_events is not None %}{% if r.expected_source == 'included' %}<strong>{{ r.expected_events }}</strong>{% else %}{{ r.expected_events }}{% endif %} <span class="text-muted">· {{ r.expected_source }}</span>{% elif r.requested_events is not None %}{{ r.requested_events }} <span class="text-muted">· requested</span>{% else %}<span class="swf-no-target">no target</span>{% endif %}</span>
@@ -542,6 +544,7 @@
     // Speed filling: the ticked set is the apply set — fully decoupled
     // from the filter, so any hand-adjusted selection works.
     const fillValue = document.getElementById('plan-fill-value');
+    // Absent for a person who may not set priorities (docs/AUTHORITY.md).
     const fillPriority = document.getElementById('plan-fill-priority');
     const prioritySaveBtn = document.getElementById('plan-priority-save');
     const priorityStatusEl = document.getElementById('plan-priority-save-status');
@@ -557,13 +560,13 @@
         const n = tickedRows().length;
         document.querySelectorAll('.plan-selected-count').forEach(function (el) { el.textContent = n; });
         saveBtn.disabled = n === 0 || fillValue.value.trim() === '';
-        prioritySaveBtn.disabled = n === 0 || fillPriority.value === '';
+        if (prioritySaveBtn) prioritySaveBtn.disabled = n === 0 || fillPriority.value === '';
     }
     document.addEventListener('change', function (event) {
         if (event.target.classList.contains('plan-tick')) refreshSelection();
     });
     fillValue.addEventListener('input', refreshSelection);
-    fillPriority.addEventListener('change', refreshSelection);
+    if (fillPriority) fillPriority.addEventListener('change', refreshSelection);
     document.getElementById('plan-select-all').addEventListener('click',
         function () {
             ticks().forEach(function (t) { t.checked = true; });
@@ -756,7 +759,7 @@
     // Fill all selected (priority): the chosen priority goes to every
     // anchored request of every ticked row, no comment, then the page
     // reloads. Rows without an anchored request are reported, not written.
-    prioritySaveBtn.addEventListener('click', function () {
+    if (prioritySaveBtn) prioritySaveBtn.addEventListener('click', function () {
         const rows = tickedRows();
         const raw = fillPriority.value;
         priorityStatusEl.textContent = '';

@@ -158,7 +158,7 @@
           </td>
           <td style="width: 12rem; max-width: 12rem; white-space: normal; overflow-wrap: anywhere;">{{ q.nevents }}</td>
           <td class="text-nowrap pcs-qf-priority" style="position:relative;" data-pk="{{ q.pk }}" data-current="{{ q.data.priority|default_if_none:'' }}">
-            <span class="pcs-qf-priority-value">{{ q.data.priority|default:"unset" }}</span>{% if user.is_authenticated %}
+            <span class="pcs-qf-priority-value">{{ q.data.priority|default:"unset" }}</span>{% if may_set_priority %}
             <button type="button" class="btn btn-link btn-sm p-0 ms-1 pcs-qf-priority-edit" title="Set the priority for this request" aria-label="Set priority"><i class="bi bi-pencil-square"></i></button>{% endif %}
           </td>
           <td style="max-width: 18rem;">{{ q.benchmark|linebreaksbr }}</td>

@@ -1014,6 +1014,13 @@ def prod_request_compose(request):
                     'contact_email', 'repository', 'intended_use',
                     'background_mode', 'background_tag', 'background_other')
     }
+    # A priority on a new request is a PAC's to set (AUTHORITY.md, The
+    # PAC role); the form shows the field only to one, so a value from
+    # anyone else is refused rather than dropped.
+    if request.data.get('priority') not in (None, '', 0, '0'):
+        refusal = _priority_refusal(request)
+        if refusal is not None:
+            return refusal
     try:
         result = services.prodrequest_compose(
             created_by=username,
@@ -1056,6 +1063,30 @@ def physics_configs_requestors(request):
     return Response(result, status=status.HTTP_200_OK)
 
 
+def _priority_refusal(request):
+    """The refusal for a person who may not set priorities, or None.
+
+    Priorities are set by the physics analysis coordinators and by
+    operations accounts (swf-monitor docs/AUTHORITY.md, The PAC role). A
+    person is a request carrying a session or the tunnel identity; a
+    bearer-token caller carries no person and is left to the view's
+    authentication, as on every other write.
+    """
+    from monitor_app.authority import PRIORITY_REFUSAL, may_set_priority
+    from monitor_app.middleware import is_tunnel_request
+
+    user = request.user
+    is_person = bool(getattr(request, 'session', None)
+                     and request.session.session_key) \
+        or is_tunnel_request(request)
+    if not is_person and getattr(request, 'auth', None) is not None:
+        return None
+    if may_set_priority(user.username):
+        return None
+    return Response({'error': PRIORITY_REFUSAL, 'authority': 'refused'},
+                    status=status.HTTP_403_FORBIDDEN)
+
+
 @api_view(['POST'])
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])
@@ -1065,6 +1096,9 @@ def questionnaire_priority(request, pk):
     2, 3, or null/0 to clear), ``comment`` (optional). Thin wrapper over
     ``services.questionnaire_priority_set``; one action-stream event per
     call. The request list's priority control calls this."""
+    refused = _priority_refusal(request)
+    if refused is not None:
+        return refused
     try:
         result = services.questionnaire_priority_set(
             pk, request.data.get('priority'),
@@ -1086,6 +1120,9 @@ def prod_request_priority(request, pk):
     ``services.prod_request_priority_set``; one action-stream event per
     call. The campaign plan's per-row priority control and the request
     list's priority control both call this, once per request."""
+    refused = _priority_refusal(request)
+    if refused is not None:
+        return refused
     try:
         result = services.prod_request_priority_set(
             pk, request.data.get('priority'),
