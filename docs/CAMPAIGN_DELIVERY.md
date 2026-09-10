@@ -173,7 +173,7 @@ allows and states the coverage it does not reach.
 `swf_epicprod/analytics/completion.py`) proposes a target for every PC
 in the campaign that has none and writes the proposals through the
 expected-events service with source `derived`, one service call per
-rule, the rule and its evidence in the required comment. Existing
+rule, the rule and its evidence in the comment. Existing
 targets of any source are never overwritten; re-running is idempotent.
 Rules, in precedence:
 

@@ -3211,6 +3211,7 @@ def _campaign_plan_state(campaign, query, pc_view):
     filters."""
     heads = []
     requested = {}
+    request_ids = {}
     if campaign is not None:
         heads = list(
             Dataset.objects.filter(campaign=campaign)
@@ -3228,6 +3229,9 @@ def _campaign_plan_state(campaign, query, pc_view):
             values = [r.nevents for r in reqs if r.nevents]
             if values:
                 requested[name] = max(values)
+            # The requests whose priority the row's priority is the best
+            # of; the row's priority control writes them.
+            request_ids[name] = [r.pk for r in reqs]
 
     # Completion join (CAMPAIGN_DELIVERY.md, Completion): per-PC rows
     # from the shared campaign-completion cached product — the panel's
@@ -3278,7 +3282,10 @@ def _campaign_plan_state(campaign, query, pc_view):
             'process': params.get('process', ''),
             'beam': f'{be}x{bh}' if be and bh else (be or bh),
             'q2': params.get('q2_range', ''),
-            'generator': ' '.join(p for p in (generator, version) if p),
+            # A generator recorded as unrecorded carries an unrecorded
+            # version too; the row says it once.
+            'generator': (' '.join(p for p in (generator, version) if p)
+                          if version != generator else generator),
             'sample': head.sample_name,
             'pc_label': (head.physics_config.label
                          if head.physics_config_id else ''),
@@ -3290,6 +3297,7 @@ def _campaign_plan_state(campaign, query, pc_view):
             'expected_events': head.expected_events,
             'expected_source': head.expected_events_source,
             'requested_events': requested.get(head.composed_name),
+            'request_ids': request_ids.get(head.composed_name, []),
             'edition': head.detector_version,
             'withdrawn': head.detector_version in withdrawn_marks,
         })
@@ -3313,9 +3321,15 @@ def _campaign_plan_state(campaign, query, pc_view):
                 by_pc[label] = r
         rows = list(by_pc.values())
 
-    rows.sort(key=lambda r: (
-        (int(r['physics'][1:]) if r['physics'][1:].isdigit() else 0)
-        if r['physics'] else 0, r['sample']))
+    # Default order: the physics configuration's number, the table's
+    # first column, so the page opens sorted by what it lists and the
+    # table's own sort arrow says so.
+    def _label_number(label):
+        digits = ''.join(ch for ch in (label or '') if ch.isdigit())
+        return int(digits) if digits else 0
+
+    rows.sort(key=lambda r: (_label_number(r['pc_label']),
+                             _label_number(r['physics']), r['sample']))
 
     rows_all = rows
     facets = _plan_facets(has_completion=bool(completion_by_pc))
@@ -3463,19 +3477,11 @@ def _campaign_assembly_context(campaign):
 
 
 def user_view_home(request):
-    """The user view home: the reduced epicprod face's landing page. Its
-    content is not yet specified; the page carries the user-view nav
-    and nothing else."""
-    from monitor_app.cached_product import get_product
-    from monitor_app.views import _campaign_completion_lines
-    summary_product = get_product(
-        'prod_hub_campaign_completion', _campaign_completion_lines,
-        ttl_seconds=600)
-    return render(request, 'pcs/user_view_home.html', {
-        'nav_mode': 'production',
-        'campaign_summary_lines': summary_product['value'] or [],
-        'campaign_summary_built_at': summary_product['built_at'],
-    })
+    """The user view home is the production root in the user view,
+    https://epic-devcloud.org/prod/?user_view=1 (swf-monitor
+    docs/USER_VIEW.md); this earlier address redirects there."""
+    from django.urls import reverse
+    return redirect(reverse('monitor_app:prod_hub') + '?user_view=1')
 
 
 def pcs_campaign_plan(request):
@@ -3489,9 +3495,10 @@ def pcs_campaign_plan(request):
     view instead (CONTINUOUS_PRODUCTION.md, Campaign assembly).
     Read-open; deciding requires login.
     """
+    # Current campaign first, the future ones to its right.
     plan_campaigns = list(
         Campaign.objects.filter(lifecycle__in=('current', 'future'))
-        .order_by('-name'))
+        .order_by('name'))
     selected_name = (request.GET.get('campaign') or '').strip()
     campaign = None
     if selected_name:
@@ -3504,8 +3511,12 @@ def pcs_campaign_plan(request):
     if campaign is not None and campaign not in plan_campaigns:
         plan_campaigns.append(campaign)
 
-    view_mode = 'pc' if (request.GET.get('view') or '') == 'pc' else 'edition'
-    state = _campaign_plan_state(campaign, request.GET, view_mode == 'pc')
+    # One row per physics configuration is the page (Torre, 2026-09-10:
+    # "the things in this table don't give a shit about the .02"). The
+    # per-edition rows are no longer a view of this page; the code path
+    # stays for the state builder's other callers.
+    view_mode = 'pc'
+    state = _campaign_plan_state(campaign, request.GET, True)
     withdrawn_editions = (services.campaign_withdrawn_editions(campaign.name)
                           if campaign is not None else {})
     campaign_editions = sorted({r.get('edition') for r in state['rows_all']
@@ -3598,8 +3609,8 @@ def pcs_campaign_plan(request):
         'withdraw_operable': withdraw_operable,
         'active_filters': state['active_filters'],
         'view_mode': view_mode,
-        'view_edition_url': url_with(view=''),
-        'view_pc_url': url_with(view='pc'),
+        'view_edition_url': url_with(view='edition'),
+        'view_pc_url': url_with(view=''),
         'plan_campaigns': plan_campaigns,
         # The user view (?user_view=1) is the plan without the delivery
         # map; the embed is neither built nor rendered there.
@@ -3616,6 +3627,7 @@ def pcs_campaign_plan(request):
         'with_target': with_target,
         'without_target': len(rows_all) - with_target,
         'target_total': target_total,
+        'target_total_m': f'{target_total / 1e6:.1f}',
     })
 
 
