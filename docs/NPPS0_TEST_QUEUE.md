@@ -41,21 +41,22 @@ directory when a version is named, and `pilot3.tar.gz` there by
 default. The URL is fetched with curl, so any scheme curl serves is
 admissible, `file://` included; `--piloturl local` skips the fetch and
 extracts a `pilot3.tar.gz` already present in the run directory. The
-pass script passes no pilot URL, so the queue runs the production
-default until one is added.
+pass script sets the URL in one variable, `PILOTURL`, and passes it
+as `--piloturl`.
 
 Three pilots are therefore one line apart:
 
-- the production default, with nothing added;
-- the canary pilot,
-  `--piloturl file:///cvmfs/eic.opensciencegrid.org/panda/pilot/canary/pilot3.tar.gz`
+- the production default: `PILOTURL` empty;
+- the canary pilot, the setting in the script:
+  `file:///cvmfs/eic.opensciencegrid.org/panda/pilot/canary/pilot3.tar.gz`,
   or a named tarball in that directory: the pilot production
   operations publishes there ([OSG_SUBMISSION.md](OSG_SUBMISSION.md)
   § Our canary pilot directory). This queue is the recorded consumer
   of that directory;
-- a pilot built on the development host and copied into the run
-  directory, with `--piloturl local`: no publication, for iterating on
-  a change before it goes to the canary directory.
+- a pilot built by hand: `PILOTURL=local`, with the tarball placed as
+  `pilot3.tar.gz` in the host's configuration directory, from which
+  the pass script copies it into each run directory. No publication,
+  for iterating on a change before it goes to the canary directory.
 
 `PILOTVERSION` inside a patched tarball stays the base version; the
 tarball name carries the patch.

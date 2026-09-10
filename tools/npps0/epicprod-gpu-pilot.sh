@@ -19,6 +19,13 @@ WRAPPER=/cvmfs/eic.opensciencegrid.org/panda/bnlpanda.runpilot2-wrapper.sh
 WORKBASE="$HOME/pilot-work"
 KEEP_RUNS=5
 
+# Pilot selection (docs/NPPS0_TEST_QUEUE.md, Choosing the pilot). The
+# wrapper fetches this URL with curl; empty runs its production default
+# (pilot3.tar.gz in the production pilot directory); 'local' runs a
+# pilot3.tar.gz taken from $CONFDIR into the run directory, for a pilot
+# built by hand and never published.
+PILOTURL=file:///cvmfs/eic.opensciencegrid.org/panda/pilot/canary/pilot3.tar.gz
+
 export PANDA_CONFIG_ROOT="$HOME/.pathena"
 export X509_USER_PROXY="$HOME/creds/longproxy-for-rucio"
 export EVGEN_X509_PROXY="$HOME/creds/eicprod-proxy-for-jlab"
@@ -63,6 +70,14 @@ if [[ -f "$CONFDIR/agis_ddmendpoints.json" ]]; then
         cp "$CONFDIR/agis_ddmendpoints.json" "$RUNDIR/$f"
     done
 fi
+if [[ "$PILOTURL" == local ]]; then
+    if [[ -f "$CONFDIR/pilot3.tar.gz" ]]; then
+        cp "$CONFDIR/pilot3.tar.gz" "$RUNDIR/pilot3.tar.gz"
+    else
+        echo "ERROR: PILOTURL=local but $CONFDIR/pilot3.tar.gz is missing" >&2
+        exit 1
+    fi
+fi
 
 # The wrapper force-appends its own --storagedata-url after all
 # passthrough arguments, so the storage catalog cannot be overridden
@@ -86,4 +101,5 @@ exec bash "$RUNDIR/wrapper.sh" \
     --pilot-user epic \
     --url https://pandaserver01.sdcc.bnl.gov -p 25443 \
     --rucio-host https://nprucio01.sdcc.bnl.gov:443 \
-    --getjobrequests 30
+    --getjobrequests 30 \
+    ${PILOTURL:+--piloturl "$PILOTURL"}
