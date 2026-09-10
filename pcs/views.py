@@ -3272,6 +3272,13 @@ def _campaign_plan_state(campaign, query, pc_view):
         rows.append({
             'priority': comp.get('priority'),
             'delivered_events': comp.get('delivered_events'),
+            # The per-edition split, shown when delivery is spread across
+            # editions or a withdrawn edition holds a share.
+            'delivered_split': [
+                e for e in (comp.get('delivered_editions') or [])
+            ] if (len(comp.get('delivered_editions') or []) > 1
+                  or any(e.get('withdrawn')
+                         for e in (comp.get('delivered_editions') or []))) else [],
             'completion_pct': (round(100 * comp['completion'])
                                if comp.get('completion') is not None
                                else None),

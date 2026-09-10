@@ -170,7 +170,10 @@ def collect_files(campaigns, limit_files=0):
 
 
 def location_map(campaigns):
-    """JLab dataset path -> (campaign, pc label), from task outputs."""
+    """JLab dataset path -> (campaign, pc label, edition), from task
+    outputs; the edition is the task's dataset edition (its detector
+    version), so the record can state a configuration's delivery per
+    edition where it is spread across several."""
     from pcs.models import ProdTask
 
     mapping = {}
@@ -180,12 +183,40 @@ def location_map(campaigns):
         if not (task.dataset_id and task.dataset.physics_config_id):
             continue
         pc = task.dataset.physics_config.label
+        edition = task.dataset.detector_version or ''
         for output in task.outputs:
             did = str(output.get('did') or '')
             path = did.split(':', 1)[-1].strip('/')
             if path:
-                mapping[path] = (task.campaign.name, pc)
+                mapping[path] = (task.campaign.name, pc, edition)
     return mapping
+
+
+def _add_counts(slot, counts):
+    slot['files'] += counts['files']
+    slot['bytes'] += counts['bytes']
+    slot['events'] += counts.get('events', 0)
+    slot['unmeasured'] += counts.get('unmeasured', 0)
+
+
+def _new_slot():
+    return {'files': 0, 'bytes': 0, 'events': 0, 'unmeasured': 0,
+            'editions': {}}
+
+
+def _add_slot(slot, counts, edition=None):
+    """Add ``counts`` to ``slot`` and, under ``edition`` (or each of the
+    counts' own editions), to the per-edition split."""
+    _add_counts(slot, counts)
+    if edition is not None:
+        sub = slot['editions'].setdefault(
+            edition, {'files': 0, 'bytes': 0, 'events': 0, 'unmeasured': 0})
+        _add_counts(sub, counts)
+        return
+    for ed, sub_counts in (counts.get('editions') or {}).items():
+        sub = slot['editions'].setdefault(
+            ed, {'files': 0, 'bytes': 0, 'events': 0, 'unmeasured': 0})
+        _add_counts(sub, sub_counts)
 
 
 def expected_map(campaigns):
@@ -237,15 +268,10 @@ def build_snaps(campaigns, limit_files=0):
                 key = (family, location)
                 unmapped[key] = unmapped.get(key, 0) + counts['files']
                 continue
-            campaign, pc = mapped
+            campaign, pc, edition = mapped
             slot = per_day_pc.setdefault(day, {}).setdefault(
-                campaign, {}).setdefault(
-                    pc, {'files': 0, 'bytes': 0, 'events': 0,
-                         'unmeasured': 0})
-            slot['files'] += counts['files']
-            slot['bytes'] += counts['bytes']
-            slot['events'] += counts.get('events', 0)
-            slot['unmeasured'] += counts.get('unmeasured', 0)
+                campaign, {}).setdefault(pc, _new_slot())
+            _add_slot(slot, counts, edition)
 
     denominators_as_of = timezone.now().isoformat()
     snaps = []
@@ -268,13 +294,8 @@ def build_snaps(campaigns, limit_files=0):
         for campaign, leaves in day_leaves.items():
             camp_state = cumulative.setdefault(campaign, {})
             for pc, counts in leaves.items():
-                slot = camp_state.setdefault(
-                    pc, {'files': 0, 'bytes': 0, 'events': 0,
-                         'unmeasured': 0})
-                slot['files'] += counts['files']
-                slot['bytes'] += counts['bytes']
-                slot['events'] += counts['events']
-                slot['unmeasured'] += counts['unmeasured']
+                slot = camp_state.setdefault(pc, _new_slot())
+                _add_slot(slot, counts)
         # The daily arrivals record: per PC, the day's registered
         # arrivals (the bumps) and the running cumulative — both on the
         # registered basis throughout, so the series never mixes bases
@@ -300,6 +321,16 @@ def build_snaps(campaigns, limit_files=0):
                               'cum_files': counts['files'],
                               'cum_bytes': counts['bytes'],
                               'unmeasured_files': counts['unmeasured'],
+                              # The cumulative split by edition, for a
+                              # configuration delivered across several
+                              # (and for a withdrawn edition's share,
+                              # which the completion readers leave out).
+                              'editions': {
+                                  ed: {'events': sub['events'],
+                                       'files': sub['files'],
+                                       'bytes': sub['bytes']}
+                                  for ed, sub in sorted(
+                                      counts['editions'].items())},
                               'expected': exp, 'tier': tier}
                 totals['configs'] += 1
                 totals['arrived_files'] += arrived

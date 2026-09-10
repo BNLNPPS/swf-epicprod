@@ -76,8 +76,12 @@ resolution on Eastern-Time calendar days. Reconstruction is the
 production method: each build rebuilds the record in full, so
 historical and current days are one record with one producer. Snaps
 carry capture policy `delivery-daily-v1`, one per complete ET day,
-stamped at day end. The placement split does not reconstruct (no
-lock-state history) and is deferred with the disk/tape metric.
+stamped at day end. Each leaf also carries the cumulative split by
+edition (events, files, bytes per detector version, attributed through
+the producing task's dataset), so a configuration delivered across
+several editions can be stated per edition. The placement split does
+not reconstruct (no lock-state history) and is deferred with the
+disk/tape metric.
 
 ### Nightly production
 
@@ -165,7 +169,12 @@ The campaign's completion is stated from the recorded targets against
 delivered events, per physics configuration, and rolled up. Where the
 intake supplies no target, the record's own evidence supplies one, so
 that the statement covers as much of the campaign as the evidence
-allows and states the coverage it does not reach.
+allows and states the coverage it does not reach. A withdrawn edition
+(test-only output, marked on the campaign) keeps its share in the daily
+record but leaves the delivered counts; the campaign plan shows the
+per-edition split beneath a configuration's delivered total when the
+delivery is spread across editions or a withdrawn edition holds a
+share, the withdrawn line struck through.
 
 ### Derived targets
 

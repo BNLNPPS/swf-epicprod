@@ -507,7 +507,7 @@
                     <span class="plan-target-value">{% if r.expected_events is not None %}{% if r.expected_source == 'included' %}<strong>{{ r.expected_events }}</strong>{% else %}{{ r.expected_events }}{% endif %} <span class="text-muted">· {{ r.expected_source }}</span>{% elif r.requested_events is not None %}{{ r.requested_events }} <span class="text-muted">· requested</span>{% else %}<span class="swf-no-target">no target</span>{% endif %}</span>
                     <button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit" title="Set the target for this configuration" aria-label="Set target"><i class="bi bi-pencil-square"></i></button>
                 </td>
-                <td class="text-end">{% if r.delivered_events is not None %}{{ r.delivered_events }}{% endif %}</td>
+                <td class="text-end text-nowrap" data-order="{{ r.delivered_events|default_if_none:'-1' }}">{% if r.delivered_events is not None %}{{ r.delivered_events }}{% endif %}{% for e in r.delivered_split %}<br><small class="text-muted">{% if e.withdrawn %}<s title="Edition {{ e.edition }} is withdrawn (test only); not counted">{{ e.edition }}: {{ e.events }}</s>{% else %}{{ e.edition }}: {{ e.events }}{% endif %}</small>{% endfor %}</td>
                 <td class="text-end">{% if r.completion_pct is not None %}{{ r.completion_pct }}%{% endif %}</td>
                 <td>{% if r.withdrawn %}<span class="swf-no-target" title="Edition {{ r.edition }} is withdrawn — test only; use the campaign's other editions">withdrawn: test only</span>{% else %}{{ r.status }}{% endif %}</td>
                 <td>{% if r.propagation != 'continue' %}<span class="badge bg-secondary">{{ r.propagation }}</span>{% else %}{{ r.propagation }}{% endif %}</td>

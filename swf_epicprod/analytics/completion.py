@@ -295,11 +295,31 @@ def campaign_completion(campaign_name):
                 head.physics_config.label,
                 tag.category.name if tag and tag.category_id else 'Uncategorized')
 
+    # A withdrawn edition's outputs are test-only and leave the counts
+    # (pcs.services.campaign_withdrawn_editions); the daily record keeps
+    # every edition's share, so the reading applies the mark.
+    from pcs.services import campaign_withdrawn_editions
+    withdrawn = campaign_withdrawn_editions(campaign_name)
+
     pcs = []
     for pc in sorted(category_of):
         leaf = mine.get(pc) or {}
-        delivered = int(leaf.get('events') or 0)
-        files = int(leaf.get('cum_files') or 0)
+        editions = leaf.get('editions') or {}
+        delivered_editions = [
+            {'edition': ed, 'events': int(sub.get('events') or 0),
+             'files': int(sub.get('files') or 0),
+             'withdrawn': ed in withdrawn}
+            for ed, sub in sorted(editions.items())
+            if int(sub.get('events') or 0) or int(sub.get('files') or 0)]
+        if editions:
+            delivered = sum(e['events'] for e in delivered_editions
+                            if not e['withdrawn'])
+            files = sum(e['files'] for e in delivered_editions
+                        if not e['withdrawn'])
+        else:
+            # A record built before the split carried only the totals.
+            delivered = int(leaf.get('events') or 0)
+            files = int(leaf.get('cum_files') or 0)
         target = targets.get(pc)
         pj = panda.get(pc)
         in_flight = bool(pj and (pj['states'] & IN_FLIGHT_STATES))
@@ -320,6 +340,7 @@ def campaign_completion(campaign_name):
             'pc': pc, 'category': category_of[pc],
             'priority': priorities.get(pc),
             'delivered_events': delivered, 'files': files,
+            'delivered_editions': delivered_editions,
             'bytes': int(leaf.get('cum_bytes') or 0),
             'unmeasured_files': int(leaf.get('unmeasured_files') or 0),
             'target': target[0] if target else None,
