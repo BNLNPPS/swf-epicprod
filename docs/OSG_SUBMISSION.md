@@ -307,14 +307,19 @@ flag gone within 5 minutes, revision 9739 visible on this host 8
 minutes after the flag with the file, the symlink and the checksum as
 written.
 
-**What consumes it is not recorded.** A queue takes the canary pilot
-only through the mechanisms above — a CRIC `pilot_url` on the queue or
-a `--piloturl` in a submit template — and neither is in this
-repository. `NERSC_Perlmutter_epic` in particular carries pilot
-manager `local` and an environment pointing into the NERSC project
-software area, which is the site's own harvester installation, so on
-the queue record alone a canary pilot does not reach Perlmutter.
-Establishing and recording that route is open work.
+**What consumes it.** A queue takes the canary pilot only through the
+mechanisms above, a CRIC `pilot_url` on the queue or a `--piloturl`
+where the wrapper is invoked. One consumer is in this repository:
+`BNL_NPPS_GPU`, whose pass script selects the pilot with `--piloturl`
+and takes the canary tarball by that route
+([NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md) § Choosing the pilot);
+a canary pilot runs there first. For the
+production queues neither mechanism is in this repository.
+`NERSC_Perlmutter_epic` in particular carries pilot manager `local`
+and an environment pointing into the NERSC project software area,
+which is the site's own harvester installation, so on the queue
+record alone a canary pilot does not reach Perlmutter. Establishing
+and recording that route is open work.
 
 ### Excluding what delivers nothing
 

@@ -6,7 +6,10 @@ single-host arrangement: the standard BNL pilot wrapper from CVMFS,
 run in pull mode under a launcher loop. No Harvester and no compute
 element. The host sits outside the SCDF network perimeter, which
 makes it the working model for volunteer-class workers
-(`VOLUNTEER_GPU_PLAN.md`).
+(`VOLUNTEER_GPU_PLAN.md`). The queue is also the test queue for the
+pilot and payload infrastructure; that program, and how the pass
+script selects the pilot it runs, is
+[NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md).
 
 ## Pieces
 

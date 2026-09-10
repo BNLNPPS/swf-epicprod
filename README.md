@@ -149,6 +149,10 @@ Submission and execution:
   GPU computing under PanDA.
 - [NPPS0_WORKER.md](docs/NPPS0_WORKER.md) — the GPU worker host behind
   BNL_NPPS_GPU.
+- [NPPS0_TEST_QUEUE.md](docs/NPPS0_TEST_QUEUE.md) — BNL_NPPS_GPU as
+  the pilot and payload test queue: choosing the pilot, the program
+  from the canary pilot through the Event Service path to prmon in
+  the runner, and what the queue cannot represent.
 - [WINDOWS_WORKER.md](docs/WINDOWS_WORKER.md) — the Windows worker.
 - [DEVCLOUD_STAGEOUT.md](docs/DEVCLOUD_STAGEOUT.md) — the devcloud
   stage-out endpoint.

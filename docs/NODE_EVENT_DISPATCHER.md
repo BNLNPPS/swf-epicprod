@@ -386,8 +386,11 @@ proven ones; the substantial work is validation at the site.
   simulation contract executable, the N-pair driver, and the rolling
   zip merger with 30-minute closes
   registered to JLab Rucio; smoke-run as a loopback on a development
-  host, the coprocessor pattern. The smoke run also confirms bare
-  range-finished reporting (Open questions).
+  host, the coprocessor pattern, then as Event Service jobs on the
+  `BNL_NPPS_GPU` test queue ([NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md)),
+  where the pilot side, the boundary and the harness are proved
+  before any other queue is involved. The smoke run also confirms
+  bare range-finished reporting (Open questions).
 - **4.** Settle the packaged-output consumer contract with the
   downstream processing step.
 - **5.** Run a first task on the queue — a few one-node allocations
@@ -396,6 +399,9 @@ proven ones; the substantial work is validation at the site.
 
 ## Related
 
+- [NPPS0_TEST_QUEUE.md](https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/NPPS0_TEST_QUEUE.md)
+  — the test queue where the pilot side of this design runs first:
+  the canary pilot, the Event Service path, the boundary, the harness.
 - [WORK_UNIT_CONTRACT.md](https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/WORK_UNIT_CONTRACT.md)
   and
   [VOLUNTEER_GPU_PLAN.md](https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/VOLUNTEER_GPU_PLAN.md)
