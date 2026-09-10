@@ -24,7 +24,7 @@ KEEP_RUNS=5
 # (pilot3.tar.gz in the production pilot directory); 'local' runs a
 # pilot3.tar.gz taken from $CONFDIR into the run directory, for a pilot
 # built by hand and never published.
-PILOTURL=file:///cvmfs/eic.opensciencegrid.org/panda/pilot/canary/pilot3.tar.gz
+PILOTURL=local
 
 export PANDA_CONFIG_ROOT="$HOME/.pathena"
 export X509_USER_PROXY="$HOME/creds/longproxy-for-rucio"
