@@ -193,7 +193,9 @@ socket (`EventService_EventRanges_<pid>`, context `local`) and exported
 its name to the payload as `PILOT_EVENTRANGECHANNEL`. The payload did
 not speak the channel, so no range was requested; the executor finished
 cleanly and the pilot reported the job finished with zero events. The
-server failed it on the `jobseed` gate above, ten ranges cancelled.
+server failed it on the `jobseed` gate above and cancelled the job's
+one range (the probe task declared one event; the later probes declare
+100, ten ranges of ten).
 
 **The defect and its fix (2026-09-09).** Two call sites build the
 payload command without passing the pilot's arguments, and the ePIC
