@@ -50,7 +50,7 @@
         <strong>{{ assembly.approved }}</strong> applied{% if assembly.denied %} ·
         <strong>{{ assembly.denied }}</strong> denied{% endif %}
         {% for d, n in assembly.by_disposition %} · {{ d }}: <strong>{{ n }}</strong>{% endfor %}
-        · showing <strong>{{ assembly.shown }}</strong>
+        · showing <strong class="swf-if-shown">{{ assembly.shown }}</strong>
     </p>
     {# Inclusive filter (monitor_app/inclusive_filter.py): every value stays listed with its count, selected values bold, the shown rows the union of the selections. #}
     {% include 'monitor_app/_inclusive_filter.html' %}
@@ -89,8 +89,8 @@
             </tr>
         </thead>
         <tbody>
-        {% for r in assembly.rows_filtered %}
-            <tr {% if r.proposal_id %}data-proposal-id="{{ r.proposal_id }}" data-orig-target="{{ r.target_events|default_if_none:'' }}" data-orig-priority="{{ r.priority|default_if_none:'' }}" data-orig-dispo="{{ r.disposition }}"{% endif %}{% if r.undo_id %} data-undo-id="{{ r.undo_id }}"{% endif %}>
+        {% for r in assembly.rows %}
+            <tr data-pc="{{ r.pc }}" data-if="{{ r.if_attr }}"{% if r.if_hidden %} class="swf-if-hidden"{% endif %} {% if r.proposal_id %}data-proposal-id="{{ r.proposal_id }}" data-orig-target="{{ r.target_events|default_if_none:'' }}" data-orig-priority="{{ r.priority|default_if_none:'' }}" data-orig-dispo="{{ r.disposition }}"{% endif %}{% if r.undo_id %} data-undo-id="{{ r.undo_id }}"{% endif %}>
                 <td><input type="checkbox" class="form-check-input asm-tick"></td>
                 <td>{% if r.task %}<a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ r.task|urlencode }}" title="This configuration's task in the campaign, on the compose page">{{ r.pc }}</a>{% else %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc %}" title="No task in this campaign yet; the physics configuration page">{{ r.pc }}</a>{% endif %}</td>
                 <td>{{ r.sample }}</td>
@@ -164,7 +164,8 @@
         const statusEl = document.getElementById('asm-status');
         const countEl = document.getElementById('asm-selected-count');
         function ticks() {
-            return Array.from(document.querySelectorAll('.asm-tick'));
+            // Visible rows only: the filter hides rows in the browser.
+            return Array.from(document.querySelectorAll('tr:not(.swf-if-hidden) .asm-tick'));
         }
         const fillTarget = document.getElementById('asm-fill-target');
         const fillTargetBtn = document.getElementById('asm-fill-target-btn');
@@ -345,7 +346,7 @@
            title="One row per physics configuration — the campaign completion table">Physics configurations</a>
     </div>
     <p>
-        <strong>{{ shown }}</strong> of <strong>{{ total }}</strong> physics configurations ·
+        <strong class="swf-if-shown">{{ shown }}</strong> of <strong>{{ total }}</strong> physics configurations ·
         <strong>{{ with_target }}</strong> with targets
         {% if without_target %}· <strong>{{ without_target }}</strong>
         <span class="swf-no-target">no target</span>{% endif %}
@@ -361,6 +362,36 @@
     <div class="mb-3">
         {% include 'snapper_ai/_snapper_embed.html' with embed=snapper_embed %}
     </div>
+    <script>
+    // The delivery map follows the filter in the browser: on each click
+    // the configurations left visible in the table select its curves,
+    // and the click-through carries the same selection.
+    (function () {
+      const prefixes = {{ embed_pc_prefixes|safe }};
+      let pending = 0;
+      document.addEventListener('swf-if-change', function (ev) {
+        const api = window.snapperEmbeds && window.snapperEmbeds['{{ snapper_embed.dom_id }}'];
+        if (!api) return;
+        api.setReportQuery(ev.detail.query);
+        // The table has already changed; the map redraw is the slow
+        // part, so it runs after the table has painted, and a burst of
+        // clicks redraws once.
+        const ticket = ++pending;
+        requestAnimationFrame(function () { setTimeout(function () {
+          if (ticket !== pending) return;
+          const pcs = new Set(Array.from(document.querySelectorAll('tr[data-if]:not(.swf-if-hidden)'))
+              .map(function (tr) { return tr.dataset.pc; }).filter(Boolean));
+          const hidden = ev.detail.selections.length ? api.curveIds().filter(function (id) {
+            for (let i = 0; i < prefixes.length; i++) {
+              if (id.startsWith(prefixes[i])) return !pcs.has(id.slice(prefixes[i].length));
+            }
+            return true;
+          }) : [];
+          api.setHidden(hidden);
+        }, 0); });
+      });
+    })();
+    </script>
     {% endif %}
 
     {# Inclusive filter (monitor_app/inclusive_filter.py): every value stays listed with its count, selected values bold, the shown rows the union of the selections. #}
@@ -441,7 +472,7 @@
         </thead>
         <tbody>
         {% for r in rows %}
-            <tr data-name="{{ r.name }}">
+            <tr data-name="{{ r.name }}" data-pc="{{ r.pc_label }}" data-if="{{ r.if_attr }}"{% if r.if_hidden %} class="swf-if-hidden"{% endif %}>
                 {% if view_mode == 'edition' %}<td><input type="checkbox" class="form-check-input plan-tick"></td>{% endif %}
                 <td>{% if r.pc_label %}{% if r.task %}<a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ r.task|urlencode }}" title="This configuration's task in the campaign, on the compose page">{{ r.pc_label }}</a>{% else %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc_label %}" title="No task in this campaign yet; the physics configuration page: identity, associations, editions, requests">{{ r.pc_label }}</a>{% endif %}{% endif %}</td>
                 <td><a href="{% url 'pcs:pcs_catalog' %}?q={{ r.name|urlencode }}" title="{{ r.name }}">{{ r.physics }}</a></td>
@@ -500,7 +531,8 @@
     const fillValue = document.getElementById('plan-fill-value');
     const selectedCount = document.getElementById('plan-selected-count');
     function ticks() {
-        return Array.from(document.querySelectorAll('.plan-tick'));
+        // Visible rows only: the filter hides rows in the browser.
+        return Array.from(document.querySelectorAll('tr:not(.swf-if-hidden) .plan-tick'));
     }
     function refreshSelection() {
         const n = ticks().filter(function (t) { return t.checked; }).length;

@@ -3035,15 +3035,25 @@ def pcs_config_detail(request, label):
     })
 
 
+def _plan_embed_pc_prefixes(campaign):
+    """The curve-id prefixes of the campaign's per-configuration
+    delivery curves; the id's remainder is the configuration label.
+    The plan filter narrows the delivery map by these, on the server
+    for the first render and in the browser on every click."""
+    tag = campaign.name.replace('.', '_')
+    return [f'{p}{tag}_' for p in ('dlvq_', 'dlvqf_', 'dlvpc_', 'dlvpcf_')]
+
+
 def _plan_delivery_embed(campaign, state):
     """The campaign's last-7-day arrivals quilt and accrued-files stack
     for the plan page (CAMPAIGN_DELIVERY.md surface 1): the factorized
     snapper embed as a cached product, built unfiltered from the
-    delivery component's snaps and pruned per request to the active
-    plan filters; the click-through opens the campaign Time history
-    carrying the same filters. None when nothing matches the window or
-    the build fails (failure is logged, never fatal to the plan
-    page)."""
+    delivery component's snaps. The plan filter narrows it in the
+    browser: the context carries the first render's hidden curves and
+    the click-through's query fragment, and the page script updates
+    both on each click through the embed's hooks. None when nothing is
+    in the window or the build fails (failure is logged, never fatal to
+    the plan page)."""
     import logging
     from datetime import timedelta
     from urllib.parse import quote, urlencode
@@ -3052,8 +3062,6 @@ def _plan_delivery_embed(campaign, state):
 
     from monitor_app.cached_product import get_product
     from snapper_ai.embed import embed_context
-
-    tag = campaign.name.replace('.', '_')
 
     def build():
         now = dj_timezone.now()
@@ -3091,13 +3099,14 @@ def _plan_delivery_embed(campaign, state):
     if not ctx or not ctx.get('has_points'):
         return None
     echo = state.get('filter_echo') or {}
+    ctx['report_query_extra'] = urlencode(echo) if echo else ''
     if echo:
-        # Prune the cached full-campaign context to the filtered slice
-        # (the value is deserialized fresh per request, so in-place is
-        # safe) and carry the filters into the Time-history link.
+        # The first render's hidden curves, by the rule the page script
+        # applies on every click (the value is deserialized fresh per
+        # request, so in-place is safe). The category rollup cannot be
+        # sliced per configuration, so under a selection it is hidden.
         pc_set = {r['pc_label'] for r in state['rows'] if r['pc_label']}
-        prefixes = tuple(f'{p}{tag}_'
-                         for p in ('dlvq_', 'dlvqf_', 'dlvpc_', 'dlvpcf_'))
+        prefixes = _plan_embed_pc_prefixes(campaign)
 
         def keep(curve_id):
             for prefix in prefixes:
@@ -3105,21 +3114,8 @@ def _plan_delivery_embed(campaign, state):
                     return curve_id[len(prefix):] in pc_set
             return False
 
-        data = ctx['data']
-        data['curves'] = {curve_id: curve
-                          for curve_id, curve in data['curves'].items()
-                          if keep(curve_id)}
-        for panel in data['panels']:
-            panel['ids'] = [curve_id for curve_id in panel['ids']
-                            if keep(curve_id)]
-        # The category rollup cannot be sliced per PC — under filters
-        # it empties and drops, leaving the pruned arrivals quilt.
-        data['panels'] = [p for p in data['panels'] if p['ids']]
-        ctx['has_points'] = any(curve['points']
-                                for curve in data['curves'].values())
-        ctx['report_query'] += '&' + urlencode(echo)
-        if not ctx['has_points']:
-            return None
+        ctx['data']['hidden_ids'] = [curve_id for curve_id in ctx['data']['curves']
+                                     if not keep(curve_id)]
     return ctx
 
 
@@ -3551,9 +3547,9 @@ def pcs_campaign_plan(request):
         # Priority facet is present here whatever the completion record.
         facets = _plan_facets(assembly=True, has_completion=True)
         flt = _plan_filter(request.GET)
-        arows = flt.apply(assembly['rows'], facets)
-        assembly['rows_filtered'] = arows
-        assembly['shown'] = len(arows)
+        # Every row is rendered; the selection hides in the browser.
+        assembly['shown'] = flt.annotate(assembly['rows'], facets)
+        arows = [r for r in assembly['rows'] if not r['if_hidden']]
         assembly['by_disposition'] = [
             (CAMPAIGN_PLAN_DISPO_LABELS.get(d, d), n)
             for d, n in assembly['by_disposition']]
@@ -3570,6 +3566,9 @@ def pcs_campaign_plan(request):
     rows = state['rows']
     facets = state['facets']
     flt = state['filter']
+    # Every row goes to the page with its facet values and its initial
+    # hidden state; the browser applies the selection from there.
+    flt.annotate(rows_all, facets)
 
     with_target = sum(1 for r in rows_all
                       if r['expected_events'] is not None)
@@ -3608,10 +3607,12 @@ def pcs_campaign_plan(request):
                           if campaign is not None
                           and request.GET.get('user_view', '') != '1'
                           else None),
-        'rows': rows,
+        'rows': rows_all,
         'total': len(rows_all),
         'shown': len(rows),
         'inclusive_filter': inclusive_filter,
+        'embed_pc_prefixes': json.dumps(
+            _plan_embed_pc_prefixes(campaign) if campaign is not None else []),
         'with_target': with_target,
         'without_target': len(rows_all) - with_target,
         'target_total': target_total,
