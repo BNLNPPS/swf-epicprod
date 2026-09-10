@@ -118,18 +118,16 @@
             <input id="rc-nevents" class="form-control" placeholder="10M or 10000000">
             <div class="form-text">Rough is fine; "M" for millions works.</div>
           </div>
-          {% if may_set_priority %}
           <div class="col-md-6">
             <label for="rc-priority">Priority</label>
-            <select id="rc-priority" class="form-select">
+            <select id="rc-priority" class="form-select"{% if not may_set_priority %} disabled{% endif %}>
               <option value="">unset</option>
               <option value="1">1 (highest)</option>
               <option value="2">2</option>
               <option value="3">3</option>
             </select>
-            <div class="form-text">The group's production order; a physics configuration takes the highest among its requests.</div>
+            <div class="form-text">{% if may_set_priority %}The group's production order; a physics configuration takes the highest among its requests.{% else %}Priorities are set by the physics analysis coordinators.{% endif %}</div>
           </div>
-          {% endif %}
           <div class="col-12">
             <label for="rc-pwg">PWG <span class="text-muted">(optional)</span></label>
             <select id="rc-pwg" class="form-select">
@@ -494,7 +492,7 @@
       contact_email: el('rc-contact-email').value.trim(),
       description: el('rc-description').value.trim(),
       nevents: parseEvents(el('rc-nevents').value),
-      priority: el('rc-priority') ? (parseInt(el('rc-priority').value, 10) || null) : null,
+      priority: (el('rc-priority') && !el('rc-priority').disabled) ? (parseInt(el('rc-priority').value, 10) || null) : null,
       process: axes.process, beam: axes.beam, species: axes.species,
       q2: axes.q2, generator: axes.generator,
       generator_version: el('rc-genver').value.trim(),
