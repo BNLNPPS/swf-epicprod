@@ -824,13 +824,15 @@ def _delivered_row_keys(task):
                            fetch_jlab_rucio_dataset_arrival,
                            fetch_jlab_rucio_unarrived_files)
     overrides = task.overrides or {}
+    # Only the task's own outputs count. output_refs are datasets owned
+    # by other tasks, attached by filter overlap (EPICPROD_DATA_LINEAGE.md
+    # § Output ownership); their files share the path below the version
+    # and the stem with this task's, so diffing against them credited
+    # rows whose own output is missing (task 7392: 5392 rows, 5389 files).
     dids = []
     for entry in (overrides.get('outputs') or []):
         if str(entry.get('stage', '')).upper() == 'RECO' and entry.get('did'):
             dids.append(entry['did'])
-    for ref in (overrides.get('output_refs') or []):
-        if str(ref.get('stage', '')).upper() == 'RECO' and ref.get('did'):
-            dids.append(ref['did'])
     dids = sorted(set(dids))
     if not dids:
         return None, [], {}
@@ -901,7 +903,7 @@ def _residual_rows(task, csv_rows, delivered=None):
     if not residual:
         raise ValueError(
             f'zero residual: all {len(csv_rows)} manifest rows have '
-            f'RECO outputs registered and arrived at JLab — nothing to '
+            f'RECO outputs registered and arrived at JLab; nothing to '
             f'rerun')
     return residual, {
         'rows_total': len(csv_rows),
