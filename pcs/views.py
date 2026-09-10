@@ -3206,12 +3206,6 @@ def _plan_filter(query):
     return InclusiveFilter(query, legacy=PLAN_LEGACY_PARAMS)
 
 
-def _apply_plan_filters(rows, query, facets):
-    """The rows the plan filter in ``query`` selects: the union of the
-    selections, every row when nothing is selected."""
-    return _plan_filter(query).apply(rows, facets)
-
-
 def _campaign_plan_state(campaign, query, pc_view):
     """Rows and filter state of the campaign plan — the single source
     for the plan page and the snapper campaign-view filter
@@ -3553,8 +3547,9 @@ def pcs_campaign_plan(request):
         # The assembly axes, Disposition and State, join the plan facets
         # in the one inclusive filter: a selection on any of them adds
         # its rows to the shown set like every other.
-        facets = _plan_facets(assembly=True,
-                              has_completion=state['has_completion'])
+        # Assembly rows carry a priority from the proposal payload, so the
+        # Priority facet is present here whatever the completion record.
+        facets = _plan_facets(assembly=True, has_completion=True)
         flt = _plan_filter(request.GET)
         arows = flt.apply(assembly['rows'], facets)
         assembly['rows_filtered'] = arows
@@ -3617,7 +3612,6 @@ def pcs_campaign_plan(request):
         'total': len(rows_all),
         'shown': len(rows),
         'inclusive_filter': inclusive_filter,
-        'clear_url': inclusive_filter['clear_url'],
         'with_target': with_target,
         'without_target': len(rows_all) - with_target,
         'target_total': target_total,
