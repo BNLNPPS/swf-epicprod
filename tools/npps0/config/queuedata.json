@@ -23,6 +23,12 @@
   ],
   "write_lan_analysis": [
    "s3"
+  ],
+  "es_events": [
+   "s3"
+  ],
+  "es_failover": [
+   "s3"
   ]
  },
  "allow_lan": true,
@@ -51,6 +57,12 @@
    "DEV_CLOUD_S3"
   ],
   "write_lan_analysis": [
+   "DEV_CLOUD_S3"
+  ],
+  "es_events": [
+   "DEV_CLOUD_S3"
+  ],
+  "es_failover": [
    "DEV_CLOUD_S3"
   ]
  },
