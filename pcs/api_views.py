@@ -1055,6 +1055,27 @@ def physics_configs_requestors(request):
     return Response(result, status=status.HTTP_200_OK)
 
 
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def prod_request_priority(request, pk):
+    """Set one production request's priority. Body: ``priority`` (1, 2,
+    3, or null/0 to clear), ``comment`` (optional). Thin wrapper over
+    ``services.prod_request_priority_set``; one action-stream event per
+    call. The campaign plan's per-row priority control and the request
+    list's priority control both call this, once per request."""
+    try:
+        result = services.prod_request_priority_set(
+            pk, request.data.get('priority'),
+            request.data.get('comment'),
+            changed_by=request.user.username,
+        )
+    except ServiceError as e:
+        return Response({'detail': e.detail}, status=e.status)
+    return Response(result, status=status.HTTP_200_OK)
+
+
 @api_view(['GET'])
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])

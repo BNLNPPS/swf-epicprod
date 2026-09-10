@@ -4861,6 +4861,48 @@ def dataset_expected_events_set(entries, comment, *, changed_by='',
             'log_id': log_id}
 
 
+REQUEST_PRIORITY_LEVELS = (1, 2, 3)
+
+
+def prod_request_priority_set(pk, priority, comment='', *, changed_by=''):
+    """Set one production request's priority (1 highest to 3; None or 0
+    clears it), the value the campaign plan rolls up per configuration
+    as the best among its anchored requests. One action-stream event per
+    call, carrying the previous and new values and the comment when one
+    is given. Raises ServiceError on an unknown request or a value
+    outside the levels."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    if priority in (None, 0, '0', ''):
+        value = None
+    elif isinstance(priority, bool) or not isinstance(priority, int) \
+            or priority not in REQUEST_PRIORITY_LEVELS:
+        raise ServiceError(
+            f'priority must be one of {REQUEST_PRIORITY_LEVELS} or null')
+    else:
+        value = priority
+    try:
+        req = ProdRequest.objects.get(pk=int(pk))
+    except (ProdRequest.DoesNotExist, ValueError, TypeError):
+        raise ServiceError(f'request {pk} not found', 404)
+    previous = req.priority
+    comment = (comment or '').strip()
+    if previous != value:
+        req.priority = value
+        req.save(update_fields=['priority'])
+    log_id = log_epicprod_action(
+        'web', 'prod_request_priority_set',
+        subject_type='prod_request', subject_key=str(req.pk),
+        username=changed_by, sublevel='normal', live_default=True,
+        message=(f'request {req.pk} priority {previous} -> {value}'
+                 + (f': {comment}' if comment else '')),
+        previous=previous, priority=value, comment=comment,
+        changed=previous != value,
+    )
+    return {'request': req.pk, 'previous': previous, 'priority': value,
+            'changed': previous != value, 'log_id': log_id}
+
+
 def physics_config_requestors_set(entries, comment, *, changed_by='',
                                   origin=None):
     """Set the requesting groups (PWG/DSC labels) on physics
