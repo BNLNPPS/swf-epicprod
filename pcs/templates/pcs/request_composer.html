@@ -118,6 +118,16 @@
             <input id="rc-nevents" class="form-control" placeholder="10M or 10000000">
             <div class="form-text">Rough is fine; "M" for millions works.</div>
           </div>
+          <div class="col-md-6">
+            <label for="rc-priority">Priority</label>
+            <select id="rc-priority" class="form-select">
+              <option value="">unset</option>
+              <option value="1">1 (highest)</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+            <div class="form-text">The group's production order; a physics configuration takes the highest among its requests.</div>
+          </div>
           <div class="col-12">
             <label for="rc-pwg">PWG <span class="text-muted">(optional)</span></label>
             <select id="rc-pwg" class="form-select">
@@ -482,6 +492,7 @@
       contact_email: el('rc-contact-email').value.trim(),
       description: el('rc-description').value.trim(),
       nevents: parseEvents(el('rc-nevents').value),
+      priority: parseInt(el('rc-priority').value, 10) || null,
       process: axes.process, beam: axes.beam, species: axes.species,
       q2: axes.q2, generator: axes.generator,
       generator_version: el('rc-genver').value.trim(),

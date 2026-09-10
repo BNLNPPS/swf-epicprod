@@ -2424,6 +2424,7 @@ def prodrequest_compose(*, created_by, pwg='', dsc='', description='',
                         sample='', pc_anchor='', simu_path='',
                         contact_name='', contact_email='',
                         repository='', intended_use='', background_mode='',
+                        priority=None,
                         background_tag='', background_other=''):
     """Create a production request from the request composer.
 
@@ -2533,10 +2534,17 @@ def prodrequest_compose(*, created_by, pwg='', dsc='', description='',
         part for part in ((generator or '').strip(),
                           (generator_version or '').strip()) if part)
 
+    if priority in (None, 0, '0', ''):
+        priority = None
+    elif isinstance(priority, bool) or not isinstance(priority, int) \
+            or priority not in REQUEST_PRIORITY_LEVELS:
+        raise ServiceError(
+            f'priority must be one of {REQUEST_PRIORITY_LEVELS} or null')
     request_row = ProdRequest.objects.create(
         requestor=requestor,
         description=description,
         nevents=nevents,
+        priority=priority,
         gen_config=gen_config,
         simu_path=(simu_path or '').strip(),
         background=background_value,
@@ -4901,6 +4909,49 @@ def prod_request_priority_set(pk, priority, comment='', *, changed_by=''):
     )
     return {'request': req.pk, 'previous': previous, 'priority': value,
             'changed': previous != value, 'log_id': log_id}
+
+
+def questionnaire_priority_set(pk, priority, comment='', *, changed_by=''):
+    """Set one questionnaire response's priority (1 highest to 3; None or
+    0 clears it), kept in the response's ``data`` JSON as ``priority``
+    with who set it and when. The same levels and event shape as
+    ``prod_request_priority_set``. Raises ServiceError on an unknown
+    response or a value outside the levels."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    if priority in (None, 0, '0', ''):
+        value = None
+    elif isinstance(priority, bool) or not isinstance(priority, int) \
+            or priority not in REQUEST_PRIORITY_LEVELS:
+        raise ServiceError(
+            f'priority must be one of {REQUEST_PRIORITY_LEVELS} or null')
+    else:
+        value = priority
+    try:
+        row = Questionnaire.objects.get(pk=int(pk))
+    except (Questionnaire.DoesNotExist, ValueError, TypeError):
+        raise ServiceError(f'questionnaire {pk} not found', 404)
+    data = dict(row.data or {})
+    previous = data.get('priority')
+    comment = (comment or '').strip()
+    if previous != value:
+        data['priority'] = value
+        data['priority_set_by'] = changed_by or ''
+        data['priority_set_at'] = _timezone.now().isoformat()
+        row.data = data
+        row.save(update_fields=['data', 'updated_at'])
+    log_id = log_epicprod_action(
+        'web', 'questionnaire_priority_set',
+        subject_type='questionnaire', subject_key=str(row.pk),
+        username=changed_by, sublevel='normal', live_default=True,
+        message=(f'questionnaire {row.pk} priority {previous} -> {value}'
+                 + (f': {comment}' if comment else '')),
+        previous=previous, priority=value, comment=comment,
+        changed=previous != value,
+    )
+    return {'questionnaire': row.pk, 'previous': previous,
+            'priority': value, 'changed': previous != value,
+            'log_id': log_id}
 
 
 def physics_config_requestors_set(entries, comment, *, changed_by='',

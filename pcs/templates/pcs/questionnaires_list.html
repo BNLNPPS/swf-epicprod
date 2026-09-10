@@ -105,6 +105,7 @@
 	          <th>Repository</th>
 	          <th>Prod matches</th>
 	          <th>Events</th>
+          <th title="The group's production order, 1 first; a physics configuration takes the highest among its requests">Priority</th>
           <th>Benchmark</th>
           <th>Estimate</th>
         </tr>
@@ -150,6 +151,10 @@
             </a>
           </td>
           <td style="width: 12rem; max-width: 12rem; white-space: normal; overflow-wrap: anywhere;">{{ q.nevents }}</td>
+          <td class="text-nowrap pcs-qf-priority" style="position:relative;" data-pk="{{ q.pk }}" data-current="{{ q.data.priority|default_if_none:'' }}">
+            <span class="pcs-qf-priority-value">{{ q.data.priority|default:"unset" }}</span>{% if user.is_authenticated %}
+            <button type="button" class="btn btn-link btn-sm p-0 ms-1 pcs-qf-priority-edit" title="Set the priority for this request" aria-label="Set priority"><i class="bi bi-pencil-square"></i></button>{% endif %}
+          </td>
           <td style="max-width: 18rem;">{{ q.benchmark|linebreaksbr }}</td>
           <td style="max-width: 22rem;">{{ q.estimate|linebreaksbr }}</td>
         </tr>
@@ -200,7 +205,84 @@
     </div>
     {% endfor %}
   {% endif %}
+  <style>
+    .pcs-qf-priority-edit { color: #6c757d; font-size: 1.05em; }
+    .pcs-qf-priority-edit:hover { color: #0d6efd; }
+    #pcs-qf-priority-panel { position: absolute; right: 0; top: 100%; z-index: 1050; min-width: 17rem; text-align: left; white-space: normal; }
+  </style>
   <script>
+  (function() {
+    // Priority: a quiet pencil in the cell opens one shared panel (a
+    // select and an optional comment, Save and Cancel); Save posts one
+    // entry to the questionnaire priority endpoint and updates the cell.
+    let panel = null, openCell = null;
+    function csrf() { return (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || ''; }
+    function closePanel() { if (panel && panel.parentNode) panel.parentNode.removeChild(panel); openCell = null; }
+    function buildPanel() {
+      const div = document.createElement('div');
+      div.id = 'pcs-qf-priority-panel';
+      div.className = 'card shadow p-2';
+      div.innerHTML =
+        '<div class="d-flex align-items-center gap-2 mb-2"><label class="form-label mb-0 text-nowrap">Priority</label>' +
+        '<select class="form-select form-select-sm" data-role="level">' +
+        '<option value="">unset</option><option value="1">1 (highest)</option><option value="2">2</option><option value="3">3</option></select></div>' +
+        '<input type="text" class="form-control form-control-sm mb-2" data-role="comment" placeholder="comment (optional)">' +
+        '<div class="d-flex align-items-center gap-2"><button type="button" class="btn btn-sm btn-primary" data-role="save">Save</button>' +
+        '<button type="button" class="btn btn-sm btn-secondary" data-role="cancel">Cancel</button>' +
+        '<span class="small" data-role="status"></span></div>';
+      div.querySelector('[data-role=cancel]').addEventListener('click', closePanel);
+      div.querySelector('[data-role=save]').addEventListener('click', save);
+      div.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); save(); }
+        if (e.key === 'Escape') closePanel();
+      });
+      return div;
+    }
+    function openPanel(cell) {
+      if (openCell === cell) { closePanel(); return; }
+      closePanel();
+      if (!panel) panel = buildPanel();
+      panel.querySelector('[data-role=level]').value = cell.dataset.current || '';
+      panel.querySelector('[data-role=comment]').value = '';
+      panel.querySelector('[data-role=status]').textContent = '';
+      cell.appendChild(panel);
+      openCell = cell;
+      panel.querySelector('[data-role=level]').focus();
+    }
+    function save() {
+      if (!openCell) return;
+      const cell = openCell;
+      const level = panel.querySelector('[data-role=level]').value;
+      const comment = panel.querySelector('[data-role=comment]').value.trim();
+      const statusEl = panel.querySelector('[data-role=status]');
+      const btn = panel.querySelector('[data-role=save]');
+      btn.disabled = true; statusEl.textContent = 'Saving...'; statusEl.style.color = '';
+      fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/questionnaires/' + cell.dataset.pk + '/priority/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+        credentials: 'same-origin',
+        body: JSON.stringify({priority: level ? parseInt(level, 10) : null, comment: comment}),
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          if (!r.ok) throw new Error(body.error || body.detail || ('save failed (HTTP ' + r.status + ')'));
+          return body;
+        });
+      }).then(function (body) {
+        const value = body.priority == null ? '' : String(body.priority);
+        cell.dataset.current = value;
+        cell.querySelector('.pcs-qf-priority-value').textContent = value || 'unset';
+        closePanel();
+      }).catch(function (err) {
+        statusEl.textContent = err.message; statusEl.style.color = '#b02a37'; btn.disabled = false;
+      });
+    }
+    document.querySelectorAll('.pcs-qf-priority-edit').forEach(function (b) {
+      b.addEventListener('click', function (e) { e.stopPropagation(); openPanel(b.closest('.pcs-qf-priority')); });
+    });
+    document.addEventListener('click', function (e) {
+      if (openCell && !openCell.contains(e.target)) closePanel();
+    });
+  })();
   (function() {
     const STR = ['repo', 'generator', 'contact'];
     const BOOL = ['missing_contact', 'missing_email'];

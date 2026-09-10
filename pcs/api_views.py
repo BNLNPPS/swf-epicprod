@@ -1018,6 +1018,7 @@ def prod_request_compose(request):
         result = services.prodrequest_compose(
             created_by=username,
             nevents=request.data.get('nevents'),
+            priority=request.data.get('priority'),
             **fields,
         )
     except ServiceError as e:
@@ -1047,6 +1048,26 @@ def physics_configs_requestors(request):
     try:
         result = services.physics_config_requestors_set(
             request.data.get('entries') or [],
+            request.data.get('comment'),
+            changed_by=request.user.username,
+        )
+    except ServiceError as e:
+        return Response({'detail': e.detail}, status=e.status)
+    return Response(result, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def questionnaire_priority(request, pk):
+    """Set one questionnaire response's priority. Body: ``priority`` (1,
+    2, 3, or null/0 to clear), ``comment`` (optional). Thin wrapper over
+    ``services.questionnaire_priority_set``; one action-stream event per
+    call. The request list's priority control calls this."""
+    try:
+        result = services.questionnaire_priority_set(
+            pk, request.data.get('priority'),
             request.data.get('comment'),
             changed_by=request.user.username,
         )
