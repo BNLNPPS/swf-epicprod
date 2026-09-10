@@ -166,7 +166,34 @@ exercised.
   payload path.
 - The fine-grained executor reports ranges bare, but its process class
   is an unfinished stub with no ePIC implementation.
-- The pilot defect the probe died on, above.
+- The pilot runs an Event Service payload outside the container unless
+  the executor is the ATLAS Ray one (`pilot/util/container.py`, the
+  overrule for event service jobs). The harness therefore runs on the
+  host and starts its workers in the image itself, which is the
+  coprocessor chain's shape already.
+- Consumer regeneration is gated on the queue record: when a consumer
+  ends with ranges unprocessed, the server creates a new consumer only
+  if the queue's CRIC `jobseed` is `all` or `es`
+  (`job_complex_module.py`, `ppEventServiceJob`); at a `std` queue it
+  fails the job (`es_noevent`, code 125) and leaves the ranges. Deferral
+  at the deadline therefore needs `jobseed = all` on the queue, a CRIC
+  field the pilot's own queuedata does not reach.
+  `NERSC_Perlmutter_epic` carries `std` (2026-09-09).
+- The pilot defect the probe died on, above; fixed by PR 220 and
+  confirmed on the first run below.
+
+**First run of the pilot side (2026-09-09, `BNL_NPPS_GPU`,
+[task 39564](https://epic-devcloud.org/prod/panda/tasks/39564/), job
+2722535).** Under the canary pilot with PR 220, the generic executor and
+the channel library installed on the host
+([NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md)): the pilot chose the
+event-service executor, built the payload command, started the generic
+executor and its server-side communicator, opened the yampl server
+socket (`EventService_EventRanges_<pid>`, context `local`) and exported
+its name to the payload as `PILOT_EVENTRANGECHANNEL`. The payload did
+not speak the channel, so no range was requested; the executor finished
+cleanly and the pilot reported the job finished with zero events. The
+server failed it on the `jobseed` gate above, ten ranges cancelled.
 
 **The defect and its fix (2026-09-09).** Two call sites build the
 payload command without passing the pilot's arguments, and the ePIC
@@ -364,8 +391,9 @@ proven ones; the substantial work is validation at the site.
   on the site within minutes, and range-level cancel and re-issue on
   job failure. On that result the native Event Service was
   selected as the completeness mechanism. The pilot side was not
-  exercised: the jobs died on a pilot defect before any Event Service
-  code ran (Completeness and accounting, The pilot side).
+  exercised there: the jobs died on a pilot defect before any Event
+  Service code ran. It was exercised on 2026-09-09 on the test queue
+  (Completeness and accounting, First run of the pilot side).
 - **0. Completed** — the remaining Event Service verification
   (2026-08-23, source-level): stage-out activities resolve to
   BNL_PROD_DISK_1 with no configuration work and the zip cadence is
@@ -380,7 +408,9 @@ proven ones; the substantial work is validation at the site.
   one mcore job per allocation, on the existing 4-hour wall. The
   other site facts are recorded: harvester runs on the site login
   node via Globus Compute, the wall request is 4 hours, and queue
-  wait is 7 minutes at the median (p90 about 12 hours).
+  wait is 7 minutes at the median (p90 about 12 hours). The queue
+  record needs `jobseed = all` in CRIC (The pilot side), on the test
+  queue first and on the Perlmutter queue with the worker-shape change.
 - **3.** Build the node harness: the pilot-side bridge in the shape
   settled under Open questions, the range-form unit spec, the
   simulation contract executable, the N-pair driver, and the rolling

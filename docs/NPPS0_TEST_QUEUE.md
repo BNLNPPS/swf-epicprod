@@ -6,11 +6,13 @@ and payload infrastructure: pilot builds and the pilot's ePIC user
 module, the pilot environment, the queue's pilot-side configuration,
 container images, credentials, stage-out routes, the runner and the
 payload, and the Event Service path the node event dispatcher builds
-on. Every piece of that chain is under production operations control
-on the host, and the jobs are real PanDA jobs against the production
-server, with their records on the production monitoring pages. A
-change is a commit, a file copy to the host, and a job: no harvester,
-no compute element, no site operator, no queue wait.
+on. Every piece of that chain on the host is under production
+operations control, and the jobs are real PanDA jobs against the
+production server, with their records on the production monitoring
+pages. A change is a commit, a file copy to the host, and a job: no
+harvester, no compute element, no site operator, no queue wait. The
+one piece not on the host is the queue record the server reads, which
+lives in CRIC (below).
 
 The queue is not the host's only occupant. npps0 is the GPU
 development machine and carries other work outside the queue. The
@@ -24,7 +26,8 @@ queue's share is the job shape in the queue record: 8 cores, 48 GB
 |---|---|
 | The pilot | `--piloturl` on the pass script's wrapper invocation (below) |
 | The pilot environment | the pass script, `tools/npps0/epicprod-gpu-pilot.sh`: credentials, Rucio, the S3 profile, and any pilot control variable such as `PILOT_ES_EXECUTOR_TYPE` |
-| The queue's pilot-side behavior | `tools/npps0/config/queuedata.json`, applied per pass; CRIC holds the queue's existence only |
+| The queue's pilot-side behavior | `tools/npps0/config/queuedata.json`, applied per pass: container type and options, copytools, storages, catchall, everything the pilot reads |
+| The queue record on the server | CRIC (`datalake-cric.cern.ch`, the ATLAS-hosted instance), which declares the queue and carries the fields the server reads for brokerage and the Event Service: `status`, `jobseed`, `corecount`, `capability`, `resource_type`, `maxtime`. The pilot's git-sourced copy does not reach the server. A change is made in CRIC (the PanDA service maintainer today; production operations once its certificate holds the queue-change permission) and reaches the server cache in about 20 minutes |
 | The storage catalog | `tools/npps0/config/agis_ddmendpoints.json`, applied per pass |
 | Container images | CVMFS unpacked images named by the job, run with `--nv` |
 | Credentials | the PanDA token, the Rucio proxy, the JLab EVGEN proxy and the S3 profile, held on the host |
@@ -83,7 +86,16 @@ Each step runs here before it is asked of any other queue. In order:
    v1.0 with the python-yampl binding, the pair whose API the pilot's
    event-service code speaks), so the generic executor can be tried
    alongside the alternatives. The pass script selects the executor
-   and puts the module on the pilot's `PYTHONPATH`.
+   and puts the module on the pilot's `PYTHONPATH`. First run
+   2026-09-09 (task 39564, job 2722535): the executor and the channel
+   came up and the pilot handed the channel name to the payload; the
+   server then failed the job, `es_noevent`, because a queue whose
+   CRIC `jobseed` is `std` never receives a new consumer for
+   unprocessed ranges, and because the pilot runs every Event Service
+   payload outside the container unless the executor is the ATLAS Ray
+   one (`pilot/util/container.py`). Both facts are recorded in
+   [NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md); the first is
+   a CRIC change on the queue, the second shapes the harness.
 3. **The pilot/harness boundary, settled in house.** Both shapes of
    the boundary ([NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md)
    § Open questions) can be built and run on this host: an ePIC
