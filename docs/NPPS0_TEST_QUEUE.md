@@ -78,9 +78,12 @@ Each step runs here before it is asked of any other queue. In order:
    the executor is the site's choice, not the task's), the range
    channel it opens, what the payload is asked to speak, and the range
    dispositions reported to the server. The channel library the
-   generic executor needs (yampl) is absent from every pilot install;
-   on this host it can be installed, so the generic executor can be
-   tried alongside the alternatives.
+   generic executor needs is absent from every pilot install; on this
+   host it is built and installed (`tools/npps0/build-yampl.sh`: yampl
+   v1.0 with the python-yampl binding, the pair whose API the pilot's
+   event-service code speaks), so the generic executor can be tried
+   alongside the alternatives. The pass script selects the executor
+   and puts the module on the pilot's `PYTHONPATH`.
 3. **The pilot/harness boundary, settled in house.** Both shapes of
    the boundary ([NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md)
    § Open questions) can be built and run on this host: an ePIC

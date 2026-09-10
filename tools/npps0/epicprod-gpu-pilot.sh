@@ -44,6 +44,13 @@ export PANDA_PILOT_AWS_PROFILE=epic-stageout
 # One GPU per pilot slot; instance 2 gets device 1 when we scale.
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
+# Event Service (docs/NPPS0_TEST_QUEUE.md, step 2). The executor is the
+# pilot environment's choice; the generic executor hands ranges to the
+# payload over a yampl socket and imports the python-yampl module,
+# built on this host by tools/npps0/build-yampl.sh into ~/yampl-1.0.
+export PILOT_ES_EXECUTOR_TYPE=generic
+export PYTHONPATH="$HOME/yampl-1.0/python${PYTHONPATH:+:$PYTHONPATH}"
+
 mkdir -p "$WORKBASE"
 # Retention: keep the last few pilot workdirs for debugging, drop the rest.
 ls -dt "$WORKBASE"/run-* 2>/dev/null | tail -n +$((KEEP_RUNS + 1)) | xargs -r rm -rf
