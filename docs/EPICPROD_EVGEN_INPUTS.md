@@ -171,6 +171,16 @@ event; setting a mark requires a signed-in user):
   decision, and the submission spec already knows a task's matched EVGEN
   inputs when it is wanted.
 
+  The EVGEN mark is one source. A production request carries its own
+  priority (`ProdRequest.priority`, the same levels), set on the request
+  form at submission and on the campaign plan per configuration
+  (`POST pcs/api/requests/<pk>/priority/`), and a questionnaire response
+  carries one in its `data` (`priority`, with who set it and when), set
+  on the request list (`POST pcs/api/questionnaires/<pk>/priority/`).
+  A physics configuration takes the best among its anchored requests
+  (CAMPAIGN_DELIVERY.md, the completion rollup), which is how a
+  production with no EVGEN input files has a priority at all.
+
 Both marks are set in bulk from the tick-box panels above the tables;
 priority is also set in one click from the compact level buttons in the
 Priority cell of a row.
