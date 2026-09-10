@@ -737,6 +737,16 @@ For external-EVGEN tasks (one manifest row per EVGEN file):
    an input resolving differently than at first submission, a zero
    residual, or an attempt whose manifest none of the three sources can
    establish each refuse with the reason instead of submitting.
+5. **Walltime from the attempt** — the rerun reruns the attempt's own
+   chunks, so its walltime is measured from that attempt's finished
+   jobs in the PanDA record (`services.panda_attempt_walltime_hours`):
+   the longest finished job times 1.5, at least the configuration's
+   value, at most 48 hours, recorded with its evidence in the
+   `PandaTasks` residual block. A legacy attempt ran under a 96-hour
+   limit with chunks of three to four hours; a rerun under the
+   configuration's two-hour default died at the wall on every job
+   (task 39623, 2026-09-10), the pilot's "Reached maxtime", with the
+   payload silent mid-simulation.
 
 For generation-only tasks: residual events = target − delivered, with
 delivered taken from registered outputs and the event-measurement store

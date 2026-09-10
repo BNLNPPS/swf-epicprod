@@ -959,6 +959,14 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         csv_rows, residual_coverage = _residual_rows(
             task, manifests.format_rows(rows), delivered)
         residual_coverage['manifest'] = manifests.to_json(info)
+        # The rerun reruns the attempt's own chunks, so its walltime is
+        # measured from that attempt's finished jobs, not taken from the
+        # configuration's target (JEDI_INTEGRATION.md § Residual rerun).
+        from .services import panda_attempt_walltime_hours
+        attempt_hours, evidence = panda_attempt_walltime_hours(
+            attempt.jedi_task_id)
+        residual_coverage['walltime'] = {'hours': attempt_hours,
+                                         'evidence': evidence}
     else:
         # Per-job manifest (file,ext,nevents,ichunk), one row per job over
         # the matched Rucio EVGEN files; PanDA's %RNDM→${SEQNUMBER} selects
@@ -1012,6 +1020,9 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
 
     hours = cfg.get('target_hours_per_job')
     walltime_hours = float(hours) if hours is not None else float(data.get('walltime_hours', 2.0))
+    if residual_coverage and (residual_coverage.get('walltime') or {}).get('hours'):
+        walltime_hours = max(walltime_hours,
+                             float(residual_coverage['walltime']['hours']))
 
     return {
         'outDS': out_ds,

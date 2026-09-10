@@ -501,6 +501,44 @@ def intake_direct_panda_task(panda_task, *, created_by='association_sweep'):
     return task, 'intaken'
 
 
+def panda_attempt_walltime_hours(jedi_task_id, margin=1.5, floor_hours=2.0,
+                                 cap_hours=48.0):
+    """The walltime a rerun of an attempt's own chunks needs, from the
+    attempt's finished jobs in the PanDA record: the longest finished job
+    times ``margin``, at least ``floor_hours``, at most ``cap_hours``.
+    Returns (hours, evidence) or (None, reason) without a finished job.
+
+    A residual rerun reruns the attempt's chunks as they were, so the
+    original jobs' durations are the measure, not the configuration's
+    target; a legacy attempt ran under a 96-hour limit with chunks that
+    take three to four hours (task 38952, 2026-09-10), and a rerun under
+    the two-hour default died at the wall on every job."""
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    sql = f'''
+        SELECT COUNT(*),
+               MAX(EXTRACT(EPOCH FROM ("endtime" - "starttime"))),
+               AVG(EXTRACT(EPOCH FROM ("endtime" - "starttime")))
+        FROM "{PANDA_SCHEMA}"."jobsarchived4"
+        WHERE "jeditaskid" = %s AND "jobstatus" = 'finished'
+          AND "starttime" IS NOT NULL AND "endtime" IS NOT NULL
+    '''
+    try:
+        with connections['panda'].cursor() as cursor:
+            cursor.execute(sql, [int(jedi_task_id)])
+            n, longest, mean = cursor.fetchone()
+    except Exception as e:                                    # noqa: BLE001
+        _log.warning('attempt walltime fetch failed for task %s: %s',
+                     jedi_task_id, e)
+        return None, f'PanDA record unavailable: {e}'
+    if not n or not longest:
+        return None, f'no finished job of PanDA task {jedi_task_id}'
+    hours = min(max(float(longest) * margin / 3600.0, floor_hours), cap_hours)
+    return hours, (f'{n} finished jobs of PanDA task {jedi_task_id}: '
+                   f'longest {float(longest) / 3600:.1f} h, mean '
+                   f'{float(mean) / 3600:.1f} h; walltime {hours:.1f} h '
+                   f'(x{margin}, floor {floor_hours:g} h, cap {cap_hours:g} h)')
+
+
 def _panda_executed_identity(jedi_task_id):
     """The executed software identity of a PanDA task: the container(s)
     recorded on its jobs — immutable execution evidence from the PanDA
