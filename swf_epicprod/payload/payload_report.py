@@ -93,8 +93,11 @@ def stage_summary(entries):
         else:
             s["ended_at"] = e["at"]
             s["status"] = e["status"]
-            if e["detail"]:
-                s["detail"].append(e["detail"])
+        # A start line's detail (the events a stage sets out to do) is as
+        # much the record as an end line's, and is all there is of a stage
+        # killed before it ended.
+        if e["detail"]:
+            s["detail"].append(e["detail"])
     for s in out.values():
         if s["started_at"] and s["ended_at"]:
             try:

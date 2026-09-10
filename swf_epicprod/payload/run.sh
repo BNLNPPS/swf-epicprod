@@ -7,12 +7,13 @@ CURRENT_STAGE=""
 stage() {
   CURRENT_STAGE=$1
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 $2${3:+ $3}" >> "${PAYLOAD_STAGES_LOG:-payload-stages.log}"
-  # As each stage ends, refresh the report, so the metrics the pilot sends
-  # on its next heartbeat say where the payload has got to. A job that
-  # dies with its worker has then already reported what it had done, which
-  # the job record keeps; its metadata, and so its full report, would not
-  # survive. The refresh never fails the payload.
-  if [ "$2" != "start" ] && [ -n "${TASKNAME:-}" ]; then
+  # As each stage starts and ends, refresh the report, so the metrics the
+  # pilot sends on its next heartbeat say where the payload has got to. A
+  # job that dies with its worker, or is killed at the wall inside a long
+  # stage, has then already reported the stage it was in and what it had
+  # done, which the job record keeps; its metadata, and so its full
+  # report, would not survive. The refresh never fails the payload.
+  if [ -n "${TASKNAME:-}" ]; then
     payload_report "" --quiet || true
   fi
 }
@@ -554,7 +555,7 @@ else
 fi
 
 # Run simulation
-stage simulation start
+stage simulation start "${EVENTS_PER_TASK:-?} events"
 {
   date
   eic-info

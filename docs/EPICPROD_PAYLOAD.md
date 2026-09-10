@@ -171,8 +171,8 @@ jobs, and on 33,245 of the 45,821 killed with their worker. In the
 quieter last seven days of that window it was present on 10,883 of
 10,932, so the shortfall is concentrated in the storms, where a job can
 die before it sends anything at all. So the payload
-refreshes its report as each stage ends and declares in it a compact
-digest: the stage reached and its outcome, the trail of stages behind
+refreshes its report as each stage starts and as it ends, and declares
+in it a compact digest: the stage reached and its outcome, the trail of stages behind
 it, the events done, the registration state, the payload version, and
 the exit code once there is one. The pilot's ePIC plugin appends the
 digest to the job metrics it sends. Both files are written atomically,
@@ -186,6 +186,14 @@ carries the trail rather than the current stage alone — a job of
 ordinary length speaks once or twice in its life, and a single message
 has to say the whole path. A job that dies inside its first heartbeat
 period still says nothing.
+
+The refresh at a stage's start is what accounts for a job killed inside
+a long stage: the pilot's kill at the wall leaves the payload no exit
+path, so the last refresh is the record, and it names the stage in
+progress as `unfinished` with its start time and what it set out to do
+(the simulation start line carries the events requested). Without it a
+job killed mid-simulation reported only the stages before, and where it
+had died was not to be seen (task 39623, 2026-09-10).
 
 The digest is small by design and is not the report. The whole report
 reaches the production system by the job writing it to object storage
