@@ -114,13 +114,18 @@
       <div class="d-flex align-items-center flex-wrap gap-2">
         <span><strong class="evgen-selected-count">0</strong> selected</span>
         <button type="button" id="evgen-register-selected" class="btn btn-sm btn-primary" disabled>Register selected in Rucio</button>
-        <a href="#" id="evgen-register-other-toggle" class="small ms-3">Register a path not on the worklist</a>
+        <a href="#" id="evgen-register-other-toggle" class="small ms-3">Register paths not on the worklist</a>
       </div>
-      <div id="evgen-register-other" class="d-none align-items-center flex-wrap gap-2 mt-1">
-        <input type="text" id="evgen-register-input" class="form-control form-control-sm"
-               style="max-width: 46em;"
-               placeholder="/EVGEN/... path, its /volatile path, or its root:// URL">
-        <button type="button" id="evgen-register-path" class="btn btn-sm btn-primary">Register path</button>
+      <div id="evgen-register-other" class="d-none flex-column gap-1 mt-1">
+        <textarea id="evgen-register-input" class="form-control form-control-sm" rows="4"
+                  style="max-width: 46em; font-family: monospace;"
+                  placeholder="One path per line: the /EVGEN/... path, its /volatile path, or its root:// URL. Blank lines and lines starting with # are skipped."></textarea>
+        <div class="d-flex align-items-center flex-wrap gap-2">
+          <button type="button" id="evgen-register-path" class="btn btn-sm btn-primary">Register paths</button>
+          <label class="btn btn-sm btn-secondary mb-0" for="evgen-register-file">Load a text file</label>
+          <input type="file" id="evgen-register-file" accept=".txt,.csv,.lst,text/plain" class="d-none">
+          <span id="evgen-register-count" class="text-muted small"></span>
+        </div>
       </div>
       <ul id="evgen-register-status" class="list-unstyled mb-0 mt-1"></ul>
     </div>
@@ -380,12 +385,42 @@
     if (!b || b.disabled) return;
     submit([b.getAttribute('data-path')]);
   });
+  // The typed entry takes one path per line, pasted or loaded from a
+  // text file (read in the browser); blank lines and # comments are
+  // skipped and duplicates dropped. Every line goes to the same endpoint
+  // as a ticked row, which validates each path and reports it back.
+  const fileEl = document.getElementById('evgen-register-file');
+  const countEl = document.getElementById('evgen-register-count');
+  function typedPaths() {
+    const seen = new Set();
+    return inputEl.value.split(/\r?\n/).map(l => l.trim())
+      .filter(l => l && !l.startsWith('#'))
+      .filter(l => { if (seen.has(l)) return false; seen.add(l); return true; });
+  }
+  function countPaths() {
+    const n = typedPaths().length;
+    countEl.textContent = n ? (n + ' path' + (n === 1 ? '' : 's') + ' to register') : '';
+  }
+  inputEl.addEventListener('input', countPaths);
   btnPath.addEventListener('click', function () {
-    const p = inputEl.value.trim();
-    if (p) submit([p]);
+    const paths = typedPaths();
+    if (paths.length) submit(paths);
   });
   inputEl.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); btnPath.click(); }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); btnPath.click(); }
+  });
+  fileEl.addEventListener('change', function () {
+    const f = fileEl.files && fileEl.files[0];
+    if (!f) return;
+    f.text().then(function (text) {
+      const have = inputEl.value.trim();
+      inputEl.value = (have ? have + '\n' : '') + text.trim() + '\n';
+      fileEl.value = '';
+      countPaths();
+      inputEl.focus();
+    }).catch(function (err) {
+      line('', 'Could not read ' + f.name + ': ' + (err.message || err), '#c62828');
+    });
   });
   document.getElementById('evgen-register-other-toggle').addEventListener('click', function (e) {
     e.preventDefault();

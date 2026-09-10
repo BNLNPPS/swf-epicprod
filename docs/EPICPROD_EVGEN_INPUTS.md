@@ -189,8 +189,10 @@ Priority cell of a row.
 
 The coverage worklist's action, **Register in Rucio**, registers the
 files at an EVGEN path as `epic:/EVGEN/...` datasets at RSE `EIC-XRD`
-under the `eicprod` account: tick worklist rows, or give one path (the
-DID tail, the `/volatile/eic/EPIC` door path, or the `root://` URL).
+under the `eicprod` account: tick worklist rows, or give paths, one per
+line, typed, pasted or loaded from a text file in the browser (each the
+DID tail, the `/volatile/eic/EPIC` door path, or the `root://` URL;
+blank lines and `#` comments are skipped).
 The web tier validates and queues (`POST /pcs/api/evgen/register/`,
 body `{"paths": [...]}`); the production operations agent does the
 credentialed work (`evgen_register` handler, doer
