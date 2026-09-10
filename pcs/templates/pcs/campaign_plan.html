@@ -16,7 +16,7 @@
     <div class="mb-3">
         <strong>Campaign:</strong>
         {% for c in plan_campaigns %}
-        <a href="?campaign={{ c.name }}"
+        <a href="?campaign={{ c.name }}{% if user_view %}&amp;user_view=1{% endif %}"
            class="btn btn-sm {% if campaign and c.name == campaign.name %}btn-secondary active{% else %}btn-outline-secondary{% endif %} me-1">{{ c.name }}
             <span class="text-lowercase">· {{ c.lifecycle }}</span></a>
         {% endfor %}

@@ -3733,8 +3733,12 @@ def pcs_campaign_plan(request):
         'view_edition_url': url_with(view=''),
         'view_pc_url': url_with(view='pc'),
         'plan_campaigns': plan_campaigns,
+        # The user view (?user_view=1) is the plan without the delivery
+        # map; the embed is neither built nor rendered there.
         'snapper_embed': (_plan_delivery_embed(campaign, state)
-                          if campaign is not None else None),
+                          if campaign is not None
+                          and request.GET.get('user_view', '') != '1'
+                          else None),
         'rows': rows,
         'total': len(rows_all),
         'shown': len(rows),
