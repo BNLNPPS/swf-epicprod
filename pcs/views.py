@@ -3128,11 +3128,14 @@ PLAN_STATUS_SLUGS = (('complete', 'complete'),
                      ('not-started', 'not started'),
                      ('no-target', 'no target'))
 
-# The plan's filter parameters, in facet-row order — the vocabulary the
-# plan page, its snapper embed, and the campaign Time history filter
-# carry-through all share.
-PLAN_FILTER_PARAMS = ('requestor', 'process', 'generator', 'beam', 'q2',
-                      'sample', 'nev', 'priority', 'status')
+# The plan's filter parameters — the vocabulary the plan page, its
+# snapper embed, and the campaign Time history filter carry-through all
+# share. The filter state rides `f` (monitor_app.inclusive_filter: the
+# selections as facet:value pairs, the shown rows their union); the rest
+# are the former one-per-facet parameters, still read from old links.
+PLAN_FILTER_PARAMS = ('f', 'requestor', 'process', 'generator', 'beam',
+                      'q2', 'sample', 'nev', 'priority', 'status', 'dispo',
+                      'astate')
 
 # Reader-facing wording for the campaign-plan recommendation values
 # (the internal identifiers stay stable in payloads and the executor).
@@ -3143,40 +3146,70 @@ CAMPAIGN_PLAN_DISPO_LABELS = {
 }
 
 
-def _apply_plan_filters(rows, query, skip=()):
-    """Apply the plan filters carried in ``query`` to ``rows``, skipping
-    the parameters named in ``skip`` — each facet row counts over the
-    slice made by every OTHER active filter (the self-excluded
-    convention), so its counts are true within the current slice while
-    switching within the facet stays possible."""
-    def val(key):
-        return '' if key in skip else (query.get(key) or '').strip()
+# The plan's former one-parameter-per-facet URL vocabulary, read as
+# selections so old links keep working (monitor_app.inclusive_filter).
+PLAN_LEGACY_PARAMS = {key: key for key in PLAN_FILTER_PARAMS if key != 'f'}
 
-    for key in ('process', 'generator', 'beam', 'q2', 'sample'):
-        value = val(key)
-        if value:
-            rows = [r for r in rows if r[key] == value]
-    # Requestor is multi-membership: a row matches when it carries the
-    # label; 'Unassigned' matches the empty list.
-    requestor = val('requestor')
-    if requestor == 'Unassigned':
-        rows = [r for r in rows if not r['requestors']]
-    elif requestor:
-        rows = [r for r in rows if requestor in r['requestors']]
-    nev = val('nev')
-    if nev == 'specified':
-        rows = [r for r in rows if r['expected_events'] is not None]
-    elif nev == 'unspecified':
-        rows = [r for r in rows if r['expected_events'] is None]
-    priority = val('priority')
-    if priority == 'none':
-        rows = [r for r in rows if r['priority'] is None]
-    elif priority.isdigit():
-        rows = [r for r in rows if r['priority'] == int(priority)]
-    status_label = dict(PLAN_STATUS_SLUGS).get(val('status'))
-    if status_label:
-        rows = [r for r in rows if r['status'] == status_label]
-    return rows
+
+def _plan_facets(assembly=False, has_completion=True):
+    """The plan's filter axes as inclusive-filter facets. Priority and
+    Status exist only where the completion record covers the campaign;
+    Disposition and State only on the assembly view."""
+    from monitor_app.inclusive_filter import Facet
+
+    slug_of = {label: slug for slug, label in PLAN_STATUS_SLUGS}
+    label_of = dict(PLAN_STATUS_SLUGS)
+    facets = [
+        # Requestor is multi-membership: a row carries each of its labels;
+        # a row with none carries 'Unassigned'.
+        Facet('requestor', 'Requestor',
+              lambda r: r['requestors'] or ['Unassigned']),
+        Facet('process', 'Process', lambda r: r['process']),
+        Facet('generator', 'Generator', lambda r: r['generator']),
+        Facet('beam', 'Beam', lambda r: r['beam']),
+        Facet('q2', 'Q²', lambda r: r['q2']),
+        Facet('sample', 'Sample', lambda r: r['sample']),
+        Facet('nev', 'Target events',
+              lambda r: ('specified' if r['expected_events'] is not None
+                         else 'unspecified'),
+              order=['specified', 'unspecified']),
+    ]
+    if has_completion:
+        facets.append(Facet(
+            'priority', 'Priority',
+            lambda r: (str(r['priority']) if r['priority'] is not None
+                       else 'none'),
+            order=lambda v: (v == 'none', int(v) if v.isdigit() else 0)))
+        if not assembly:
+            facets.append(Facet(
+                'status', 'Status',
+                lambda r: slug_of.get(r['status']),
+                display=lambda v: label_of.get(v, v),
+                order=[slug for slug, _label in PLAN_STATUS_SLUGS]))
+    if assembly:
+        facets.append(Facet(
+            'dispo', 'Disposition', lambda r: r['disposition'],
+            display=lambda v: CAMPAIGN_PLAN_DISPO_LABELS.get(v, v),
+            order=list(CAMPAIGN_PLAN_DISPO_LABELS)))
+        facets.append(Facet(
+            'astate', 'State', lambda r: r['state'],
+            display=lambda v: 'applied' if v == 'approved' else v,
+            order=['proposed', 'approved', 'denied']))
+    return facets
+
+
+def _plan_filter(query):
+    """The plan's inclusive filter over ``query`` (a QueryDict or a plain
+    mapping): the shown rows are the union of every selected value."""
+    from monitor_app.inclusive_filter import InclusiveFilter
+
+    return InclusiveFilter(query, legacy=PLAN_LEGACY_PARAMS)
+
+
+def _apply_plan_filters(rows, query, facets):
+    """The rows the plan filter in ``query`` selects: the union of the
+    selections, every row when nothing is selected."""
+    return _plan_filter(query).apply(rows, facets)
 
 
 def _campaign_plan_state(campaign, query, pc_view):
@@ -3295,43 +3328,17 @@ def _campaign_plan_state(campaign, query, pc_view):
         if r['physics'] else 0, r['sample']))
 
     rows_all = rows
-    filters = {key: (query.get(key) or '').strip()
-               for key in ('process', 'generator', 'beam', 'q2', 'sample')}
-    requestor_filter = (query.get('requestor') or '').strip()
-    nev = (query.get('nev') or '').strip()
-    priority_filter = (query.get('priority') or '').strip()
-    status_filter = (query.get('status') or '').strip()
-    status_label = dict(PLAN_STATUS_SLUGS).get(status_filter)
-    rows = _apply_plan_filters(rows_all, query)
+    facets = _plan_facets(has_completion=bool(completion_by_pc))
+    flt = _plan_filter(query)
+    rows = flt.apply(rows_all, facets)
 
-    # The named active filters (the page's Active-filters line and the
+    # The named active filters (the page's filter statement and the
     # Time-history carry-through statement) and their parameter echo
     # (the query fragment that reproduces this slice).
-    active_filters = []
-    filter_echo = {}
-    if requestor_filter:
-        active_filters.append(('Requestor', requestor_filter))
-        filter_echo['requestor'] = requestor_filter
-    for key, label in (('process', 'Process'), ('generator', 'Generator'),
-                       ('beam', 'Beam'), ('q2', 'Q²'), ('sample', 'Sample')):
-        if filters[key]:
-            active_filters.append((label, filters[key]))
-            filter_echo[key] = filters[key]
-    if nev:
-        active_filters.append(('Target events', nev))
-        filter_echo['nev'] = nev
-    if priority_filter:
-        active_filters.append(('Priority', priority_filter))
-        filter_echo['priority'] = priority_filter
-    if status_label:
-        active_filters.append(('Status', status_label))
-        filter_echo['status'] = status_filter
-
-    return {'rows_all': rows_all, 'rows': rows, 'filters': filters,
-            'requestor_filter': requestor_filter, 'nev': nev,
-            'priority_filter': priority_filter,
-            'status_filter': status_filter, 'status_label': status_label,
-            'active_filters': active_filters, 'filter_echo': filter_echo,
+    return {'rows_all': rows_all, 'rows': rows,
+            'facets': facets, 'filter': flt,
+            'active_filters': flt.active_filters(facets),
+            'filter_echo': flt.echo,
             'has_completion': bool(completion_by_pc)}
 
 
@@ -3340,8 +3347,7 @@ def campaign_plan_pc_filter(campaign_name, query):
     plan filter parameters in ``query`` against ``campaign_name`` and
     return ``(active_filters, pc label set)`` — or ``(None, None)``
     when no plan filter is active or the campaign is unknown."""
-    if not any((query.get(key) or '').strip()
-               for key in PLAN_FILTER_PARAMS):
+    if not _plan_filter(query).active:
         return None, None
     campaign = Campaign.objects.filter(name=campaign_name).first()
     if campaign is None:
@@ -3470,8 +3476,16 @@ def user_view_home(request):
     """The user view home: the reduced epicprod face's landing page. Its
     content is not yet specified; the page carries the user-view nav
     and nothing else."""
-    return render(request, 'pcs/user_view_home.html',
-                  {'nav_mode': 'production'})
+    from monitor_app.cached_product import get_product
+    from monitor_app.views import _campaign_completion_lines
+    summary_product = get_product(
+        'prod_hub_campaign_completion', _campaign_completion_lines,
+        ttl_seconds=600)
+    return render(request, 'pcs/user_view_home.html', {
+        'nav_mode': 'production',
+        'campaign_summary_lines': summary_product['value'] or [],
+        'campaign_summary_built_at': summary_product['built_at'],
+    })
 
 
 def pcs_campaign_plan(request):
@@ -3516,7 +3530,6 @@ def pcs_campaign_plan(request):
     # current campaign's PC spine, the standard plan filters apply, and
     # the assembly-only recommendation and review-state axes join them.
     assembly = None
-    dispo_filter = astate_filter = ''
     if campaign is not None and not state['rows_all']:
         assembly = _campaign_assembly_context(campaign)
     if assembly:
@@ -3537,13 +3550,13 @@ def pcs_campaign_plan(request):
             row['status'] = ''
             row['disposition_label'] = CAMPAIGN_PLAN_DISPO_LABELS.get(
                 row['disposition'], row['disposition'])
-        arows = _apply_plan_filters(assembly['rows'], request.GET)
-        dispo_filter = (request.GET.get('dispo') or '').strip()
-        astate_filter = (request.GET.get('astate') or '').strip()
-        if dispo_filter:
-            arows = [r for r in arows if r['disposition'] == dispo_filter]
-        if astate_filter:
-            arows = [r for r in arows if r['state'] == astate_filter]
+        # The assembly axes, Disposition and State, join the plan facets
+        # in the one inclusive filter: a selection on any of them adds
+        # its rows to the shown set like every other.
+        facets = _plan_facets(assembly=True,
+                              has_completion=state['has_completion'])
+        flt = _plan_filter(request.GET)
+        arows = flt.apply(assembly['rows'], facets)
         assembly['rows_filtered'] = arows
         assembly['shown'] = len(arows)
         assembly['by_disposition'] = [
@@ -3553,23 +3566,15 @@ def pcs_campaign_plan(request):
         state['rows_all'] = assembly['rows']
         state['rows'] = arows
         state['has_completion'] = True
-        active = list(state['active_filters'])
-        if dispo_filter:
-            active.append(('Disposition',
-                           CAMPAIGN_PLAN_DISPO_LABELS.get(dispo_filter,
-                                                          dispo_filter)))
-        if astate_filter:
-            active.append(('State', 'applied' if astate_filter == 'approved'
-                           else astate_filter))
-        state['active_filters'] = active
+        state['facets'] = facets
+        state['filter'] = flt
+        state['active_filters'] = flt.active_filters(facets)
+        state['filter_echo'] = flt.echo
 
     rows_all = state['rows_all']
     rows = state['rows']
-    filters = state['filters']
-    requestor_filter = state['requestor_filter']
-    nev = state['nev']
-    priority_filter = state['priority_filter']
-    status_filter = state['status_filter']
+    facets = state['facets']
+    flt = state['filter']
 
     with_target = sum(1 for r in rows_all
                       if r['expected_events'] is not None)
@@ -3586,149 +3591,10 @@ def pcs_campaign_plan(request):
         encoded = params.urlencode()
         return f'{request.path}?{encoded}' if encoded else request.path
 
-    def facet(param):
-        # Counts over the slice made by every OTHER active filter, so
-        # each count is true within the current slice; the active value
-        # stays listed even at zero.
-        counts = {}
-        for r in _apply_plan_filters(rows_all, request.GET, skip=(param,)):
-            value = r[param]
-            if value:
-                counts[value] = counts.get(value, 0) + 1
-        if filters[param] and filters[param] not in counts:
-            counts[filters[param]] = 0
-        return {'items': [{'value': v, 'count': n,
-                           'url': url_with(**{param: v}),
-                           'active': filters[param] == v}
-                          for v, n in sorted(counts.items())],
-                'all_url': url_with(**{param: ''}),
-                'all_active': not filters[param]}
-
-    requestor_counts = {}
-    unassigned_count = 0
-    for r in _apply_plan_filters(rows_all, request.GET,
-                                 skip=('requestor',)):
-        if not r['requestors']:
-            unassigned_count += 1
-        for label in r['requestors']:
-            requestor_counts[label] = requestor_counts.get(label, 0) + 1
-    requestor_items = [
-        {'value': label, 'count': count,
-         'url': url_with(requestor=label),
-         'active': requestor_filter == label}
-        for label, count in sorted(requestor_counts.items())]
-    if unassigned_count:
-        requestor_items.append(
-            {'value': 'Unassigned', 'count': unassigned_count,
-             'url': url_with(requestor='Unassigned'),
-             'active': requestor_filter == 'Unassigned'})
-    facet_rows = [
-        ('Requestor', {'items': requestor_items,
-                       'all_url': url_with(requestor=''),
-                       'all_active': not requestor_filter}),
-        ('Process', facet('process')),
-        ('Generator', facet('generator')),
-        ('Beam', facet('beam')),
-        ('Q²', facet('q2')),
-        ('Sample', facet('sample')),
-    ]
-    nev_base = _apply_plan_filters(rows_all, request.GET, skip=('nev',))
-    specified_count = sum(
-        1 for r in nev_base if r['expected_events'] is not None)
-    facet_rows.append(('Target events', {
-        'items': [
-            {'value': 'specified', 'count': specified_count,
-             'url': url_with(nev='specified'), 'active': nev == 'specified'},
-            {'value': 'unspecified',
-             'count': len(nev_base) - specified_count,
-             'url': url_with(nev='unspecified'),
-             'active': nev == 'unspecified'},
-        ],
-        'all_url': url_with(nev=''),
-        'all_active': not nev,
-    }))
-    # Priority and Status facets exist only where the completion record
-    # covers the campaign (current or producing).
-    if state['has_completion']:
-        priority_counts = {}
-        no_priority_count = 0
-        for r in _apply_plan_filters(rows_all, request.GET,
-                                     skip=('priority',)):
-            if r['priority'] is None:
-                no_priority_count += 1
-            else:
-                priority_counts[r['priority']] = (
-                    priority_counts.get(r['priority'], 0) + 1)
-        if (priority_filter.isdigit()
-                and int(priority_filter) not in priority_counts):
-            priority_counts[int(priority_filter)] = 0
-        priority_items = [
-            {'value': str(p), 'count': n, 'url': url_with(priority=str(p)),
-             'active': priority_filter == str(p)}
-            for p, n in sorted(priority_counts.items())]
-        if no_priority_count or priority_filter == 'none':
-            priority_items.append(
-                {'value': 'none', 'count': no_priority_count,
-                 'url': url_with(priority='none'),
-                 'active': priority_filter == 'none'})
-        facet_rows.append(('Priority', {
-            'items': priority_items,
-            'all_url': url_with(priority=''),
-            'all_active': not priority_filter}))
-        if assembly is None:
-            status_base = _apply_plan_filters(rows_all, request.GET,
-                                              skip=('status',))
-            status_counts = {label: sum(1 for r in status_base
-                                        if r['status'] == label)
-                             for _slug, label in PLAN_STATUS_SLUGS}
-            facet_rows.append(('Status', {
-                'items': [
-                    {'value': label, 'count': status_counts[label],
-                     'url': url_with(status=slug),
-                     'active': status_filter == slug}
-                    for slug, label in PLAN_STATUS_SLUGS
-                    if status_counts[label] or status_filter == slug],
-                'all_url': url_with(status=''),
-                'all_active': not status_filter}))
-    if assembly is not None:
-        # The assembly axes, self-excluded like every other facet: each
-        # counts over the rows the OTHER filters leave.
-        def _assembly_base(skip_dispo=False, skip_astate=False):
-            base = _apply_plan_filters(rows_all, request.GET)
-            if dispo_filter and not skip_dispo:
-                base = [r for r in base
-                        if r['disposition'] == dispo_filter]
-            if astate_filter and not skip_astate:
-                base = [r for r in base if r['state'] == astate_filter]
-            return base
-
-        dispo_base = _assembly_base(skip_dispo=True)
-        facet_rows.append(('Disposition', {
-            'items': [
-                {'value': CAMPAIGN_PLAN_DISPO_LABELS[value],
-                 'count': sum(1 for r in dispo_base
-                              if r['disposition'] == value),
-                 'url': url_with(dispo=value),
-                 'active': dispo_filter == value}
-                for value in CAMPAIGN_PLAN_DISPO_LABELS
-                if sum(1 for r in dispo_base
-                       if r['disposition'] == value)
-                or dispo_filter == value],
-            'all_url': url_with(dispo=''),
-            'all_active': not dispo_filter}))
-        astate_base = _assembly_base(skip_astate=True)
-        facet_rows.append(('State', {
-            'items': [
-                {'value': 'applied' if value == 'approved' else value,
-                 'count': sum(1 for r in astate_base
-                              if r['state'] == value),
-                 'url': url_with(astate=value),
-                 'active': astate_filter == value}
-                for value in ('proposed', 'approved')
-                if sum(1 for r in astate_base if r['state'] == value)
-                or astate_filter == value],
-            'all_url': url_with(astate=''),
-            'all_active': not astate_filter}))
+    # The inclusive filter's rows: every value of every facet with its
+    # count over all rows, selected values bold, the shown rows the
+    # union of the selections (monitor_app.inclusive_filter).
+    inclusive_filter = flt.context(rows_all, facets, request)
 
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
@@ -3750,10 +3616,8 @@ def pcs_campaign_plan(request):
         'rows': rows,
         'total': len(rows_all),
         'shown': len(rows),
-        'facet_rows': facet_rows,
-        'clear_url': url_with(process='', generator='', beam='', q2='',
-                              sample='', requestor='', nev='', priority='',
-                              status='', dispo='', astate=''),
+        'inclusive_filter': inclusive_filter,
+        'clear_url': inclusive_filter['clear_url'],
         'with_target': with_target,
         'without_target': len(rows_all) - with_target,
         'target_total': target_total,
