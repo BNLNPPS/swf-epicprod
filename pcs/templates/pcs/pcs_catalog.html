@@ -86,7 +86,7 @@
     })();
     </script>
     {% endif %}
-    {% if catalog_view != 'progress' %}
+    {% if catalog_view != 'progress' and not user_view %}
     {% if not is_tunnel and user.is_authenticated %}
     <form method="post" action="{% url 'pcs:pcs_catalog_csv_update' %}" class="ms-2 d-inline" id="csv-update-form">
       {% csrf_token %}
@@ -129,6 +129,9 @@
     {% endif %}
     {% endif %}
   </div>
+  {% if catalog_view != 'progress' %}
+  <p class="mb-3"><strong>This is a production task oriented view of the campaign. For a physics product oriented view, showing the physics configurations in the campaign and their production status, use the <a href="{% url 'pcs:pcs_campaign_plan' %}{% if user_view %}?user_view=1{% endif %}">current campaign view</a>.</strong></p>
+  {% endif %}
 
   <script>
   // Update from Rucio — fire-and-notify via the prod-ops agent + SSE push.
@@ -475,7 +478,7 @@
     </div>
   {% endif %}
 
-  <div id="pcs-rucio-timeline" class="mb-2"></div>
+  {% if not user_view %}<div id="pcs-rucio-timeline" class="mb-2"></div>{% endif %}
 
   {% if catalog_view == 'progress' %}
   <div class="small text-muted mb-3 d-flex align-items-center gap-2 flex-wrap">
@@ -569,7 +572,7 @@
   </details>
   {% endif %}
 
-  {% if evgen_rucio_unmatched %}
+  {% if evgen_rucio_unmatched and not user_view %}
   <details class="mb-3 small">
     <summary class="text-muted">
       <strong style="color:#dc3545">&#9888; {{ evgen_rucio_unmatched|length }} EVGEN dataset{{ evgen_rucio_unmatched|length|pluralize }} in Rucio unclaimed by any request</strong>

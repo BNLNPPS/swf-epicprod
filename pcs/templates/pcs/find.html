@@ -81,7 +81,7 @@
 <div id="pcs-brains-panel" aria-label="Brains dialog">
   <div class="pcs-brains-head">
     <span><span class="ai-attr-text">Brains</span> <span id="pcs-brains-who">{% if brains_model %}{{ brains_model }} at work{% endif %}</span></span>
-    <a href="{% url 'pcs:find_data' %}" class="pcs-brains-x" title="Clear the dialog and restore the page">&times;</a>
+    <a href="{% url 'pcs:find_data' %}{% if user_view %}?user_view=1{% endif %}" class="pcs-brains-x" title="Clear the dialog and restore the page">&times;</a>
   </div>
   <div id="pcs-brains-turns"></div>
   <div id="pcs-brains-status"></div>
@@ -94,8 +94,9 @@
       <input type="search" name="q" value="{% if not brains_id %}{{ q }}{% endif %}" autofocus
              class="form-control form-control-lg pcs-find-input me-3"
              placeholder="beamgas proton 275, DIS NC 10x100 minQ2=1, a path fragment, or question&hellip;">
-      {% if q %}<a href="{% url 'pcs:find_data' %}" class="btn btn-secondary btn-lg" title="Clear the search, filters, and dialog">Clear</a>{% else %}<button type="button" class="btn btn-outline-secondary btn-lg" disabled>Clear</button>{% endif %}
+      {% if q %}<a href="{% url 'pcs:find_data' %}{% if user_view %}?user_view=1{% endif %}" class="btn btn-secondary btn-lg" title="Clear the search, filters, and dialog">Clear</a>{% else %}<button type="button" class="btn btn-outline-secondary btn-lg" disabled>Clear</button>{% endif %}
     </div>
+    {% if user_view %}<input type="hidden" name="user_view" value="1">{% endif %}
     <input type="hidden" name="brains" id="pcs-brains-hidden" value="{{ brains_id }}">
     <div class="row mt-2">
       <div class="col-md-6">
@@ -234,7 +235,8 @@
   }
   function applySearch(q) {
     window.location = findUrl + '?q=' + encodeURIComponent(q)
-      + '&brains=' + encodeURIComponent(conversationId);
+      + '&brains=' + encodeURIComponent(conversationId)
+      + (document.documentElement.getAttribute('data-user-view') === '1' ? '&user_view=1' : '');
   }
   async function refresh(fresh) {
     if (!conversationId) return false;

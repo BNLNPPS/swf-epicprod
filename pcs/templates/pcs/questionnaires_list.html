@@ -28,10 +28,13 @@
       <div class="text-muted">
         <span id="pcs-qf-shown">{{ total_count }}</span> shown of {{ total_count }}
       </div>
+      {% comment %}The Google Form intake is retired (2026-09-10); the link stays in the code and is not shown.{% endcomment %}
+      {% if False %}
       <a href="https://docs.google.com/forms/d/e/1FAIpQLScDqiEaHayAcwBDGAWa4W6k-6yUFzS-XiWuhLolpy64mLk5FA/viewform"
          target="_blank" rel="noopener noreferrer">
         Questionnaire form
       </a>
+      {% endif %}
     </div>
   </div>
 
@@ -65,6 +68,8 @@
     </div>
   </div>
 
+  {% comment %}The Google Form intake is retired (2026-09-10); the CSV import stays in the code and is not shown.{% endcomment %}
+  {% if False %}
   {% if not is_tunnel and user.is_authenticated %}
   <div class="mb-3 p-2 border rounded bg-light" style="max-width: 42rem;">
     <form method="post" action="{% url 'pcs:questionnaire_import' %}" class="row g-2 align-items-end">
@@ -94,6 +99,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
   {% endif %}
 
   <!-- House frame owns overflow and latches the header; no outer wrapper. -->
