@@ -548,6 +548,18 @@ With these, the nightly dig reads the trace from the report store
 (the sweep of JOB_REPORTING.md files it beside the job) and fetches no
 tarball. The exit-code registry gains the crash-class row.
 
+As built (2026-09-11, payload 0.12.0): the ERR trap calls
+`crash_capture` on a status from 128 to 159, which puts "crash: <stage>
+(<program>) exited <s> (signal N)" and the last 200 lines of the stage's
+log (`npsim.log`, `eicrecon.log`, `hepmcmerger.log`, `evgen.log` by
+stage) into `REPORT_NOTE`, so the report the EXIT trap writes and sends
+carries the trace, and then calls `upload_logs`, the Rucio log upload
+of the Logs stage made a function, when the configuration copies logs
+through Rucio. A live check under the trap (a SIGSEGV in the simulation
+stage) exited 139 with the tail in the note and the stage marked
+failed. The dig reads a filed report whose note begins `crash:` before
+resolving any tarball. The registry row is in EPICPROD_PAYLOAD.md.
+
 ## Production disposition
 
 The catalog feeds two consumers with two different questions.

@@ -35,7 +35,38 @@ monitor() {
     "$@"
   fi
 }
-trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; if [ -n "$CURRENT_STAGE" ]; then stage "$CURRENT_STAGE" fail "line $LINENO: $BASH_COMMAND"; fi; exit $s' ERR
+# A crash (a stage's program dead on a signal: exit 128 + N) leaves its
+# evidence in the stage's log, which never reaches anyone when the job
+# dies before the Logs stage. So the trap, before exiting on a crash-class
+# status, puts the tail of the failing stage's log into the report's note
+# (the report goes out on the EXIT trap, through the report channel) and
+# runs the log upload, so the stage logs of a crashed job reach LOG_RSE
+# as a finished job's do (swf-epicprod docs/SEGFAULT_DIAGNOSIS.md, Traces
+# going forward). Neither changes the exit code.
+CRASH_TAIL_LINES=200
+crash_capture() {
+  local s=$1
+  trap - ERR
+  local program
+  case "${CURRENT_STAGE}" in
+    simulation) program=npsim ;;
+    reconstruction) program=eicrecon ;;
+    background) program=hepmcmerger ;;
+    evgen) program=evgen ;;
+    *) program="" ;;
+  esac
+  local stage_log="${LOG_TEMP:-}/${TASKNAME:-}.${program}.log"
+  if [ -n "${program}" ] && [ -f "${stage_log}" ]; then
+    REPORT_NOTE="crash: ${CURRENT_STAGE} (${program}) exited ${s} (signal $((s - 128))); last ${CRASH_TAIL_LINES} lines of ${program}.log:"$'\n'"$(tail -n "${CRASH_TAIL_LINES}" "${stage_log}" 2>/dev/null || true)"
+  else
+    REPORT_NOTE="crash: ${CURRENT_STAGE:-unknown stage} exited ${s} (signal $((s - 128))); no stage log to read"
+  fi
+  echo "crash capture: ${CURRENT_STAGE:-?} exited ${s}; the report carries the stage log tail"
+  if [ "${COPYLOG:-false}" == "true" ] && [ "${USERUCIO:-false}" == "true" ] && [ -n "${LOG_TEMP:-}" ]; then
+    upload_logs || true
+  fi
+}
+trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; if [ -n "$CURRENT_STAGE" ]; then stage "$CURRENT_STAGE" fail "line $LINENO: $BASH_COMMAND"; fi; if [ "$s" -ge 128 ] && [ "$s" -le 159 ]; then crash_capture "$s" || true; fi; exit $s' ERR
 # Payload report (PAYLOAD_REPORT, payload-report.json in the working
 # directory): written on every exit path from what the run left behind,
 # by payload_report.py, and carried into jobReport.json by the epicprod
@@ -678,8 +709,10 @@ stage metadata ok
 
 # Data egress to directory
 
-if [ "${COPYLOG:-false}" == "true" ] ; then
-  if [ "${USERUCIO:-false}" == "true" ] ; then
+# The Rucio log upload, as a function: the Logs stage calls it on a
+# finished run, and the crash trap calls it on a crash-class exit so a
+# crashed job's stage logs reach the store as well.
+upload_logs() {
     # Every path through this block leaves a mark in the stage log. The
     # block used to record only its failures, so a successful upload, a
     # block never entered, and a configuration that skips logs all read
@@ -756,6 +789,11 @@ if [ "${COPYLOG:-false}" == "true" ] ; then
         echo "WARNING: no log upload succeeded. The payload continues; the report carries this."
       fi
     fi
+}
+
+if [ "${COPYLOG:-false}" == "true" ] ; then
+  if [ "${USERUCIO:-false}" == "true" ] ; then
+    upload_logs
   else
     echo "=== DEBUG: Attempting to copy LOG files to xrootd ==="
     setup_xrd_auth
