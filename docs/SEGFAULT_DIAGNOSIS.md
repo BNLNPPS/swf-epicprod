@@ -269,10 +269,12 @@ in its render path reaches the PanDA database or any remote service.
 
 List: one row per signature, columns: class, signature (exit code and,
 at trace level, the frame), configuration, tasks, crashes, rate, time
-to death (p10/p50 minutes), sites, hosts, rows lost, stage, status,
-last seen. Default order: crashes descending. The inclusive filter
-(swf-monitor `docs/INCLUSIVE_FILTER.md`) carries the facets class,
-exit code, site, status and level.
+to death (p10/p50 minutes), queues, hosts, rows lost, stage, status,
+last seen first. Default order: last seen, newest first. The narrowing
+filter of the operations views (swf-monitor `docs/INCLUSIVE_FILTER.md`
+§ The narrowing filter) carries the facets class, exit code, queue,
+status and level: a selection narrows to the intersection and every
+bar re-counts within the selection.
 
 Detail `/panda/segfaults/<key>/`: the signature's tasks with links to
 the task pages, the configuration block, the site table, the crashed
