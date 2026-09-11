@@ -746,7 +746,17 @@ For external-EVGEN tasks (one manifest row per EVGEN file):
    limit with chunks of three to four hours; a rerun under the
    configuration's two-hour default died at the wall on every job
    (task 39623, 2026-09-10), the pilot's "Reached maxtime", with the
-   payload silent mid-simulation.
+   payload silent mid-simulation. When the task names a queue, the
+   declaration is held just under that queue's `maxtime` from
+   schedconfig (`services.panda_queue_walltime_cap`), since JEDI finds
+   no candidate for a declaration above the limit (task 39721,
+   2026-09-11: 5.8 h against a 3 h queue) and the pilot does not kill
+   on `maxtime`; the record keeps the estimate, the limit and the
+   observed longest job. Recording the submission logs a
+   `walltime_queue_cap` action: a warning naming the queue when the
+   attempt's own jobs ran longer than the queue declares, which is a
+   wrong queue declaration for its owner to correct; info when the
+   estimate alone was capped.
 
 For generation-only tasks: residual events = target − delivered, with
 delivered taken from registered outputs and the event-measurement store

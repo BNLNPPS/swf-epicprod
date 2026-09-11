@@ -506,7 +506,8 @@ def panda_attempt_walltime_hours(jedi_task_id, margin=1.5, floor_hours=2.0,
     """The walltime a rerun of an attempt's own chunks needs, from the
     attempt's finished jobs in the PanDA record: the longest finished job
     times ``margin``, at least ``floor_hours``, at most ``cap_hours``.
-    Returns (hours, evidence) or (None, reason) without a finished job.
+    Returns (hours, evidence, longest_hours) or (None, reason, None)
+    without a finished job.
 
     A residual rerun reruns the attempt's chunks as they were, so the
     original jobs' durations are the measure, not the configuration's
@@ -529,14 +530,54 @@ def panda_attempt_walltime_hours(jedi_task_id, margin=1.5, floor_hours=2.0,
     except Exception as e:                                    # noqa: BLE001
         _log.warning('attempt walltime fetch failed for task %s: %s',
                      jedi_task_id, e)
-        return None, f'PanDA record unavailable: {e}'
+        return None, f'PanDA record unavailable: {e}', None
     if not n or not longest:
-        return None, f'no finished job of PanDA task {jedi_task_id}'
+        return None, f'no finished job of PanDA task {jedi_task_id}', None
     hours = min(max(float(longest) * margin / 3600.0, floor_hours), cap_hours)
     return hours, (f'{n} finished jobs of PanDA task {jedi_task_id}: '
                    f'longest {float(longest) / 3600:.1f} h, mean '
                    f'{float(mean) / 3600:.1f} h; walltime {hours:.1f} h '
-                   f'(x{margin}, floor {floor_hours:g} h, cap {cap_hours:g} h)')
+                   f'(x{margin}, floor {floor_hours:g} h, cap {cap_hours:g} h)'), \
+        float(longest) / 3600.0
+
+
+QUEUE_WALLTIME_MARGIN_HOURS = 0.1
+
+
+def panda_queue_walltime_cap(queue, walltime_hours, observed_longest_hours=None):
+    """The declared walltime of a task pointed at ``queue``, held just under
+    the queue's ``maxtime`` (schedconfig, a PanDA table read) so brokerage
+    accepts it: JEDI finds no candidate when the declaration exceeds the
+    queue's limit (task 39721, 2026-09-11: 5.8 h declared against a 3 h
+    queue). Returns (hours, cap) where cap is None when the queue names
+    no limit, else {queue, maxtime_hours, declared_hours, capped, hours,
+    observed_longest_hours, mismatch}; ``mismatch`` is true when the
+    attempt's own jobs ran longer than the queue declares, which says the
+    queue's declaration is wrong, not the estimate."""
+    if not queue:
+        return walltime_hours, None
+    from monitor_app.panda.queries import get_queue
+    cfg = (get_queue(queue) or {}).get('queue') or {}
+    try:
+        maxtime = int(cfg.get('maxtime') or 0)
+    except (TypeError, ValueError):
+        maxtime = 0
+    if maxtime <= 0:
+        return walltime_hours, None
+    maxtime_hours = maxtime / 3600.0
+    cap = {'queue': queue, 'maxtime_hours': round(maxtime_hours, 2),
+           'declared_hours': round(float(walltime_hours), 2), 'capped': False,
+           'hours': round(float(walltime_hours), 2),
+           'observed_longest_hours': (round(float(observed_longest_hours), 2)
+                                      if observed_longest_hours else None),
+           'mismatch': bool(observed_longest_hours
+                            and float(observed_longest_hours) > maxtime_hours)}
+    hours = float(walltime_hours)
+    if hours > maxtime_hours - QUEUE_WALLTIME_MARGIN_HOURS:
+        hours = max(maxtime_hours - QUEUE_WALLTIME_MARGIN_HOURS, QUEUE_WALLTIME_MARGIN_HOURS)
+        cap['capped'] = True
+        cap['hours'] = round(hours, 2)
+    return hours, cap
 
 
 def _panda_executed_identity(jedi_task_id):
@@ -5873,6 +5914,33 @@ def rename_pcs_current_campaign(new_name, *, created_by='operator'):
     return set_pcs_campaign_lifecycle(new_name, 'current', created_by=created_by)
 
 
+def _holler_walltime_cap(task, jedi_task_id, residual):
+    """The walltime cap of a residual submission as an action: a warning
+    naming the queue when the attempt's own jobs ran longer than the queue
+    declares (the declaration is wrong; the queue owner corrects it), info
+    when the estimate alone ran past the limit and was capped."""
+    cap = ((residual or {}).get('walltime') or {}).get('queue_limit') or {}
+    if not cap or not (cap.get('capped') or cap.get('mismatch')):
+        return
+    from monitor_app.epicprod_logging import log_epicprod_action
+    if cap.get('mismatch'):
+        message = (f"queue {cap['queue']} declares maxtime {cap['maxtime_hours']} h, "
+                   f"but the attempt's own jobs ran up to {cap['observed_longest_hours']} h "
+                   f"on it; residual task {jedi_task_id} declared {cap['hours']} h "
+                   f"(estimate {cap['declared_hours']} h). The queue declaration is wrong.")
+    else:
+        message = (f"residual task {jedi_task_id}: walltime estimate {cap['declared_hours']} h "
+                   f"capped to {cap['hours']} h under queue {cap['queue']}'s maxtime "
+                   f"{cap['maxtime_hours']} h.")
+    log_epicprod_action(
+        'pcs', 'walltime_queue_cap', outcome='ok', sublevel='normal', live_default=True,
+        subject_type='panda_queue', subject_key=cap['queue'],
+        severity='warning' if cap.get('mismatch') else 'info',
+        message=message, prod_task=task.name, jedi_task_id=int(jedi_task_id),
+        maxtime_hours=cap['maxtime_hours'], declared_hours=cap['declared_hours'],
+        hours=cap['hours'], observed_longest_hours=cap.get('observed_longest_hours') or 0)
+
+
 def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
                                panda_tasks_id=None, task_name=None,
                                residual=None, payload_version=None,
@@ -5960,6 +6028,7 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
             # Residual .tryN coverage (JEDI_INTEGRATION.md § Residual
             # rerun): what fraction of the manifest this attempt covers.
             meta['residual'] = residual
+            _holler_walltime_cap(task, incoming, residual)
         if payload_version:
             meta['payload_version'] = str(payload_version)
         if manifest_rows:

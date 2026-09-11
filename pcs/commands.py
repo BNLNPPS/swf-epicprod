@@ -975,10 +975,11 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         # measured from that attempt's finished jobs, not taken from the
         # configuration's target (JEDI_INTEGRATION.md § Residual rerun).
         from .services import panda_attempt_walltime_hours
-        attempt_hours, evidence = panda_attempt_walltime_hours(
+        attempt_hours, evidence, longest_hours = panda_attempt_walltime_hours(
             attempt.jedi_task_id)
         residual_coverage['walltime'] = {'hours': attempt_hours,
-                                         'evidence': evidence}
+                                         'evidence': evidence,
+                                         'observed_longest_hours': longest_hours}
     else:
         # Per-job manifest (file,ext,nevents,ichunk), one row per job over
         # the matched Rucio EVGEN files; PanDA's %RNDM→${SEQNUMBER} selects
@@ -1033,20 +1034,29 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
 
     hours = cfg.get('target_hours_per_job')
     walltime_hours = float(hours) if hours is not None else float(data.get('walltime_hours', 2.0))
+    # A trial's site is the destination it was fired at to qualify, so it
+    # outranks the configuration's: a trial that records GREX and submits
+    # to OSG qualifies the wrong path and reports success for it.
+    site = (str((ds.metadata or {}).get('trial_site') or '')
+            or cfg.get('panda_site') or EVGEN_DEFAULT_SITE)
     if residual_coverage and (residual_coverage.get('walltime') or {}).get('hours'):
         walltime_hours = max(walltime_hours,
                              float(residual_coverage['walltime']['hours']))
+        # Held just under the named queue's maxtime so brokerage accepts
+        # it; the record keeps the estimate, the limit and whether the
+        # attempt's jobs outran the declaration (services.panda_queue_walltime_cap).
+        from .services import panda_queue_walltime_cap
+        walltime_hours, cap = panda_queue_walltime_cap(
+            site, walltime_hours, residual_coverage['walltime'].get('observed_longest_hours'))
+        if cap:
+            residual_coverage['walltime']['queue_limit'] = cap
 
     return {
         'outDS': out_ds,
         'vo': data.get('vo', 'epic'),
         'userName': task.created_by,
         'workingGroup': cfg.get('panda_working_group') or 'EIC',
-        # A trial's site is the destination it was fired at to qualify, so it
-        # outranks the configuration's: a trial that records GREX and submits
-        # to OSG qualifies the wrong path and reports success for it.
-        'site': (str((ds.metadata or {}).get('trial_site') or '')
-                 or cfg.get('panda_site') or EVGEN_DEFAULT_SITE),
+        'site': site,
         'prodSourceLabel': data.get('prod_source_label', 'test'),
         'taskType': data.get('task_type', 'prod'),
         'processingType': data.get('processing_type', 'epicproduction'),
