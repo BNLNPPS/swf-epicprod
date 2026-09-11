@@ -112,9 +112,20 @@ def pythia8_dis_nc_card(events, seed):
     # multiplicity, and with it on they matched (2026-09-07).
     if radiative == 'off':
         lines.append('PDF:lepton = off')
+        lines.append('TimeShower:QEDshowerByL = off')
     elif radiative != 'on':
         fail(f'EVGEN_RADIATIVE {radiative!r}: expected on or off')
+    # The physics settings of the collaboration's DIS cards
+    # (eic/eicSimuBeamEffects Pythia8/steerFiles, docs/EPICPROD_INTERNAL_EVGEN.md
+    # § The steering): CTEQ5L, no multiparton interactions, the phase-space
+    # floor, the shower matching.
     lines += [
+        'PDF:pset = 2',
+        'PartonLevel:MPI = off',
+        'PromptPhoton:all = off',
+        'PhaseSpace:mHatMin = 0.0',
+        'PhaseSpace:pTHatMinDiverge = force 0.01',
+        'SpaceShower:pTmaxMatch = 2',
         'SpaceShower:dipoleRecoil = on',
         'Random:setSeed = on',
         f'Random:seed = {seed}',
