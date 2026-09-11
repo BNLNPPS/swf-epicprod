@@ -238,6 +238,7 @@ The canonical subject types for new assessments are:
 | `panda_task` | JEDI task id, or PanDA task name when no JEDI id is known |
 | `panda_job` | PanDA job id (`pandaid`) |
 | `panda_queue` | PanDA queue name; if the queue name equals the site name, the row represents the site as a whole |
+| `crash_signature` | Segfault catalog signature key, e.g. `exit139:task38661` (SEGFAULT_DIAGNOSIS.md) |
 
 AI clients register assessments through MCP with
 `epic_register_ai_assessment`. The tool resolves known subjects, creates the

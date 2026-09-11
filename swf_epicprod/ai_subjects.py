@@ -140,6 +140,24 @@ register_subject_type(
 register_subject_type(
     'panda_queue', _resolve_panda_queue,
     aliases=('queue', 'site', 'monitor.panda_queue'))
+def _resolve_crash_signature(subject_key, data):
+    """A crash signature of the segfault catalog (SEGFAULT_DIAGNOSIS.md);
+    the assessment's page group id lands in the signature's data."""
+    from monitor_app.models import CrashSignature
+
+    sig = CrashSignature.objects.get(key=str(subject_key).strip())
+    return {
+        'target_obj': sig,
+        'target_json_field': 'data',
+        'subject_key': sig.key,
+        'subject_label': f'Crash signature {sig.key}',
+        'subject_url': _url('monitor_app:panda_segfault_detail', sig.key),
+    }
+
+
 register_subject_type(
     'campaign', _resolve_campaign,
     aliases=('pcs.campaign',))
+register_subject_type(
+    'crash_signature', _resolve_crash_signature,
+    aliases=('segfault', 'signature', 'monitor.crash_signature'))

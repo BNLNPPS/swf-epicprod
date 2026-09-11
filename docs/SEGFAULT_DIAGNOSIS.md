@@ -481,6 +481,39 @@ assessment on the signature.
 Diagnosis runs on operator request from the detail page and
 automatically once a signature reaches `reproduced` with a trace.
 
+As built (2026-09-11): the contract is `swf_epicprod/segfault/spec.py`
+(section `epicprod.segfault`, bundle section `epicprod.segfault.bundle`,
+definition `segfault_diagnosis`, the system prompt, the artifact schema
+with the verdict floor, the report renderer);
+`swf_epicprod.segfault.bootstrap` creates the sections, the versioned
+system prompt and the definition in corun-ai over REST on the assessment
+bootstrap's client (Codex Sol at xhigh, thirty-minute worker timeout,
+the tools tjai, swf-testbed, xrootd, lxr, github-readonly) and prints
+`CORUN_SEGFAULT_DEFINITION` for `production.env`. The front end is
+`scripts/segfault-diagnosis-trigger.py` (the bundle from the signature
+record, its trace, the representative and reproduction job records and
+the package README; the hidden bundle page; the two-POST submission; the
+run recorded on the signature under `data['diagnosis']`; the action
+`segfault_diagnosis_triggered`). The corun completion callback routes a
+`segfault_diagnosis` run to the ops agent as
+`segfault_diagnosis_completed`, which runs
+`scripts/segfault-diagnosis-enforce.py`: extract, validate against the
+schema and the floor, one repair run, quarantine on the second failure;
+a valid artifact is rendered with the bundle's facts, registered as an
+assessment on the signature (subject type `crash_signature`, resolver in
+`swf_epicprod/ai_subjects.py`), the status becomes `diagnosed`
+(`handed_off` for a hand-off, the handoff text kept on the signature's
+package record) and the verdict the classification and action. The
+`segfault_diagnosis` action carries the classification as its severity
+(warning for a software defect or a configuration finding, info
+otherwise), the narration and the signature URL, which is what notice
+routing (swf-monitor NOTICE_ROUTING.md) delivers to a subscriber; a
+Capcom subscription to `segfault_diagnosis` is the feed. The page's
+Diagnose control queues `segfault_diagnose` to the agent and hears
+`segfault_diagnose_queued` and `segfault_diagnosis_done`; the automatic
+trigger fires in the reproduction refresh when the outcome settles as
+reproduced or site_dependent with a trace on record, once.
+
 ### 7. Handoff
 
 A signature the diagnosis classifies as a software defect, or that it

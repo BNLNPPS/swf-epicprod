@@ -85,7 +85,8 @@ def ensure_system_prompt(kind):
     return str(created['group_id'])
 
 
-def ensure_definition(name, sp_group_id, model, effort, timeout_s):
+def ensure_definition(name, sp_group_id, model, effort, timeout_s,
+                      description=None):
     wanted_data = {'model': model, 'effort': effort,
                    'mcp_tools': [
                        'tjai',
@@ -109,9 +110,10 @@ def ensure_definition(name, sp_group_id, model, effort, timeout_s):
         return str(existing['id'])
     created = _request('POST', '/definitions/', {
         'name': name,
-        'description': 'epicprod campaign assessment — the model run only; '
-                       'the harness is production-side '
-                       '(EPICPROD_ASSESSMENTS_V1.md).',
+        'description': description or (
+            'epicprod campaign assessment — the model run only; '
+            'the harness is production-side '
+            '(EPICPROD_ASSESSMENTS_V1.md).'),
         'status': 'active',
         'data': wanted_data,
     })
