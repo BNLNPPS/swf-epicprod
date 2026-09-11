@@ -97,11 +97,12 @@ PanDA database through `connections['panda']` (the connection
 ORM. It runs standalone for the campaign back-fill and as a nightly
 chain step for top-ups.
 
-Selection: jobs in `doma_panda.jobsarchived4` and
-`doma_pandaarch.jobsarchived` with `jobstatus = 'failed'` and
-`transexitcode IN ('134','135','136','139')`, `modificationtime`
-inside the window. The union of the two tables is required: the
-archive holds the campaign, the live table holds the last days.
+Selection: jobs in `doma_panda.jobsarchived4` with `jobstatus =
+'failed'` and `transexitcode IN ('134','135','136','139')`,
+`modificationtime` inside the window. That table holds the whole
+campaign (its oldest rows are from September 2025) and the archive
+schema `doma_pandaarch` holds no job of the period, so the live table
+is read alone, as every other PanDA query in swf-monitor reads it.
 
 Per job, the builder records one `EpicProdJob` row
 (`monitor_app/models.py`, table `swf_epicprod_jobs`; no schema
@@ -120,15 +121,33 @@ stage (from the payload digest in jobmetrics when present),
 trace_status (unknown | found | absent | log_unavailable)
 ```
 
-The sequence number is the first argument of the dispatcher exec in
-the job's parameters (`doma_panda.jobparamstable`, joined by
-`pandaid`); the row is `expand(record_of(panda_tasks))[seq − 1]` when
-the attempt's manifest record exists (`pcs/manifests.py`), else left
-unresolved and counted. Legacy attempts submitted outside PCS carry
-the run script's argument list in the job parameters instead; the
-builder parses `file ext nevents ichunk` from it when the dispatcher
-form is absent. The implementer confirms both forms on one
-representative job of each kind before relying on them.
+The sequence number is the job's `pseudo_input` file in
+`doma_panda.filestable4` (dataset `seq_number`, LFN the number), and
+that table, like `jobparamstable`, is purged after about thirty days:
+of the 116,334 crash-class jobs in the 65 days to 2026-09-11, 6,874
+still had a file row. Beyond the purge the number comes from the
+tables JEDI keeps with the task: `jedi_job_retry_history` links every
+retried job to its successor, and the `seq_number` dataset's row in
+`jedi_dataset_contents` carries the pandaid of the row's last attempt,
+so a job's sequence number is that of the last job in its retry chain.
+The chain resolves 116,245 of the 116,334 (chains run to depth 9), and
+on every job where the file row also exists the two agree. The
+dispatcher's first argument in the job parameters is the last resort.
+The six-digit serial in a job's log file name is JEDI's job counter,
+not the row (task 39623 has four rows and serials to eleven), and is
+not used.
+
+The row is `expand(record_of(panda_tasks))[seq − 1]` when the
+attempt's manifest record exists (`pcs/manifests.py`), else left
+unresolved and counted. The record exists on 85 of the 351 attempts
+(every PCS submission; legacy attempts only where the sandbox
+keepalive found the sandbox still cached), so the back-fill resolved
+the row on 4,888 jobs; the storm tasks are legacy attempts whose
+sandboxes were purged before the keepalive existed. Their sequence
+numbers are on the record, so the reconstruction path of
+`attempt_manifest` (the definition's per-file totals and the attempt's
+row count) can supply the rows without a further PanDA read; that pass
+is not part of stage 1.
 
 Per PanDA task, the builder computes the record-level signature and
 upserts a `CrashSignature` row (below): counts, first and last seen,
@@ -148,10 +167,13 @@ Thresholds are SysConfig keys (`segfault_class_*`) with these defaults,
 visible on the System page as every SysConfig key is.
 
 Invocation: `segfault-inventory.py --since 2026-07-01` for the campaign
-back-fill (minutes; the 65-day aggregate query ran in about two
-minutes), `--days 3` for the nightly. The nightly window overlaps
-deliberately; upserts are keyed on `pandaid`, so a job seen twice is
-one row. Every run logs one `segfault_inventory` action to the
+back-fill, `--days 3` for the nightly, `--check --since <date>` for
+the record's count against swfdb's rows. The nightly window overlaps
+deliberately; rows are keyed on `pandaid`, so a job seen twice is one
+row, and a row's other content (the payload report the sweep files,
+the registrar's notes) is left as it is. The back-fill of 2026-09-11
+wrote 136,616 rows (all four codes, since 2026-07-01, 132 tasks) in
+97 seconds, and the check matched. Every run logs one `segfault_inventory` action to the
 epicprod action stream (`monitor_app/epicprod_logging.py`, sublevel
 `normal`) carrying the window, jobs seen, rows added, rows unresolved
 and signatures touched; an error is an action with outcome `error`,
@@ -502,9 +524,15 @@ before building on them, each on one representative job:
   expected sign; confirm on one job's payload stdout).
 - The log tarball of a job that exited 139 is registered and fetchable
   through the doer, and the backtrace sits in `payload.stdout`.
-- The dispatcher's sequence number is the first argument in the job
-  parameters, and a legacy job's parameters carry the run script's
-  argument list.
+- Confirmed 2026-09-11 (stage 1): the dispatcher's sequence number is
+  the first argument in the job parameters (job 2723039, task 39623),
+  and the same number is the job's `pseudo_input` file and the row of
+  the last job in its retry chain. A storm job (1768411, task 38661)
+  has no parameters and no file rows left, so the legacy argument form
+  was not confirmed and the builder does not depend on it. The payload
+  digest in the job metrics names the crashing stage on payload 0.11
+  jobs (`payloadStage=reconstruction payloadExit=139` on 2723039) and
+  is absent on the campaign's earlier jobs.
 - The per-event seed under `skipNEvents` (only if event narrowing is
   attempted).
 
@@ -512,24 +540,47 @@ before building on them, each on one representative job:
 
 The aggregate that produced the numbers above, run read-only against
 the PanDA database (`PANDA_DB_*` in the operating account's
-environment), for checking the builder's totals:
+environment), for checking the builder's totals. The archive schema
+contributed no row to the 65-day window when it was run with a union
+over `doma_pandaarch.jobsarchived`; the live table alone gives the
+same result.
 
 ```sql
-WITH j AS (
-  SELECT pandaid, jeditaskid, computingsite, transexitcode, jobstatus,
-         modificationtime, starttime, endtime, modificationhost, maxrss
-  FROM doma_panda.jobsarchived4
-  WHERE modificationtime > now() - interval '65 days'
-  UNION ALL
-  SELECT pandaid, jeditaskid, computingsite, transexitcode, jobstatus,
-         modificationtime, starttime, endtime, modificationhost, maxrss
-  FROM doma_pandaarch.jobsarchived
-  WHERE modificationtime > now() - interval '65 days')
 SELECT jeditaskid, computingsite, transexitcode, count(*) AS n,
        percentile_cont(0.5) WITHIN GROUP
          (ORDER BY extract(epoch FROM (endtime - starttime))/60) AS med_min,
        count(DISTINCT modificationhost) AS hosts
-FROM j
-WHERE jobstatus = 'failed' AND transexitcode IN ('134','135','136','139')
+FROM doma_panda.jobsarchived4
+WHERE modificationtime > now() - interval '65 days'
+  AND jobstatus = 'failed' AND transexitcode IN ('134','135','136','139')
 GROUP BY 1, 2, 3 ORDER BY n DESC;
+```
+
+The sequence number of every crash-class job beyond the purge of
+`filestable4`, through the retry chain:
+
+```sql
+WITH RECURSIVE crashed AS (
+  SELECT pandaid, jeditaskid FROM doma_panda.jobsarchived4
+  WHERE jobstatus = 'failed' AND transexitcode IN ('134','135','136','139')
+    AND modificationtime > now() - interval '65 days'),
+chain AS (
+  SELECT pandaid AS origin, jeditaskid, pandaid AS cur, 0 AS depth FROM crashed
+  UNION ALL
+  SELECT ch.origin, ch.jeditaskid, h.newpandaid, ch.depth + 1
+  FROM chain ch JOIN doma_panda.jedi_job_retry_history h
+    ON h.jeditaskid = ch.jeditaskid AND h.oldpandaid = ch.cur
+   AND h.relationtype = 'retry'
+  WHERE ch.depth < 50),
+last AS (
+  SELECT DISTINCT ON (origin) origin, jeditaskid, cur
+  FROM chain ORDER BY origin, depth DESC)
+SELECT l.origin AS pandaid, dc.lfn::int AS seq
+FROM last l
+JOIN doma_panda.jedi_datasets d
+  ON d.jeditaskid = l.jeditaskid AND d.type = 'pseudo_input'
+ AND d.datasetname = 'seq_number'
+JOIN doma_panda.jedi_dataset_contents dc
+  ON dc.datasetid = d.datasetid AND dc.jeditaskid = d.jeditaskid
+ AND dc.pandaid = l.cur;
 ```
