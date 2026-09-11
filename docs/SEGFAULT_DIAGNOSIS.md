@@ -560,6 +560,23 @@ stage) exited 139 with the tail in the note and the stage marked
 failed. The dig reads a filed report whose note begins `crash:` before
 resolving any tarball. The registry row is in EPICPROD_PAYLOAD.md.
 
+## Findings
+
+The catalog is the record; what a study concludes is a reading of it,
+kept apart so the record stays programmatic and the reading stays
+curated. `swf_epicprod/segfault/findings.yaml` holds one entry per
+crashing frame (date, frame, stage, the catalog signatures it explains,
+what the crash is with its sources, class, what production does,
+standing, fix, notes), written by the production operator after
+checking each claim against its source and versioned in git; an LLM
+study's reading that has not been checked is marked as the model's.
+The Segfault findings page (`/panda/segfaults/findings/`) renders it as
+one table, joined live to the catalog for the crashes, tasks and loss;
+the catalog and each signature page link to the frame's row. The
+diagnosis machinery never writes to the file; a sweep of registered
+diagnoses into draft rows is possible later, since the artifact carries
+the row's fields.
+
 ## Production disposition
 
 The catalog feeds two consumers with two different questions.

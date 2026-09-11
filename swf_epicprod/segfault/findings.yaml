@@ -1,0 +1,73 @@
+# Segfault findings: the curated reading of the segfault catalog
+# (docs/SEGFAULT_DIAGNOSIS.md, Findings). One entry per crashing frame,
+# written by the production operator after checking every claim against
+# its source; rendered as the Segfault findings page
+# (/panda/segfaults/findings/), which reads the affected configurations
+# and the loss live from the catalog by signature key. The diagnosis
+# machinery never writes here; an LLM study's reading that has not been
+# checked is marked as the model's.
+#
+# Fields: date (of the finding), frame (the crashing frame), stage,
+# signatures (catalog keys: the trace-level entry first), title, what
+# (the crash and its cause, with sources), sources (links), class,
+# action (what production does), standing (open | fix named | fixed |
+# accepted), fix (the image, release or commit), notes.
+
+- date: 2026-09-11
+  frame: eicrecon::PulseCombiner::sumPulses
+  stage: reco
+  signatures: [exit139:frame:0bb3bb652dac, exit139:task39623]
+  title: A rare BIC hit with a huge time crashes the pulse combiner
+  what: >
+    A segmentation fault in eicrecon::PulseCombiner::sumPulses
+    (libalgorithms_digi.so, the BEMC digitization) in EICrecon 1.39.2, the
+    reconstruction of eic_xl:26.07.1-stable. A BIC hit with an exceptionally
+    large time (above 10^10) makes the float-computed maxStep zero, the
+    combined-pulse vector is sized zero, and the amplitude write runs off
+    it. Fixed on EICrecon main on 2026-09-01 (sumTimeOrderedPulses, with
+    incremental resizing); v1.40.1, released 2026-09-11, still carries the
+    old routine. The PR's author notes the large hit times are themselves
+    suspect and may warrant a time threshold in SimCalorimeterHitProcessor.
+  sources:
+    - label: EICrecon issue #2788
+      url: https://github.com/eic/EICrecon/issues/2788
+    - label: EICrecon PR #2789 (merged 2026-09-01)
+      url: https://github.com/eic/EICrecon/pull/2789
+    - label: v1.40.1 still carries sumPulses
+      url: https://github.com/eic/EICrecon/blob/v1.40.1/src/algorithms/digi/PulseCombiner.h
+  class: software defect, event-shaped in effect (one rare hit kills the job)
+  action: >
+    Hold the affected configurations on eic_xl:26.07.1-stable or accept the
+    stated loss; resume under an image built from EICrecon main after
+    2026-09-01 or a release that includes PR #2789; a residual rerun of the
+    affected rows under the fixed image closes it.
+  standing: fix named
+  fix: EICrecon main after 2026-09-01 (PR #2789); no release yet
+  notes: >
+    LLM study of 2026-09-11 on exit139:task39623 (software_defect,
+    confirmed); its citations checked against GitHub by the operator the
+    same day. Reproduction runs in flight on BNL_OSG_PanDA_1 and
+    BNL_NPPS_GPU.
+
+- date: 2026-09-11
+  frame: podio::ROOTWriter::resetBranches
+  stage: reco
+  signatures: [exit139:frame:570c6e0d5feb, exit139:task37333]
+  title: The reconstruction dies at its first output write
+  what: >
+    A segmentation fault in podio::ROOTWriter::resetBranches
+    (libpodioRootIO.so, podio 1.7) called from JEventProcessorPODIO::Process
+    at the first event written; the reconstruction has processed no event
+    when it dies. The whole "config dead" class of the catalog is this one
+    frame: every beam-gas and synchrotron background task, the BeAGLE eHe3
+    tasks, task 39054 on Perlmutter. The LLM study of the largest member is
+    in progress; the cause is stated here when its citations are checked.
+  sources: []
+  class: configuration dead
+  action: >
+    The configurations cannot run at all under their images; nothing was
+    ever deliverable, so nothing is lost that a rerun under a fix does not
+    recover. Pending the study.
+  standing: open
+  fix: ''
+  notes: Study submitted 2026-09-11 on exit139:task37333 (11,976 crashes).
