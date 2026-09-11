@@ -34,7 +34,19 @@ content. Consumers always load the current version of each.
 ```
 campaign_general_YYYYMMDD          general series, dated
 campaign_<campaign>                one living page per campaign, e.g. campaign_26.07.0
+findings_<topic>                   one curated findings document per diagnostic
+                                   topic, e.g. findings_segfault
 ```
+
+A findings document is the curated reading of what a diagnostic
+machinery concluded, kept apart from the machinery's record so the
+record stays programmatic and the reading stays editable:
+`findings_segfault` holds one entry per crashing frame of the segfault
+catalog (SEGFAULT_DIAGNOSIS.md), each claim verified against its source
+before it is written, each entry linked to the catalog entries it
+explains and linked back from them. The production operator curates it;
+experts correct it in place; the diagnosis machinery never writes to it
+on its own.
 
 `<campaign>` is the campaign's canonical name as PCS records it (the bare
 version, e.g. `26.07.0`) — never an approximation of it. PCS names carry
