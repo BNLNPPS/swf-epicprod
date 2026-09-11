@@ -430,8 +430,15 @@ and the copies off, and the payload's invocation with the row's
 arguments as the dispatcher passes them (`run.sh EVGEN/<file> <ext>
 <events> <chunk>`), with the input's public path, the seed and the
 skip stated (`local_repro` in `monitor_app/segfaults.py`, from the
-same environment builder the package uses). A job whose row is
-unresolved or whose task is not in PCS gets the reason instead.
+same environment builder the package uses). The clone is pinned to the
+payload the job ran: the attempt's submission record carries the
+payload version, each version was set by one commit (the one that
+wrote it into `payload/VERSION`), and the fragment checks that commit
+out by `git log -S` on the clone, so no tag or table is kept. An
+attempt without a version is a legacy attempt that ran the production
+team's script; the block says so and runs the current payload over the
+same row. A job whose row is unresolved or whose task is not in PCS
+gets the reason instead.
 
 **The reproduction package** for a software expert:
 `scripts/segfault-repro-package.py <pandaid>` writes a directory (and
