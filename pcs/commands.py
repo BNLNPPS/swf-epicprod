@@ -916,7 +916,7 @@ def _residual_rows(task, csv_rows, delivered=None):
 
 
 def build_evgen_task_params(task, panda_tasks=None, residual=False,
-                            residual_of=None):
+                            residual_of=None, rows=None, container=None):
     """Build the client-API EVGEN production submission spec from a ProdTask.
 
     This is the production reproduction of the proven condor-side recipe
@@ -937,7 +937,19 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
     data = cfg.get('data') or {}
 
     residual_coverage = None
-    if residual:
+    if rows:
+        # Explicit rows: a reproduction runs a crashed job's own manifest
+        # row (SEGFAULT_DIAGNOSIS.md, Reproduction), so the manifest is
+        # given and neither the EVGEN input resolution nor the per-job
+        # count is asked of the configuration. Each row is
+        # file,ext,nevents,ichunk as the manifest carries it.
+        from . import manifests
+        csv_rows = []
+        for row in rows:
+            if not manifests.MANIFEST_ROW_RE.match(str(row).strip()):
+                raise ValueError(f'malformed manifest row: {row!r}')
+            csv_rows.append(str(row).strip())
+    elif residual:
         # Residual rerun: the workload is the undelivered remainder of the
         # attempt being completed, over the rows that attempt actually ran
         # (pcs/manifests.py; JEDI_INTEGRATION.md § Residual rerun). Each
@@ -1006,9 +1018,10 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         task.composed_name or ds.composed_name or ds.build_dataset_name()
     )
 
-    # Container: an explicit image wins; else build the cvmfs eic_xl ref from the
-    # jug_xl tag, as submit_csv.sh does.
-    container = cfg.get('container_image') or ''
+    # Container: the caller's image (a reproduction runs the image the
+    # crashed task ran) wins; else the configuration's explicit image; else
+    # the cvmfs eic_xl ref from the jug_xl tag, as submit_csv.sh does.
+    container = container or cfg.get('container_image') or ''
     if not container and cfg.get('jug_xl_tag'):
         container = f"/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:{cfg['jug_xl_tag']}"
     if not container:

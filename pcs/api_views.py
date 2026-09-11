@@ -563,9 +563,14 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
                             status=status.HTTP_404_NOT_FOUND,
                         )
                 residual = request.query_params.get('residual') in ('1', 'true')
+                # A reproduction's own rows (SEGFAULT_DIAGNOSIS.md): the
+                # manifest is given, so no input resolution is needed.
+                rows = [r for r in request.query_params.getlist('row') if r.strip()]
+                container = (request.query_params.get('container') or '').strip()
                 return JsonResponse(
                     build_evgen_task_params(task, panda_tasks=panda_tasks,
-                                            residual=residual),
+                                            residual=residual, rows=rows or None,
+                                            container=container or None),
                     json_dumps_params={'indent': 2})
             except ValueError as e:
                 return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
