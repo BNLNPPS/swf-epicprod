@@ -280,8 +280,8 @@ Detail `/panda/segfaults/<key>/`: the signature's tasks with links to
 the task pages, the configuration block, the site table, the crashed
 jobs (paged, linked to job pages, with row, host, minutes, maxrss),
 the trace block with its source job, the reproduction table with the
-canary task links, the verdict, the assessments, and the reproduction
-package link. Actions on the detail page: Dig (fetch the trace of a
+canary task links, the local reproduction block (below), the verdict,
+the assessments, and the reproduction package link. Actions on the detail page: Dig (fetch the trace of a
 chosen representative), Reproduce (choose a job, a queue), Diagnose
 (submit the codoc study), each queued to the production operations
 agent and reported back over the SSE relay in the pattern of the
@@ -422,6 +422,16 @@ skip and change the per-event seed), so the reproduction runs the whole
 row. An implementer who verifies the seeding on one reproduced crash
 may add `--canary-events K --canary-skip S` to run one event; until
 then the row is the unit.
+
+**Local reproduction** on the detail page: the representative job's run
+as a shell fragment to copy, for a software expert with the image at
+hand: the image, the payload environment of the task with registration
+and the copies off, and the payload's invocation with the row's
+arguments as the dispatcher passes them (`run.sh EVGEN/<file> <ext>
+<events> <chunk>`), with the input's public path, the seed and the
+skip stated (`local_repro` in `monitor_app/segfaults.py`, from the
+same environment builder the package uses). A job whose row is
+unresolved or whose task is not in PCS gets the reason instead.
 
 **The reproduction package** for a software expert:
 `scripts/segfault-repro-package.py <pandaid>` writes a directory (and
