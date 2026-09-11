@@ -163,8 +163,24 @@ the task is associated), and the class heuristic:
 - `abort`: exit 134 regardless;
 - otherwise `mixed`, which is a class to look at, not a verdict.
 
-Thresholds are SysConfig keys (`segfault_class_*`) with these defaults,
-visible on the System page as every SysConfig key is.
+Thresholds are SysConfig keys (`segfault_class_dead_rate`,
+`segfault_class_storm_rate`, `segfault_class_storm_iqr`,
+`segfault_class_sparse_rate`) with these defaults, seeded on first read
+and visible on the System page as every SysConfig key is. The
+grouping and the class reading live in `monitor_app/segfaults.py`
+(`build_record_signatures`), run by the builder after its job pass
+for the tasks touched, or over the whole inventory with
+`--signatures`. The rate's denominator is the task's finished plus
+failed jobs over its whole life, one aggregate query per pass. The
+delivery lookup behind `rows_lost` reaches JLab Rucio through the
+residual rerun's `_delivered_row_keys` (`pcs/commands.py`), so it
+runs in the builder only, largest signatures first, at most
+`--rows-lost-max-tasks` (50) per pass; a signature whose rows are
+unresolved or whose task has no PCS association records why instead
+of a number. The first pass over the campaign (2026-09-11) produced
+146 signatures: 10 storm, 11 configuration dead, 7 mixed, 109 sparse,
+9 abort. A small task classifies noisily (task 39623, 4 rows and 7
+crashes, reads as a storm); the thresholds are the knob.
 
 Invocation: `segfault-inventory.py --since 2026-07-01` for the campaign
 back-fill, `--days 3` for the nightly, `--check --since <date>` for
@@ -246,17 +262,17 @@ is real.
 `monitor_app/viewdir/pandamon.py` beside `panda_errors_list`, template
 `monitor_app/panda_segfaults.html`, URL names `panda_segfaults` and
 `panda_segfault_detail`. Linked from the PanDA hub beside Error
-Summary (`panda_hub.html`) and from the production workflow hub
-(`prod_hub_workflow.html`). The page renders from swfdb only; nothing
+Summary (`panda_hub.html`), from the production workflow hub
+(`prod_hub_workflow.html`), and from the production nav's Diagnostics
+menu beside Error summary. The page renders from swfdb only; nothing
 in its render path reaches the PanDA database or any remote service.
 
-List: one row per signature, the four classes as filter chips with
-counts, columns: class, signature (exit code and, at trace level, the
-frame), tasks (count, with the composed names in the detail), crashes,
-rate, time to death (p10/p50 minutes), sites, rows lost, status, last
-seen. Default order: crashes descending. The inclusive-filter
-mechanism (swf-monitor `docs/INCLUSIVE_FILTER.md`) applies if it is
-the house filter by then; otherwise the error summary's chips.
+List: one row per signature, columns: class, signature (exit code and,
+at trace level, the frame), configuration, tasks, crashes, rate, time
+to death (p10/p50 minutes), sites, hosts, rows lost, stage, status,
+last seen. Default order: crashes descending. The inclusive filter
+(swf-monitor `docs/INCLUSIVE_FILTER.md`) carries the facets class,
+exit code, site, status and level.
 
 Detail `/panda/segfaults/<key>/`: the signature's tasks with links to
 the task pages, the configuration block, the site table, the crashed
