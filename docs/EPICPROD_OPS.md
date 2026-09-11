@@ -484,7 +484,9 @@ attempt still lacking one) → batch log capture → batch log learn →
 segfault inventory (the last three days' payload crashes from the PanDA
 record and the crash signatures of the tasks touched,
 SEGFAULT_DIAGNOSIS.md; placed before the first Rucio step so a catalog
-stall cannot cost the day's crash record) → csv import → epic-prod past import →
+stall cannot cost the day's crash record) → segfault dig (one
+representative payload log for each of the largest signatures never
+dug, ten a night) → csv import → epic-prod past import →
 questionnaire import → association sweep with auto-intake of direct
 group.EIC submissions → Rucio output snapshot → Rucio arrivals sweep →
 EVGEN assimilation → dataset definitions sweep (the

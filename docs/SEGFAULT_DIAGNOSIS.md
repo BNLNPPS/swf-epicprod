@@ -337,6 +337,43 @@ automatically, for every new signature the nightly inventory creates,
 capped at ten fetches per night so a storm does not turn into a
 thousand log reads.
 
+As built (2026-09-11): `trace_extract` reads three forms. eicrecon
+prints JANA2's backtrace into `payload.stdout` (`[fatal] Segfault
+detected!`, `Backtrace:`, numbered frames each with its library and
+offset), and the crashing frame is the first named one: job 994773
+(task 37333, beam gas) dies in `podio::ROOTWriter::resetBranches`,
+libpodioRootIO.so, at the first output write; job 2723039 (task 39623)
+in `eicrecon::PulseCombiner::sumPulses`, libalgorithms_digi.so, at
+event 358. npsim prints no backtrace: DD4hep's handler reports
+`[FATAL] (SignalHandler) Handle signal: 11 [SIGSEGV]`, and the
+evidence is the last `G4Exception` block before it, which names the
+exception, the Geant4 function and the volume; the extractor makes
+that the frame (job 2723082, task 39623: `G4Exception GeomNav0003 in
+G4Navigator::ComputeStep`, a stuck optical photon in `DRICH_gas_0`
+after a geometry-overlap warning at `DRICH_mirror_sec2_425`). The
+Geant4 and ROOT `*** Break ***` forms with gdb-style frames are read
+too. The stage comes from the prmon error line (`${TASKNAME}.<stage>.prmon`)
+or from the payload digest.
+
+Task 39623 shows that a record-level signature (exit code by task) can
+hold two crashes: five reconstruction deaths and two simulation
+deaths. The dig reads one representative per signature, so the page
+states the stage mix from the digest where the jobs carry one, and the
+Dig control accepts a chosen job for the other stage. The log tarballs
+of the storm, sparse and mixed representatives at BNL_OSG_EPIC_PROD_1
+have no replica in BNL Rucio (jobs 1801822, 2249415, 1951234); those
+signatures carry `log_unavailable` with the reason, and their cause
+comes from reproduction. The tarballs of the Perlmutter and
+BNL_OSG_PanDA_1 jobs are present. `study_job` reads the log DID from
+`filestable4`, which is purged after about thirty days, so the job
+page's payload-log fetch cannot start for an older job; the dig
+resolves the DID through the task's log dataset contents row, whose
+LFN carries a `$JEDITASKID` placeholder, scope `group.EIC`.
+`scripts/segfault-dig.py` (`--key`, `--pandaid`, `--auto N`) is the
+doer; the ops agent runs it for the Dig action (`segfault_dig` message,
+completion event `segfault_dig_done` on the SSE relay) and as the
+`segfault_dig` chain step after the inventory.
+
 ### 5. Reproduction
 
 A reproduction is the crashed row run again through the production
