@@ -10,12 +10,16 @@ the payload asked for a detector geometry the image does not carry and
 exited 83 at its geometry check. This tool re-derives every tag from its
 datasets' recorded PanDA task names and reports each tag whose derivation
 differs; with --apply it corrects the tags whose difference is purely an
-axis the tag lacked, and leaves alone any tag whose corrected parameters
-would collide with another tag's, or whose recorded axes would change.
+axis the tag lacked, and leaves alone any tag whose recorded axes would
+change, or whose corrected parameters would equal another tag's unless
+--allow-duplicate says so (the twelve eHe3 tags: the physics already had
+its tags, and the editions of both are one merge away; the correction
+lets the payload read the beams right meanwhile). An applying run is one
+physics_tag_rederive record in the action stream.
 
 Django-bootstrap standalone script against the deployed monitor:
 
-    /opt/swf-monitor/current/.venv/bin/python rederive-physics-tags.py [--apply] [--tag LABEL ...]
+    /opt/swf-monitor/current/.venv/bin/python rederive-physics-tags.py [--apply] [--allow-duplicate] [--tag LABEL ...] [--changed-by NAME]
 
 SWF_MONITOR_SRC names the monitor source tree (default
 /opt/swf-monitor/current/src).
@@ -68,6 +72,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--apply', action='store_true', help='correct the additive differences')
     ap.add_argument('--tag', action='append', default=[], help='only this tag label (repeatable)')
+    ap.add_argument('--allow-duplicate', action='store_true',
+                    help='correct a tag even when its corrected parameters equal another '
+                         "tag's, leaving two tags of one physics for a later merge of "
+                         'their editions; the record names both')
+    ap.add_argument('--changed-by', default='rederive-physics-tags')
     args = ap.parse_args()
 
     by_key = {}
@@ -99,7 +108,7 @@ def main():
                  'source': ((ds.metadata or {}).get('source') or {}).get('location'),
                  'changes': changed, 'additive': additive, 'collides_with': collision,
                  'action': 'skip'}
-        if additive and not collision:
+        if additive and (not collision or args.allow_duplicate):
             entry['action'] = 'apply' if args.apply else 'would apply'
             if args.apply:
                 tag.parameters = derived
@@ -111,9 +120,24 @@ def main():
         print(f"{e['tag']:<8} {e['status']:<7} datasets {e['datasets']:<3} {e['action']:<12} "
               f"{e['changes']}" + (f" collides with {e['collides_with']}" if e['collides_with'] else '')
               + (f"  [{e['source']}]" if e['action'] == 'skip' else ''))
-    applied = sum(1 for e in report if e['action'] == 'apply')
-    print(json.dumps({'differing': len(report), 'applied': applied,
-                      'skipped': sum(1 for e in report if e['action'] == 'skip')}))
+    applied = [e for e in report if e['action'] == 'apply']
+    skipped = [e for e in report if e['action'] == 'skip']
+    if applied:
+        from monitor_app.epicprod_logging import log_epicprod_action
+        duplicates = [e for e in applied if e['collides_with']]
+        log_epicprod_action(
+            'pcs', 'physics_tag_rederive', outcome='ok', sublevel='low',
+            live_default=False, subject_type='physics_tag',
+            subject_key=','.join(e['tag'] for e in applied), username=args.changed_by,
+            message=(f"physics_tag_rederive: {len(applied)} tag(s) corrected ("
+                     + ', '.join(f"{e['tag']} +{'/'.join(sorted(e['changes']))}" for e in applied)
+                     + ')'
+                     + (f"; {len(duplicates)} now equal another tag's parameters: "
+                        + ', '.join(f"{e['tag']}={'/'.join(e['collides_with'])}" for e in duplicates)
+                        if duplicates else '')
+                     + (f"; {len(skipped)} left" if skipped else '')),
+            corrected=len(applied), duplicates=len(duplicates), left=len(skipped))
+    print(json.dumps({'differing': len(report), 'applied': len(applied), 'skipped': len(skipped)}))
     return 0
 
 
