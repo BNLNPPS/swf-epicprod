@@ -155,6 +155,10 @@ Submission and execution:
   the pilot and payload test queue: choosing the pilot, the program
   from the canary pilot through the Event Service path to prmon in
   the runner, and what the queue cannot represent.
+- [NERSC_PERLMUTTER.md](docs/NERSC_PERLMUTTER.md) — how a pilot starts
+  on Perlmutter, the public worker record, CVMFS on the nodes,
+  pilot-side queue configuration by file, and production operations'
+  wrapper on the Perlmutter test queue.
 - [WINDOWS_WORKER.md](docs/WINDOWS_WORKER.md) — the Windows worker.
 - [DEVCLOUD_STAGEOUT.md](docs/DEVCLOUD_STAGEOUT.md) — the devcloud
   stage-out endpoint.

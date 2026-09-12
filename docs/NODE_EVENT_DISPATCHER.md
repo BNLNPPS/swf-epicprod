@@ -178,7 +178,9 @@ exercised.
   fails the job (`es_noevent`, code 125) and leaves the ranges. Deferral
   at the deadline therefore needs `jobseed = all` on the queue, a CRIC
   field the pilot's own queuedata does not reach.
-  `NERSC_Perlmutter_epic` carries `std` (2026-09-09).
+  `NERSC_Perlmutter_epic` carries `std`; the test queue
+  `NERSC_Perlmutter_epic_es` carries `all` (2026-09-10,
+  [NERSC_PERLMUTTER.md](NERSC_PERLMUTTER.md)).
 - The pilot defect the probe died on, above; fixed by PR 220 and
   confirmed on the first run below.
 
@@ -449,8 +451,12 @@ proven ones; the substantial work is validation at the site.
   other site facts are recorded: harvester runs on the site login
   node via Globus Compute, the wall request is 4 hours, and queue
   wait is 7 minutes at the median (p90 about 12 hours). The queue
-  record needs `jobseed = all` in CRIC (The pilot side), on the test
-  queue first and on the Perlmutter queue with the worker-shape change.
+  record needs `jobseed = all` in CRIC (The pilot side): done on the
+  Perlmutter test queue `NERSC_Perlmutter_epic_es` (2026-09-10), and
+  on the production queue with the worker-shape change. How a pilot
+  starts at the site, and the arrangement under which production
+  operations controls the pilot on the test queue, are in
+  [NERSC_PERLMUTTER.md](NERSC_PERLMUTTER.md).
 - **3.** Build the node harness: the pilot-side bridge in the shape
   settled under Open questions, the range-form unit spec, the
   simulation contract executable, the N-pair driver, and the rolling

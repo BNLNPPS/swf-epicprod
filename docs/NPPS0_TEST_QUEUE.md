@@ -183,8 +183,11 @@ These remain for the OSG queues and Perlmutter:
   simulated by a short deadline, not reproduced.
 - The NERSC environment: the site's own harvester installation, the
   pilot it runs, and the software area it points into. The canary
-  pilot does not reach Perlmutter through the queue record alone
-  ([OSG_SUBMISSION.md](OSG_SUBMISSION.md)).
+  pilot does not reach Perlmutter through the queue record alone, and
+  the nodes do not mount the CVMFS repository it lives in; how a pilot
+  starts there and how production operations controls it on the
+  Perlmutter test queue are in
+  [NERSC_PERLMUTTER.md](NERSC_PERLMUTTER.md).
 
 The Perlmutter specifics are therefore the last step, taken to the
 site's PanDA operations as one concrete ask once the design has run

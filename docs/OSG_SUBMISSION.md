@@ -318,8 +318,10 @@ production queues neither mechanism is in this repository.
 `NERSC_Perlmutter_epic` in particular carries pilot manager `local`
 and an environment pointing into the NERSC project software area,
 which is the site's own harvester installation, so on the queue
-record alone a canary pilot does not reach Perlmutter. Establishing
-and recording that route is open work.
+record alone a canary pilot does not reach Perlmutter; nor does this
+directory, since the nodes do not mount `eic.opensciencegrid.org`.
+The Perlmutter route is recorded in
+[NERSC_PERLMUTTER.md](NERSC_PERLMUTTER.md).
 
 ### Excluding what delivers nothing
 
