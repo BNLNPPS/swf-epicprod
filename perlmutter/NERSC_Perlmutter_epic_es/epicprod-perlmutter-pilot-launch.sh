@@ -26,10 +26,12 @@ QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter
 # (docs/DEVCLOUD_STAGEOUT.md § 4); the name and checksum pin one build.
 PILOT_TARBALL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-3.14.3.3-epic3.tar.gz
 PILOT_TARBALL_SHA256=b7b0e27141a9d6f6b7e4fb9a2c3dea91bc5669f90aa39c3b360c9ad6b6e02721
-# The Event Service channel library (python-yampl) built for the
-# container's Python, as a tarball unpacked into the working directory;
-# empty until one is published, in which case only ordinary jobs run.
+# The Event Service channel library (python-yampl) built by
+# build-es-channel.sh for the container's Python, a tarball unpacked
+# into the working directory; the URL empty until one is published, in
+# which case only ordinary jobs run.
 ES_CHANNEL_URL=
+ES_CHANNEL_SHA256=
 
 # The site's harvester installation: the Rucio client configuration for
 # the pilot's Rucio account lives there.
@@ -61,11 +63,13 @@ fi
 # The Event Service channel library, when published.
 ES_PYTHONPATH=
 if [[ -n "$ES_CHANNEL_URL" ]]; then
-    if curl -sfL "$ES_CHANNEL_URL" -o es-channel.tar.gz && tar -xzf es-channel.tar.gz; then
-        ES_PYTHONPATH=$PWD/es-channel/python
+    if curl -sfL "$ES_CHANNEL_URL" -o es-channel.tar.gz \
+        && echo "$ES_CHANNEL_SHA256  es-channel.tar.gz" | sha256sum -c --quiet \
+        && tar -xzf es-channel.tar.gz; then
+        ES_PYTHONPATH=/srv/es-channel/python   # this directory is /srv inside the container
         log "event service channel library from $ES_CHANNEL_URL"
     else
-        log "event service channel library fetch failed: $ES_CHANNEL_URL"
+        log "event service channel library not usable (fetch, checksum or unpack failed): $ES_CHANNEL_URL"
     fi
 fi
 
@@ -139,8 +143,9 @@ for s in INT QUIT USR1 TERM CONT XCPU; do trap "forward_host $s" $s; done
 
 log "starting the container"
 # setupATLAS is this source line; the subshell keeps the sourced setup
-# out of this script's own environment.
-( source "$ATLAS_LOCAL_ROOT_BASE/user/atlasLocalSetup.sh" -c el9 -s /srv/myEnv.sh -m /global -m /pscratch ) &
+# out of this script's own environment, and drops set -u, under which
+# ALRB's setup fails on its own unbound variables.
+( set +u; source "$ATLAS_LOCAL_ROOT_BASE/user/atlasLocalSetup.sh" -c el9 -s /srv/myEnv.sh -m /global -m /pscratch ) &
 setup_pid=$!
 wait "$setup_pid"; rc=$?
 log "container finished with code $rc"

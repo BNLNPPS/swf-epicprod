@@ -112,7 +112,10 @@ public fork), so the prefix is readable by anyone; the rest of the
 bucket, the logs and the write key stay private.
 
 An object is named `pilot/pilot3-<version>-epicN.tar.gz`, the tarball's
-own name, and is never overwritten and never removed: a consumer pins
+own name (the prefix also holds what a pilot launch fetches beside the
+pilot, such as the Event Service channel library
+`es-channel-<python>-el9.tar.gz`), and is never overwritten and never
+removed: a consumer pins
 a name and a sha256, and an earlier pilot stays fetchable for as long
 as anything might pin it. The URL is
 
