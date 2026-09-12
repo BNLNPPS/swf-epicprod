@@ -128,7 +128,9 @@ Keeping a bounded number per distinct signature and deleting the rest
 unread costs nothing in understanding and avoids reading a storm one
 object at a time. The signature comes from the digest PanDA already
 carries for every failed job, so the sweep knows what it is looking at
-before it reads anything.
+before it reads anything. Canary and reproduction jobs (processing type
+`canary`) are read whatever their signature's count: each is a one-off
+whose report is the product.
 
 The sweep's credential is issued by the gateway and held on
 pandaserver02: list, get and delete under the reports prefix, and

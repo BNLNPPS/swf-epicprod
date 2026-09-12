@@ -150,9 +150,10 @@ setup_xrd_auth() {
   fi
 }
 
-# Load job environment (mask secrets)
+# Load job environment (mask secrets: any line naming a token, a secret,
+# a password or an access key stays out of the job's stdout)
 if ls environment*.sh ; then
-  grep -v BEARER environment*.sh
+  grep -v -E 'BEARER|SECRET|TOKEN|PASSWORD|ACCESS_KEY' environment*.sh
   source environment*.sh
 fi
 

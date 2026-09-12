@@ -34,6 +34,7 @@ queue's share is the job shape in the queue record: 8 cores, 48 GB
 | Stage-out | the devcloud S3 bucket for logs ([DEVCLOUD_STAGEOUT.md](DEVCLOUD_STAGEOUT.md)); JLab Rucio for science outputs, on the payload data path |
 | The payload | the epicprod payload in the submission sandbox ([EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md)); the `epicrun` executor (`tools/worker/epicrun.py`, [PANDA_CAPABILITIES.md](PANDA_CAPABILITIES.md)) |
 | Dispatch | pull mode: the pilot asks the server for a job at every pass, so a job submitted to the queue starts within one pass cycle |
+| Log dataset | none. The pilot's log goes to S3, an object store the PanDA server cannot register, and the adder fails a job with a log dataset on that whatever the payload did (DDM 200, every reproduction of 2026-09-11). A task sent here carries no log dataset: the submit doer sets `noLog` for this queue (`OBJECT_STORE_LOG_QUEUES`), as the test tasks and probes did by hand. The pilot log stays in the pass's run directory on the host; the payload's own account travels the report channel |
 
 ## Choosing the pilot
 

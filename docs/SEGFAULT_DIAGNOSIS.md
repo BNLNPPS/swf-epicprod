@@ -409,6 +409,19 @@ collection cycle; the reproduction reads the same report plus the exit
 code and, for a crash, fetches the trace through the dig, so a
 reproduced crash yields its trace even where the campaign's did not.
 
+A task sent to the reference queue carries no log dataset: its pilot
+log goes to the devcloud S3 store, which the PanDA server cannot
+register, and the adder fails a job on that whatever the payload did
+(every reproduction of 2026-09-11, DDM 200). The submit doer sets
+`noLog` for `BNL_NPPS_GPU` (`OBJECT_STORE_LOG_QUEUES` in swf-monitor
+`scripts/submit-evgen-task.py`); the crash tail then reaches the
+record through the report channel (payload 0.12.0) while the pilot log
+stays on the host. A payload canary whose job failed after the payload
+ran to its exit (a stage-out or registration failure, no executor or
+pilot error) is collected from the job digest, exit code and stage, so
+a verdict never waits on the pilot's stage-out; and the report sweep
+reads every canary job's report whatever its signature's count.
+
 Memory: a crash that only appears near a queue's memory ceiling is a
 platform condition, and a fat reference node hides it. The canary
 environment carries `CANARY_MEM_LIMIT_MB`, honored by the dispatcher as
