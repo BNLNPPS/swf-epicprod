@@ -97,6 +97,63 @@ The s3 copytool composes the object key as
 `logs/<queue>/<log dataset>/<lfn>`, so log tarballs arrive under
 `logs/BNL_NPPS_GPU/` in the bucket.
 
+## 4. The pilot prefix: public pilot tarballs
+
+The bucket also serves the pilot tarballs production operations builds
+(OSG_SUBMISSION.md § Our canary pilot directory), under the `pilot/`
+prefix, to consumers that fetch a pilot over HTTPS at every start: the
+Perlmutter pilot launch ([NERSC_PERLMUTTER.md](NERSC_PERLMUTTER.md)),
+and later any worker outside the SCDF perimeter. The pilot is public
+code (the released pilot plus the commits on the production team's
+public fork), so the prefix is readable by anyone; the rest of the
+bucket, the logs and the write key stay private.
+
+An object is named `pilot/pilot3-<version>-epicN.tar.gz`, the tarball's
+own name, and is never overwritten and never removed: a consumer pins
+a name and a sha256, and an earlier pilot stays fetchable for as long
+as anything might pin it. The URL is
+
+```
+https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-<version>-epicN.tar.gz
+```
+
+**Bucket configuration (devcloud account holder, once).** Public reads
+on the prefix are granted by a bucket policy, which the account's
+public-access block must permit; ACLs stay blocked. The expiry rule
+narrows to `logs/` so pilots do not expire.
+
+```bash
+aws s3api put-public-access-block --bucket epic-devcloud-stageout \
+    --public-access-block-configuration \
+    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=false,RestrictPublicBuckets=false
+
+aws s3api put-bucket-policy --bucket epic-devcloud-stageout --policy '{
+  "Version": "2012-10-17",
+  "Statement": [{"Sid": "PublicPilotTarballs", "Effect": "Allow",
+    "Principal": "*", "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::epic-devcloud-stageout/pilot/*"}]}'
+
+aws s3api put-bucket-lifecycle-configuration --bucket epic-devcloud-stageout \
+    --lifecycle-configuration '{"Rules": [{"ID": "expire-logs",
+        "Status": "Enabled", "Filter": {"Prefix": "logs/"},
+        "Expiration": {"Days": 30}}]}'
+```
+
+**Publishing a pilot (production operations).** The worker profile's
+`PutObject` right covers the prefix; one copy from any host holding the
+profile (npps0 today):
+
+```bash
+AWS_PROFILE=epic-stageout aws s3 cp pilot3-<version>-epicN.tar.gz \
+    s3://epic-devcloud-stageout/pilot/pilot3-<version>-epicN.tar.gz
+sha256sum pilot3-<version>-epicN.tar.gz
+curl -sI https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-<version>-epicN.tar.gz | head -1
+```
+
+The consumer then takes the new name and checksum: for Perlmutter, the
+launcher's `PILOT_TARBALL_URL` and `PILOT_TARBALL_SHA256` lines, one
+commit on `main`.
+
 ## Verification
 
 From a worker host, in order:

@@ -22,7 +22,9 @@ ACCESS_POINT=${2:?harvester access point}
 
 # What production operations publishes for this queue.
 QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/$PQ
-PILOT_TARBALL_URL=https://github.com/BNLNPPS/swf-epicprod/releases/download/pilot-3.14.3.3-epic3/pilot3-3.14.3.3-epic3.tar.gz
+# The pilot: the public pilot prefix of the devcloud bucket
+# (docs/DEVCLOUD_STAGEOUT.md § 4); the name and checksum pin one build.
+PILOT_TARBALL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-3.14.3.3-epic3.tar.gz
 PILOT_TARBALL_SHA256=78bebbc4031b041b3ef0ef99fa25f465fb106a0d4b0311f1f998efc025bb9adb
 # The Event Service channel library (python-yampl) built for the
 # container's Python, as a tarball unpacked into the working directory;
