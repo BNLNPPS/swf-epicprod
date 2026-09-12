@@ -31,12 +31,15 @@ credentials (worker host operator), and the queue configuration
 ```bash
 aws s3 mb s3://epic-devcloud-stageout --region <region>
 
-# Lifecycle: logs expire on their own.
+# Lifecycle: logs and job reports expire on their own, after 7 days;
+# the pilot prefix (section 4) is under neither rule.
 aws s3api put-bucket-lifecycle-configuration \
     --bucket epic-devcloud-stageout \
-    --lifecycle-configuration '{"Rules": [{"ID": "expire-logs",
-        "Status": "Enabled", "Filter": {},
-        "Expiration": {"Days": 30}}]}'
+    --lifecycle-configuration '{"Rules": [
+        {"ID": "expire-logs", "Status": "Enabled",
+         "Filter": {"Prefix": "logs/"}, "Expiration": {"Days": 7}},
+        {"ID": "expire-reports", "Status": "Enabled",
+         "Filter": {"Prefix": "reports/"}, "Expiration": {"Days": 7}}]}'
 
 # One IAM user scoped to this bucket only, allowing PutObject,
 # GetObject, ListBucket. Its access key pair is the worker credential.
@@ -117,10 +120,12 @@ as anything might pin it. The URL is
 https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-<version>-epicN.tar.gz
 ```
 
-**Bucket configuration (devcloud account holder, once).** Public reads
-on the prefix are granted by a bucket policy, which the account's
-public-access block must permit; ACLs stay blocked. The expiry rule
-narrows to `logs/` so pilots do not expire.
+**Bucket configuration (devcloud account holder; done 2026-09-12).**
+Public reads on the prefix are granted by a bucket policy, which the
+account's public-access block must permit; ACLs stay blocked. The
+expiry rules name their prefixes, `logs/` and `reports/` (the job
+reporter's, [JOB_REPORTING.md](JOB_REPORTING.md)), 7 days each, so
+pilots do not expire.
 
 ```bash
 aws s3api put-public-access-block --bucket epic-devcloud-stageout \
@@ -134,10 +139,17 @@ aws s3api put-bucket-policy --bucket epic-devcloud-stageout --policy '{
     "Resource": "arn:aws:s3:::epic-devcloud-stageout/pilot/*"}]}'
 
 aws s3api put-bucket-lifecycle-configuration --bucket epic-devcloud-stageout \
-    --lifecycle-configuration '{"Rules": [{"ID": "expire-logs",
-        "Status": "Enabled", "Filter": {"Prefix": "logs/"},
-        "Expiration": {"Days": 30}}]}'
+    --lifecycle-configuration '{"Rules": [
+        {"ID": "expire-logs", "Status": "Enabled",
+         "Filter": {"Prefix": "logs/"}, "Expiration": {"Days": 7}},
+        {"ID": "expire-reports", "Status": "Enabled",
+         "Filter": {"Prefix": "reports/"}, "Expiration": {"Days": 7}}]}'
 ```
+
+The first object, `pilot/pilot3-3.14.3.3-epic3.tar.gz` (sha256
+`b7b0e271…e02721`), was published 2026-09-12: a `git archive` of
+commit 4e70e231 on the fork's `epic-es-server-api` branch, equal file
+for file to the build npps0 had run from a local copy.
 
 **Publishing a pilot (production operations).** The worker profile's
 `PutObject` right covers the prefix; one copy from any host holding the

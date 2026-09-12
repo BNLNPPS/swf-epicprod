@@ -25,7 +25,7 @@ QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter
 # The pilot: the public pilot prefix of the devcloud bucket
 # (docs/DEVCLOUD_STAGEOUT.md § 4); the name and checksum pin one build.
 PILOT_TARBALL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-3.14.3.3-epic3.tar.gz
-PILOT_TARBALL_SHA256=78bebbc4031b041b3ef0ef99fa25f465fb106a0d4b0311f1f998efc025bb9adb
+PILOT_TARBALL_SHA256=b7b0e27141a9d6f6b7e4fb9a2c3dea91bc5669f90aa39c3b360c9ad6b6e02721
 # The Event Service channel library (python-yampl) built for the
 # container's Python, as a tarball unpacked into the working directory;
 # empty until one is published, in which case only ordinary jobs run.
