@@ -436,6 +436,45 @@ row. An implementer who verifies the seeding on one reproduced crash
 may add `--canary-events K --canary-skip S` to run one event; until
 then the row is the unit.
 
+**Visibility of the attempts.** Two records make a reproduction
+attempt: the request on the signature (`CrashSignature.reproduction`,
+one entry per queue, with a `request_id` the canary message carries)
+and the execution in the canary store (the `ProbeRun` of kind payload,
+tagged with the signature, the crashed job and the request id). One
+read-only summary joins them (swf-monitor
+`monitor_app/reproductions.py`), one row per attempt, exact by request
+id and, for entries from before the id existed, by queue, crashed job
+and request time, one to one and never reassigned; a run whose request
+mirror is stale is still a row. The summary feeds the catalog's
+Reproductions column (active and ended attempts per row, a trace-level
+row counting its members' attempts, each attempt once), the runs page
+`/panda/segfaults/reproductions/` (every attempt under the narrowing
+filter by execution, result, queue, role and signature, the active
+ones first, with each attempt's last observation), and the signature
+page. Execution and result are stated apart. Execution: queued for
+submission (a request without a run), submitting, queued, running,
+finishing, finished, failed, cancelled, submission failed; a job's
+terminal state outranks a run still flagged submitted. Result: pending,
+awaiting report (the job ended, the report not yet collected), crash
+reproduced (the payload's exit in the crash class), completed without
+crash (exit 0), inconclusive with the reason; a finished PanDA job is
+not a clean payload, since the canary wrapper exits 0 to keep the
+report, and a failed one is not a crash. Waiting time stops at the
+start, running time at the end; a running attempt shows its time so
+far. A page read reads the two stores and writes nothing: the join is
+written back onto the signature (each entry's run, task, job and
+outcome; the pair's settlement; the diagnosis trigger, once) by the
+canary agent after every probe collection
+(`scripts/segfault-reproductions-reconcile.py`, the
+`segfault_reproduction_reconcile` action when something changed),
+under a row lock so a request recorded meanwhile is kept. Collection
+runs hourly with the probe tick and every five minutes as a
+collect-only tick while runs are open (site-canary
+SWF_INTEGRATION.md), so an attempt's state on the pages is at most
+minutes old while it runs; the pages show when PanDA was last read for
+each attempt. A request whose second queue's send fails keeps its first
+queue's request on record.
+
 **Local reproduction** on the detail page: the representative job's run
 as a shell fragment to copy, for a software expert with the image at
 hand: the image, the payload environment of the task with registration
@@ -541,8 +580,10 @@ routing (swf-monitor NOTICE_ROUTING.md) delivers to a subscriber; a
 Capcom subscription to `segfault_diagnosis` is the feed. The page's
 Diagnose control queues `segfault_diagnose` to the agent and hears
 `segfault_diagnose_queued` and `segfault_diagnosis_done`; the automatic
-trigger fires in the reproduction refresh when the outcome settles as
-reproduced or site_dependent with a trace on record, once.
+trigger fires in the canary agent's reconciliation after a collection
+when the outcome settles as reproduced or site_dependent with a trace
+on record, once (the signature's diagnosis record is marked queued
+before the message goes out, so a later pass never queues it twice).
 
 ### 7. Handoff
 
