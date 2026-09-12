@@ -100,9 +100,10 @@ storage that is not an object store.
 
 ## Controlling the pilot on the test queue
 
-Production operations owns the wrapper that runs on
+Production operations owns the pilot start script that runs on
 `NERSC_Perlmutter_epic_es`. It lives in this repository at
-`perlmutter/NERSC_Perlmutter_epic_es/wrapper.sh` and is
+`perlmutter/NERSC_Perlmutter_epic_es/epicprod-perlmutter-pilot.sh`
+(the naming of the npps0 pass script, `epicprod-gpu-pilot.sh`) and is
 served from `main`, as everything in this repository is: `main` is what
 runs. It is written against the interface the site's Slurm job
 provides (the two arguments, the three environment variables, one
@@ -118,13 +119,14 @@ the harvester installation, where the job script now copies the site's
 own wrapper:
 
 ```
-OURS=/global/common/software/m3763/panda-harvester/etc/panda/queues/${PQ}/wrapper.sh
+OURS=/global/common/software/m3763/panda-harvester/etc/panda/queues/${PQ}/epicprod-perlmutter-pilot.sh
 mkdir -p "$(dirname "$OURS")"
-curl -sfL "https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/${PQ}/wrapper.sh" -o "$OURS.new" && mv -f "$OURS.new" "$OURS"
-cp "$OURS" wrapper.sh 2>/dev/null || cp /global/common/software/m3763/panda-harvester/etc/panda/wrapper-wrapper-3-epic-test.sh wrapper.sh
+curl -sfL "https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/${PQ}/epicprod-perlmutter-pilot.sh" -o "$OURS.new" && mv -f "$OURS.new" "$OURS"
+cp "$OURS" epicprod-perlmutter-pilot.sh 2>/dev/null || cp /global/common/software/m3763/panda-harvester/etc/panda/wrapper-wrapper-3-epic-test.sh epicprod-perlmutter-pilot.sh
 ```
 
-and the `srun` line runs `./wrapper.sh` in place of the site's file name.
+and the `srun` line runs `./epicprod-perlmutter-pilot.sh` in place of
+the site's file name.
 
 The scope is set by the URL: a queue has a cached copy only if a file
 is published under its name, so only `NERSC_Perlmutter_epic_es` runs

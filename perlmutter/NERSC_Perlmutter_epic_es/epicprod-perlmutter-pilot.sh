@@ -1,10 +1,11 @@
 #!/bin/bash
-# Pilot wrapper for NERSC_Perlmutter_epic_es, the Event Service test queue
-# on Perlmutter (docs/NERSC_PERLMUTTER.md). The site's Slurm job fetches
-# this file by queue name at worker start and runs one copy per pilot:
+# The epicprod pilot start on Perlmutter for NERSC_Perlmutter_epic_es,
+# the Event Service test queue (docs/NERSC_PERLMUTTER.md). The site's
+# Slurm job fetches this file by queue name at worker start and runs one
+# copy per pilot:
 #
 #   srun -n <tasks> --export=HARVESTER_ID,HARVESTER_WORKER_ID,GTAG \
-#        /bin/bash ./wrapper.sh <queue> <accessPoint>
+#        /bin/bash ./epicprod-perlmutter-pilot.sh <queue> <accessPoint>
 #
 # What it does, per task: a working directory under the access point,
 # the pilot from the tarball named below (checksum verified), the
