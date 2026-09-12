@@ -2,6 +2,7 @@
 # Build yampl, the messaging library the pilot's Event Service executor hands
 # event ranges to the payload through, for the Perlmutter pilot: yampl v1.0
 # and its Python binding python-yampl (the pair the pilot's event-service code
+# speaks; tools/npps0/build-yampl.sh says why v1.0), compiled inside
 # the same ALRB AlmaLinux 9 container and against the same ALRB Python
 # the pilot runs under at NERSC (docs/NERSC_PERLMUTTER.md), so the
 # binding loads there. The result is a relocatable tarball,
