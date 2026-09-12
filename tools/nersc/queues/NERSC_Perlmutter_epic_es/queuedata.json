@@ -1,0 +1,187 @@
+{
+  "acopytools": {
+    "es_events": [
+      "rucio"
+    ],
+    "es_failover": [
+      "rucio"
+    ],
+    "pl": [
+      "rucio"
+    ],
+    "pr": [
+      "rucio"
+    ],
+    "pw": [
+      "rucio"
+    ],
+    "read_lan": [
+      "rucio"
+    ],
+    "read_lan_analysis": [
+      "rucio"
+    ],
+    "write_lan": [
+      "rucio"
+    ],
+    "write_lan_analysis": [
+      "rucio"
+    ]
+  },
+  "allow_lan": true,
+  "allow_wan": false,
+  "appdir": "",
+  "astorages": {
+    "es_events": [
+      "BNL_PROD_DISK_1"
+    ],
+    "es_failover": [
+      "BNL_PROD_DISK_1"
+    ],
+    "pl": [
+      "BNL_PROD_DISK_1"
+    ],
+    "pr": [
+      "BNL_PROD_DISK_1"
+    ],
+    "pw": [
+      "BNL_PROD_DISK_1"
+    ],
+    "read_lan": [
+      "BNL_PROD_DISK_1"
+    ],
+    "read_lan_analysis": [
+      "BNL_PROD_DISK_1"
+    ],
+    "write_lan": [
+      "BNL_PROD_DISK_1"
+    ],
+    "write_lan_analysis": [
+      "BNL_PROD_DISK_1"
+    ]
+  },
+  "atlas_site": "BNL-OSG",
+  "availablecpu": null,
+  "cachedse": null,
+  "capability": "mcore",
+  "catchall": "allow_no_pilot,logging=logstash;http://pandalogstash.sdcc.bnl.gov:8443",
+  "cloud": "US",
+  "comment": "no active blacklisting rules defined",
+  "container_options": "-B /global -B /cvmfs -B /pscratch -C",
+  "container_type": "apptainer:pilot",
+  "copytools": {
+    "rucio": {
+      "setup": ""
+    }
+  },
+  "corecount": null,
+  "coreenergy": 10.0,
+  "coreenergy_data": {
+    "coreenergy": 0.0,
+    "coreenergy_on": false,
+    "parent_coreenergy": 0.0,
+    "parent_coreenergy_on": false,
+    "parent_rc_site_coreenergy": 10.0,
+    "parent_site_coreenergy": 0.0,
+    "parent_site_coreenergy_on": false,
+    "scope": "rcsite"
+  },
+  "corepower": 12.32,
+  "corepower_data": {
+    "corepower": 0.0,
+    "corepower_on": false,
+    "parent_corepower": 0.0,
+    "parent_corepower_on": false,
+    "parent_rc_site_corepower": 12.32,
+    "parent_site_corepower": 0.0,
+    "parent_site_corepower_on": false,
+    "scope": "rcsite"
+  },
+  "country": "United States",
+  "countrygroup": "",
+  "depthboost": null,
+  "description": "",
+  "direct_access_lan": false,
+  "direct_access_wan": true,
+  "environ": "RUCIO_CONFIG=/global/common/software/m3763/panda-harvester/rucio.cfg RUCIO_ACCOUNT=panda",
+  "envsetup": "",
+  "fairsharepolicy": "",
+  "gocname": "BNL-OSG",
+  "gstat": "BNL-OSG",
+  "harvester": "",
+  "harvester_template": "",
+  "hc_param": "False",
+  "hc_suite": [
+    "PFT"
+  ],
+  "id": 110,
+  "is_cvmfs": true,
+  "is_default": false,
+  "is_virtual": false,
+  "jobseed": "all",
+  "last_modified": "2026-09-10T23:49:36.085500",
+  "localqueue": "",
+  "maxdiskio": null,
+  "maxdiskio_data": {
+    "maxdiskio": null,
+    "maxdiskio_on": false,
+    "parent_maxdiskio": null,
+    "parent_maxdiskio_on": false,
+    "parent_rc_site_maxdiskio": null,
+    "parent_site_maxdiskio": null,
+    "parent_site_maxdiskio_on": false,
+    "scope": "rcsite"
+  },
+  "maxinputsize": 14336,
+  "maxrss": 0,
+  "maxtime": 345600,
+  "maxwdir": 30000,
+  "meanrss": 4000,
+  "minrss": 0,
+  "mintime": 0,
+  "name": "NERSC_Perlmutter_epic_es",
+  "nickname": "NERSC_Perlmutter_epic_es",
+  "nodes": 0,
+  "panda_resource": "NERSC_Perlmutter_epic_es",
+  "panda_site": "BNL-OSG-PanDA",
+  "params": {},
+  "parent": "OSG_VIRTUAL",
+  "pilot_manager": "local",
+  "pilot_version": "3",
+  "pledgedcpu": null,
+  "probe": null,
+  "python_version": "2",
+  "queuehours": 0,
+  "queues": [],
+  "rc": "US-T1-BNL",
+  "rc_country": "United States",
+  "rc_site": "BNL-OSG",
+  "rc_site_state": "ACTIVE",
+  "region": "US",
+  "releases": [
+    "ANY"
+  ],
+  "resource_type": "hpc_special",
+  "site": "BNL-OSG-PanDA",
+  "site_state": "ACTIVE",
+  "siteid": "NERSC_Perlmutter_epic_es",
+  "special_par": "",
+  "state": "ACTIVE",
+  "state_comment": "Object was cloned from NERSC_Perlmutter_epic_dev via WebUI",
+  "state_update": "2026-09-10T23:49:36.084806",
+  "status": "online",
+  "system": "osg",
+  "tags": "has_worked itb osg working",
+  "tier": "T1",
+  "tier_level": 1,
+  "timefloor": 0,
+  "transferringlimit": null,
+  "type": "production",
+  "uconfig": {},
+  "use_pcache": false,
+  "validatedreleases": "None",
+  "vo_name": "eic",
+  "wnconnectivity": "full",
+  "workflow": null,
+  "zip_time_gap": 7200
+}
