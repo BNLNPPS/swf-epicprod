@@ -599,6 +599,33 @@ stated); the residual rerun of the affected configurations under the
 fixed image is the closing action, recorded on the signature by the
 rerun's `PandaTasks` rows.
 
+### Fatal signals followed by a stall
+
+A terminal job status and a payload failure are separate observations.
+Reproduction job 2723541 (task 39792, original job 2236724/task 38864)
+ended at the Perlmutter wall-time limit, but its preserved npsim log
+records GeomNav0003 at the DRICH gas/mirror boundary, heap corruption
+(`corrupted double-linked list`) and SIGABRT. The stage's CPU and file-I/O
+counters were unchanged from 12:02:33 to 15:29:13 UTC on 2026-09-12.
+The attempted ACTS reconstruction reproducer did not reach reconstruction.
+
+The payload watchdog described in EPICPROD_PAYLOAD.md preserves explicit
+fatal-signal evidence before termination and stops a stalled fatal stage
+after 120 seconds of measured inactivity. Reproduction rows show **Crash
+observed**, including the signal and stage, independently of the execution
+status and actual payload exit. This evidence alone does not settle the
+requested signature as reproduced: a different stage or fault may have
+prevented that code from running.
+
+The canary collector keeps the fatal digest and full-report evidence.
+The shared reproduction projection also reads fatal evidence from reports
+filed by the existing report sweep. It performs no remote fetch on a page
+read. Historical logs can be attached with swf-monitor's
+`scripts/record-reproduction-fatal.py --job ID --stage simulation --log FILE
+--source URL`; it previews by default and `--apply` records the evidence
+on the matching reproduction run without inventing an exit code. Run the
+existing reconciliation script for the signature after a historical repair.
+
 ### 8. Traces going forward: the payload change
 
 For jobs from now on, the trace should not depend on the pilot's

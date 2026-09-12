@@ -19,6 +19,7 @@ stderr, never raised into the payload's own exit.
 """
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -313,6 +314,12 @@ def job_metrics(report):
         metrics["payloadEvents"] = events
     if report.get("exit_code") is not None:
         metrics["payloadExit"] = report["exit_code"]
+    fatal = report.get("fatal") or {}
+    if fatal.get("signal") in (6, 7, 8, 11):
+        metrics["payloadFatalSignal"] = fatal["signal"]
+        metrics["payloadFatalStage"] = fatal.get("stage", "unknown")
+        if fatal.get("terminated"):
+            metrics["payloadFatalStalled"] = 1
     return metrics
 
 
@@ -352,6 +359,14 @@ def build_report(args):
     }
     if args.note:
         report["note"] = args.note
+    for path in sorted(glob.glob(os.path.join(args.prmon_dir, glob.escape(args.taskname) + '.*.fatal.json'))):
+        try:
+            with open(path) as handle:
+                fatal = json.load(handle)
+            if fatal.get('signal') in (6, 7, 8, 11):
+                report['fatal'] = fatal
+        except (OSError, ValueError, TypeError) as exc:
+            print(f'payload report: cannot read fatal evidence {path}: {exc}', file=sys.stderr)
     report["jobMetrics"] = job_metrics(report)
     return report
 

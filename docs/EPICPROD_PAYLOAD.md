@@ -157,6 +157,28 @@ verdict's events check reads the reconstructed count.
 
 ### Reporting from a job that fails
 
+Simulation and reconstruction run through `fatal_watch.py` outside their
+prmon process. An explicit SIGABRT, SIGBUS, SIGFPE or SIGSEGV message in
+the stage log is saved as `*.fatal.json`, including its stage and log tail,
+and immediately copied into the payload report and pilot digest. Geometry
+warnings and event-abort messages alone do not qualify.
+
+After a fatal signal, fresh prmon samples must show unchanged user/system
+CPU and file-I/O counters for 120 seconds before the watchdog terminates
+the stage. Missing or stale samples reset this interval. Before termination
+it records the counters and bounded process identities and wait states;
+it then sends TERM to its own stage process group, allows ten seconds,
+and sends KILL to remaining members. The supervisor returns 128 plus the
+observed signal so the existing crash trap captures and reports the failure.
+This is a supervisor exit; the report separately records the observed
+signal and the watchdog intervention. Ordinary idle stages are unaffected.
+
+The report's `fatal` object survives subsequent stage-report rewrites.
+The digest carries `payloadFatalSignal`, `payloadFatalStage`, and, after
+watchdog termination, `payloadFatalStalled=1`, independently of `payloadExit`.
+The existing capped report sender carries the final report; the watchdog
+adds no network writes or additional reporting loop.
+
 A job that fails reports none of this. The PanDA server keeps job
 metadata for finished jobs only. Over the thirty days to 2026-09-06,
 363,621 failed jobs carried metadata not once, and the log tarball is
