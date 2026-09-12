@@ -59,8 +59,11 @@ def taskname_remainder_path(remainder):
     """PanDA-taskname remainder -> derivation path. Dots separate tokens,
     except inside decimal numbers, which stay intact so decimal-valued
     physics tokens (``ma_0.1``) survive as single tokens instead of
-    fragmenting before derivation sees them."""
-    protected = re.sub(r'(\d)\.(\d)', '\\1\x00\\2', remainder or '')
+    fragmenting before derivation sees them. A dot before a beam token
+    (``eHe3.9x166``, ``Pb208.5x110``) separates: the digit ending an ion
+    species and the digit starting the beam pair are not a decimal, and
+    gluing them lost the species (the 26.07 BeAGLE eHe3 tags)."""
+    protected = re.sub(r'(\d)\.(?!\d+x\d+(?:\.|$))(\d)', '\\1\x00\\2', remainder or '')
     return protected.replace('.', '/').replace('\x00', '.')
 
 
