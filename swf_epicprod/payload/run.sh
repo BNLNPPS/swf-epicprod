@@ -35,6 +35,15 @@ monitor() {
     "$@"
   fi
 }
+guard_stage() {
+  local label=$1; shift
+  python "${SCRIPT_DIR}/fatal_watch.py" --stage "${CURRENT_STAGE}" \
+    --log "${LOG_TEMP}/${TASKNAME}.${label}.log" \
+    --series "${LOG_TEMP}/${TASKNAME}.${label}.prmon.txt" \
+    --evidence "${LOG_TEMP}/${TASKNAME}.${label}.fatal.json" \
+    --report "${PAYLOAD_REPORT:-payload-report.json}" \
+    --job-report "${PAYLOAD_JOB_REPORT:-jobReport.json}" -- "$@"
+}
 # A crash (a stage's program dead on a signal: exit 128 + N) leaves its
 # evidence in the stage's log, which never reaches anyone when the job
 # dies before the Logs stage. So the trap, before exiting on a crash-class
@@ -619,7 +628,7 @@ stage simulation start "${EVENTS_PER_TASK:-?} events"
     )
   fi
   # Run npsim with both common and uncommon flags
-  prmon \
+  guard_stage npsim prmon \
     --filename ${LOG_TEMP}/${TASKNAME}.npsim.prmon.txt \
     --json-summary ${LOG_TEMP}/${TASKNAME}.npsim.prmon.json \
     --log-filename ${LOG_TEMP}/${TASKNAME}.npsim.prmon.log \
@@ -643,7 +652,7 @@ stage reconstruction start
 {
   date
   eic-info
-  prmon \
+  guard_stage eicrecon prmon \
     --filename ${LOG_TEMP}/${TASKNAME}.eicrecon.prmon.txt \
     --json-summary ${LOG_TEMP}/${TASKNAME}.eicrecon.prmon.json \
     --log-filename ${LOG_TEMP}/${TASKNAME}.eicrecon.prmon.log \
