@@ -81,8 +81,9 @@ Each step runs here before it is asked of any other queue. In order:
    chosen (`PILOT_ES_EXECUTOR_TYPE` in the pass script's environment;
    the executor is the site's choice, not the task's), the range
    channel it opens, what the payload is asked to speak, and the range
-   dispositions reported to the server. The channel library the
-   generic executor needs is absent from every pilot install; on this
+   dispositions reported to the server. yampl, the messaging library the
+   generic executor hands event ranges through, is absent from every
+   pilot install; on this
    host it is built and installed (`tools/npps0/build-yampl.sh`: yampl
    v1.0 with the python-yampl binding, the pair whose API the pilot's
    event-service code speaks), so the generic executor can be tried

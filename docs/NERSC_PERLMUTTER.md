@@ -117,8 +117,8 @@ prefix of the devcloud bucket ([DEVCLOUD_STAGEOUT.md](DEVCLOUD_STAGEOUT.md)
 table in [OSG_SUBMISSION.md](OSG_SUBMISSION.md) § Our canary pilot
 directory), the `queuedata.json` above
 placed in the pilot's working directory, `PILOT_ES_EXECUTOR_TYPE` and
-the channel library for the Event Service executor (python-yampl built
-for ALRB's Python inside the same container by
+yampl, the messaging library the Event Service executor hands event
+ranges to the payload through (its Python binding built for ALRB's Python inside the same container by
 `perlmutter/build-es-channel.sh`, served from the bucket's pilot prefix
 beside the pilot and pinned by URL and checksum the same way), and the pilot
 options.

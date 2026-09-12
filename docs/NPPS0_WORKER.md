@@ -57,8 +57,8 @@ Scripts install at `~wenaus/bin/`, configuration at
   (`/cvmfs/singularity.opensciencegrid.org/eicweb/...`); the pilot's
   container layer does not accept local SIF files.
 - boto3 for the system python3 (pilot s3 copytool dependency).
-- yampl v1.0 and python-yampl under `~/yampl-1.0`, the pilot's Event
-  Service channel library, built by `tools/npps0/build-yampl.sh`
+- yampl v1.0 and python-yampl under `~/yampl-1.0`, the messaging library the pilot's
+  Event Service executor hands event ranges through, built by `tools/npps0/build-yampl.sh`
   (2026-09-09); the pass script puts it on the pilot's `PYTHONPATH`
   and selects the generic event-service executor.
 - Credentials (mode 600):

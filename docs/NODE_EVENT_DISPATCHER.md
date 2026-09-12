@@ -187,7 +187,7 @@ exercised.
 **First run of the pilot side (2026-09-09, `BNL_NPPS_GPU`,
 [task 39564](https://epic-devcloud.org/prod/panda/tasks/39564/), job
 2722535).** Under the canary pilot with PR 220, the generic executor and
-the channel library installed on the host
+yampl, the messaging library it hands event ranges through, installed on the host
 ([NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md)): the pilot chose the
 event-service executor, built the payload command, started the generic
 executor and its server-side communicator, opened the yampl server
@@ -316,10 +316,10 @@ inbox/outbox contract, hand per-range completions back, and run the
 rolling zip merger with its 30-minute closes registered to JLab Rucio
 (Design § Package). Two shapes of the pilot/harness boundary are on
 the table (Open questions): the harness speaks the pilot's range
-channel, which needs the generic executor and its channel library at
-the site; or an ePIC process class on the pilot side speaks the
+channel, which needs the generic executor and yampl, the messaging library
+it hands ranges through, at the site; or an ePIC process class on the pilot side speaks the
 harness's own contract, so the inbox/outbox contract is the interface
-and the pilot carries no channel library.
+and the pilot needs no yampl.
 
 The streaming reconstruction payload settles the shape of that
 contract. EICrecon's managed socket (the fast-processing transformer,
@@ -374,7 +374,7 @@ proven ones; the substantial work is validation at the site.
   the harness reports ranges bare) — to confirm in the harness smoke
   run.
 - The pilot/harness boundary: which side speaks which contract, the
-  channel library the site's pilot lacks, and the pilot defect the
+  yampl messaging library the site's pilot lacks, and the pilot defect the
   probe died on (Completeness and accounting, The pilot side). Under
   discussion; the rule is to resolve maximally in house, in the
   payload and the ePIC user module.

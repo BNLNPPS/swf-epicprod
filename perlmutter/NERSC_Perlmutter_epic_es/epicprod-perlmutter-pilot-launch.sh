@@ -26,8 +26,9 @@ QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter
 # (docs/DEVCLOUD_STAGEOUT.md § 4); the name and checksum pin one build.
 PILOT_TARBALL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-3.14.3.3-epic3.tar.gz
 PILOT_TARBALL_SHA256=b7b0e27141a9d6f6b7e4fb9a2c3dea91bc5669f90aa39c3b360c9ad6b6e02721
-# The Event Service channel library (python-yampl) built by
-# build-es-channel.sh for the container's Python, a tarball unpacked
+# yampl, the messaging library the Event Service executor hands event
+# ranges to the payload through, with its Python binding, built by
+# build-es-channel.sh for the container's Python as a tarball unpacked
 # into the working directory; with the URL empty only ordinary jobs run.
 ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py311-el9.tar.gz
 ES_CHANNEL_SHA256=f6c11690f046ae8ceb90886d034e4fbba0f494203f839a16e8a85f687efcc938
@@ -59,7 +60,7 @@ else
     log "no queuedata.json published for $PQ; the pilot uses the server cache"
 fi
 
-# The Event Service channel library, when published.
+# yampl for the Event Service executor, when published.
 ES_PYTHONPATH=
 if [[ -n "$ES_CHANNEL_URL" ]]; then
     if curl -sfL "$ES_CHANNEL_URL" -o es-channel.tar.gz \
