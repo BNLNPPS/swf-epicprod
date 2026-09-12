@@ -20,13 +20,11 @@ WORKBASE="$HOME/pilot-work"
 KEEP_RUNS=5
 
 # Pilot selection (docs/NPPS0_TEST_QUEUE.md, Choosing the pilot). The
-# wrapper fetches this URL with curl; the standing value is a pilot of
-# ours in the public pilot prefix of the devcloud bucket
-# (docs/DEVCLOUD_STAGEOUT.md, section 4); empty runs the wrapper's
-# production default (pilot3.tar.gz in the production pilot directory);
-# 'local' runs a pilot3.tar.gz taken from $CONFDIR into the run
-# directory, for a pilot built by hand and not yet published.
-PILOTURL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-3.14.3.3-epic3.tar.gz
+# wrapper fetches this URL with curl; empty runs its production default
+# (pilot3.tar.gz in the production pilot directory); 'local' runs a
+# pilot3.tar.gz taken from $CONFDIR into the run directory, for a pilot
+# built by hand and never published.
+PILOTURL=local
 
 export PANDA_CONFIG_ROOT="$HOME/.pathena"
 export X509_USER_PROXY="$HOME/creds/longproxy-for-rucio"

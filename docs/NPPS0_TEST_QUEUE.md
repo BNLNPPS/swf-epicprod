@@ -48,24 +48,19 @@ extracts a `pilot3.tar.gz` already present in the run directory. The
 pass script sets the URL in one variable, `PILOTURL`, and passes it
 as `--piloturl`.
 
-Four pilots are therefore one line apart:
+Three pilots are therefore one line apart:
 
-- a pilot of ours from the public pilot prefix of the devcloud bucket,
-  the standing setting:
-  `https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-<version>-epicN.tar.gz`
-  ([DEVCLOUD_STAGEOUT.md](DEVCLOUD_STAGEOUT.md) § 4), the same object
-  the Perlmutter pilot launch fetches, so the two test queues run one
-  build;
 - the production default: `PILOTURL` empty;
-- the canary pilot in CVMFS:
+- the canary pilot, the setting in the script:
   `file:///cvmfs/eic.opensciencegrid.org/panda/pilot/canary/pilot3.tar.gz`,
-  or a named tarball in that directory
-  ([OSG_SUBMISSION.md](OSG_SUBMISSION.md) § Our canary pilot
-  directory), the route for queues that mount the repository;
+  or a named tarball in that directory: the pilot production
+  operations publishes there ([OSG_SUBMISSION.md](OSG_SUBMISSION.md)
+  § Our canary pilot directory). This queue is the recorded consumer
+  of that directory;
 - a pilot built by hand: `PILOTURL=local`, with the tarball placed as
   `pilot3.tar.gz` in the host's configuration directory, from which
   the pass script copies it into each run directory. No publication,
-  for iterating on a change before it is published.
+  for iterating on a change before it goes to the canary directory.
 
 `PILOTVERSION` inside a patched tarball stays the base version; the
 tarball name carries the patch.
