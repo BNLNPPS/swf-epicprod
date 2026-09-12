@@ -72,8 +72,12 @@ Activation requires an explicitly approved full deployment: migrations
 `0009` and `0010`, restricted runtime role provisioning, credential cutover,
 and service restart. Applications use `swf_runtime`; `pcs_identity_owner`
 is NOLOGIN and owns the six identity tables, history and trigger functions.
-The previous owner login is disabled after its current application environments
-are switched. No owner membership is granted to the runtime role.
+Operator accounts remain available: switching application credentials does not
+authorize disabling an operator login, removing its password or changing its
+role attributes. The `wenaus` login retains its original password and CREATEDB,
+with read/write access to protected identities and read access to history.
+The deletion and identity guards still apply. No owner membership is granted
+to the application runtime role.
 
 The full deploy uses `swf-monitor/scripts/migrate-swfdb.py` as root to run
 migrations through the local PostgreSQL administrator's peer authentication.
