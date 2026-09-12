@@ -28,10 +28,9 @@ PILOT_TARBALL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilo
 PILOT_TARBALL_SHA256=b7b0e27141a9d6f6b7e4fb9a2c3dea91bc5669f90aa39c3b360c9ad6b6e02721
 # The Event Service channel library (python-yampl) built by
 # build-es-channel.sh for the container's Python, a tarball unpacked
-# into the working directory; the URL empty until one is published, in
-# which case only ordinary jobs run.
-ES_CHANNEL_URL=
-ES_CHANNEL_SHA256=
+# into the working directory; with the URL empty only ordinary jobs run.
+ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py311-el9.tar.gz
+ES_CHANNEL_SHA256=f6c11690f046ae8ceb90886d034e4fbba0f494203f839a16e8a85f687efcc938
 
 # The site's harvester installation: the Rucio client configuration for
 # the pilot's Rucio account lives there.
