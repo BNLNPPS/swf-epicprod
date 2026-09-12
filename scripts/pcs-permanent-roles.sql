@@ -1,6 +1,6 @@
 -- Apply only during the approved deployment, as a database administrator.
 -- psql --set=runtime_role=swf_runtime --set=owner_role=pcs_identity_owner \
---      --set=archive_role=pcs_archive_reader --set=migration_role=wenaus \
+--      --set=migration_role=postgres \
 --      --file=scripts/pcs-permanent-roles.sql <connection options>
 -- Role names are quoted as identifiers; no passwords appear in this file.
 \set ON_ERROR_STOP on
@@ -8,10 +8,9 @@ BEGIN;
 -- Fail on collisions: reusing a role without auditing its grants is unsafe.
 CREATE ROLE :"owner_role" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 CREATE ROLE :"runtime_role" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-CREATE ROLE :"archive_role" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-SELECT format('GRANT CONNECT ON DATABASE %I TO %I, %I', current_database(), :'runtime_role', :'archive_role') \gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'runtime_role') \gexec
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-GRANT USAGE ON SCHEMA public TO :"runtime_role", :"archive_role", :"owner_role";
+GRANT USAGE ON SCHEMA public TO :"runtime_role", :"owner_role";
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"runtime_role";
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"runtime_role";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"migration_role" IN SCHEMA public
@@ -31,9 +30,9 @@ REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER ON
 REVOKE ALL ON public.pcs_identity_history FROM :"runtime_role", PUBLIC;
 GRANT SELECT ON public.pcs_identity_history TO :"runtime_role";
 REVOKE ALL ON SEQUENCE public.pcs_identity_history_id_seq FROM :"runtime_role", PUBLIC;
-GRANT SELECT ON public.pcs_physics_category, public.pcs_physics_tag, public.pcs_evgen_tag,
-    public.pcs_simu_tag, public.pcs_reco_tag, public.pcs_background_tag,
-    public.pcs_physics_config, public.pcs_identity_history, public.pcs_dataset TO :"archive_role";
+-- The existing database backup job uses the runtime login for pg_dump.
+-- SELECT reads sequence state; it cannot advance or reset the history sequence.
+GRANT SELECT ON SEQUENCE public.pcs_identity_history_id_seq TO :"runtime_role";
 COMMIT;
--- Activate LOGIN and configure authentication separately, then change DB_USER
+-- Activate the runtime LOGIN and configure authentication, then change DB_USER
 -- for every application/worker/maintenance process. Never distribute owner credentials.
