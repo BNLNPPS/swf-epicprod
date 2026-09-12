@@ -111,7 +111,10 @@ runs. It is written against the interface the site's Slurm job
 provides (the two arguments, the three environment variables, one
 task per pilot under `srun`), not copied from the site's wrapper, and
 it carries what the test queue needs: the pilot from a tarball
-production operations builds and serves, the `queuedata.json` above
+production operations builds and serves as a GitHub release asset of
+this repository (every place a pilot of ours goes, and how each is
+fed, is the table in [OSG_SUBMISSION.md](OSG_SUBMISSION.md) § Our
+canary pilot directory), the `queuedata.json` above
 placed in the pilot's working directory, `PILOT_ES_EXECUTOR_TYPE` and
 the channel library for the Event Service executor, and the pilot
 options.

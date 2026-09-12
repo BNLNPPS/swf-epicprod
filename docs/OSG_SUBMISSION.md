@@ -323,6 +323,22 @@ directory, since the nodes do not mount `eic.opensciencegrid.org`.
 The Perlmutter route is recorded in
 [NERSC_PERLMUTTER.md](NERSC_PERLMUTTER.md).
 
+**Every place a pilot of ours goes.** One tarball, built once (step 1
+above), is placed in each of these; a pilot is "published" when all
+of them hold it. Each has its own consumer and its own route, and none
+follows another automatically.
+
+| Place | Consumer | How it gets there | Takes effect |
+|---|---|---|---|
+| The canary directory, `/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/`, symlink `pilot3.tar.gz` | any queue whose pilot selection names the directory: `BNL_NPPS_GPU` when its pass script's `PILOTURL` is the canary symlink; OSG queues only by a `pilot_url` that PanDA operations sets | steps 2 to 6 above (the `cvmfs-canary-publish` procedure) | the next pilot after the repository revision advances, about 10 minutes |
+| The npps0 configuration directory, `~/npps0-config/pilot3.tar.gz` on the host | `BNL_NPPS_GPU` when its pass script runs `PILOTURL=local` ([NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md) § Choosing the pilot); the state since 2026-09-09 | a file copy to the host (the `npps0` deploy procedure) | the next pass |
+| A GitHub release on this repository, `pilot-<version>-epicN`, with the tarball as its asset | the Perlmutter pilot launch, `perlmutter/<queue>/epicprod-perlmutter-pilot-launch.sh`, which fetches the asset at every pilot start and verifies its sha256 ([NERSC_PERLMUTTER.md](NERSC_PERLMUTTER.md)) | `gh release create` with the tarball, then a commit on `main` changing the launcher's two lines, `PILOT_TARBALL_URL` and `PILOT_TARBALL_SHA256` | the next worker start after the commit (the launcher is fetched by the site at every worker start) |
+
+A queue that is to keep running an earlier pilot keeps it by these
+same lines: the canary symlink moved back, the host file replaced, or
+the launcher's two lines reverted. The tarballs themselves are never
+removed from any of the three places.
+
 ### Excluding what delivers nothing
 
 Two levers, at two granularities, both in the submit description that
