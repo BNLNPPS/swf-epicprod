@@ -71,6 +71,12 @@ EXCLUDED_SITE_NODES = [
      'failed': 119, 'finished': 0, 'core_hours': 111},
     {'site': 'ComputeCanada-Fir', 'node': 'fc30416',
      'failed': 96, 'finished': 0, 'core_hours': 102},
+    # Added 2026-09-12 from the segfault catalog (finding exit139:task38914):
+    # 187 of task 38914's 252 crashes were this one host, every one dead at
+    # 35.5 minutes; the same thirty-day window as the rest, and over ninety
+    # days 480 failed against 4 finished, none since 2026-07-21.
+    {'site': 'BEOCAT-SLATE', 'node': 'warlock12',
+     'failed': 271, 'finished': 0, 'core_hours': 161, 'applied': '2026-09-12'},
 ]
 
 
