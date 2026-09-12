@@ -118,11 +118,13 @@ the harvester installation, where the job script now copies the site's
 own wrapper:
 
 ```
-OURS=/global/common/software/m3763/panda-harvester/etc/panda/queues/${PQ}/wrapper-wrapper.sh
+OURS=/global/common/software/m3763/panda-harvester/etc/panda/queues/${PQ}/wrapper.sh
 mkdir -p "$(dirname "$OURS")"
 curl -sfL "https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/${PQ}/wrapper.sh" -o "$OURS.new" && mv -f "$OURS.new" "$OURS"
-cp "$OURS" wrapper-wrapper-3-epic-test.sh 2>/dev/null || cp /global/common/software/m3763/panda-harvester/etc/panda/wrapper-wrapper-3-epic-test.sh .
+cp "$OURS" wrapper.sh 2>/dev/null || cp /global/common/software/m3763/panda-harvester/etc/panda/wrapper-wrapper-3-epic-test.sh wrapper.sh
 ```
+
+and the `srun` line runs `./wrapper.sh` in place of the site's file name.
 
 The scope is set by the URL: a queue has a cached copy only if a file
 is published under its name, so only `NERSC_Perlmutter_epic_es` runs
