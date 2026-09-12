@@ -102,7 +102,7 @@ storage that is not an object store.
 
 Production operations owns the wrapper that runs on
 `NERSC_Perlmutter_epic_es`. It lives in this repository at
-`tools/nersc/queues/NERSC_Perlmutter_epic_es/wrapper-wrapper.sh` and is
+`perlmutter/NERSC_Perlmutter_epic_es/wrapper.sh` and is
 served from `main`, as everything in this repository is: `main` is what
 runs. It is written against the interface the site's Slurm job
 provides (the two arguments, the three environment variables, one
@@ -120,7 +120,7 @@ own wrapper:
 ```
 OURS=/global/common/software/m3763/panda-harvester/etc/panda/queues/${PQ}/wrapper-wrapper.sh
 mkdir -p "$(dirname "$OURS")"
-curl -sfL "https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/tools/nersc/queues/${PQ}/wrapper-wrapper.sh" -o "$OURS.new" && mv -f "$OURS.new" "$OURS"
+curl -sfL "https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/${PQ}/wrapper.sh" -o "$OURS.new" && mv -f "$OURS.new" "$OURS"
 cp "$OURS" wrapper-wrapper-3-epic-test.sh 2>/dev/null || cp /global/common/software/m3763/panda-harvester/etc/panda/wrapper-wrapper-3-epic-test.sh .
 ```
 

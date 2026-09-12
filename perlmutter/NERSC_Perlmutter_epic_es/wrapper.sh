@@ -20,7 +20,7 @@ PQ=${1:?panda queue}
 ACCESS_POINT=${2:?harvester access point}
 
 # What production operations publishes for this queue.
-QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/tools/nersc/queues/$PQ
+QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/$PQ
 PILOT_TARBALL_URL=https://github.com/BNLNPPS/swf-epicprod/releases/download/pilot-3.14.3.3-epic3/pilot3-3.14.3.3-epic3.tar.gz
 PILOT_TARBALL_SHA256=78bebbc4031b041b3ef0ef99fa25f465fb106a0d4b0311f1f998efc025bb9adb
 # The Event Service channel library (python-yampl) built for the
