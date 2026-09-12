@@ -666,7 +666,7 @@ curated. The findings live in swf-monitor's entry store (the tjai-style
 `entry` table the alarm system brought in: context `segfault`, kind
 `finding`, one row per crashing frame named by its catalog key, the
 reading as the content, the structured fields in `data`: serial (the
-permanent id, drawn once at creation and shown as F-8; the page lists
+permanent id, drawn once at creation and shown as f-8; the page lists
 findings newest first by it), date, frame,
 stage, signatures, sources, class, action, standing, fix, notes,
 model_reading), which versions every substantive change with the
