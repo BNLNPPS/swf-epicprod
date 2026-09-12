@@ -6,6 +6,11 @@
 <div class="container-fluid mt-4">
     <h2>{{ config.label }} <span class="text-muted">· physics configuration</span></h2>
 
+    <p><span class="badge bg-secondary">{{ config.lifecycle }}</span>
+        {% if config.lifecycle_reason %}{{ config.lifecycle_reason }}{% endif %}
+        <a class="ms-2" href="{% url 'pcs:identity_detail' kind='pc' label=config.label %}">Disposition &amp; history</a>
+        {% if config.superseded_by %} · superseded by <a href="{% url 'pcs:pcs_config_detail' label=config.superseded_by.label %}">{{ config.superseded_by.label }}</a>{% endif %}
+    </p>
     <!-- Identity is read-only here: it flows only through composition. -->
     <div class="card mb-4" style="max-width: 60em;">
         <div class="card-header"><strong>Identity</strong></div>

@@ -1300,6 +1300,9 @@ def tag_compose(request, tag_type):
             'tag_number': t.tag_number,
             'tag_label': t.tag_label,
             'status': t.status,
+            'lifecycle': t.lifecycle,
+            'lifecycle_reason': t.lifecycle_reason,
+            'disposition_url': reverse('pcs:identity_detail', args=[tag_type, t.tag_label]),
             'description': t.description,
             'parameters': t.parameters,
             'created_by': t.created_by,
@@ -1401,28 +1404,59 @@ def param_defs_api(request, tag_type):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
-@_login_required_flash
 def tag_delete(request, tag_type, tag_number):
-    if request.method != 'POST':
-        return _post_only_redirect(
-            request, reverse('pcs:tag_compose', kwargs={'tag_type': tag_type}),
-            action_label='Tag delete')
-    model = TAG_MODELS[tag_type]
-    tag = get_object_or_404(model, tag_number=tag_number)
-    if tag.status == 'locked':
-        messages.error(request, f"Tag {tag.tag_label} is locked and cannot be deleted.")
-        return redirect('pcs:tag_compose', tag_type=tag_type)
-    if tag.created_by != request.user.username:
-        messages.error(request, f"Only the creator ({tag.created_by}) can delete {tag.tag_label}.")
-        return redirect('pcs:tag_compose', tag_type=tag_type)
-    label = tag.tag_label
-    tag.delete()
-    messages.success(request, f"Tag {label} deleted.")
-    log_epicprod_action(
-        'web', 'tag_delete', subject_key=label,
-        username=getattr(request.user, 'username', ''),
-        sublevel='normal', live_default=True)
-    return redirect('pcs:tag_compose', tag_type=tag_type)
+    return JsonResponse({'error': 'Issued tags are permanent. Use the disposition page with a reason.'}, status=405)
+
+
+def identity_detail(request, kind, label):
+    """Stable identity, explicit disposition and database-recorded history."""
+    from django.core.exceptions import ValidationError
+    from django.core.paginator import Paginator
+    from django.http import Http404
+    from .models import IdentityHistory
+    from .permanence import LIFECYCLES, set_lifecycle
+
+    model = PhysicsConfig if kind == 'pc' else TAG_MODELS.get(kind)
+    if model is None:
+        raise Http404('Unknown identity type')
+    label_field = 'label' if kind == 'pc' else 'tag_label'
+    instance = get_object_or_404(model, **{label_field: label})
+    can_change = request.user.is_authenticated and (
+        request.user.is_staff or request.user.username == instance.created_by)
+    if request.method == 'POST':
+        if not can_change:
+            return JsonResponse({'error': 'Only the creator or staff can change this disposition.'}, status=403)
+        try:
+            replacement = None
+            replacement_label = request.POST.get('replacement', '').strip()
+            if replacement_label:
+                replacement = model.objects.filter(**{label_field: replacement_label}).first()
+                if replacement is None:
+                    raise ValidationError('Replacement identity not found.')
+            instance = set_lifecycle(instance, request.POST.get('lifecycle'),
+                                     reason=request.POST.get('reason'),
+                                     changed_by=request.user.username, replacement=replacement)
+        except ValidationError as exc:
+            messages.error(request, ' '.join(exc.messages))
+        else:
+            messages.success(request, f'{label}: {instance.lifecycle} recorded.')
+            return redirect('pcs:identity_detail', kind=kind, label=label)
+    elif request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    history = Paginator(IdentityHistory.objects.filter(
+        table_name=model._meta.db_table, record_id=instance.pk).order_by('-id'), 25
+    ).get_page(request.GET.get('page'))
+    for event in history:
+        event.before_display = json.dumps(event.before, indent=2, ensure_ascii=False)
+        event.after_display = json.dumps(event.after, indent=2, ensure_ascii=False)
+    if kind == 'pc':
+        source_url = reverse('pcs:pcs_config_detail', args=[label])
+    else:
+        source_url = reverse('pcs:tag_compose', args=[kind]) + '?selected=' + urlquote(label)
+    return render(request, 'pcs/identity_detail.html', {
+        'identity': instance, 'kind': kind, 'label': label, 'source_url': source_url,
+        'can_change': can_change, 'lifecycles': LIFECYCLES, 'identity_history': history,
+    })
 
 
 @_login_required_flash
@@ -1435,11 +1469,15 @@ def tag_lock(request, tag_type, tag_number):
     tag = get_object_or_404(model, tag_number=tag_number)
     if tag.created_by != request.user.username:
         messages.error(request, f"Only the creator ({tag.created_by}) can lock this tag.")
+    elif tag.lifecycle != 'active':
+        messages.error(request, 'Reactivate this tag before locking it.')
     elif tag.status == 'locked':
         messages.warning(request, f"Tag {tag.tag_label} is already locked.")
     else:
-        tag.status = 'locked'
-        tag.save(update_fields=['status', 'updated_at'])
+        from .permanence import identity_change
+        with identity_change(request.user.username, 'Tag locked'):
+            tag.status = 'locked'
+            tag.save(update_fields=['status', 'updated_at'])
         messages.success(request, f"Tag {tag.tag_label} locked. It can now be used in datasets.")
         log_epicprod_action(
             'web', 'tag_lock', subject_key=tag.tag_label,
@@ -1456,8 +1494,8 @@ def tag_edit(request, tag_type, tag_number):
 
     compose_url = reverse('pcs:tag_compose', kwargs={'tag_type': tag_type})
     selected_url = f'{compose_url}?selected={tag_number}'
-    if tag.status == 'locked':
-        messages.error(request, f"Tag {tag.tag_label} is locked and cannot be edited.")
+    if tag.status == 'locked' or tag.lifecycle != 'active':
+        messages.error(request, f"Tag {tag.tag_label} must be an active draft to be edited.")
         return redirect(selected_url)
 
     if tag_type == 'p':
@@ -1470,11 +1508,16 @@ def tag_edit(request, tag_type, tag_number):
     if request.method == 'POST':
         form = FormClass(request.POST, **form_kwargs)
         if form.is_valid():
+            if tag_type == 'p' and form.cleaned_data['category'].pk != tag.category_id:
+                messages.error(request, 'Category is part of the permanent identity. Create a new tag.')
+                return redirect(selected_url)
             tag.description = form.cleaned_data['description']
             tag.parameters = form.get_parameters()
             if tag_type == 'p':
                 tag.category = form.cleaned_data['category']
-            tag.save()
+            from .permanence import identity_change
+            with identity_change(request.user.username, 'Draft tag correction'):
+                tag.save()
             messages.success(request, f"Tag {tag.tag_label} updated.")
             log_epicprod_action(
                 'web', 'tag_edit', subject_key=tag.tag_label,

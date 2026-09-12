@@ -12,6 +12,7 @@ from django.utils.functional import cached_property
 
 from .name_tokens import (reserved_sample_token_description,
                           sample_name_reserved_collision, trial_name)
+from .permanence import PermanentIdentity
 
 
 TAG_STATUS_CHOICES = [
@@ -41,7 +42,7 @@ class PhysicsCategory(models.Model):
         return f"{self.digit}: {self.name}"
 
 
-class PhysicsTag(models.Model):
+class PhysicsTag(PermanentIdentity):
     """Physics process tag (p3001, p3002...). Number = category.digit * 1000 + N."""
     tag_number = models.IntegerField(unique=True)
     tag_label = models.CharField(max_length=10, unique=True)
@@ -73,7 +74,7 @@ class PhysicsTag(models.Model):
         return category.digit * 1000 + suffix
 
 
-class EvgenTag(models.Model):
+class EvgenTag(PermanentIdentity):
     """Event generation tag (e1, e2...). Number auto-incremented via PersistentState."""
     tag_number = models.IntegerField(unique=True)
     tag_label = models.CharField(max_length=10, unique=True)
@@ -100,7 +101,7 @@ class EvgenTag(models.Model):
         return _allocate_simple_tag('pcs_next_evgen')
 
 
-class SimuTag(models.Model):
+class SimuTag(PermanentIdentity):
     """Simulation tag (s1, s2...). Number auto-incremented via PersistentState."""
     tag_number = models.IntegerField(unique=True)
     tag_label = models.CharField(max_length=10, unique=True)
@@ -127,7 +128,7 @@ class SimuTag(models.Model):
         return _allocate_simple_tag('pcs_next_simu')
 
 
-class RecoTag(models.Model):
+class RecoTag(PermanentIdentity):
     """Reconstruction tag (r1, r2...). Number auto-incremented via PersistentState."""
     tag_number = models.IntegerField(unique=True)
     tag_label = models.CharField(max_length=10, unique=True)
@@ -154,7 +155,7 @@ class RecoTag(models.Model):
         return _allocate_simple_tag('pcs_next_reco')
 
 
-class BackgroundTag(models.Model):
+class BackgroundTag(PermanentIdentity):
     """Background tag (k1, k2...). A named, versioned background configuration
     (beam-gas, synchrotron radiation, or overlay samples), independent of any
     physics signal. Number auto-incremented via PersistentState."""
@@ -183,7 +184,7 @@ class BackgroundTag(models.Model):
         return _allocate_simple_tag('pcs_next_background')
 
 
-class PhysicsConfig(models.Model):
+class PhysicsConfig(PermanentIdentity):
     """The physics configuration — the campaign-invariant identity
     behind dataset editions (an edition is a physics configuration ×
     campaign) and the home of its associations.
@@ -225,6 +226,31 @@ class PhysicsConfig(models.Model):
 
     def __str__(self):
         return self.config_key
+
+
+class IdentityHistory(models.Model):
+    """Database-written, append-only snapshots, including edition rebindings."""
+    table_name = models.CharField(max_length=64)
+    record_id = models.BigIntegerField()
+    operation = models.CharField(max_length=16)
+    before = models.JSONField(null=True)
+    after = models.JSONField(null=True)
+    changed_at = models.DateTimeField()
+    database_user = models.CharField(max_length=100)
+    actor = models.CharField(max_length=100, blank=True)
+    reason = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'pcs_identity_history'
+        ordering = ['id']
+        indexes = [models.Index(fields=['table_name', 'record_id', 'id'],
+                               name='pcs_identity_history_lookup')]
+
+    def save(self, *args, **kwargs):
+        raise ValidationError('Identity history is written only by database triggers.')
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Identity history is permanent.')
 
 
 class Dataset(models.Model):

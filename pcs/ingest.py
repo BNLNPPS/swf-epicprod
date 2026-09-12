@@ -257,7 +257,7 @@ def _family(derived, generator):
     if not derived:
         return []
     want = _physics_axes(derived)
-    tags = [t for t in PhysicsTag.objects.filter(
+    tags = [t for t in PhysicsTag.objects.active().filter(
                 parameters__process=derived.get('process'))
             if _physics_axes(t.parameters or {}) == want]
     if not tags:

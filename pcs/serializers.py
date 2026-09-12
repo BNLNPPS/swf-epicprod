@@ -24,8 +24,10 @@ class PhysicsTagSerializer(serializers.ModelSerializer):
             'id', 'tag_number', 'tag_label', 'category', 'category_name',
             'status', 'description', 'parameters',
             'created_by', 'created_at', 'updated_at',
+            'lifecycle', 'lifecycle_reason', 'lifecycle_by', 'lifecycle_at', 'superseded_by',
         ]
-        read_only_fields = ['id', 'tag_number', 'tag_label', 'status', 'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'tag_number', 'tag_label', 'status', 'created_by', 'created_at', 'updated_at',
+                            'lifecycle', 'lifecycle_reason', 'lifecycle_by', 'lifecycle_at', 'superseded_by']
 
     def validate_parameters(self, value):
         ok, msg = validate_parameters('p', value)
@@ -39,8 +41,10 @@ class _SimpleTagSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'tag_number', 'tag_label', 'status', 'description',
             'parameters', 'created_by', 'created_at', 'updated_at',
+            'lifecycle', 'lifecycle_reason', 'lifecycle_by', 'lifecycle_at', 'superseded_by',
         ]
-        read_only_fields = ['id', 'tag_number', 'tag_label', 'status', 'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'tag_number', 'tag_label', 'status', 'created_by', 'created_at', 'updated_at',
+                            'lifecycle', 'lifecycle_reason', 'lifecycle_by', 'lifecycle_at', 'superseded_by']
 
 
 class EvgenTagSerializer(_SimpleTagSerializer):

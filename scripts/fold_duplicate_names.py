@@ -7,8 +7,8 @@ since closed): for each duplicated name, the oldest row is the
 identity; every later row's payload moves to the identity task as
 outputs entries (constructed from the row's recorded metadata where it
 has no task), its bookkeeping tasks delete (tasks with PanDA
-associations re-point), and the row deletes. Physics configurations
-left with no editions delete afterward.
+associations re-point), and the row deletes. Every issued physics
+configuration remains permanent, including those left with no editions.
 
 Dry-run by default with a printed plan and audit JSON;
 ``--apply`` executes.
@@ -27,7 +27,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'swf_monitor_project.settings')
 import django  # noqa: E402
 django.setup()
 
-from pcs.models import Dataset, PandaTasks, PhysicsConfig, ProdTask  # noqa: E402
+from pcs.models import Dataset, PandaTasks, ProdTask  # noqa: E402
 from pcs.reconcile import _identity_task, _upsert_task_output  # noqa: E402
 
 AUDIT_DIR = '/data/wenauseic/swf-delivery'
@@ -103,11 +103,7 @@ def main():
                 row.delete()
         plan.append(entry)
 
-    orphans = 0
-    if args.apply:
-        qs = PhysicsConfig.objects.filter(editions__isnull=True)
-        orphans = qs.count()
-        qs.delete()
+    # Issued configurations remain permanent, including those with no editions.
 
     stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     audit_path = os.path.join(AUDIT_DIR, f'dup_fold_audit_{stamp}.json')
@@ -115,8 +111,7 @@ def main():
         json.dump(plan, fh, indent=1, default=str)
     print('TOTALS ' + json.dumps({
         'duplicated_names': len(dup_names),
-        'rows_folded': sum(len(e['folded']) for e in plan),
-        'orphan_pcs_deleted': orphans}))
+        'rows_folded': sum(len(e['folded']) for e in plan)}))
     for e in plan[:6]:
         print(' ', e['name'][:70], '| keeper', e['keeper_pk'],
               '| folds', [f['pk'] for f in e['folded']])

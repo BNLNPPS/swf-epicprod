@@ -3,13 +3,15 @@ PCS REST API ViewSets.
 
 Endpoints under /pcs/api/. All endpoints require authentication.
 Tag immutability enforced: PATCH returns 400 on locked tags. Lock is one-way via POST /lock/.
-Tag delete via POST /delete/ — creator-only, draft-only (locked tags protected by PROTECT FK).
+Issued identities are permanent; POST /lifecycle/ records retirement or supersession.
 Tag numbers auto-assigned on POST: physics from category range, e/s/r from PersistentState.
 Dataset creation requires all four tags to be locked. created_by set from authenticated user.
 """
 from urllib.parse import quote as urlquote
 
 from django.urls import reverse
+from django.core.exceptions import ValidationError
+from .permanence import identity_change, set_lifecycle
 from rest_framework import viewsets, status
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from monitor_app.middleware import TunnelAuthentication
@@ -63,7 +65,7 @@ class PhysicsCategoryViewSet(viewsets.ModelViewSet):
 
 
 class _TagViewSetMixin:
-    """Shared behavior for all tag ViewSets: draft/locked lifecycle, PATCH guard, lock/delete actions."""
+    """Shared behavior for all tag ViewSets: draft/locked lifecycle, PATCH guard, permanent disposition actions."""
     authentication_classes = [TunnelAuthentication, SessionAuthentication, TokenAuthentication]
     permission_classes = [IsAuthenticatedOrReadOnly]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
@@ -71,6 +73,8 @@ class _TagViewSetMixin:
 
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
+        if instance.lifecycle != 'active':
+            return Response({'detail': 'Reactivate this tag before editing or locking it.'}, status=400)
         if instance.status == 'locked':
             return Response(
                 {'detail': f'Tag {instance.tag_label} is locked and cannot be modified.'},
@@ -81,36 +85,61 @@ class _TagViewSetMixin:
                 {'detail': 'Use the /lock/ endpoint to change status.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        return super().partial_update(request, *args, **kwargs)
+        if 'category' in request.data and str(request.data['category']) != str(getattr(instance, 'category_id', '')):
+            return Response({'detail': 'Category is part of the permanent identity. Create a new tag.'}, status=400)
+        with identity_change(request.user.username, 'Draft tag correction'):
+            return super().partial_update(request, *args, **kwargs)
 
     @action(detail=True, methods=['post'])
     def lock(self, request, **kwargs):
         instance = self.get_object()
+        if instance.lifecycle != 'active':
+            return Response({'detail': 'Reactivate this tag before editing or locking it.'}, status=400)
         if instance.status == 'locked':
             return Response(
                 {'detail': f'Tag {instance.tag_label} is already locked.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        instance.status = 'locked'
-        instance.save(update_fields=['status', 'updated_at'])
+        with identity_change(request.user.username, 'Tag locked'):
+            instance.status = 'locked'
+            instance.save(update_fields=['status', 'updated_at'])
         return Response(self.get_serializer(instance).data)
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Detail retrieval always resolves retired identities and old links.
+        if self.action == 'list' and self.request.query_params.get('include_retired') != '1':
+            qs = qs.filter(lifecycle='active')
+        return qs
 
     @action(detail=True, methods=['post'], url_path='delete')
     def soft_delete(self, request, **kwargs):
+        return Response({'detail': 'Issued tags are permanent. Use /lifecycle/ with a reason.'},
+                        status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response({'detail': 'Issued tags are permanent.'},
+                        status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    @action(detail=True, methods=['post'])
+    def lifecycle(self, request, **kwargs):
         instance = self.get_object()
-        if instance.status == 'locked':
-            return Response(
-                {'detail': f'Tag {instance.tag_label} is locked and cannot be deleted.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if instance.created_by != request.user.username:
-            return Response(
-                {'detail': f'Only the creator ({instance.created_by}) can delete this tag.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        label = instance.tag_label
-        instance.delete()
-        return Response({'detail': f'Tag {label} deleted.'})
+        if instance.created_by != request.user.username and not request.user.is_staff:
+            return Response({'detail': 'Only the creator or staff can change this disposition.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        replacement = None
+        label = request.data.get('replacement', '')
+        if label:
+            replacement = type(instance).objects.filter(tag_label=label).first()
+            if replacement is None:
+                return Response({'detail': 'Replacement tag not found.'}, status=400)
+        try:
+            instance = set_lifecycle(instance, request.data.get('lifecycle'),
+                                     reason=request.data.get('reason'),
+                                     changed_by=request.user.username, replacement=replacement)
+        except ValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=400)
+        return Response(self.get_serializer(instance).data)
 
 
 class PhysicsTagViewSet(_TagViewSetMixin, viewsets.ModelViewSet):

@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}{{ label }} · Disposition and history{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4" style="max-width: 80em;">
+    <h2><a href="{{ source_url }}">{{ label }}</a> · Disposition and history</h2>
+    <p><strong>{{ identity.get_lifecycle_display }}</strong>
+        {% if identity.lifecycle_at %} · {{ identity.lifecycle_at }} · {{ identity.lifecycle_by }}{% endif %}
+        {% if identity.lifecycle_reason %}<br>{{ identity.lifecycle_reason }}{% endif %}
+        {% if identity.superseded_by %}<br>Superseded by <a href="{% url 'pcs:identity_detail' kind=kind label=identity.superseded_by.identity_label %}">{{ identity.superseded_by.identity_label }}</a>{% endif %}
+    </p>
+    {% if can_change %}
+    <form method="post" class="card card-body mb-4">
+        {% csrf_token %}
+        <div class="row g-3">
+            <div class="col-md-3"><label for="lifecycle" class="form-label">Disposition</label>
+                <select id="lifecycle" name="lifecycle" class="form-select">
+                    {% for value, text in lifecycles %}<option value="{{ value }}"{% if identity.lifecycle == value %} selected{% endif %}>{{ text }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3"><label for="replacement" class="form-label">Replacement (for supersession)</label>
+                <input id="replacement" name="replacement" class="form-control" value="{% if identity.superseded_by %}{{ identity.superseded_by.identity_label }}{% endif %}" placeholder="Same type of identity">
+            </div>
+            <div class="col-md-6"><label for="reason" class="form-label">Reason</label>
+                <input id="reason" name="reason" class="form-control" required>
+            </div>
+        </div>
+        <div class="mt-3"><button class="btn btn-primary" type="submit">Record disposition</button></div>
+    </form>
+    {% endif %}
+    <h3>Recorded changes</h3>
+    <p class="text-muted">The baseline records the state when permanent history protection was installed. Earlier provenance is retained inside that record.</p>
+    {% for event in identity_history %}
+    <details class="card card-body mb-2">
+        <summary>{{ event.changed_at }} · {{ event.operation }} · {{ event.actor }}{% if event.reason %} · {{ event.reason }}{% endif %}</summary>
+        <div class="row mt-2">
+            <div class="col-md-6"><strong>Before</strong><pre class="small" style="white-space: pre-wrap;">{{ event.before_display }}</pre></div>
+            <div class="col-md-6"><strong>After</strong><pre class="small" style="white-space: pre-wrap;">{{ event.after_display }}</pre></div>
+        </div>
+    </details>
+    {% empty %}<p>No recorded changes.</p>{% endfor %}
+    <nav class="my-3">
+        {% if identity_history.has_previous %}<a href="?page={{ identity_history.previous_page_number }}">Newer</a> · {% endif %}
+        Page {{ identity_history.number }} of {{ identity_history.paginator.num_pages }}
+        {% if identity_history.has_next %} · <a href="?page={{ identity_history.next_page_number }}">Older</a>{% endif %}
+    </nav>
+</div>
+{% endblock %}

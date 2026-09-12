@@ -4,6 +4,7 @@ from . import dashboard, views
 app_name = 'pcs'
 
 urlpatterns = [
+    path('identities/<str:kind>/<str:label>/', views.identity_detail, name='identity_detail'),
     # Hub
     path('', views.pcs_hub, name='pcs_hub'),
 

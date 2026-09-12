@@ -31,9 +31,9 @@ edition is not an identity row. For every edition on a duplicate tag:
 3. the edition then takes the earlier tag; its composed name and physics
    configuration follow on save, with the change in ``metadata['rebind']``.
 
-Then output ownership is consolidated per campaign, physics configurations
-left without editions delete, and one ``edition_fold`` action records the
-run. The duplicate tags are left in place, unreferenced, for the operator.
+Then output ownership is consolidated per campaign and one ``edition_fold``
+action records the run. Every issued physics configuration remains permanent,
+including those left without editions. The duplicate tags are left in place, unreferenced, for the operator.
 
 Dry run by default; ``--apply`` writes. The audit file records every
 folded row in full under /data/wenauseic/swf-delivery/.
@@ -57,7 +57,7 @@ django.setup()
 
 from django.db import transaction  # noqa: E402
 
-from pcs.models import Campaign, Dataset, PandaTasks, PhysicsConfig, PhysicsTag, ProdRequest, ProdTask  # noqa: E402
+from pcs.models import Campaign, Dataset, PandaTasks, PhysicsTag, ProdRequest, ProdTask  # noqa: E402
 from pcs.physics_config import _source_path, evgen_identity  # noqa: E402
 from pcs.physics_match import derive_evgen  # noqa: E402
 from pcs.reconcile import _identity_task, _upsert_task_output  # noqa: E402
@@ -257,9 +257,7 @@ def main():
             campaign = Campaign.objects.filter(pk=cid).first()
             if campaign is not None:
                 consolidate_output_ownership(campaign)
-        orphans = PhysicsConfig.objects.filter(editions__isnull=True)
-        summary['orphan_pcs_deleted'] = orphans.count()
-        orphans.delete()
+        # Issued configurations remain permanent, including those with no editions.
 
     os.makedirs(AUDIT_DIR, exist_ok=True)
     audit_path = os.path.join(AUDIT_DIR, f"duplicate_tag_fold_{now.replace(':', '')}.json")
@@ -276,7 +274,7 @@ def main():
                  f"{summary['refused']} refused; tags now unreferenced: {', '.join(unreferenced) or 'none'}; "
                  f"audit {audit_path}"),
         folds=summary['folds'], rebinds=summary['rebinds'], evgen_rebinds=summary['evgen_rebinds'],
-        refused=summary['refused'], orphan_pcs_deleted=summary.get('orphan_pcs_deleted', 0))
+        refused=summary['refused'])
     print(json.dumps({'applied': True, **summary, 'unreferenced_tags': unreferenced, 'audit': audit_path}))
     return 0
 

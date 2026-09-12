@@ -10,8 +10,24 @@ class PhysicsCategoryAdmin(admin.ModelAdmin):
     search_fields = ('name',)
 
 
+class PermanentTagAdmin(admin.ModelAdmin):
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = tuple(super().get_readonly_fields(request, obj)) + (
+            'lifecycle', 'lifecycle_reason', 'lifecycle_by', 'lifecycle_at', 'superseded_by')
+        if obj is not None:
+            fields += ('created_by',)
+            if hasattr(obj, 'category_id'):
+                fields += ('category',)
+            if obj.status == 'locked':
+                fields += ('status', 'parameters')
+        return fields
+
+
 @admin.register(PhysicsTag)
-class PhysicsTagAdmin(admin.ModelAdmin):
+class PhysicsTagAdmin(PermanentTagAdmin):
     list_display = ('tag_label', 'category', 'status', 'description', 'created_by', 'created_at')
     list_filter = ('status', 'category')
     search_fields = ('tag_label', 'description')
@@ -19,7 +35,7 @@ class PhysicsTagAdmin(admin.ModelAdmin):
 
 
 @admin.register(EvgenTag)
-class EvgenTagAdmin(admin.ModelAdmin):
+class EvgenTagAdmin(PermanentTagAdmin):
     list_display = ('tag_label', 'status', 'description', 'created_by', 'created_at')
     list_filter = ('status',)
     search_fields = ('tag_label', 'description')
@@ -27,7 +43,7 @@ class EvgenTagAdmin(admin.ModelAdmin):
 
 
 @admin.register(SimuTag)
-class SimuTagAdmin(admin.ModelAdmin):
+class SimuTagAdmin(PermanentTagAdmin):
     list_display = ('tag_label', 'status', 'description', 'created_by', 'created_at')
     list_filter = ('status',)
     search_fields = ('tag_label', 'description')
@@ -35,7 +51,7 @@ class SimuTagAdmin(admin.ModelAdmin):
 
 
 @admin.register(RecoTag)
-class RecoTagAdmin(admin.ModelAdmin):
+class RecoTagAdmin(PermanentTagAdmin):
     list_display = ('tag_label', 'status', 'description', 'created_by', 'created_at')
     list_filter = ('status',)
     search_fields = ('tag_label', 'description')
@@ -43,7 +59,7 @@ class RecoTagAdmin(admin.ModelAdmin):
 
 
 @admin.register(BackgroundTag)
-class BackgroundTagAdmin(admin.ModelAdmin):
+class BackgroundTagAdmin(PermanentTagAdmin):
     list_display = ('tag_label', 'status', 'description', 'created_by', 'created_at')
     list_filter = ('status',)
     search_fields = ('tag_label', 'description')

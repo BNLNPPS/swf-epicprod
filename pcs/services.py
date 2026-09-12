@@ -2057,7 +2057,7 @@ def find_or_create_physics_tag(derived, *, created_by='csv_import', dry_run=Fals
     process = derived.get('process')
     want = _physics_key(derived)
     matches = sorted(
-        (t for t in PhysicsTag.objects.filter(parameters__process=process)
+        (t for t in PhysicsTag.objects.active().filter(parameters__process=process)
          if _physics_key(t.parameters) == want),
         key=lambda t: (0 if t.status == 'locked' else 1, t.tag_number),
     )
@@ -2128,7 +2128,7 @@ def find_or_create_background_tag(params, *, created_by='csv_import', dry_run=Fa
     """
     match = {f'parameters__{k}': params.get(k, '') for k in _BG_MATCH_FIELDS}
     matches = sorted(
-        BackgroundTag.objects.filter(**match),
+        BackgroundTag.objects.active().filter(**match),
         key=lambda t: (0 if t.status == 'locked' else 1, t.tag_number),
     )
     if matches:
@@ -2167,7 +2167,7 @@ def find_or_create_evgen_tag(params, *, created_by='csv_import', dry_run=False):
     if params.get('radiative'):
         match['parameters__radiative'] = params['radiative']
     matches = sorted(
-        EvgenTag.objects.filter(**match),
+        EvgenTag.objects.active().filter(**match),
         key=lambda t: (0 if t.status == 'locked' else 1, t.tag_number),
     )
     if matches:
@@ -2892,7 +2892,7 @@ def campaign_stage_tags(detector_version, *, created_by='intake'):
     version = str(detector_version or '').strip()
     if not version:
         raise ServiceError('campaign_stage_tags: no detector version')
-    simu = (SimuTag.objects.filter(parameters__sim_version=version,
+    simu = (SimuTag.objects.active().filter(parameters__sim_version=version,
                                    parameters__detector_sim='npsim')
             .order_by('tag_number').first())
     if simu is None:
@@ -2902,7 +2902,7 @@ def campaign_stage_tags(detector_version, *, created_by='intake'):
                                    'detector_sim': 'npsim'},
                        created_by=created_by)
         simu.save()
-    reco = (RecoTag.objects.filter(parameters__reco_version=version,
+    reco = (RecoTag.objects.active().filter(parameters__reco_version=version,
                                    parameters__reco_config='standard')
             .order_by('tag_number').first())
     if reco is None:
@@ -2924,7 +2924,7 @@ def evgen_unrecorded_tag(generator='', *, created_by='intake'):
     generator = (generator or '').strip()
     params = {'generator': generator or UNRECORDED,
               'generator_version': UNRECORDED}
-    tag = (EvgenTag.objects
+    tag = (EvgenTag.objects.active()
            .filter(parameters__generator=params['generator'],
                    parameters__generator_version=UNRECORDED)
            .order_by('tag_number').first())

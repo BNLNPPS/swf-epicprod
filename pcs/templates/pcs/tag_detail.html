@@ -3,6 +3,8 @@
 {% block title %}{{ tag.tag_label }} - PCS{% endblock %}
 
 {% block content %}
+<p class="m-3">{{ tag.lifecycle }}{% if tag.lifecycle_reason %}: {{ tag.lifecycle_reason }}{% endif %}
+    <a href="{% url 'pcs:identity_detail' kind=tag_type label=tag.tag_label %}">Disposition &amp; history</a></p>
 {% csrf_token %}
 <div class="container-fluid mt-4">
     <nav aria-label="breadcrumb">
@@ -25,7 +27,7 @@
             <p class="text-muted">{{ schema.label }} Tag &middot; Created by {{ tag.created_by }} on {{ tag.created_at|date:"Y-m-d H:i" }}</p>
         </div>
         <div>
-            {% if tag.status == 'draft' %}
+            {% if tag.status == 'draft' and tag.lifecycle == 'active' %}
             <a href="{% url 'pcs:tag_edit' tag_type=tag_type tag_number=tag.tag_number %}" class="btn btn-dark-green btn-sm">Edit</a>
             <button type="button" class="btn btn-success btn-sm" onclick="lockTag()">Lock</button>
             <script>

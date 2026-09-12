@@ -61,23 +61,23 @@ class DatasetForm(forms.Form):
     detector_version = forms.CharField(max_length=50)
     detector_config = forms.CharField(max_length=100)
     physics_tag = forms.ModelChoiceField(
-        queryset=PhysicsTag.objects.all(),
+        queryset=PhysicsTag.objects.active(),
         empty_label="Select physics tag",
     )
     evgen_tag = forms.ModelChoiceField(
-        queryset=EvgenTag.objects.all(),
+        queryset=EvgenTag.objects.active(),
         empty_label="Select evgen tag",
     )
     simu_tag = forms.ModelChoiceField(
-        queryset=SimuTag.objects.all(),
+        queryset=SimuTag.objects.active(),
         empty_label="Select simu tag",
     )
     reco_tag = forms.ModelChoiceField(
-        queryset=RecoTag.objects.all(),
+        queryset=RecoTag.objects.active(),
         empty_label="Select reco tag",
     )
     background_tag = forms.ModelChoiceField(
-        queryset=BackgroundTag.objects.all(),
+        queryset=BackgroundTag.objects.active(),
         empty_label="Select background tag (optional)",
         required=False,
     )

@@ -21,8 +21,8 @@ for curation. Campaign target events recorded on a folded row carry
 to the edition where the edition has none.
 
 After the fold: output ownership consolidates per campaign
-(``consolidate_output_ownership``), and physics configurations left
-with no editions delete.
+(``consolidate_output_ownership``). Every issued physics configuration
+remains permanent, including those left with no editions.
 
 Dry-run by default, printing the plan and writing a full audit JSON
 (every row's payload before any change); ``--apply`` executes.
@@ -52,7 +52,7 @@ django.setup()
 
 from django.db import transaction  # noqa: E402
 
-from pcs.models import Campaign, Dataset, PandaTasks, PhysicsConfig, \
+from pcs.models import Campaign, Dataset, PandaTasks, \
     ProdTask  # noqa: E402
 from pcs.physics_config import physics_config_key  # noqa: E402
 from pcs.reconcile import _identity_task, _upsert_task_output  # noqa: E402
@@ -246,10 +246,7 @@ def main():
             from pcs.services import consolidate_output_ownership
             consolidate_output_ownership(campaign)
 
-    if args.apply:
-        orphans = PhysicsConfig.objects.filter(editions__isnull=True)
-        totals['orphan_pcs_deleted'] = orphans.count()
-        orphans.delete()
+    # Issued configurations remain permanent, including those with no editions.
 
     os.makedirs(AUDIT_DIR, exist_ok=True)
     audit_path = os.path.join(AUDIT_DIR, f'slug_fold_audit_{stamp}.json')

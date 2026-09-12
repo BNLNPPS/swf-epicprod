@@ -53,6 +53,8 @@ PCS:
   identities, campaigns, production configs, REST and MCP surfaces.
 - [PCS_DATASET_REQUEST_WORKFLOW.md](docs/PCS_DATASET_REQUEST_WORKFLOW.md)
   — production request intake and the dataset request workflow.
+- [PCS_PERMANENT_IDENTITIES.md](docs/PCS_PERMANENT_IDENTITIES.md) — permanent
+  tags/configurations, database enforcement, deployment and recovery.
 - [PCS_BACKGROUND_TAG.md](docs/PCS_BACKGROUND_TAG.md) — the background
   tag axis.
 - [PCS_COMPOSED_NAME_INTEGRITY.md](docs/PCS_COMPOSED_NAME_INTEGRITY.md)

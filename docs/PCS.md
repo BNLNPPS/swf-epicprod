@@ -39,10 +39,10 @@ A fifth tag type, **background** (`k`), captures a named, versioned background c
 draft  ──►  locked
 ```
 
-- **Draft** — editable. You can modify parameters, copy from other tags, or delete.
+- **Draft** — editable. You can modify parameters or copy from other tags. Every issued identity is permanent.
 - **Locked** — immutable. One-way transition. Ensures reproducibility: once a tag is used in production, its meaning never changes.
 
-Only the tag creator can edit, lock, or delete their own drafts. Anyone can copy any tag to create their own variant.
+Only the tag creator can edit or lock their own drafts. Anyone can copy any tag to create their own variant.
 
 During alpha commissioning all tags remain draft and the lock requirement for datasets and submission is lifted; see [Commissioning Relaxations](COMMISSIONING_RELAXATIONS.md) for the current relaxation and how it is re-tightened.
 
@@ -81,9 +81,9 @@ While editing, click other tags to see suggestion bars for differing values. Cli
 
 Any tag (yours or others') has a **Copy** button. This fills the create form with all values from the source tag, sets you as creator, and lets you modify before saving. Useful for creating variants of existing configurations.
 
-### Locking and Deleting
+### Locking and Disposition
 
-Your own drafts show **Lock** and **Delete** buttons. Locking is permanent — confirm carefully. Deletion removes the tag.
+Your own active drafts show **Lock**. **Disposition & history** records retirement, invalidation or supersession with a reason, while retaining the identity and its links permanently. See [Permanent identities](PCS_PERMANENT_IDENTITIES.md) for the database guarantees and recovery procedure.
 
 ## Tag Numbering
 
@@ -133,6 +133,7 @@ Tags support list, create, get, update (draft only), and lock. Replace `{type}` 
 | GET | `/{type}/{number}/` | Tag detail |
 | PATCH | `/{type}/{number}/` | Update draft tag |
 | POST | `/{type}/{number}/lock/` | Lock tag (permanent) |
+| POST | `/{type}/{number}/lifecycle/` | Record disposition with reason and optional replacement |
 
 Physics tag creation requires a `category` field (digit). Tag numbers are always auto-assigned.
 
@@ -394,6 +395,6 @@ MCP tools for AI-assisted tag browsing and lookup:
 | `pcs_get_tag(tag_label)` | Full tag detail with all parameters |
 | `pcs_search_tags(query, tag_type)` | Full-text search across tag labels, descriptions, and parameter values |
 
-Tag creation, lock/delete, and dataset/prod-config management go through the REST API and the web UI — see the sections above. The submission-artifact endpoint (`/prod-tasks/command/`) plus the `pcs-task-cmd` CLI are the programmatic path for production operators.
+Tag creation, locking and disposition changes, and dataset/prod-config management go through the REST API and the web UI — see the sections above. The submission-artifact endpoint (`/prod-tasks/command/`) plus the `pcs-task-cmd` CLI are the programmatic path for production operators.
 
 The dataset and production-task MCP tools (`pcs_dataset_*`, `pcs_prodtask_*`) identify a dataset or task by its composed tag name — the same canonical identity used in URLs and REST (see [Datasets](#datasets)) — return it as `composed_name`, and accept it as the lookup key; legacy names remain resolvable.
