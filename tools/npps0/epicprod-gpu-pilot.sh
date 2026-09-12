@@ -52,8 +52,23 @@ export PILOT_ES_EXECUTOR_TYPE=generic
 export PYTHONPATH="$HOME/yampl-1.0/python${PYTHONPATH:+:$PYTHONPATH}"
 
 mkdir -p "$WORKBASE"
-# Retention: keep the last few pilot workdirs for debugging, drop the rest.
-ls -dt "$WORKBASE"/run-* 2>/dev/null | tail -n +$((KEEP_RUNS + 1)) | xargs -r rm -rf
+# Retention: the last KEEP_RUNS pilot workdirs stay whole; older ones are
+# trimmed to their logs (the pilot log and each job's stdout, stderr,
+# report and stage log, a few MB), which stay TRIM_KEEP_DAYS. A job's log
+# is staged nowhere else from this queue (docs/NPPS0_TEST_QUEUE.md: no
+# log dataset), and a pass every few minutes had been rotating a job's
+# log away within the hour.
+TRIM_KEEP_DAYS=${TRIM_KEEP_DAYS:-14}
+for d in $(ls -dt "$WORKBASE"/run-* 2>/dev/null | tail -n +$((KEEP_RUNS + 1))); do
+  if [[ -d "$d" && ! -f "$d/.trimmed" ]]; then
+    find "$d" -type f ! \( -name pilotlog.txt -o -name payload.stdout -o -name payload.stderr \
+      -o -name payload-report.json -o -name payload-stages.log -o -name jobReport.json \
+      -o -name queuedata.json -o -name pilot_heartbeat.json \) -delete 2>/dev/null
+    find "$d" -depth -mindepth 1 -type d -empty -delete 2>/dev/null
+    [[ -d "$d" ]] && touch "$d/.trimmed"
+  fi
+done
+find "$WORKBASE" -maxdepth 1 -name 'run-*' -type d -mtime +"$TRIM_KEEP_DAYS" -exec rm -rf {} + 2>/dev/null
 
 RUNDIR="$WORKBASE/run-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$RUNDIR"
