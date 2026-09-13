@@ -155,9 +155,13 @@ def _panel_panda():
 def _panel_arrivals():
     from monitor_app.models import AppLog
 
+    # Every sweep records itself since 2026-09-13, a quiet one with
+    # total_files 0; the panel wants the sweeps that brought files
+    # (jsonb containment, so a record without the key is kept).
     rows = (
         AppLog.objects
         .filter(app_name='epicprod', extra_data__action='rucio_arrivals')
+        .exclude(extra_data__contains={'total_files': 0})
         .order_by('-timestamp')
         .values('timestamp', 'extra_data')[:20]
     )

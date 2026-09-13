@@ -5545,32 +5545,36 @@ def sweep_rucio_arrivals(*, roots=('/RECO', '/SIMU'), scope='epic',
             known.append(campaign_name)
     PersistentState.update_state({'rucio_arrivals_last_swept': now.isoformat()})
 
-    log_id = None
+    # Every sweep records its interval, arrivals or none: the assessment's
+    # arrival coverage is read from these records (analytics/members.py,
+    # rucio_arrivals), and a sweep that found nothing is a measured zero,
+    # not an unmeasured hour. A zero sweep is logged low and off the live
+    # view; arrivals are normal and live.
+    since = _timezone.localtime(start_dt).strftime("%Y-%m-%d %H:%M %Z")
+    extra = {
+        'total_files': total,
+        'campaigns': {c: i['files'] for c, i in per_campaign.items()},
+        'campaign_details': {
+            campaign_name: {
+                'files': info['files'],
+                'by_root': dict(info['by_root']),
+                'locations': dict(info['locations']),
+            }
+            for campaign_name, info in per_campaign.items()
+        },
+        'window_start': window_start,
+        'roots': list(roots),
+    }
+    if unknown:
+        extra['unknown_campaigns'] = unknown
     if total:
         lines = []
         for campaign_name, info in sorted(per_campaign.items()):
             for location, count in sorted(info['locations'].items()):
                 lines.append(f'{count:>7} {location}')
         message = (
-            f'{total} new file(s) in JLab Rucio since '
-            f'{_timezone.localtime(start_dt).strftime("%Y-%m-%d %H:%M %Z")} '
+            f'{total} new file(s) in JLab Rucio since {since} '
             f'[{", ".join(sorted(per_campaign))}]:\n' + '\n'.join(lines))
-        extra = {
-            'total_files': total,
-            'campaigns': {c: i['files'] for c, i in per_campaign.items()},
-            'campaign_details': {
-                campaign_name: {
-                    'files': info['files'],
-                    'by_root': dict(info['by_root']),
-                    'locations': dict(info['locations']),
-                }
-                for campaign_name, info in per_campaign.items()
-            },
-            'window_start': window_start,
-            'roots': list(roots),
-        }
-        if unknown:
-            extra['unknown_campaigns'] = unknown
         log_id = log_epicprod_action(
             instance, 'rucio_arrivals',
             username=created_by,
@@ -5579,6 +5583,14 @@ def sweep_rucio_arrivals(*, roots=('/RECO', '/SIMU'), scope='epic',
                      + ', '.join(f'{c} +{i["files"]}'
                                  for c, i in sorted(per_campaign.items()))),
             message=message, **extra)
+    else:
+        log_id = log_epicprod_action(
+            instance, 'rucio_arrivals',
+            username=created_by,
+            sublevel='low', live_default=False,
+            summary=f'no new files since {since}',
+            message=f'No new file in JLab Rucio since {since} under {", ".join(roots)}.',
+            **extra)
     return {'total_files': total,
             'campaigns': {c: i['files'] for c, i in per_campaign.items()},
             'known': known, 'unknown': unknown,
