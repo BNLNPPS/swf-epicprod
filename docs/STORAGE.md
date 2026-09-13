@@ -120,8 +120,9 @@ Three modes:
 
 - **census**, once, over every file under the roots, establishing the
   complete inventory and the initial ghost population;
-- **full**, nightly as a `catalog_sync` chain step, over the dataset
-  tier for every dataset and the file tier for the target campaigns;
+- **full**, nightly as a `catalog_sync` chain step, over the file tier
+  for the target campaigns (and the EVGEN root), which is where files
+  are marked gone;
 - **incremental**, every four hours, by file name and never by listing
   a location: the files registered since the previous pass (the
   created-after search names them) and the target campaigns' stored
@@ -131,8 +132,17 @@ Three modes:
   pass. Every open, partially placed, or non-OK-ruled dataset of the
   target campaigns has its summary, rules and locks refreshed without a
   file listing, two light calls per dataset, so rule progress reads
-  each pass. The crawl is single-threaded with a two-second pause after
-  every catalog call, well under one call a second.
+  each pass. The dataset tier for the rest of the inventory rides the
+  incremental passes too, a sixth of the datasets per pass, the least
+  recently checked first, so every dataset's summary and rules are at
+  most a day old (`DATASET_TIER_SLICES`). The crawl is single-threaded
+  with a two-second pause after every catalog call, well under one
+  call a second; at that pace the whole dataset tier is about six
+  hours (6,361 datasets on 2026-09-13), which is why it is spread over
+  the day rather than run as one nightly step: the nightly full pass
+  carried it from 2026-09-06 to 09-13 and was killed at its hour's
+  timeout every night, so the tier had not been refreshed since the
+  census.
 
 The job join: every production job records its manifest row as a
 pseudo-input file named by the sequence number, and an output file's

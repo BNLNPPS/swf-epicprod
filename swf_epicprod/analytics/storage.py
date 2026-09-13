@@ -48,6 +48,13 @@ META_CHUNK = 500
 # hour.
 THREADS = 1
 PAUSE_S = 2.0
+# The dataset tier (every dataset's summary and rules, two light calls
+# each) is spread over the day's incremental passes: each refreshes this
+# fraction of the inventory, the least recently checked datasets first,
+# so every dataset is at most a day old. At the pacing above the whole
+# tier is about six hours (6,361 datasets, 2026-09-13), which no nightly
+# step can hold; the nightly full pass keeps the file tier.
+DATASET_TIER_SLICES = 6
 # JLab Rucio tokens live one hour; a pass runs for many.
 TOKEN_REFRESH_S = 50 * 60
 LISTING_HEAD = 50
@@ -642,14 +649,30 @@ def _locations_incremental(db, catalog, campaigns, since):
     return out
 
 
+def _dataset_slice(db, by_location, taken):
+    """The dataset tier's share of one incremental pass: a
+    ``1/DATASET_TIER_SLICES`` slice of the inventory outside ``taken``
+    (the locations the pass already crawls), the least recently checked
+    datasets first and those never stored before them, as [(location,
+    name)]. Consecutive passes therefore cover every dataset within a
+    day, and a new dataset on its first pass."""
+    checked = dict(db.execute('SELECT name, last_checked FROM datasets'))
+    candidates = sorted((checked.get(name) or '', location, name)
+                        for location, name in by_location.items()
+                        if location not in taken)
+    share = -(-len(by_location) // DATASET_TIER_SLICES)
+    return [(location, name) for _, location, name in candidates[:share]]
+
+
 def locations_to_crawl(db, catalog, mode, inventory, campaigns, since):
     """The crawl order as (location, dataset name or None, with_files)
     entries. A census walks every dataset location with its files; a
-    full pass walks the target campaigns' locations with files and
-    refreshes every other dataset without them; an incremental pass
-    walks its selection with files. Store locations without a dataset
-    row join a census or full pass, so a directory whose dataset was
-    removed is still walked."""
+    full pass walks the target campaigns' locations (and EVGEN) with
+    files; an incremental pass walks its selection with files and
+    refreshes its slice of the dataset tier without them
+    (``_dataset_slice``). Store locations without a dataset row join a
+    census or full pass, so a directory whose dataset was removed is
+    still walked."""
     by_location = {name.lstrip('/'): name for name in inventory}
     entries = {}
     if mode == 'census':
@@ -658,12 +681,14 @@ def locations_to_crawl(db, catalog, mode, inventory, campaigns, since):
     elif mode == 'full':
         for location, name in by_location.items():
             root, campaign = inventory[name]
-            entries[location] = (name, campaign in campaigns
-                                 or root == 'EVGEN', None)
+            if campaign in campaigns or root == 'EVGEN':
+                entries[location] = (name, True, None)
     else:
         selection = _locations_incremental(db, catalog, campaigns, since)
         for location, (with_files, names) in selection.items():
             entries[location] = (by_location.get(location), with_files, names)
+        for location, name in _dataset_slice(db, by_location, set(entries)):
+            entries[location] = (name, False, None)
     if mode != 'incremental':
         query = 'SELECT DISTINCT location FROM files WHERE gone_at IS NULL'
         params = []
