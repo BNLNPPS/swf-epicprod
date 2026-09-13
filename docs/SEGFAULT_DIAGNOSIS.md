@@ -597,8 +597,18 @@ assessment on the signature.
   below configuration; a `reproduced` signature cannot be classified
   platform.
 
-Diagnosis runs on operator request from the detail page and
-automatically once a signature reaches `reproduced` with a trace.
+Diagnosis runs on operator request from the detail page,
+automatically once a signature reaches `reproduced` with a trace, and,
+since 2026-09-13, nightly for the traced signatures no finding reads
+without waiting for a reproduction: the `segfault_study` chain step
+(between the dig and the notice, `scripts/segfault-study-auto.py`)
+queues the study of such signatures largest first, at most
+`EPICPROD_SEGFAULT_STUDY_AUTO` (3) a night, each marked queued before
+its message goes out so no night asks twice; a traced signature whose
+frame a finding already reads is marked `diagnosed`, "covered by
+finding f-N", the same night and outside the cap, since its reading
+exists and nothing further is owed. Reproduction and diagnosis are the
+task's ordinary moves and need no word beyond the record.
 
 As built (2026-09-11): the contract is `swf_epicprod/segfault/spec.py`
 (section `epicprod.segfault`, bundle section `epicprod.segfault.bundle`,

@@ -487,7 +487,9 @@ record and the crash signatures of the tasks touched,
 SEGFAULT_DIAGNOSIS.md; placed before the first Rucio step so a catalog
 stall cannot cost the day's crash record) → segfault dig (one
 representative payload log for each of the largest signatures never
-dug, ten a night) → segfault notice (one TJAI message to the swf
+dug, ten a night) → segfault study (the traced signatures no finding
+reads, three studies a night; frames a finding reads marked covered) →
+segfault notice (one TJAI message to the swf
 sessions: the catalog census and the signatures awaiting a
 reproduction or a reading; SEGFAULT_DIAGNOSIS.md, The nightly notice)
 → csv import → epic-prod past import →
