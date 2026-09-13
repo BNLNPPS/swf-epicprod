@@ -773,6 +773,15 @@ is its input.
 Software experts ask what is broken. They receive the package and the
 handoff text, and nothing they have to assemble themselves.
 
+The production lead reviews segfault status as clear statements and
+action proposals: what is established, what was decided, and each open
+decision put as a question with a recommended answer that a yes settles
+(accept the stated loss, rerun the residual, file the issue whose draft
+is on the finding, send the note that is the finding's action). The
+resolutions are brought to the review, not extracted by asking, and
+filing an issue or writing to a site stays a human act (Torre,
+2026-09-13).
+
 ## Sequencing
 
 Each stage is a functional delivery, deployed and checked before the
