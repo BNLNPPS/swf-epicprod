@@ -487,7 +487,10 @@ record and the crash signatures of the tasks touched,
 SEGFAULT_DIAGNOSIS.md; placed before the first Rucio step so a catalog
 stall cannot cost the day's crash record) → segfault dig (one
 representative payload log for each of the largest signatures never
-dug, ten a night) → csv import → epic-prod past import →
+dug, ten a night) → segfault notice (one TJAI message to the swf
+sessions: the catalog census and the signatures awaiting a
+reproduction or a reading; SEGFAULT_DIAGNOSIS.md, The nightly notice)
+→ csv import → epic-prod past import →
 questionnaire import → association sweep with auto-intake of direct
 group.EIC submissions → Rucio output snapshot → Rucio arrivals sweep →
 EVGEN assimilation → dataset definitions sweep (the

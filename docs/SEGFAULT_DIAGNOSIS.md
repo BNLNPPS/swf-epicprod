@@ -369,7 +369,14 @@ of the storm, sparse and mixed representatives at BNL_OSG_EPIC_PROD_1
 have no replica in BNL Rucio (jobs 1801822, 2249415, 1951234); those
 signatures carry `log_unavailable` with the reason, and their cause
 comes from reproduction. The tarballs of the Perlmutter and
-BNL_OSG_PanDA_1 jobs are present. `study_job` reads the log DID from
+BNL_OSG_PanDA_1 jobs are present. The tarballs of the legacy tasks
+whose log RSE was JLab (EIC-XRD-LOG, 27 signatures on 2026-09-13) are
+catalogued by the JLab WebDAV door (`davs://dtn-rucio.jlab.org:1094/...`),
+which xrdcp cannot read; the same door serves xrootd on the same port
+and admits the JLab production proxy (`EVGEN_X509_PROXY`), so the
+fetch doer (`scripts/cache-payload-log.py`) reads such a PFN as
+`root://` with that proxy, and those digs land (task 38970's on
+2026-09-13). `study_job` reads the log DID from
 `filestable4`, which is purged after about thirty days, so the job
 page's payload-log fetch cannot start for an older job; the dig
 resolves the DID through the task's log dataset contents row, whose
@@ -454,6 +461,30 @@ skip and change the per-event seed), so the reproduction runs the whole
 row. An implementer who verifies the seeding on one reproduced crash
 may add `--canary-events K --canary-skip S` to run one event; until
 then the row is the unit.
+
+**The nightly notice.** Nothing submits a reproduction on its own: a
+reproduction is a request on the record, and the decision to make one
+is a person's or an LLM session's. So the catalog says what it holds
+that awaits a decision. The last segfault step of the nightly
+`catalog_sync` chain (`segfault_notice`, after the inventory and the
+automatic dig; `scripts/segfault-nightly-notice.py`) sends one TJAI
+peer message to the swf sessions on the monitor host (the
+`host:swf-testbed` group, from a registered sender of its own,
+`epicprod-nightly`) with the census of the catalog (signatures and
+crashes; read by a finding; a reproduction in flight; no trace and a
+runnable row; traced with no reading; no trace and no runnable row)
+and two lists, largest first: the signatures for which reproduction is
+the only extraction left (no trace, a runnable row, no attempt in
+flight, no finding), and the traced signatures no finding reads. A
+session takes an item by requesting its reproduction on the record,
+with the MCP tool `panda_segfault_reproduce(key)` (the production
+queue and the reference queue, the crashed row of the representative;
+under the authority gate) or the signature page's Reproduce; the
+request shows on the runs page within a minute, which is what keeps
+two sessions from submitting the same row: read the signature's
+attempts before requesting. The action `segfault_notice` carries the
+counts and the message id; a send that fails is an error on the
+stream, never a silent night.
 
 **Visibility of the attempts.** Two records make a reproduction
 attempt: the request on the signature (`CrashSignature.reproduction`,
