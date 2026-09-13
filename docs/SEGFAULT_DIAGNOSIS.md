@@ -99,7 +99,11 @@ chain step for top-ups.
 
 Selection: jobs in `doma_panda.jobsarchived4` with `jobstatus =
 'failed'` and `transexitcode IN ('134','135','136','139')`,
-`modificationtime` inside the window. That table holds the whole
+`modificationtime` inside the window, of production tasks only
+(`jedi_tasks.processingtype = 'epicproduction'`): the testbed's
+streams (fast and prompt processing, EICFast) are not production and
+never enter this record (2026-09-13; eight EICFast tasks and their 85
+crashed jobs were removed from it that day). That table holds the whole
 campaign (its oldest rows are from September 2025) and the archive
 schema `doma_pandaarch` holds no job of the period, so the live table
 is read alone, as every other PanDA query in swf-monitor reads it.
