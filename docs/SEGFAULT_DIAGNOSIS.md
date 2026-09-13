@@ -409,6 +409,22 @@ collection cycle; the reproduction reads the same report plus the exit
 code and, for a crash, fetches the trace through the dig, so a
 reproduced crash yields its trace even where the campaign's did not.
 
+As built (2026-09-13): the reconciliation reads the trace of a
+reproduced crash from the crashed run's payload report when the
+signature has none, the reference run first (`report_note` and
+`trace_from_report` in swf-monitor `monitor_app/segfaults.py`; a job
+that finished at the server has its report in the PanDA metatable, a
+swept job in its filing), records and merges it as a dig does, and the
+dig's `--pandaid` accepts one of the signature's reproduction jobs for
+the same read by hand. A reproduction run before payload 0.12 carries
+no crash note, and its trace comes from the log tarball or not at all
+(38970's runs of 2026-09-11). Once the trace and the outcome are both
+on record, a signature whose frame a finding already names is marked
+`diagnosed` by that finding (verdict "covered by finding f-N", the
+diagnosis record `covered`) and no study is queued: the finding is the
+reading, and nothing further is asked of the signature. The automatic
+study fires only for a frame with no finding.
+
 A task sent to the reference queue carries no log dataset: its pilot
 log goes to the devcloud S3 store, which the PanDA server cannot
 register, and the adder fails a job on that whatever the payload did
@@ -581,9 +597,11 @@ Capcom subscription to `segfault_diagnosis` is the feed. The page's
 Diagnose control queues `segfault_diagnose` to the agent and hears
 `segfault_diagnose_queued` and `segfault_diagnosis_done`; the automatic
 trigger fires in the canary agent's reconciliation after a collection
-when the outcome settles as reproduced or site_dependent with a trace
-on record, once (the signature's diagnosis record is marked queued
-before the message goes out, so a later pass never queues it twice).
+when the outcome stands as reproduced or site_dependent with a trace
+on record and no finding names the frame, once (the signature's
+diagnosis record is marked queued before the message goes out, so a
+later pass never queues it twice; a frame with a finding is marked
+covered instead, § 5).
 
 ### 7. Handoff
 
