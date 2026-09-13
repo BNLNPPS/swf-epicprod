@@ -639,6 +639,14 @@ def reconcile_panda_task_association(panda_task):
         .first()
     )
     if row:
+        # The stored status follows PanDA on every visit, so the nightly
+        # sweep keeps the record in step with the live task: the pages
+        # read PanDA live, but the campaign analytics and assessments read
+        # the store, which otherwise held the status at association time.
+        status = str(panda_task.get('status') or '')
+        if status and status != row.status_snapshot:
+            row.status_snapshot = status
+            row.save(update_fields=['status_snapshot', 'updated_at'])
         return row.prod_task, row, 'existing jediTaskID association'
 
     matches = _match_prod_tasks_for_panda_name(task_name)
