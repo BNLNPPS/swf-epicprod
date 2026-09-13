@@ -406,11 +406,22 @@ chosen row instead of row 1:
   submit under.
 
 Each reproduction is two runs: the production queue where the crash
-happened and the reference queue, which is a queue of known
-conditions: the npps0 test queue `BNL_NPPS_GPU`
-([NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md)), where the node, its
-memory, the image and the container runtime are known and the host can
-be examined directly (core dumps, a debugger on the crashed process).
+happened and a second queue. Since 2026-09-13 the second queue is by
+default a second production-class queue (`UM_GREX_PanDA_1`, or
+`BNL_OSG_EPIC_PROD_1` for a crash at GREX; `elsewhere_queue` in
+`monitor_app/segfaults.py`), because the crash-or-not verdict and the
+trace come from any queue once the payload carries the crash capture
+(§ 8), and the many slots of a production queue return the verdict in
+hours where the reference queue's one slot took days. The reference
+queue, the npps0 test queue `BNL_NPPS_GPU`
+([NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md)), is a queue of known
+conditions, where the node, its memory, the image and the container
+runtime are known and the host can be examined directly (core dumps, a
+debugger on the crashed process, a stall watched live), and is asked for
+when the reading needs that: the page offers it beside the pair, with
+the production queue's memory limit. Each request records its run's
+role (`production`, `elsewhere`, `reference`); the production run
+against the other run settles the outcome, whichever the other is.
 Outcomes recorded on the signature: `reproduced`
 (both crashed), `site_dependent` (production only), `not_reproduced`
 (neither), `inconclusive` (a run failed for another reason, stated).
