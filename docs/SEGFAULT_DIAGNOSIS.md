@@ -352,9 +352,12 @@ evidence is the last `G4Exception` block before it, which names the
 exception, the Geant4 function and the volume; the extractor makes
 that the frame (job 2723082, task 39623: `G4Exception GeomNav0003 in
 G4Navigator::ComputeStep`, a stuck optical photon in `DRICH_gas_0`
-after a geometry-overlap warning at `DRICH_mirror_sec2_425`). The
-Geant4 and ROOT `*** Break ***` forms with gdb-style frames are read
-too. The stage comes from the prmon error line (`${TASKNAME}.<stage>.prmon`)
+after a geometry-overlap warning at `DRICH_mirror_sec2_425`), whether
+the signal is 11 or, when glibc aborts the process on heap corruption
+after the event abort, 6 (jobs 2723594 and 2723599; ROOT's frameless
+`*** Break *** abort` banner follows the signal and decides nothing).
+The Geant4 and ROOT `*** Break ***` forms with gdb-style frames are
+read too. The stage comes from the prmon error line (`${TASKNAME}.<stage>.prmon`)
 or from the payload digest.
 
 Task 39623 shows that a record-level signature (exit code by task) can
