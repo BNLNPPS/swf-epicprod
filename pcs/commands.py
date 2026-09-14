@@ -1143,7 +1143,7 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
 
     task_priority, priority_source = prodtask_task_priority(task, cfg=cfg)
 
-    return {
+    spec = {
         'outDS': out_ds,
         'vo': data.get('vo', 'epic'),
         'userName': task.created_by,
@@ -1179,6 +1179,12 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         # (docs/PCS.md, Trials).
         **_trial_spec(ds),
     }
+    # The datasets the jobs register into, with their metadata, created
+    # by the submission doer before the task goes to PanDA
+    # (docs/RUCIO_REGISTRATION_CONTRACT.md § 2).
+    from swf_epicprod.output_datasets import output_datasets
+    spec['outputs'] = output_datasets(spec, cfg)
+    return spec
 
 
 def _trial_spec(ds):
