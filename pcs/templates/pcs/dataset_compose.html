@@ -125,6 +125,11 @@
                         </div>
                         <div class="mb-2"><label class="form-label" style="font-size:.82rem;"><strong>Description</strong></label>
                             <textarea id="ds-description" class="form-control form-control-sm" rows="2"></textarea></div>
+                        <div class="mb-2" id="ds-source-location-row" style="display:none;">
+                            <label class="form-label" style="font-size:.82rem;"><strong>Input source location</strong></label>
+                            <input type="text" id="ds-source-location" class="form-control form-control-sm" placeholder="EVGEN/... the input sample's path under the EVGEN tree">
+                            <div class="form-text" style="font-size:.8rem;">The path the EVGEN assimilation matches against the registered epic:/EVGEN inventory to resolve this edition's input; after a change, run Update EVGEN from Rucio on the EVGEN inputs page.</div>
+                        </div>
                         <div class="mb-2"><label class="form-label" style="font-size:.82rem;"><strong>Name Preview</strong></label>
                             <div id="name-preview" class="form-control form-control-sm bg-light" style="min-height:32px;"></div></div>
                     </div>
@@ -387,6 +392,12 @@
             document.getElementById('ds-version').value = datasetToEdit.detector_version;
             document.getElementById('ds-config').value = datasetToEdit.detector_config;
             document.getElementById('ds-description').value = datasetToEdit.description || '';
+            // The input's source location, editable on an evgen edition only.
+            const srcRow = document.getElementById('ds-source-location-row');
+            const srcInput = document.getElementById('ds-source-location');
+            srcInput.value = datasetToEdit.source_location || '';
+            srcInput.dataset.was = datasetToEdit.source_location || '';
+            srcRow.style.display = (datasetToEdit.stage === 'evgen') ? 'block' : 'none';
             ['p','e','s','r'].forEach(tt => {
                 const tagData = datasetToEdit[TAG_FK[tt]];
                 // Find full tag from allTags
@@ -402,6 +413,8 @@
         } else {
             panelTitle.textContent = 'New Dataset';
             btnSave.textContent = 'Create Dataset';
+            document.getElementById('ds-source-location-row').style.display = 'none';
+            document.getElementById('ds-source-location').value = '';
         }
         updatePreview();
         updateSaveButton();
@@ -671,6 +684,11 @@
             physics_tag: compose.p.id, evgen_tag: compose.e.id, simu_tag: compose.s.id, reco_tag: compose.r.id,
             background_tag: compose.k ? compose.k.id : null,
             created_by: currentUser };
+        if (editingDatasetId) {
+            const srcInput = document.getElementById('ds-source-location');
+            const srcNow = (srcInput.value || '').trim();
+            if (srcNow && srcNow !== (srcInput.dataset.was || '')) payload.source_location = srcNow;
+        }
 
         const url = editingDatasetId ? `/swf-monitor/pcs/api/datasets/${editingDatasetId}/` : '/swf-monitor/pcs/api/datasets/';
         const method = editingDatasetId ? 'PATCH' : 'POST';

@@ -248,6 +248,25 @@ class DatasetViewSet(viewsets.ModelViewSet):
         from .models import PandaTasks, ProdRequest
 
         instance = self.get_object()
+        # The input's source location of an evgen edition: the EVGEN path
+        # the assimilation matches against the registered inventory
+        # (EPICPROD_EVGEN_INPUTS.md § Matching). Editable here, since a
+        # location set from a line or a request can be wrong and no other
+        # surface corrects it; the stale match is cleared for the next sweep.
+        new_location = None
+        if 'source_location' in request.data:
+            new_location = str(request.data.get('source_location') or '').strip().strip('/')
+            if instance.stage != 'evgen':
+                return Response(
+                    {'detail': 'source_location is the input path of an evgen '
+                               'edition; this edition is not one.'},
+                    status=status.HTTP_400_BAD_REQUEST)
+            if not new_location.startswith('EVGEN/') or '..' in new_location or '//' in new_location:
+                return Response(
+                    {'detail': f'source_location must be an EVGEN/... path; got {new_location!r}'},
+                    status=status.HTTP_400_BAD_REQUEST)
+            if new_location == instance.source_location:
+                new_location = None
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         changing = [f for f in self._TAG_FIELDS
@@ -294,6 +313,24 @@ class DatasetViewSet(viewsets.ModelViewSet):
                     serializer.validated_data.get('metadata', instance.metadata) or {},
                     rebind=history)
         instance = serializer.save()
+        if new_location is not None:
+            md = dict(instance.metadata or {})
+            source = dict(md.get('source') or {})
+            was = source.get('location', '')
+            source.update(location=new_location,
+                          kind=source.get('kind') or 'csv_manifest',
+                          edited={'from': was, 'by': request.user.username,
+                                  'at': _tz.now().isoformat(timespec='seconds')})
+            md['source'] = source
+            md.pop('rucio', None)   # the match is against the old path; the next sweep rewrites it
+            instance.metadata = md
+            instance.save(update_fields=['metadata'])
+            log_epicprod_action(
+                'web', 'dataset_edit', subject_type='dataset',
+                subject_key=instance.composed_name, username=request.user.username,
+                sublevel='normal', live_default=False,
+                message=f'dataset_edit: source location {was!r} -> {new_location!r}',
+                fields=['source_location'])
         if changing and instance.composed_name != old_name:
             for req in ProdRequest.objects.filter(data__physics_config_anchor=old_name):
                 data = dict(req.data or {})
