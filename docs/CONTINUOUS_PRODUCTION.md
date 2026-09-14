@@ -211,6 +211,25 @@ set points, gates, last feed and next candidate, and the ordered
 quantities as time bars per queue: hours of ready work on the source
 side and hours of available capacity on the resource side.
 
+As built (2026-09-14): the cycle is `swf_epicprod/front.py`, run by the
+production-operations agent's `front_cycle` doer (swf-monitor
+`scripts/front-cycle.py`, timeout 240 s) every five minutes by cron
+enqueue, in shadow mode: `front.mode` is `shadow` and `front.enabled`
+is false at their seeded defaults, so every queue reads `held
+(front_off)` until the switches are turned, and in shadow mode a feed
+decision records `would_feed` and submits nothing. The settings are the
+SysConfig keys named above plus `front.queues`, `front.max_per_cycle`
+and `front.activation_window_s`; the census is
+`monitor_app/panda/census.py`; the decision records are the
+`front_decision` and `front_cycle` actions. The gates in place: the
+passive canary verdict with the age of its newest evidence window
+(failing, or older than 24 hours, is red), the nightly credential check
+(not ok, or older than 36 hours, is red), the breaker key, and the two
+fast detectors computed from the census's six-hour window (burn-through:
+at least 10 failures, half of them fast, none finished; failure window:
+at least 50 outcomes with 60% failed). Declared downtime is not yet an
+input.
+
 ### States and reason codes
 
 | State | Condition | Action | Reason |

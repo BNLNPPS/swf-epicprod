@@ -924,6 +924,47 @@ TASK_PRIORITY_UNSET = 800
 PRIORITY_LEVELS = (1, 2, 3)
 
 
+def prodtask_events_per_job(task, cfg=None):
+    """The per-job event count of a task's manifest: the configuration's
+    ``events_per_job``, else the measured cost of a trial of the edition
+    and the configuration's target job length (the production team's own
+    formula), bounded by the task's own override where it carries one.
+    0 when nothing sizes it."""
+    if cfg is None:
+        cfg = task.get_effective_config()
+    data = cfg.get('data') or {}
+    n_events = int(data.get('events_per_job') or 0)
+    if n_events <= 0:
+        from .services import events_per_job_from_cost
+        n_events = events_per_job_from_cost(
+            task.dataset, cfg.get('target_hours_per_job')) or 0
+    override = events_per_job_override(task)
+    if override:
+        n_events = min(n_events, override) if n_events > 0 else override
+    return n_events
+
+
+def prodtask_manifest_rows(task, cfg=None):
+    """The number of jobs a first submission of the task declares: the
+    rows of its per-job manifest over the matched inputs (one row per
+    job for an internal-EVGEN task). None when the task cannot be sized
+    or has no input."""
+    if cfg is None:
+        cfg = task.get_effective_config()
+    n_events = prodtask_events_per_job(task, cfg=cfg)
+    if n_events <= 0:
+        return None
+    data = cfg.get('data') or {}
+    try:
+        if str(data.get('workflow_mode') or 'external_evgen') == 'internal_evgen':
+            return len(_evgen_manifest_internal(task, n_events))
+        if not task.has_input:
+            return None
+        return len(_evgen_manifest_from_inputs(task, n_events))
+    except ValueError:
+        return None
+
+
 def pinned_site(task, cfg=None, ds=None):
     """The PanDA queue a task submits to. A trial's site is the
     destination it was fired at to qualify, so it outranks the
@@ -1041,19 +1082,8 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
     else:
         # Per-job manifest (file,ext,nevents,ichunk), one row per job over
         # the matched Rucio EVGEN files; PanDA's %RNDM→${SEQNUMBER} selects
-        # the row in-job. The per-job count is the config's events_per_job,
-        # bounded by the task's own override where it carries one.
-        n_events = int(data.get('events_per_job') or 0)
-        if n_events <= 0:
-            # No configured count: the measured cost of a trial of this
-            # edition and the config's target job length give it, by the
-            # production team's own formula.
-            from .services import events_per_job_from_cost
-            n_events = events_per_job_from_cost(
-                task.dataset, cfg.get('target_hours_per_job')) or 0
-        override = events_per_job_override(task)
-        if override:
-            n_events = min(n_events, override) if n_events > 0 else override
+        # the row in-job.
+        n_events = prodtask_events_per_job(task, cfg=cfg)
         if n_events <= 0:
             raise ValueError(
                 'set events_per_job on the config, max_events_per_job on the '

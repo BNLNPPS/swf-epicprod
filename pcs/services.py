@@ -1572,15 +1572,11 @@ def prodtask_readiness_problems(task):
     # What the production dispatcher needs to place the task
     # (CONTINUOUS_PRODUCTION.md, The intake). Local reads only: readiness
     # renders on the compose page for every listed task.
-    from .commands import (events_per_job_override, pinned_site,
+    from .commands import (pinned_site, prodtask_events_per_job,
                            prodtask_priority_level)
     data = cfg.get('data') or {}
     if not internal and task.dataset_id:
-        n_events = int(data.get('events_per_job') or 0)
-        if n_events <= 0:
-            n_events = events_per_job_from_cost(
-                task.dataset, cfg.get('target_hours_per_job')) or 0
-        if n_events <= 0 and not events_per_job_override(task):
+        if prodtask_events_per_job(task, cfg=cfg) <= 0:
             problems.append(
                 'No per-job event count: set events_per_job on the config, '
                 'max_events_per_job on the task, or run a trial so the cost '

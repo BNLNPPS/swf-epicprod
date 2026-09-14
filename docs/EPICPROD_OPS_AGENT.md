@@ -211,6 +211,7 @@ invokable on their own, so a single step can be rerun without the chain.
 | `panda_task_operation` | `panda-task-operation.py` | Run one PanDA-native operation on an existing JEDI task. | 120 |
 | `panda_task_operations` | `panda-task-operation.py` | Run one paced batch of scalar PanDA pause/resume commands. | 120 |
 | `panda_sandbox_keepalive` | `panda-sandbox-keepalive.py` | Keep retryable tasks' sandbox tarballs alive in the PanDA server cache. | 600 |
+| `front_cycle` | `front-cycle.py` | One decision cycle of the pressure front (CONTINUOUS_PRODUCTION.md, The dispatcher): per regulated queue, the census, the gates and the ready backlog decide feed or hold, recorded as `front_decision`. Five-minutely by cron enqueue; shadow mode submits nothing. | 240 |
 
 ### Rucio and storage
 
@@ -376,7 +377,8 @@ proposer: a ping and its remedy for every edition without a Standard
 Production configuration, through the AI proposal subsystem; swf-monitor
 PINGS.md § Pings with a remedy), `sync_epicprod_inventory`,
 `refresh_system_status`,
-`capture_system_snap`, `health_ping`, `shutdown`. All work handlers run their doers on the `run_in_background`
+`capture_system_snap`, `front_cycle` (the pressure front's decision
+cycle, CONTINUOUS_PRODUCTION.md), `health_ping`, `shutdown`. All work handlers run their doers on the `run_in_background`
 worker pool and record structured action records — see
 [ACTION_STREAM.md](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/ACTION_STREAM.md).
 
