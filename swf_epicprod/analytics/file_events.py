@@ -318,7 +318,7 @@ def measure_file_events(campaigns=None, *, db_path=DEFAULT_DB, workers=6,
     # still-growing source sheds its provisional rate.
     have = {name for (name,) in db.execute(
         "SELECT name FROM file_events WHERE events IS NOT NULL"
-        " AND provenance IN ('measured', 'sampled-rate')")}
+        " AND provenance IN ('measured', 'sampled-rate', 'sandbox')")}
     log(f'store: {len(have)} files with measured/sampled events')
 
     by_location = collect_inventory(campaigns)
@@ -493,3 +493,349 @@ def measure_file_events(campaigns=None, *, db_path=DEFAULT_DB, workers=6,
         log(f'{campaign}: {row[0]} files carrying events, '
             f'{row[1] or 0} events')
     return stats
+
+
+# ---------------------------------------------------------------------------
+# Exact counts from the PanDA task sandboxes (provenance 'sandbox').
+#
+# The production team's PanDA path (job_submission_condor's
+# submit_panda.py) ships the submission CSV in the task's sandbox, one
+# row per job: source file, extension, events per job, chunk index. The
+# campaign run script names the outputs from the same row
+# (<source basename>.<chunk>.eicrecon.edm4eic.root under the tag built
+# from the sandbox environment), so a delivered file maps to its row and
+# its row's event count is exact, except a source's last chunk, which
+# holds what remains of the source: min(row events, catalog total -
+# chunk * row events). No file is read and Rucio is not written; the
+# counts land in this store and replace inferred rows (sampled-rate,
+# catalog-derived, unmeasured). Measured rows are kept and compared.
+# Files with no sandbox row (the condor path) are left as they are.
+# ---------------------------------------------------------------------------
+SANDBOX_CACHE = '/data/wenauseic/swf-delivery/panda-sandboxes'
+SANDBOX_CACHE_URL = 'https://pandaserver01.sdcc.bnl.gov:25443/cache/'
+SANDBOX_PROVENANCE = 'sandbox'
+SANDBOX_TASK_SQL = (
+    'SELECT t.jeditaskid, t.status, t.taskname, p.taskparams'
+    ' FROM doma_panda.jedi_tasks t'
+    ' JOIN doma_panda.jedi_taskparams p ON p.jeditaskid = t.jeditaskid'
+    ' WHERE t.taskname LIKE %s AND p.taskparams LIKE %s'
+    ' ORDER BY t.jeditaskid')
+
+
+def sandbox_tasks(campaign):
+    """The campaign's PanDA tasks submitted through the CSV path, from
+    the PanDA database (read-only): [{jeditaskid, status, taskname,
+    jobo, csvbase}], plus the tasks whose parameters could not be read."""
+    import re
+    import urllib.parse
+    from django.db import connections
+
+    tasks, unread = [], []
+    with connections['panda'].cursor() as cur:
+        cur.execute(SANDBOX_TASK_SQL,
+                    (f'group.EIC.{campaign}%', '%submit_panda.py%'))
+        for tid, status, name, params in cur.fetchall():
+            jobo = re.search(r'jobO\.[0-9a-f]+\.tar\.gz', params or '')
+            base = re.search(r'submit_panda\.py%20\$\{SEQNUMBER\}%20([^"]+)',
+                             params or '')
+            if not (jobo and base):
+                unread.append((tid, name))
+                continue
+            tasks.append({'jeditaskid': tid, 'status': status,
+                          'taskname': name, 'jobo': jobo.group(0),
+                          'csvbase': urllib.parse.unquote(base.group(1))})
+    return tasks, unread
+
+
+def fetch_sandbox(jobo):
+    """The sandbox's CSV and environment files, cached under
+    SANDBOX_CACHE/<jobo stem>/ (the tarball also carries the submitter's
+    proxy, which is never written to disk). Returns the directory."""
+    import io
+    import tarfile
+
+    stem = jobo[:-len('.tar.gz')]
+    target = os.path.join(SANDBOX_CACHE, stem)
+    if os.path.isdir(target) and any(
+            f.endswith('.csv') for f in os.listdir(target)):
+        return target
+    # The cache answers plain reads from inside SCDF; a proxy, when the
+    # environment names one that exists, is presented as the client cert.
+    proxy = os.environ.get('EVGEN_X509_PROXY') or os.environ.get('X509_USER_PROXY')
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    if proxy and os.path.exists(proxy):
+        ctx.load_cert_chain(proxy)
+    with urllib.request.urlopen(SANDBOX_CACHE_URL + jobo, context=ctx,
+                                timeout=60) as response:
+        blob = response.read()
+    os.makedirs(target, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(blob), mode='r:gz') as tar:
+        for member in tar.getmembers():
+            name = os.path.basename(member.name)
+            if not member.isfile():
+                continue
+            if name.endswith('.csv') or (name.startswith('environment')
+                                         and name.endswith('.sh')):
+                data = tar.extractfile(member).read()
+                with open(os.path.join(target, name), 'wb') as out:
+                    out.write(data)
+    return target
+
+
+def sandbox_env(directory):
+    """{KEY: value} from the sandbox's environment-*.sh export lines."""
+    env = {}
+    for filename in os.listdir(directory):
+        if not (filename.startswith('environment') and filename.endswith('.sh')):
+            continue
+        with open(os.path.join(directory, filename)) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('export ') and '=' in line:
+                    key, value = line[len('export '):].split('=', 1)
+                    env[key.strip()] = value.strip().strip('"').strip("'")
+    return env
+
+
+def sandbox_rows(directory, csvbase):
+    """[(file_col, ext, events, chunk)] from the sandbox CSV named by
+    the task's csvbase (the file the jobs indexed by sequence number)."""
+    import csv
+
+    path = os.path.join(directory, csvbase + '.csv')
+    if not os.path.exists(path):
+        candidates = [f for f in os.listdir(directory) if f.endswith('.csv')]
+        if len(candidates) != 1:
+            raise FileNotFoundError(f'{csvbase}.csv not in {directory}')
+        path = os.path.join(directory, candidates[0])
+    rows = []
+    with open(path) as f:
+        for parsed in csv.reader(f):
+            if len(parsed) < 4 or not parsed[2].strip().isdigit():
+                continue
+            rows.append((parsed[0].strip(), parsed[1].strip(),
+                         int(parsed[2]), parsed[3].strip()))
+    return rows
+
+
+def sandbox_reco_name(file_col, chunk, env):
+    """The RECO DID the campaign run script writes for a CSV row: the
+    tag is <DETECTOR_VERSION>/<DETECTOR_CONFIG>[/<TAG_PREFIX>][/<source
+    dir>], the file <TAG_SUFFIX_><source basename>.<chunk>.eicrecon.edm4eic.root."""
+    source_dir = os.path.dirname(file_col)
+    if source_dir.startswith('EVGEN/'):
+        source_dir = source_dir[len('EVGEN/'):]
+    parts = [env.get('DETECTOR_VERSION') or 'main',
+             env.get('DETECTOR_CONFIG') or '']
+    if env.get('TAG_PREFIX'):
+        parts.append(env['TAG_PREFIX'].strip('/'))
+    if source_dir and source_dir != 'EVGEN':
+        parts.append(source_dir.strip('/'))
+    tag = '/'.join(p for p in parts if p)
+    suffix = env.get('TAG_SUFFIX') or ''
+    taskname = f"{suffix + '_' if suffix else ''}{os.path.basename(file_col)}.{chunk}"
+    return f'/RECO/{tag}/{taskname}.eicrecon.edm4eic.root'
+
+
+def sandbox_expected(campaign, max_tasks=0):
+    """{RECO DID: {'events', 'source', 'chunk', 'tasks'}} over the
+    campaign's sandboxes, with the conflicts (one DID, two event
+    counts) and per-task notes. Reads the PanDA database and the
+    sandbox cache only."""
+    tasks, unread = sandbox_tasks(campaign)
+    if max_tasks:
+        tasks = tasks[:max_tasks]
+    expected, conflicts, notes = {}, {}, []
+    for task in tasks:
+        try:
+            directory = fetch_sandbox(task['jobo'])
+            env = sandbox_env(directory)
+            rows = sandbox_rows(directory, task['csvbase'])
+        except Exception as exc:                            # noqa: BLE001
+            notes.append(f"task {task['jeditaskid']} {task['taskname']}: {exc}")
+            continue
+        if str(env.get('COPYRECO', 'true')).lower() != 'true':
+            notes.append(f"task {task['jeditaskid']}: COPYRECO is not true; skipped")
+            continue
+        task['rows'] = len(rows)
+        for file_col, _ext, events, chunk in rows:
+            did = sandbox_reco_name(file_col, chunk, env)
+            entry = expected.get(did)
+            if entry is None:
+                expected[did] = {'events': events,
+                                 'source': os.path.basename(file_col),
+                                 'chunk': int(chunk) if chunk.isdigit() else None,
+                                 'tasks': [task['jeditaskid']]}
+            elif entry['events'] != events:
+                conflicts.setdefault(did, set()).update(
+                    {entry['events'], events})
+                entry['tasks'].append(task['jeditaskid'])
+            else:
+                entry['tasks'].append(task['jeditaskid'])
+    for tid, name in unread:
+        notes.append(f'task {tid} {name}: parameters carry no sandbox or csv name')
+    return {'tasks': tasks, 'expected': expected, 'conflicts': conflicts,
+            'notes': notes}
+
+
+def apply_sandbox_counts(campaign, *, db_path=DEFAULT_DB, apply=False,
+                         max_tasks=0):
+    """Reconcile the sandbox counts with the store for one campaign and,
+    with ``apply``, write them (provenance 'sandbox') over inferred rows.
+    Returns the statistics; every skipped or disagreeing file is listed
+    in the returned samples, never dropped silently."""
+    import statistics
+
+    found = sandbox_expected(campaign, max_tasks=max_tasks)
+    expected, conflicts = found['expected'], found['conflicts']
+    log(f"sandboxes: {len(found['tasks'])} tasks, "
+        f"{sum(t.get('rows', 0) for t in found['tasks'])} rows, "
+        f"{len(expected)} expected RECO files, {len(conflicts)} conflicts, "
+        f"{len(found['notes'])} notes")
+    for note in found['notes']:
+        log(f'  note: {note}')
+
+    db = open_store(db_path)
+    store = {}
+    for name, size, events, provenance, location in db.execute(
+            'SELECT name, bytes, events, provenance, location FROM file_events'
+            ' WHERE campaign = ?', (campaign,)):
+        store[name] = (size, events, provenance, location)
+    log(f'store: {len(store)} files of campaign {campaign}')
+
+    stats = {'expected': len(expected), 'conflicts': len(conflicts),
+             'not_in_store': 0, 'matched': 0, 'last_chunks': 0,
+             'last_chunk_catalog': 0, 'last_chunk_bytes_ok': 0,
+             'last_chunk_uncertain': 0, 'anomalies': 0,
+             'measured_agree': 0, 'measured_differ': 0,
+             'inferred_agree': 0, 'inferred_differ': 0,
+             'unmeasured_filled': 0, 'written': 0,
+             'unguarded': 0, 'undersized': 0,
+             'events_before': 0, 'events_after': 0}
+    samples = {'measured_differ': [], 'inferred_differ': [],
+               'uncertain': [], 'anomalies': [], 'conflicts': [],
+               'unguarded': [], 'undersized': []}
+    for did, values in list(conflicts.items())[:20]:
+        samples['conflicts'].append((did, sorted(values)))
+
+    # Group the matched files by (location, source) for the last-chunk rule.
+    by_source = {}
+    for did, entry in expected.items():
+        if did in conflicts:
+            continue
+        row = store.get(did)
+        if row is None:
+            stats['not_in_store'] += 1
+            continue
+        stats['matched'] += 1
+        key = (row[3], entry['source'])
+        by_source.setdefault(key, []).append((did, entry, row))
+
+    catalog_cache = {}
+
+    def catalog(location):
+        if location not in catalog_cache:
+            catalog_cache[location] = catalog_rows(location) or {}
+        return catalog_cache[location]
+
+    # The size guard: chunks of one location planned at the same event
+    # count are the same size up to compression jitter, across the
+    # location's source files; a file well under that median holds fewer
+    # events than its row planned (an input shorter than assumed, an
+    # event dropped) and gets no planned count. Fewer than three sized
+    # siblings is no basis to judge.
+    sizes_by_class = {}
+    for (location, _source), members in by_source.items():
+        for _did, entry, row in members:
+            if row[0]:
+                sizes_by_class.setdefault((location, entry['events']), []).append(row[0])
+    medians = {key: statistics.median(sizes)
+               for key, sizes in sizes_by_class.items() if len(sizes) >= 3}
+
+    decided = {}   # did -> exact events
+    for (location, source), members in by_source.items():
+        chunks = [m for m in members if m[1]['chunk'] is not None]
+        last = max(chunks, key=lambda m: m[1]['chunk']) if chunks else None
+        for did, entry, row in members:
+            events = entry['events']
+            median = medians.get((location, events))
+            sizes = sizes_by_class.get((location, events), [])
+            if median is None:
+                stats['unguarded'] += 1
+                if len(samples['unguarded']) < 20:
+                    samples['unguarded'].append((did, f'{len(sizes)} sized siblings'))
+                continue
+            if last is None or did != last[0]:
+                if not row[0] or row[0] < (1 - SIZE_TOLERANCE) * median:
+                    stats['undersized'] += 1
+                    if len(samples['undersized']) < 20:
+                        samples['undersized'].append(
+                            (did, row[0], int(median), row[2], row[1]))
+                    continue
+            if last is not None and did == last[0]:
+                stats['last_chunks'] += 1
+                total = catalog(location).get(source)
+                if total:
+                    remain = total - entry['chunk'] * events
+                    if remain <= 0:
+                        stats['anomalies'] += 1
+                        if len(samples['anomalies']) < 20:
+                            samples['anomalies'].append(
+                                (did, f'catalog total {total} leaves no events'
+                                      f' for chunk {entry["chunk"]}'))
+                        continue
+                    events = min(events, remain)
+                    stats['last_chunk_catalog'] += 1
+                else:
+                    if row[0] and row[0] >= (1 - SIZE_TOLERANCE) * median:
+                        stats['last_chunk_bytes_ok'] += 1
+                    else:
+                        stats['last_chunk_uncertain'] += 1
+                        if len(samples['uncertain']) < 20:
+                            samples['uncertain'].append(
+                                (did, 'last chunk, no catalog total, size not'
+                                      ' in its class'))
+                        continue
+            decided[did] = events
+
+    now = dt.datetime.utcnow().isoformat()
+    for did, events in decided.items():
+        size, old_events, provenance, location = store[did]
+        if old_events is not None:
+            stats['events_before'] += old_events
+        stats['events_after'] += events
+        if provenance == 'measured':
+            if old_events == events:
+                stats['measured_agree'] += 1
+            else:
+                stats['measured_differ'] += 1
+                if len(samples['measured_differ']) < 20:
+                    samples['measured_differ'].append((did, old_events, events))
+            continue        # a measured row is truth; never replaced
+        if old_events is None:
+            stats['unmeasured_filled'] += 1
+        elif old_events == events:
+            stats['inferred_agree'] += 1
+        else:
+            stats['inferred_differ'] += 1
+            if len(samples['inferred_differ']) < 20:
+                samples['inferred_differ'].append(
+                    (did, provenance, old_events, events))
+        if apply:
+            db.execute(
+                'INSERT OR REPLACE INTO file_events'
+                ' (name, campaign, location, bytes, events, provenance,'
+                '  pfn, rse, error, measured_at)'
+                ' VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)',
+                (did, campaign, location, size, events, SANDBOX_PROVENANCE, now))
+            stats['written'] += 1
+    if apply:
+        db.commit()
+    db.close()
+    log(f"{'applied' if apply else 'dry run'}: {stats}")
+    for kind, rows in samples.items():
+        for row in rows:
+            log(f'  {kind}: {row}')
+    return stats, samples

@@ -136,7 +136,30 @@ count, via uproot on a disk replica) anchors the class rate, and
 members inherit it. Classes with no readable replica (tape-only) are
 derived from the catalog where the source's chunks are fully delivered
 and the location is dormant; derived rows recompute on every run.
-Provenance per file: `measured`, `sampled-rate`, or `catalog-derived`.
+Provenance per file: `measured`, `sampled-rate`, `catalog-derived`, or
+`sandbox`.
+
+The `sandbox` provenance is the planned count from the submission
+itself, available for the production team's PanDA path: the task's
+sandbox on the PanDA server carries the submission CSV, one row per job
+(source file, extension, events per job, chunk index), and the campaign
+run script names the outputs from the same row, so a delivered RECO
+file maps to its row. The row's count is the file's count except the
+last chunk of a source, which holds what remains of the source: the
+smaller of the row's count and the catalog total less the preceding
+chunks. A size guard withholds the planned count from any file well
+under the median size of its location's files planned at the same
+count (an input shorter than assumed, a dropped event): such files,
+files two submissions named with different chunk sizes, and files with
+no size basis keep their existing row and are reported. Sandbox rows
+replace inferred rows and never a measured one; every measured anchor
+they meet is compared and the disagreements reported. The PanDA server
+keeps sandboxes for about a month, so the pass caches each task's CSV
+and environment under `/data/wenauseic/swf-delivery/panda-sandboxes/`
+(the submitter's proxy is never written) and a campaign's older tasks
+are recoverable only while their sandbox lasts. Hand-run through
+`scripts/sandbox_file_events.py` (dry by default; `--apply` writes the
+store only). Nothing is written to Rucio and no data file is read.
 Results accumulate in a SQLite store
 (`/data/wenauseic/swf-delivery/file_events.sqlite`) that the daily
 record builder joins at build time, emitting per-PC `arrived_events`,
