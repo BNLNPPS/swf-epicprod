@@ -75,6 +75,8 @@ Campaigns:
   data on every RSE, its lifecycle per RSE, and the Storage view.
 - [CONTINUOUS_PRODUCTION.md](docs/CONTINUOUS_PRODUCTION.md) — the ready
   queue, the dispatcher, and the tripwire.
+- [EPIC_JOB_THROTTLER.md](docs/EPIC_JOB_THROTTLER.md) — the queue-side
+  regulator: a JEDI job throttler paced per PanDA queue.
 - [EPICPROD_NARRATIVES.md](docs/EPICPROD_NARRATIVES.md) — campaign
   narratives.
 - [EPICPROD_ASSESSMENTS.md](docs/EPICPROD_ASSESSMENTS.md) — campaign

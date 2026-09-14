@@ -1,0 +1,102 @@
+# The ePIC job throttler in JEDI
+
+The queue-side regulator of continuous production
+([CONTINUOUS_PRODUCTION.md](CONTINUOUS_PRODUCTION.md), Queue-side
+regulation): a JEDI job throttler that paces job generation per PanDA
+queue against what the queue is running, so that a task's jobs enter
+`activated` at the rate the queue consumes them. It is the second
+regulator in series with the pressure front, which admits tasks from
+`ready` in priority order.
+
+## The control point
+
+JEDI's job generator asks the registered throttler, for each VO, source
+label, cloud, work queue and resource type, whether to generate. The
+answer is a throttled flag, a cap on the jobs generated in the pass, and
+a minimum task priority when generation is limited to the
+highest-priority waiting work. Unthrottled, the generator reads up to
+`nFiles` pseudo-files per task per cycle, and the jobs are activated
+within minutes.
+
+The ATLAS production throttler (`AtlasProdJobThrottler` over
+`JobThrottlerBase`) decides per work queue and resource type over all
+sites together. It skips generation when the queued jobs (assigned,
+activated, starting, defined) exceed both a threshold times the running
+jobs and a queue limit, or when a cap on running or queued jobs is
+exceeded; a waiting task of higher priority than anything queued lifts
+the skip, and the pass then carries that priority as its minimum. The
+reading is fair where brokerage spreads a task's jobs over sites, as in
+ATLAS. ePIC's tasks are pinned to one queue each, so a count over all
+sites puts a saturated queue and a starved one in the same group: a
+skip starves the starved one and a pass overfills the saturated one.
+For the epic VO JEDI registers `GenJobThrottler`, which returns
+unthrottled for a work queue without a share, as the epic work queues
+are.
+
+## The ePIC engine
+
+`EpicProdJobThrottler`, a `JobThrottlerBase` subclass beside the ATLAS
+one, registered for the epic VO. It keeps the ATLAS rule and the ATLAS
+configuration keys and applies them per site.
+
+Statistics per site come from the taskbuffer's
+`getJobStatisticsByResourceTypeSite`: for each computing site of the
+work queue, running, not-run (assigned, activated, starting) and
+defined jobs at resource-type level.
+
+Configuration per site, from the `config` table (component
+`epic_job_throttler`, app `jedi`, VO `epic`), a work-queue-wide value
+as the fallback and the engine's built-in default last:
+
+| Key | Meaning | Built-in default |
+|---|---|---|
+| `THROTTLE_THRESHOLD_<site>` | generate while queued ≤ threshold × running | 2.0 |
+| `NQUEUELIMIT_<site>` | the queued floor below which generation always continues, and the bound when nothing runs | the ATLAS default, four bunches of 500 to 600 jobs |
+| `NRUNNINGCAP_<site>` | stop generating when running exceeds it | none |
+| `NQUEUECAP_<site>` | stop generating when queued exceeds it | none |
+| `MODE` | `observe` (decide and log, never throttle) or `throttle` | `observe` |
+
+A site is saturated when
+`not_run + defined > max(threshold × running, NQUEUELIMIT_<site>)` or a
+cap is exceeded. The sites considered are those with statistics or
+with configuration.
+
+The answer for a work queue and resource type: throttled when every
+site is saturated; otherwise unthrottled, with the pass cap set to the
+room of the unsaturated sites (the sum of
+`max(threshold × running, NQUEUELIMIT) - queued` over them, bounded by
+the ATLAS engine's per-pass maximum) and the saturated sites named, so
+that task selection serves the unsaturated sites only. The priority
+valve is the ATLAS one applied per site: a saturated site with a
+waiting task of higher priority than anything queued there is not named,
+and the pass carries that priority as its minimum.
+
+Task selection must skip tasks pinned to saturated sites. The selection
+query filters on VO, work queue, resource type, label, cloud, status and
+minimum priority and has no site clause; it gains an `excluded_sites`
+parameter, `AND (tabT.site IS NULL OR tabT.site NOT IN (...))`, carried
+from the engine through `JobThrottler` and `JobGenerator`. An empty list
+changes nothing, so the ATLAS engines are unaffected.
+
+The engine ignores work-queue shares: its configuration is keyed on the
+site and its statistics are read per site, so the epic work queues need
+no share.
+
+## Interaction with the front
+
+The front admits whole tasks; the engine paces their generation. With
+both in place the activated pool at a queue is bounded by
+`max(threshold × running, NQUEUELIMIT_<site>)` whatever the front
+submits, and the front's set point moves from runnable depth to
+committed depth: the tasks in JEDI whose inputs are not yet all
+generated are the buffer the engine draws on. The census gains, per
+site, the unprocessed inputs of the queue's tasks (`nFilesToBeUsed -
+nFilesUsed` over their datasets), which the front's committed depth
+includes; the job cap and the oversize hold of the front's first phase
+retire.
+
+`NQUEUELIMIT_<site>` set at the queue's running ceiling, read from the
+census, keeps one fill of the queue activated, a few hours of work; the
+threshold of 2 keeps the pool at twice the running count when the queue
+is full; the front's `h_high` of one day bounds what is committed in
+JEDI, generated or not.
