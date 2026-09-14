@@ -915,6 +915,51 @@ def _residual_rows(task, csv_rows, delivered=None):
     }
 
 
+# The PanDA taskPriority band of production (CONTINUOUS_PRODUCTION.md,
+# The dispatcher, Priority): priority levels 1, 2 and 3 map to 950, 900
+# and 850; a task with no level submits at 800; PanDA dispatches
+# activated jobs by this value within a global share.
+TASK_PRIORITY_BY_LEVEL = {1: 950, 2: 900, 3: 850}
+TASK_PRIORITY_UNSET = 800
+PRIORITY_LEVELS = (1, 2, 3)
+
+
+def prodtask_priority_level(task):
+    """The production priority level of a task (1 to 3, or None) and its
+    source: the task's own value (seeded from its request, carried by
+    instancing), else the campaign plan's entry for the task's physics
+    configuration, else the request's. ``(level, source)`` with source
+    one of task, plan, request, none."""
+    if task.priority in PRIORITY_LEVELS:
+        return task.priority, 'task'
+    ds = task.dataset
+    pc = getattr(ds, 'physics_config', None) if ds is not None else None
+    if pc is not None and task.campaign_id:
+        from .services import campaign_plan_get
+        entry = campaign_plan_get(task.campaign.name).get(pc.label) or {}
+        if entry.get('priority') in PRIORITY_LEVELS:
+            return entry['priority'], 'plan'
+    req = task.request
+    if req is not None and req.priority in PRIORITY_LEVELS:
+        return req.priority, 'request'
+    return None, 'none'
+
+
+def prodtask_task_priority(task):
+    """The PanDA ``taskPriority`` of a task and how it was set: an
+    explicit value on the task's overrides (an operator's escalation) or
+    on its configuration's ``task_priority``, else the band of its
+    priority level. Returns ``(value, {'level', 'source'})``."""
+    override = (task.overrides or {}).get('task_priority')
+    if override not in (None, ''):
+        return int(override), {'level': None, 'source': 'override'}
+    cfg_value = ((task.prod_config.data or {}) if task.prod_config_id else {}).get('task_priority')
+    if cfg_value not in (None, ''):
+        return int(cfg_value), {'level': None, 'source': 'config'}
+    level, source = prodtask_priority_level(task)
+    return TASK_PRIORITY_BY_LEVEL.get(level, TASK_PRIORITY_UNSET), {'level': level, 'source': source}
+
+
 def build_evgen_task_params(task, panda_tasks=None, residual=False,
                             residual_of=None, rows=None, container=None):
     """Build the client-API EVGEN production submission spec from a ProdTask.
@@ -1051,6 +1096,8 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         if cap:
             residual_coverage['walltime']['queue_limit'] = cap
 
+    task_priority, priority_source = prodtask_task_priority(task)
+
     return {
         'outDS': out_ds,
         'vo': data.get('vo', 'epic'),
@@ -1060,6 +1107,11 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         'prodSourceLabel': data.get('prod_source_label', 'test'),
         'taskType': data.get('task_type', 'prod'),
         'processingType': data.get('processing_type', 'epicproduction'),
+        # The priority line: the level from the task, plan or request,
+        # mapped to the production band; the source rides on the spec so
+        # the submission record says where the value came from.
+        'taskPriority': task_priority,
+        'priority': priority_source,
         'containerImage': container,
         'nCore': int(data.get('corecount', 1)),
         'memory': int(data.get('ram_count', 4096)),

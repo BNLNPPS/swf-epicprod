@@ -237,7 +237,9 @@ The request's priority (1 to 3) is copied to the task at creation and
 carried by instancing; a task's own value overrides it, and a plan
 entry's value (campaign assembly) overrides the request's. The live
 task specification carries it as `taskPriority` under one mapping:
-1 → 950, 2 → 900, 3 → 850, unset → 800, operator escalation → 1000.
+1 → 950, 2 → 900, 3 → 850, unset → 800; an operator's escalation is an
+explicit value on the task's overrides (`task_priority`, e.g. 1000),
+used verbatim (JEDI_INTEGRATION.md, the parameter table).
 Within a global share PanDA dispatches activated jobs by priority, so
 the mapping orders the pool at every queue; `change_priority` reaches
 activated jobs and is the lever for reordering what is already there,

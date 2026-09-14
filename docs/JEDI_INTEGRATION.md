@@ -88,7 +88,7 @@ Submission chain: `submit_csv.sh` → `submit_panda_api.py` (`client.submit_task
 | `prodSourceLabel` | `config.data['prod_source_label']` | `'test'` during commissioning; production submissions may use `'managed'` |
 | `taskType` | `'prod'` | PanDA task type for the live client-API EVGEN path |
 | `processingType` | `config.data['processing_type']` | e.g. `'epicproduction'` |
-| `taskPriority` | `config.data` or default | 0-1000, production typically 900 |
+| `taskPriority` | the task's priority level, mapped | Level 1, 2, 3 → 950, 900, 850; no level → 800. The level is the task's own (`ProdTask.priority`, seeded from the request, carried by instancing), else the campaign plan's entry for the task's physics configuration, else the request's. An explicit value on `task.overrides['task_priority']` (an operator's escalation, e.g. 1000) or on `config.data['task_priority']` is used verbatim. The spec's `priority` field records the level and its source. See CONTINUOUS_PRODUCTION.md, The dispatcher, Priority. |
 | `transPath` | `config.data['transformation']` | Payload executable or TRF URL |
 | `transUses` | `''` | Not used for containerized jobs |
 | `transHome` | `''` | Not used for containerized jobs |
