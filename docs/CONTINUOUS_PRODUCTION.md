@@ -100,18 +100,165 @@ gaps are a worklist. Contact editing is PC-page curation.
 
 ## The dispatcher
 
-The dispatcher is a production-operations agent
-loop that
+The dispatcher is the front's regulator: a production-operations agent
+loop that keeps every production queue supplied with work from `ready`,
+in priority order, against a set point expressed in time, under the
+tripwire's gate, with every decision on the action stream. The queue is
+pinned per task at submission, so queue selection is entirely
+production-side, with CRIC and PanDA configuration out of the control
+loop.
 
-- keeps a target number of tasks pending per queue and share, refilled
-  as PanDA drains them;
-- drains `ready` in priority order;
-- targets queues directly — the queue is pinned per task at submission,
-  so queue selection is entirely production-side, with CRIC and PanDA
-  configuration out of the control loop;
-- runs the submission ladder per queue (below);
-- consults health verdicts before every cycle — the tripwire's gate;
-- records every action in the action stream.
+### The pressure measure
+
+Pressure is measured in time, not in tasks. Tasks differ by a factor of
+twenty or more in job count (over the 26.07 production tasks, rows per
+task run from about 350 at the tenth percentile to about 8,400 at the
+ninetieth), while job walltime is nearly constant (median finished
+walltime 1.4 to 2.2 hours at every production queue, every job
+single-core). A count of pending tasks therefore says little about how
+long a queue stays supplied, and a queue burning fast failures drains
+any count quickly, which reads as consumption. The measure is the depth
+of not-yet-running work at a queue in hours at the queue's capacity:
+
+- **runnable depth**: the jobs of the queue's tasks that PanDA holds
+  but has not started (activated, assigned, defined, starting, and the
+  jobs Harvester has fetched for workers not yet running), times the
+  queue's median finished walltime, divided by the queue's running
+  ceiling (the measured peak, or the declared capacity where one
+  exists);
+- **committed depth**: runnable depth plus every submission the front
+  has made whose jobs are not yet visible (a task submitted and not yet
+  generated, a submission request not yet answered), counted at its
+  declared rows.
+
+The two are read together. Low runnable and low committed depth is a
+queue that needs work; low runnable and high committed depth is work
+held upstream of the queue (generation, brokerage, worker supply) that
+more submission would not help. The useful completion rate of the
+queue (finished jobs per hour over the last six hours) is a gate on
+both: a queue with running jobs, no completions and failures above the
+floor is consuming without producing, and its depth reads as infinite,
+never as empty.
+
+### Two regulators, two phases
+
+Until the ePIC job throttler runs in JEDI (§ Queue-side regulation),
+everything the front submits is activated at once, so the front alone
+bounds the activated pool. In that phase the set points are on
+runnable depth, the refill unit is the whole task, and two caps guard
+the exposure per submission: an absolute job cap per queue and a task
+cap per queue, and a task whose declared rows exceed the queue's
+high-water mark is held for an operator's decision rather than
+submitted. Once the throttler paces generation per queue, the activated
+pool is JEDI's to bound: the front's set points move to committed
+depth (enough work in JEDI for the throttler to draw on), the job cap
+and the oversize hold retire, and the task cap remains as the
+operator's bound on how much is committed where. Blocks, a task's
+manifest submitted in parts as separate PanDA tasks writing to one open
+output dataset, remain available as a further layer of protection and
+are not part of the first build.
+
+### Set points and caps
+
+Per queue, in SysConfig under `front.queue.<queue>.*`, every edit an
+action-stream event with its editor:
+
+- `h_low`, the low-water mark in hours: below it the queue is refilled.
+  The starting default is one shift, 8 hours at capacity, the longest
+  gap the front is expected to be unattended.
+- `h_high`, the high-water mark in hours: refilling stops at it. The
+  starting default is one day at capacity; a deeper pool delays a later
+  high-priority task by that much, since activated jobs are dispatched
+  in priority order but frozen once Harvester has fetched them.
+- `j_max`, the absolute job cap on the pool (phase one), defaulted from
+  the measured peak running count until the Harvester fetch limits are
+  reported.
+- `t_max`, the maximum number of tasks with unstarted work pinned to the
+  queue, a small integer.
+- `feed`, the per-queue switch; `front.enabled`, the global switch.
+
+In hours at capacity the queues differ mainly in scale: eight hours is
+roughly 16,000 jobs at the OSG production queue at its burst capacity,
+34,000 at Perlmutter, 3,800 at GREX. At sustained rates the same pools
+last several times longer, which is the conservative direction for a
+supply target. Set points are per queue; a share dimension is added
+only when the global-share tree acquires leaves beyond the
+production/analysis split.
+
+### The loop and its record
+
+The loop runs as a credential-free doer on the production-operations
+agent's drumbeat, one cycle per five minutes aligned to the Snapper
+census. It reads the per-queue job census (a service over
+`jobsactive4` and the Harvester worker statistics), the canary verdicts
+with their window bounds, the nightly credential check, declared
+downtime once collected, the breaker states and switches, and the
+ordered `ready` backlog with each task's declared rows and pinned
+queue. It writes one decision record per queue per cycle to the action
+stream (`subject_type='panda_queue'`), carrying the observation time,
+the measured runnable and committed depth in jobs and hours, the set
+points, each gate's value and age, the breaker state, the task chosen
+if any, and a reason code. Feeds are always recorded; holds are
+recorded when the reason changes and hourly as a heartbeat, so a
+stalled front is one detection over the latest record. A feed is the
+existing `/pcs/api/` submit action, which enqueues the credentialed
+`submit_evgen_task` doer with its per-task dedup key; the loop holds no
+credential and submits nothing itself.
+
+The same records feed the ready-queue page: per queue its state, depth,
+set points, gates, last feed and next candidate, and the ordered
+`ready` backlog with per-queue eligibility. A later view shows the two
+quantities as time bars per queue: hours of ready work on the source
+side and hours of available capacity on the resource side.
+
+### States and reason codes
+
+| State | Condition | Action | Reason |
+|---|---|---|---|
+| supplied | depth ≥ `h_low`, gates green | hold | `supplied` |
+| refill | depth < `h_low`, gates green, feed on, no submission awaiting observation | submit the highest-priority eligible task; at most two per cycle, never past `h_high` | `fed:<task>` |
+| awaiting observation | a submission is younger than one activation window (two cycles) | hold; count the submission as committed depth | `awaiting_observation` |
+| idle capacity | running below a fraction of the ceiling while depth > 0 for longer than the queue's p90 start latency | hold; notice (worker supply or site, not the front) | `not_pulling` |
+| degraded | a gate is red: canary failing or its window stale, burn-through or windowed failure rate over threshold, declared downtime inside the horizon, credential invalid | hold; breaker opens | `canary`, `burn_through`, `failure_window`, `downtime`, `credential` |
+| half open | the breaker's cause has cleared and policy allows automatic recovery | submit one task and wait for completions; on failure reopen with a doubled wait | `half_open` |
+| held by operator | queue feed off or front off | hold | `queue_off`, `front_off` |
+| oversize | the next eligible task exceeds `h_high` (phase one) | hold for the operator's decision | `oversize_task` |
+| no work | nothing in `ready` is eligible for the queue | hold; the page states the starvation | `no_eligible_task` |
+
+Three rules cover delayed observation. A submission counts as
+committed depth for one activation window, so the loop never feeds
+twice on the same gap. Refill starts below `h_low` and stops at
+`h_high`, so census noise does not cause chatter. A breaker trips only
+on a minimum number of terminal outcomes in its window.
+
+### Priority
+
+The request's priority (1 to 3) is copied to the task at creation and
+carried by instancing; a task's own value overrides it, and a plan
+entry's value (campaign assembly) overrides the request's. The live
+task specification carries it as `taskPriority` under one mapping:
+1 → 950, 2 → 900, 3 → 850, unset → 800, operator escalation → 1000.
+Within a global share PanDA dispatches activated jobs by priority, so
+the mapping orders the pool at every queue; `change_priority` reaches
+activated jobs and is the lever for reordering what is already there,
+exposed through the production-operations agent beside pause and
+resume. No aging boost is applied; a starved low-priority task stays
+where the operator put it.
+
+### The intake
+
+The dispatcher drains `ready` only. The manual Submit control remains
+as an explicit operator path and records `origin=manual`; the
+dispatcher records `origin=front`. Promotion to `ready` is a human
+decision, one task or a filtered set at a time through the plan and
+task pages; the readiness checks grow to what the dispatcher needs
+before it places a task: the input dataset with an available replica,
+a bound and sized configuration, an event target, a priority, walltime
+and memory within the pinned queue's limits, and a current payload
+canary verdict for a new or changed configuration. The commissioning
+relaxation that lets a draft submit (COMMISSIONING_RELAXATIONS.md,
+item 4) is retired once 26.09 intake has exercised the draft → ready
+path in volume.
 
 Credentials: the loop runs under the operator credential exactly as
 submissions run today. Lifetimes measured by the nightly credential
@@ -150,10 +297,11 @@ jobs, tasks pinned to one queue, the epic work queues given shares,
 record, corePower honest at every queue, and the front's canary and
 breaker state respected. We write the engine; registering it for the
 epic VO on the PanDA server and setting the work-queue shares are the
-PanDA team's actions. It follows the front, not precedes it: the front
-must run guarded before generation pacing is added underneath, and the
-engine's inputs (shares, corePower, honest job metrics) are the ones
-native scouts need as well.
+PanDA team's actions. It is built as a parallel track while the front
+commissions: the front runs guarded first, the engine's per-queue
+limits are set from the front's shadow-mode record, and its inputs
+(shares, corePower, honest job metrics) are the ones native scouts
+need as well.
 
 ## The submission ladder
 
@@ -215,6 +363,28 @@ logged there.
 Recovery is via operator, or automatic when the verdict clears and policy
 allows.
 
+Two kinds of stop are kept apart in the record and on the page. A hold
+is the dispatcher's own transient decision (supplied, awaiting
+observation, idle capacity, no eligible task); it clears by itself and
+is never latched. A breaker is a latched state on a queue, a task or
+the front, opened by a detection or an operator and closed by an
+operator or, per breaker class and only where policy allows, after one
+half-open task completes. Opening a breaker changes no ProdTask state:
+`ready` tasks stay `ready` in their order; the only PanDA-side action
+is pause of the tasks already submitted, reversible within one
+TaskCommando cycle and touching no running job. Closing a breaker
+resumes feeding through half open, never directly to full refill. A
+task breaker pauses the task and withholds it at every queue; a queue
+breaker withholds every task from the queue; the global breaker stops
+the front and takes precedence.
+
+Until the alarm-queue detection modules exist, the dispatcher's own
+gate computes the two fast conditions from the job record: burn-through
+(failures ending in under a quarter of the queue's median finished
+walltime, above a rate floor, within a one-to-two-hour window) and the
+windowed failure rate (for storms whose failures run the full job
+length). The front never runs without a fast detector.
+
 ## Storage health
 
 Stage-out is part of every canary probe. In addition, a standalone
@@ -273,21 +443,30 @@ pressure front can reach.
    through the proposal surface; priority→taskPriority mapping.
 2. EVGEN registration run over the coverage worklist; inputs registered
    ahead of need.
-3. Readiness checks promote draft → ready; the queue fills.
-4. Dispatcher v1: keep-N pending, priority-ordered, site-canary-gated,
-   with the canary payload gate on new or changed configurations and
+3. Dispatcher prerequisites: `taskPriority` in the live task
+   specification under the mapping; the per-queue job census as a
+   service; the readiness checks widened; the dispatcher's intake
+   restricted to `ready`.
+4. Dispatcher in shadow mode: the loop computes depth, gates and reason
+   codes per queue, writes the decision records and the ready-queue
+   page, and submits nothing; its predictions are compared with the
+   realized drain.
+5. Dispatcher commissioning: one queue enabled, one task per fresh
+   observation, the caps and switches in SysConfig, submission through
+   the existing action; then the remaining queues.
+6. Tripwire v1: the fast detectors in the dispatcher's gate; queue and
+   task breakers with pause, notices and the operator recovery surface;
    credential expiries alarmed.
-5. Tripwire v1: queue and task breakers wired from existing detections,
-   with notices and the operator recovery surface.
-6. Native scouts replace the canary payload gate for new
+7. Native scouts replace the canary payload gate for new
    configurations, once payload reporting and corePower are in place.
-7. The ePIC job throttler in JEDI: the engine derived from
-   `AtlasProdJobThrottler`, tailored to ePIC and registered for the
-   epic VO, with the work-queue shares and per-queue limits set from
-   the record; generation paced per queue under the front.
-8. Rucio exerciser and the Storage view.
-9. Probe and rider build-out (site-canary increments 8–9), extending
-   node-level evidence to every node work reaches.
+8. The ePIC job throttler in JEDI, a parallel track from item 4: the
+   engine derived from `AtlasProdJobThrottler` and tailored to ePIC is
+   designed and coded while the front commissions, its per-queue limits
+   set from the shadow-mode record; registration for the epic VO and
+   the work-queue shares follow, and the front's phase-one caps retire.
+9. Rucio exerciser and the Storage view.
+10. Probe and rider build-out (site-canary increments 8–9), extending
+    node-level evidence to every node work reaches.
 
 ## Asks and open items
 
