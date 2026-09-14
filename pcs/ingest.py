@@ -467,9 +467,14 @@ def resolve_line(parsed, definitions=None, definitions_stamp=None,
         row['pc'] = pc.label
         row['reason'] = ''
         if row['campaign_name']:
-            edition = (Dataset.objects.filter(physics_config=pc,
-                                              campaign__name=row['campaign_name'])
-                       .order_by('id').first())
+            # The production edition of the configuration in the campaign,
+            # never the EVGEN-stage record (s0.r0) when a production one
+            # exists: a request and its task sit on the production edition.
+            editions = (Dataset.objects.filter(physics_config=pc,
+                                               campaign__name=row['campaign_name'])
+                        .order_by('id'))
+            edition = (editions.exclude(metadata__contains={'stage': 'evgen'}).first()
+                       or editions.first())
             if edition is not None:
                 row['edition'] = edition.composed_name
         return row
@@ -619,12 +624,60 @@ def accept_line(raw, *, created_by, allow_near_miss=False):
             ds.save()
         except Exception as e:                                  # noqa: BLE001
             raise ServiceError(f'{composed}: {e}')
+        # The production edition, on the campaign's release pair: what a
+        # request and its draft task sit on, and where the plan's target
+        # and priority go. The s0.r0 record above is the input only.
+        prod = _production_edition(ds, created_by=created_by)
     row['accepted'] = True
-    row['composed_name'] = ds.composed_name
+    row['composed_name'] = prod.composed_name
+    row['input_edition'] = ds.composed_name
     row['pc'] = ds.physics_config.label if ds.physics_config_id else ''
     row['state'] = 'identified'
-    row['edition'] = ds.composed_name
+    row['edition'] = prod.composed_name
     return row
+
+
+def _production_edition(evgen_edition, *, created_by):
+    """The production edition of an EVGEN-stage record: the same
+    configuration on the release pair of its detector version
+    (``campaign_stage_tags``), in its campaign; the existing one when the
+    composed name is already held, else composed now. Never s0.r0."""
+    from .models import Dataset
+    from .services import campaign_stage_tags, ServiceError
+    simu, reco = campaign_stage_tags(evgen_edition.detector_version, created_by=created_by)
+    probe = Dataset(scope=evgen_edition.scope,
+                    detector_version=evgen_edition.detector_version,
+                    detector_config=evgen_edition.detector_config,
+                    physics_tag=evgen_edition.physics_tag,
+                    evgen_tag=evgen_edition.evgen_tag,
+                    simu_tag=simu, reco_tag=reco,
+                    background_tag=evgen_edition.background_tag,
+                    sample_name=evgen_edition.sample_name)
+    composed = probe.build_dataset_name()
+    existing = Dataset.objects.filter(composed_name=composed).order_by('pk').first()
+    if existing is not None:
+        return existing
+    md = evgen_edition.metadata or {}
+    prod = Dataset(
+        scope=evgen_edition.scope,
+        detector_version=evgen_edition.detector_version,
+        detector_config=evgen_edition.detector_config,
+        campaign=evgen_edition.campaign,
+        physics_tag=evgen_edition.physics_tag, evgen_tag=evgen_edition.evgen_tag,
+        simu_tag=simu, reco_tag=reco, background_tag=evgen_edition.background_tag,
+        sample_name=evgen_edition.sample_name,
+        description=(evgen_edition.description or '').replace(
+            'PC ingest from', 'production edition of the PC ingest from') or
+        'production edition of a PC ingest',
+        metadata={'input_edition': evgen_edition.composed_name,
+                  'ingest': md.get('ingest') or {}},
+        created_by=created_by,
+    )
+    try:
+        prod.save()
+    except Exception as e:                                      # noqa: BLE001
+        raise ServiceError(f'{composed}: {e}')
+    return prod
 
 
 def create_request_line(raw, *, created_by):
@@ -659,6 +712,11 @@ def create_request_line(raw, *, created_by):
     if edition is None:
         row['refusal'] = f'edition {row["edition"]} names no dataset'
         return row
+    if edition.stage == 'evgen':
+        # A request and its task sit on the production edition, never on
+        # the EVGEN-stage record; composed on the release pair when absent.
+        edition = _production_edition(edition, created_by=created_by)
+        row['edition'] = edition.composed_name
     campaign = edition.campaign or Campaign.objects.filter(
         name=row['campaign_name']).first()
     if campaign is None:

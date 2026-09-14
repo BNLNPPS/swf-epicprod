@@ -226,7 +226,15 @@ class DatasetViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save(created_by=request.user.username)
+        # An edition belongs to the campaign its detector version names,
+        # so the campaign plan lists it; composed by hand it carried none.
+        from .models import Campaign
+        from .name_tokens import campaign_family
+        campaign = Campaign.objects.filter(
+            name=campaign_family(serializer.validated_data.get('detector_version') or '')
+        ).first()
+        instance = serializer.save(created_by=request.user.username,
+                                   **({'campaign': campaign} if campaign else {}))
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     _TAG_FIELDS = ('physics_tag', 'evgen_tag', 'simu_tag', 'reco_tag',

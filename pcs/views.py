@@ -3327,6 +3327,9 @@ def _campaign_plan_state(campaign, query, pc_view):
                                else None),
             'status': comp.get('status', ''),
             'name': head.composed_name,
+            # An EVGEN-stage record (s0.r0) never represents its
+            # configuration when a production edition exists.
+            'evgen_stage': head.stage == 'evgen',
             'physics': head.physics_tag.tag_label if head.physics_tag_id
                        else '',
             'process': params.get('process', ''),
@@ -3354,7 +3357,8 @@ def _campaign_plan_state(campaign, query, pc_view):
     if pc_view:
         # One row per physics configuration — the completion table the
         # home panel's counts link into. The representative edition is
-        # the first head carrying a target, else the first head (the
+        # a production edition over an EVGEN-stage record, then the
+        # first head carrying a target, else the first head (the
         # pc_targets rule); heads without a configuration are outside
         # the completion record and are not shown in this view.
         by_pc = {}
@@ -3363,6 +3367,10 @@ def _campaign_plan_state(campaign, query, pc_view):
             if not label:
                 continue
             keep = by_pc.get(label)
+            if keep is not None and keep['evgen_stage'] != r['evgen_stage']:
+                if keep['evgen_stage']:
+                    by_pc[label] = r
+                continue
             if (keep is None
                     or (keep['withdrawn'] and not r['withdrawn'])
                     or (keep['withdrawn'] == r['withdrawn']
