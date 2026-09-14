@@ -6009,26 +6009,25 @@ def front_page(request):
             'gate_fast_failed': d.get('gate_fast_failed', ''),
             'breaker': settings['breaker'], 'feed_switch': bool(settings['feed']),
         })
-    # The two bars, in hours of work at capacity: ready work by priority
-    # on the supply side, room below the high-water mark by queue on the
-    # resource side; both drawn on one scale.
+    # The two bars: the ready work in job-hours by priority on the supply
+    # side, the capacity in job-hours per hour by queue on the resource
+    # side, each bar on its own scale.
     hours = state.get('hours') or {}
     ready = hours.get('ready') or {}
-    available = hours.get('available') or {}
-    for r in rows:
-        r['available_h'] = (available.get('by_queue_h') or {}).get(r['queue'])
-    scale = max(float(ready.get('total') or 0), float(available.get('total') or 0), 1.0)
+    capacity = hours.get('capacity') or {}
+    ready_total = float(ready.get('total') or 0)
+    capacity_total = float(capacity.get('total') or 0)
     priority_colors = {'1': '#1f4e79', '2': '#2e75b6', '3': '#9dc3e6', 'unset': '#bfbfbf'}
     priority_labels = {'1': 'priority 1', '2': 'priority 2', '3': 'priority 3', 'unset': 'no priority'}
     ready_segments = [
-        {'label': priority_labels[k], 'hours': v, 'pct': round(100.0 * v / scale, 2),
+        {'label': priority_labels[k], 'value': v, 'pct': round(100.0 * v / ready_total, 2),
          'color': priority_colors[k]}
-        for k, v in (ready.get('by_priority') or {}).items() if v]
+        for k, v in (ready.get('by_priority') or {}).items() if v and ready_total > 0]
     queue_palette = ['#375623', '#548235', '#a9d18e', '#c5e0b4', '#7f7f7f', '#595959']
-    available_segments = [
-        {'label': q, 'hours': v, 'pct': round(100.0 * v / scale, 2),
+    capacity_segments = [
+        {'label': q, 'value': v, 'pct': round(100.0 * v / capacity_total, 2),
          'color': queue_palette[i % len(queue_palette)]}
-        for i, (q, v) in enumerate((available.get('by_queue') or {}).items()) if v]
+        for i, (q, v) in enumerate((capacity.get('by_queue') or {}).items()) if v and capacity_total > 0]
     return render(request, 'pcs/front.html', {
         'enabled': bool(config.get('front.enabled', False)),
         'mode': str(config.get('front.mode', 'shadow')),
@@ -6038,7 +6037,8 @@ def front_page(request):
         'errors': state.get('errors') or [],
         'rows': rows,
         'backlog': state.get('backlog') or {},
-        'ready_hours': ready, 'available_hours': available,
-        'ready_segments': ready_segments, 'available_segments': available_segments,
+        'ready_total': ready_total, 'capacity_total': int(capacity_total),
+        'drain_h': hours.get('drain_h'),
+        'ready_segments': ready_segments, 'capacity_segments': capacity_segments,
         'unsized_tasks': ready.get('unsized_tasks') or 0,
     })

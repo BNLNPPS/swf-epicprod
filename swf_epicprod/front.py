@@ -380,16 +380,16 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     return out
 
 
-def hours_summary(backlog, latest, settings_by_queue):
-    """The two quantities the front balances, in job-hours: one job-hour
-    is one slot for one hour, so a queue with a ceiling of N jobs
-    supplies N job-hours per hour of clock. Pure.
+def hours_summary(backlog, latest):
+    """The two quantities the front balances. Pure.
 
-    ``ready``: the backlog's sizable tasks, each rows times the pinned
-    queue's median walltime, by priority level and by queue.
-    ``available``: per queue the room below the high-water mark in hours
-    at capacity (``h_high - committed_h``, None without a calibration)
-    and that room times the ceiling in job-hours; and the totals.
+    ``ready``: the work queued in ready, in job-hours (one slot busy for
+    one hour): each sizable task's jobs times its pinned queue's median
+    walltime, by priority level and by queue, with the total.
+    ``capacity``: each queue's capacity in job-hours per hour of clock,
+    which is its ceiling (the most jobs it ran at once), with the total.
+    Ready job-hours over total capacity is the clock time to drain the
+    backlog with every queue full.
     """
     ready = {'by_priority': {'1': 0.0, '2': 0.0, '3': 0.0, 'unset': 0.0},
              'by_queue': {}, 'total': 0.0, 'unsized_tasks': 0}
@@ -406,22 +406,18 @@ def hours_summary(backlog, latest, settings_by_queue):
             ready['by_priority'][key] += jh
             ready['by_queue'][queue] = ready['by_queue'].get(queue, 0.0) + jh
             ready['total'] += jh
-    available = {'by_queue': {}, 'by_queue_h': {}, 'total': 0.0}
+    capacity = {'by_queue': {}, 'total': 0}
     for queue, d in latest.items():
-        committed = d.get('committed_h')
         ceiling = int(d.get('ceiling') or 0)
-        h_high = float((settings_by_queue.get(queue) or {}).get('h_high') or 0)
-        room_h = None if committed is None else max(0.0, h_high - float(committed))
-        available['by_queue_h'][queue] = None if room_h is None else round(room_h, 2)
-        room_jh = None if room_h is None else round(room_h * ceiling, 1)
-        available['by_queue'][queue] = room_jh
-        available['total'] += room_jh or 0.0
+        capacity['by_queue'][queue] = ceiling
+        capacity['total'] += ceiling
     for k in list(ready['by_priority']):
         ready['by_priority'][k] = round(ready['by_priority'][k], 1)
     ready['by_queue'] = {q: round(v, 1) for q, v in ready['by_queue'].items()}
     ready['total'] = round(ready['total'], 1)
-    available['total'] = round(available['total'], 1)
-    return {'ready': ready, 'available': available}
+    drain_h = (round(ready['total'] / capacity['total'], 2)
+               if capacity['total'] > 0 else None)
+    return {'ready': ready, 'capacity': capacity, 'drain_h': drain_h}
 
 
 # The cycle
@@ -523,7 +519,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
     latest = {}
     for d in decisions:
         latest[d['queue']] = d
-    hours = _safe('hours summary', lambda: hours_summary(backlog, latest, settings_by_queue),
+    hours = _safe('hours summary', lambda: hours_summary(backlog, latest),
                   failed('hours summary'))
     summary = {'observed_at': (census or {}).get('observed_at') if census else None,
                'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
