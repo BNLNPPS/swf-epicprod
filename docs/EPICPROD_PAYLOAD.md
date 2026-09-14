@@ -360,6 +360,15 @@ In order, each a committed step on the clone:
    stage (EPICPROD_INTERNAL_EVGEN.md): the generator in the campaign
    image writes the sample the job then simulates, at the path an
    external sample would have had, so nothing downstream changes.
+8. **Output datasets created at submission**
+   (RUCIO_REGISTRATION_CONTRACT.md § 2). The submission doer creates
+   each output dataset with its rule and metadata before the task is
+   submitted; `register_to_rucio.py` uploads and attaches the file,
+   passing no dataset metadata and no lifetime, and a missing dataset
+   is a registration failure. The metadata stage stays: the job
+   compares what it reads from its own output file with the dataset's
+   metadata and reports a difference in the stage log and the payload
+   report, never as a failure.
 
 ## Container contract
 
