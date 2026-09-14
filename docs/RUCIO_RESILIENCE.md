@@ -13,6 +13,8 @@ With continuous pressure-driven submission beginning for the 26.09 campaign, reg
 
 This flattens the pulse and likely prevents recurrence at current scale. It does not protect against genuine Rucio degradation.
 
+As built (2026-09-13, payload 0.15.0): the payload waits once, a random 0 to `REGISTRATION_STAGGER_MAX_S` seconds (default 180), before its first registration of the job, whichever output that is (FULL, RECO or an internal EVGEN file); 0 disables it. The in-job attempt is single and the retries live in the registrar, as Measure 2 built them. The harvester's allocation stagger is the site's (Xin's) and is not built.
+
 ## Measure 2 — decouple registration from job success
 
 - The job uploads its output (the transfer path held throughout the incident), then makes one jittered registration attempt. On success the catalog is as current as today. On failure the job records the pending registration in its job report and still exits success on good physics plus completed upload — registration failure never fails a job.

@@ -94,6 +94,21 @@ RECO_EVENTS_ARGS=()
 REPORT_SEND_MAX=12
 REPORT_SENT=0
 REPORT_SEND_OFF=0
+# Measure 1 of RUCIO_RESILIENCE.md: jobs that start as one wave finish as
+# one wave, and their registrations reach the catalog as one pulse. One
+# randomized wait of up to REGISTRATION_STAGGER_MAX_S (default 180 s)
+# before the job's first registration spreads that pulse over minutes at
+# the cost of seconds per job. 0 disables it.
+REGISTRATION_STAGGER_MAX_S=${REGISTRATION_STAGGER_MAX_S:-180}
+REGISTRATION_STAGGERED=0
+registration_stagger() {
+  [ "${REGISTRATION_STAGGERED}" -eq 0 ] || return 0
+  REGISTRATION_STAGGERED=1
+  [ "${REGISTRATION_STAGGER_MAX_S}" -gt 0 ] 2>/dev/null || return 0
+  local wait=$((RANDOM % (REGISTRATION_STAGGER_MAX_S + 1)))
+  echo "registration stagger: waiting ${wait}s (up to ${REGISTRATION_STAGGER_MAX_S}s) before the first registration"
+  sleep "${wait}"
+}
 # What the job calls itself when it reports. The PanDA job id when the
 # server substituted one, and otherwise something unique to this run:
 # object storage has no versioning here, so a shared name means one job
@@ -835,6 +850,7 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
   stage validation ok FULL
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
+    registration_stagger
     stage registration start FULL
     # A registration failure must not destroy finished physics. The script
     # exits 81 when the catalog could neither register the output nor say
@@ -898,6 +914,7 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
   fi
 
   if [ "${USERUCIO:-false}" == "true" ] ; then
+    registration_stagger
     stage registration start RECO
     # Pending rather than failed when the catalog cannot answer; see the FULL
     # step above and docs/RUCIO_RESILIENCE.md, Measure 2.
@@ -944,6 +961,7 @@ fi
 # this point, and a sample that could not be registered is said in the
 # stage log and the report.
 if [ "${EVGEN_INTERNAL:-false}" == "true" ] && [ "${COPYEVGEN:-false}" == "true" ] && [ "${USERUCIO:-false}" == "true" ] ; then
+  registration_stagger
   EVGEN_NAME=$(basename ${EVGEN_LOCAL})
   EVGEN_EVENTS_ARGS=()
   if [ -n "${EVGEN_EVENTS:-}" ] && [ "${EVGEN_EVENTS}" != "null" ]; then

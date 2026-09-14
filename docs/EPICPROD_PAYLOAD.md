@@ -316,7 +316,10 @@ In order, each a committed step on the clone:
    registrar completes pending registrations in batches at bounded
    concurrency; the BNL interim stash when the upload path itself
    fails (RUCIO_FAILOVER_STASH.md). A registration failure then costs
-   no completed compute.
+   no completed compute. Measure 1's payload half landed last
+   (2026-09-13, payload 0.15.0): one random wait of up to
+   `REGISTRATION_STAGGER_MAX_S` seconds (default 180) before the job's
+   first registration; 0 disables it.
 3. **Payload reporting** (2026-09-06, the payload report above).
    `jobReport.json` carries the payload's report: events requested and
    produced, every stage's outcome and wall time, every stage's prmon
