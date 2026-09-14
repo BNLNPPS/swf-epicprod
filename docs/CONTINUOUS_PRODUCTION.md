@@ -315,30 +315,34 @@ generates jobs for a work queue only while the queued jobs (activated
 plus starting) stay under a multiple of the running jobs
 (`THROTTLE_THRESHOLD`, 2.0 by default) and under a queue limit
 (`NQUEUELIMIT`), and Harvester's `add_target_slots` raises that limit
-to build job pressure for a fleet. ePIC does not run it. The live
-`panda_jedi.cfg` registers `GenJobThrottler` for the epic VO, which
-returns unthrottled whenever the work queue has no share, and every
-epic work queue has none (verified 2026-09-14 in the configuration,
-the `jedi_work_queue` table and the throttler's log). A submitted task
-is therefore generated and activated in full within minutes
-(`nFiles=5000` per 10-second generator cycle), and the pressure front
-is today the only regulator of the activated pool at each queue.
+to build job pressure for a fleet. The ePIC server does not yet run
+one. The live `panda_jedi.cfg` registers `GenJobThrottler` for the
+epic VO, which returns unthrottled whenever the work queue has no
+share, and every epic work queue has none (verified 2026-09-14 in the
+configuration, the `jedi_work_queue` table and the throttler's log). A
+submitted task is therefore generated and activated in full within
+minutes (`nFiles=5000` per 10-second generator cycle), and the
+pressure front is today the only regulator of the activated pool at
+each queue.
 
 The target is two regulators in series. The front admits work from
 `ready` in priority order and never lets a queue run dry; an ePIC job
-throttler in JEDI paces generation per queue against what the queue
-is running, so a task's jobs enter `activated` at the rate the queue
+throttler in JEDI paces generation per site against what the site is
+running, so a task's jobs enter `activated` at the rate the queue
 consumes them and a later high-priority task is not held behind a day
 of activated work. The engine is derived from the ATLAS one, twenty
 years of production experience, and tailored to ePIC: single-core
-jobs, tasks pinned to one queue, the epic work queues given shares,
-`NQUEUELIMIT` and `THROTTLE_THRESHOLD` set per queue from the measured
-record, corePower honest at every queue, and the front's canary and
-breaker state respected. It is built as a parallel track while the front
-commissions: the front runs guarded first, the engine's per-queue
-limits are set from the front's shadow-mode record, and its inputs
-(shares, corePower, honest job metrics) are the ones native scouts
-need as well.
+jobs, tasks pinned to one queue, the ATLAS rule and limits applied
+per site rather than per work queue, so the epic work queues need no
+share. It is built: `swf_epicprod/jedi/EpicProdJobThrottler.py`, with
+its decision tested without a server (EPIC_JOB_THROTTLER.md § The
+engine as built). Its registration for the epic VO, the package on
+JEDI's path, the configuration rows and the generator's site
+exclusion ride the pending server upgrade; it starts in `observe`
+mode, logging its decisions while the server behaves as today, and is
+switched to `throttle` by one configuration row once its readings have
+been checked against the queue census. Its per-site limits are set
+from the front's shadow-mode record.
 
 ## The submission ladder
 
@@ -497,10 +501,11 @@ pressure front can reach.
 7. Native scouts replace the canary payload gate for new
    configurations, once payload reporting and corePower are in place.
 8. The ePIC job throttler in JEDI, a parallel track from item 4: the
-   engine derived from `AtlasProdJobThrottler` and tailored to ePIC is
-   designed and coded while the front commissions, its per-queue limits
-   set from the shadow-mode record; registration for the epic VO and
-   the work-queue shares follow, and the front's phase-one caps retire.
+   engine is built (EPIC_JOB_THROTTLER.md); its registration for the
+   epic VO, the configuration rows and the generator's site exclusion
+   ride the pending server upgrade, in `observe` mode first, with the
+   per-site limits set from the shadow-mode record; once it throttles,
+   the front's phase-one caps retire.
 9. Rucio exerciser and the Storage view.
 10. Probe and rider build-out (site-canary increments 8–9), extending
     node-level evidence to every node work reaches.
