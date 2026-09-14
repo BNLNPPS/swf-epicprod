@@ -148,7 +148,7 @@ payload_report() {
     ${ended[@]+"${ended[@]}"} "$@" \
     --job-report "${PAYLOAD_JOB_REPORT:-jobReport.json}" \
     --stages "${PAYLOAD_STAGES_LOG:-payload-stages.log}" --version "${here}/VERSION" \
-    --stash "${STASH_OUT:-}" \
+    --stash "${STASH_OUT:-}" --metadata-compare "${METADATA_COMPARE_OUT:-}" \
     --requested "${EVENTS_PER_TASK:-}" --prmon-dir "${LOG_TEMP:-}" --taskname "${TASKNAME:-}" \
     --full "${FULL_TEMP:+${FULL_TEMP}/${TASKNAME:-}.edm4hep.root}" \
     --reco "${RECO_TEMP:+${RECO_TEMP}/${TASKNAME:-}.eicrecon.edm4eic.root}" \
@@ -480,6 +480,9 @@ RECO_DID=/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root
 FULL_DID=/${FULL_DIR}/${TASKNAME}.edm4hep.root
 # Where a diverted registration leaves the name it actually used.
 export DIVERTED_OUT=${TMPDIR}/${TASKNAME}.diverted
+# Where the registration leaves its comparison of the dataset's declared
+# metadata with the job's own reading, for the payload report.
+export METADATA_COMPARE_OUT=${TMPDIR}/${TASKNAME}.metadata-compare.json
 
 # The failover stash (docs/RUCIO_FAILOVER_STASH.md). When the JLab upload
 # path itself fails — the door unreachable, the catalog refusing to
@@ -866,6 +869,12 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
     elif [ ${REG_RC} -eq 81 ]; then
       echo "WARNING: catalog unreachable for FULL; registration pending."
       stage registration pending "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
+    elif [ ${REG_RC} -eq 84 ]; then
+      # The dataset was not created at submission: a failure of the
+      # submission path, not a catalog outage, so no stash and no pending.
+      echo "ERROR: output dataset /${FULL_DIR} does not exist; it is created at submission."
+      stage registration fail "FULL: output dataset /${FULL_DIR} not created at submission"
+      exit 78
     elif stash_output "${FULL_TEMP}/${TASKNAME}.edm4hep.root" \
            "${FULL_DID}" "JLab registration failed (exit ${REG_RC})"; then
       echo "FULL could not be registered at JLab and is stashed at BNL."
@@ -929,6 +938,10 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     elif [ ${REG_RC} -eq 81 ]; then
       echo "WARNING: catalog unreachable for RECO; registration pending."
       stage registration pending "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
+    elif [ ${REG_RC} -eq 84 ]; then
+      echo "ERROR: output dataset /${RECO_DIR} does not exist; it is created at submission."
+      stage registration fail "RECO: output dataset /${RECO_DIR} not created at submission"
+      exit 78
     elif stash_output "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" \
            "${RECO_DID}" "JLab registration failed (exit ${REG_RC})"; then
       echo "RECO could not be registered at JLab and is stashed at BNL."
@@ -975,6 +988,9 @@ if [ "${EVGEN_INTERNAL:-false}" == "true" ] && [ "${COPYEVGEN:-false}" == "true"
   elif [ ${REG_RC} -eq 81 ]; then
     echo "WARNING: catalog unreachable for EVGEN; registration pending."
     stage registration pending "/${EVGEN_DIR}/${EVGEN_NAME}"
+  elif [ ${REG_RC} -eq 84 ]; then
+    echo "WARNING: dataset /${EVGEN_DIR} does not exist (created at submission); the generated sample is not registered, the job's physics is unaffected."
+    stage registration fail "EVGEN: dataset /${EVGEN_DIR} not created at submission"
   else
     echo "WARNING: the generated sample could not be registered (exit ${REG_RC}); the job's physics is unaffected."
     stage registration fail "EVGEN exit ${REG_RC}"

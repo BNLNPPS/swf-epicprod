@@ -18,6 +18,11 @@ from jsonschema import validate as json_validate, ValidationError
 # registration later (docs/RUCIO_RESILIENCE.md, Measure 2). It is a code
 # between this script and run.sh and never becomes a job's exit code.
 PENDING_EXIT = 81
+# The output dataset does not exist: it is created at submission
+# (docs/RUCIO_REGISTRATION_CONTRACT.md § 2), so a job that finds none was
+# not submitted through that path. A code between this script and run.sh,
+# which records the registration failed; never a job's exit code.
+NO_DATASET_EXIT = 84
 
 
 # Define the metadata schema
@@ -362,15 +367,23 @@ if __name__ == "__main__":
             'no_register': noregister
         }
 
-        # Add metadata if provided and not in noregister mode
-        if dataset_meta and not noregister:
-            upload_item['dataset_meta'] = dataset_meta
-        # A lifetime bounds the rule of a dataset this upload creates; the
-        # client refuses a lifetime on a dataset that already exists, so a
-        # second file into the same expiring dataset carries none here and
-        # gets its DID expiry below.
-        if args.lifetime and not noregister and not _dataset_exists(parent_directory):
-            upload_item['lifetime'] = int(args.lifetime)
+        # The dataset, its rule and its metadata exist before the task is
+        # submitted (docs/RUCIO_REGISTRATION_CONTRACT.md § 2); the upload
+        # attaches the file and carries no dataset metadata and no lifetime.
+        # The catalog is asked once per dataset: absent is a failure of the
+        # submission path, not of this job's work, and no bytes move for it.
+        if not noregister:
+            try:
+                present = _dataset_exists(parent_directory)
+            except Exception as exc:  # noqa: BLE001
+                print(f"Catalog unreachable while asking for dataset {scope}:{parent_directory}: {exc}; "
+                      f"exiting pending, the registrar completes the registration.", file=sys.stderr)
+                sys.exit(PENDING_EXIT)
+            if not present:
+                print(f"ERROR: output dataset {scope}:{parent_directory} does not exist; it is created "
+                      f"at submission (RUCIO_REGISTRATION_CONTRACT.md § 2), so this job's output "
+                      f"cannot be registered.", file=sys.stderr)
+                sys.exit(NO_DATASET_EXIT)
 
         # Append the new item to the upload_items list
         upload_items.append(upload_item)
@@ -423,6 +436,38 @@ if __name__ == "__main__":
                                  scope, ds_name, derived, sum(counts))
                 else:
                     logger.info("events on dataset %s:%s verified: %d over %d files", scope, ds_name, derived, len(counts))
+        if dataset_meta and not noregister:
+            # The dataset carries what the task declared at submission; the
+            # job reports whether what it reads from its own output file
+            # agrees. A difference or an absent value is reported, never a
+            # failure (docs/RUCIO_REGISTRATION_CONTRACT.md § 2). To a file,
+            # never to stdout, which the monitor shares.
+            comparison = {}
+            for ds_name in sorted({item['dataset_name'] for item in upload_items}):
+                try:
+                    declared = client.get_metadata(scope, ds_name, plugin='ALL')
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("metadata on dataset %s:%s unread: %s", scope, ds_name, exc)
+                    comparison[ds_name] = {'unread': str(exc)}
+                    continue
+                differ = {k: {'dataset': declared.get(k), 'job': v} for k, v in dataset_meta.items()
+                          if declared.get(k) is not None and declared.get(k) != v}
+                absent = [k for k in dataset_meta if declared.get(k) is None]
+                agree = len(dataset_meta) - len(differ) - len(absent)
+                comparison[ds_name] = {'agree': agree, 'differ': differ, 'absent': absent}
+                if differ or absent:
+                    logger.warning("metadata on dataset %s:%s: %d agree, differ %s, absent %s",
+                                   scope, ds_name, agree, differ or '{}', absent or '[]')
+                else:
+                    logger.info("metadata on dataset %s:%s agrees with the job's reading (%d keys)",
+                                scope, ds_name, agree)
+            marker = os.environ.get('METADATA_COMPARE_OUT')
+            if marker:
+                try:
+                    with open(marker, 'w') as handle:
+                        json.dump(comparison, handle)
+                except OSError as exc:  # noqa: BLE001
+                    logger.error("metadata comparison not written: %s", exc)
     except Exception as e:
         logger.error(f"Upload failed: {e}")
 

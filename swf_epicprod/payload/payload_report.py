@@ -253,21 +253,32 @@ def stash_record(path):
     return entries
 
 
-def registration_record(stages):
+def registration_record(stages, compare_path=""):
     """The registration outcome from the stage log: registered with its
-    DIDs, failed with what failed, or not reached."""
+    DIDs, failed with what failed, or not reached; and, when the
+    registration wrote one, its comparison of each dataset's declared
+    metadata with the job's own reading (register_to_rucio.py), under
+    ``metadata``: per dataset the keys that agree, differ and are absent."""
     reg = stages.get("registration")
     if reg is None:
-        return {"outcome": "not reached", "dids": [], "failed": []}
-    dids = [d for d in reg["detail"] if d.startswith("/")]
-    failed = [d for d in reg["detail"] if not d.startswith("/")]
-    if reg["status"] == "ok":
-        outcome = "registered"
-    elif reg["status"] == "fail":
-        outcome = "failed"
+        record = {"outcome": "not reached", "dids": [], "failed": []}
     else:
-        outcome = reg["status"]
-    return {"outcome": outcome, "dids": dids, "failed": failed}
+        dids = [d for d in reg["detail"] if d.startswith("/")]
+        failed = [d for d in reg["detail"] if not d.startswith("/")]
+        if reg["status"] == "ok":
+            outcome = "registered"
+        elif reg["status"] == "fail":
+            outcome = "failed"
+        else:
+            outcome = reg["status"]
+        record = {"outcome": outcome, "dids": dids, "failed": failed}
+    if compare_path and os.path.isfile(compare_path):
+        try:
+            with open(compare_path) as handle:
+                record["metadata"] = json.load(handle)
+        except (OSError, ValueError) as exc:
+            print(f"payload report: cannot read metadata comparison {compare_path}: {exc}", file=sys.stderr)
+    return record
 
 
 def _int_or_none(text):
@@ -354,7 +365,7 @@ def build_report(args):
             "full": output_record(args.full, full_events),
             "reco": output_record(args.reco, reco_events),
         },
-        "registration": registration_record(stages),
+        "registration": registration_record(stages, args.metadata_compare),
         "stash": stash_record(args.stash),
     }
     if args.note:
@@ -380,6 +391,8 @@ def main():
     ap.add_argument("--stages", required=True, help="the stage log")
     ap.add_argument("--stash", default="",
                     help="the stash record run.sh wrote, if it stashed")
+    ap.add_argument("--metadata-compare", default="",
+                    help="the registration's metadata comparison file, if written")
     ap.add_argument("--version", required=True, help="the payload VERSION file")
     ap.add_argument("--requested", default="")
     ap.add_argument("--prmon-dir", default="")
