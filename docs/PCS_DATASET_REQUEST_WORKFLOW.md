@@ -205,9 +205,20 @@ there is no separate `needs_metadata`, `planned`, or
 `ready_for_operator_review` state — those are sub-states *inside*
 `draft` driven by validation, not enumerated transitions.
 
-Readiness checks include path / CSV manifest validity, file readability
-where possible, event counts, tag mapping, production config, and
-public catalogue projection.
+The readiness checks (`prodtask_readiness_problems`) are what a valid
+submission needs and what the production dispatcher needs to place the
+task (CONTINUOUS_PRODUCTION.md, The intake): a physics output
+configured; a matched EVGEN input; coherent background parameters; the
+physics tag's beam matching the sample; an ion beam's isotope
+resolvable; a per-job event count (`events_per_job` on the
+configuration, `max_events_per_job` on the task, or a trial's measured
+cost); an event target (the edition's, else the request's count); a
+priority level (the task's, the campaign plan entry's, or the
+request's); and the declared walltime and memory within the pinned
+queue's `maxtime` and `maxrss`. Two more follow as recorded stamps
+rather than live checks: the input's replica availability, written by
+the nightly EVGEN sweep, and a current payload-canary verdict for a new
+or changed configuration.
 
 PCS should store the public catalogue mapping internally:
 

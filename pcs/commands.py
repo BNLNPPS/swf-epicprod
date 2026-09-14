@@ -924,6 +924,19 @@ TASK_PRIORITY_UNSET = 800
 PRIORITY_LEVELS = (1, 2, 3)
 
 
+def pinned_site(task, cfg=None, ds=None):
+    """The PanDA queue a task submits to. A trial's site is the
+    destination it was fired at to qualify, so it outranks the
+    configuration's: a trial that records GREX and submits to OSG
+    qualifies the wrong path and reports success for it."""
+    if cfg is None:
+        cfg = task.get_effective_config()
+    if ds is None:
+        ds = task.dataset
+    trial_site = str(((ds.metadata if ds is not None else None) or {}).get('trial_site') or '')
+    return trial_site or cfg.get('panda_site') or EVGEN_DEFAULT_SITE
+
+
 def prodtask_priority_level(task):
     """The production priority level of a task (1 to 3, or None) and its
     source: the task's own value (seeded from its request, carried by
@@ -1079,11 +1092,7 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
 
     hours = cfg.get('target_hours_per_job')
     walltime_hours = float(hours) if hours is not None else float(data.get('walltime_hours', 2.0))
-    # A trial's site is the destination it was fired at to qualify, so it
-    # outranks the configuration's: a trial that records GREX and submits
-    # to OSG qualifies the wrong path and reports success for it.
-    site = (str((ds.metadata or {}).get('trial_site') or '')
-            or cfg.get('panda_site') or EVGEN_DEFAULT_SITE)
+    site = pinned_site(task, cfg=cfg, ds=ds)
     if residual_coverage and (residual_coverage.get('walltime') or {}).get('hours'):
         walltime_hours = max(walltime_hours,
                              float(residual_coverage['walltime']['hours']))

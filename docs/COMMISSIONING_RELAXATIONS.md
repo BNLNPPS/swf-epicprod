@@ -34,7 +34,7 @@ relaxation 4 additionally lifts the task-level `ready` freeze.
 - [Permanent identity retention](PCS_PERMANENT_IDENTITIES.md): no issued tag or physics configuration can be deleted or renumbered, including drafts and orphans.
 
 - The tag lock action and the locked-tag edit guard (above) — the means of tightening.
-- The readiness *checks* themselves still run (`prodtask_readiness_problems`: output configured, physics tag beam matches the sample). They describe submission correctness, not provenance, so under relaxation 4 they are surfaced as a warning rather than blocking; the checks are not removed.
+- The readiness *checks* themselves still run (`prodtask_readiness_problems`: output configured, matched EVGEN input, background coherence, physics tag beam matches the sample, ion isotope, per-job event count, event target, priority, walltime and memory within the pinned queue's limits; PCS_DATASET_REQUEST_WORKFLOW.md). They describe submission correctness, not provenance, so under relaxation 4 they are surfaced as a warning rather than blocking; the checks are not removed.
 
 ## Related
 

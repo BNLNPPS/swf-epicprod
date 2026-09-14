@@ -253,11 +253,16 @@ The dispatcher drains `ready` only. The manual Submit control remains
 as an explicit operator path and records `origin=manual`; the
 dispatcher records `origin=front`. Promotion to `ready` is a human
 decision, one task or a filtered set at a time through the plan and
-task pages; the readiness checks grow to what the dispatcher needs
-before it places a task: the input dataset with an available replica,
-a bound and sized configuration, an event target, a priority, walltime
-and memory within the pinned queue's limits, and a current payload
-canary verdict for a new or changed configuration. The commissioning
+task pages; the readiness checks are what the dispatcher needs before
+it places a task: a matched input, a sized configuration (a per-job
+event count), an event target, a priority, and walltime and memory
+within the pinned queue's limits (PCS_DATASET_REQUEST_WORKFLOW.md).
+Two checks are recorded stamps rather than live reads, since readiness
+renders on the compose page for every task and no remote call belongs
+there: the input's replica availability, stamped on the match record
+by the nightly EVGEN sweep, and a current payload-canary verdict for a
+new or changed configuration, indexed by configuration when the
+dispatcher's gate is built; readiness reads both. The commissioning
 relaxation that lets a draft submit (COMMISSIONING_RELAXATIONS.md,
 item 4) is retired once 26.09 intake has exercised the draft → ready
 path in volume.

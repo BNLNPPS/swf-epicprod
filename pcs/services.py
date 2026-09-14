@@ -1568,7 +1568,73 @@ def prodtask_readiness_problems(task):
         _e, _p, beam_problem = payload_beams(task)
         if beam_problem:
             problems.append(beam_problem)
+
+    # What the production dispatcher needs to place the task
+    # (CONTINUOUS_PRODUCTION.md, The intake). Local reads only: readiness
+    # renders on the compose page for every listed task.
+    from .commands import (events_per_job_override, pinned_site,
+                           prodtask_priority_level)
+    data = cfg.get('data') or {}
+    if not internal and task.dataset_id:
+        n_events = int(data.get('events_per_job') or 0)
+        if n_events <= 0:
+            n_events = events_per_job_from_cost(
+                task.dataset, cfg.get('target_hours_per_job')) or 0
+        if n_events <= 0 and not events_per_job_override(task):
+            problems.append(
+                'No per-job event count: set events_per_job on the config, '
+                'max_events_per_job on the task, or run a trial so the cost '
+                'gives it.')
+    if task.dataset_id and task.dataset.expected_events is None and not (
+            task.request_id and task.request.nevents):
+        problems.append(
+            "No event target: set the edition's target (the campaign plan) "
+            'or a request with an event count.')
+    level, _source = prodtask_priority_level(task)
+    if level is None:
+        problems.append(
+            'No priority: set it on the task, the campaign plan entry, or '
+            'the request.')
+    site = pinned_site(task, cfg=cfg, ds=ds)
+    maxtime, maxrss = _queue_limits(site)
+    hours = cfg.get('target_hours_per_job')
+    walltime_hours = (float(hours) if hours is not None
+                      else float(data.get('walltime_hours', 2.0)))
+    if maxtime > 0 and walltime_hours * 3600 > maxtime:
+        problems.append(
+            f'Declared walltime {walltime_hours:g} h exceeds the maxtime of '
+            f'{site} ({maxtime / 3600:.1f} h).')
+    memory_mb = int(data.get('ram_count', 4096))
+    if maxrss > 0 and memory_mb > maxrss:
+        problems.append(
+            f'Declared memory {memory_mb} MB exceeds the maxrss of {site} '
+            f'({maxrss} MB).')
     return problems
+
+
+_QUEUE_LIMITS_CACHE = {}
+_QUEUE_LIMITS_TTL_S = 300
+
+
+def _queue_limits(site):
+    """A queue's declared ``maxtime`` (seconds) and ``maxrss`` (MB) from
+    schedconfig, 0 where unset or the queue is unknown; memoized for five
+    minutes so readiness over a page of tasks reads each queue once."""
+    import time as _time
+    now = _time.monotonic()
+    hit = _QUEUE_LIMITS_CACHE.get(site)
+    if hit and now - hit[0] < _QUEUE_LIMITS_TTL_S:
+        return hit[1]
+    from monitor_app.panda.queries import get_queue
+    qcfg = (get_queue(site) or {}).get('queue') or {}
+    limits = []
+    for key in ('maxtime', 'maxrss'):
+        try:
+            limits.append(int(qcfg.get(key) or 0))
+        except (TypeError, ValueError):
+            limits.append(0)
+    _QUEUE_LIMITS_CACHE[site] = (now, tuple(limits))
+    return tuple(limits)
 
 
 def prodtask_set_status(*, task, new_status):
