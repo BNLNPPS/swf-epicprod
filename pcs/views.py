@@ -5951,3 +5951,66 @@ def stash_page(request):
         'built_at': state.get('built_at'),
         'never_run': not state,
     })
+
+
+def front_page(request):
+    """The pressure front (docs/CONTINUOUS_PRODUCTION.md, The dispatcher):
+    per regulated queue its latest decision (state, reason, depth, set
+    points, gates), the switches, and the ordered ready backlog with
+    per-queue eligibility. Reads the decision records and PCS only: a
+    page that reaches PanDA to render hangs when PanDA does, so the
+    census numbers come from the records the cycle wrote.
+    """
+    from monitor_app.models import AppLog, SysConfig
+    from swf_epicprod.front import DEFAULT_QUEUES, QUEUE_DEFAULTS, ready_backlog
+
+    config = SysConfig.get_config()
+    enabled = bool(config.get('front.enabled', False))
+    mode = str(config.get('front.mode', 'shadow'))
+    queues = list(config.get('front.queues') or DEFAULT_QUEUES)
+    labels = {'supplied': 'supplied', 'fed': 'fed', 'would_feed': 'would feed',
+              'awaiting_observation': 'awaiting observation',
+              'idle_capacity': 'idle capacity', 'degraded': 'degraded',
+              'oversize': 'oversize', 'held': 'held', 'no_work': 'no work'}
+    rows = []
+    for queue in queues:
+        last = (AppLog.objects.filter(app_name='epicprod',
+                                      extra_data__action='front_decision',
+                                      extra_data__subject_key=queue)
+                .order_by('-timestamp').values('timestamp', 'extra_data').first())
+        extra = (last or {}).get('extra_data') or {}
+        settings = {k: config.get(f'front.queue.{queue}.{k}', d)
+                    for k, d in QUEUE_DEFAULTS.items()}
+        state = str(extra.get('state') or extra.get('outcome') or '')
+        rows.append({
+            'queue': queue,
+            'state': state or 'undecided',
+            'state_label': labels.get(state, state or 'not yet decided'),
+            'reason': extra.get('reason', ''),
+            'committed_h': extra.get('committed_h'),
+            'runnable_h': extra.get('runnable_h'),
+            'not_started': extra.get('not_started', ''),
+            'running': extra.get('running', ''),
+            'ceiling': extra.get('ceiling', ''),
+            'h_low': settings['h_low'], 'h_high': settings['h_high'],
+            'ready_eligible': extra.get('ready_eligible', 0),
+            'ready_total': extra.get('ready_total', 0),
+            'candidate': extra.get('candidate', ''),
+            'candidate_rows': extra.get('candidate_rows'),
+            'candidate_level': extra.get('candidate_level'),
+            'canary': extra.get('canary', ''), 'canary_age_h': extra.get('canary_age_h'),
+            'credential': extra.get('credential', ''),
+            'credential_age_h': extra.get('credential_age_h'),
+            'gate_finished': extra.get('gate_finished', ''),
+            'gate_failed': extra.get('gate_failed', ''),
+            'gate_fast_failed': extra.get('gate_fast_failed', ''),
+            'breaker': settings['breaker'], 'feed_switch': bool(settings['feed']),
+            'decided_at': (last or {}).get('timestamp'),
+        })
+    last_cycle = (AppLog.objects.filter(app_name='epicprod',
+                                        extra_data__action='front_cycle')
+                  .order_by('-timestamp').values('timestamp', 'extra_data').first())
+    return render(request, 'pcs/front.html', {
+        'enabled': enabled, 'mode': mode, 'rows': rows,
+        'backlog': ready_backlog(), 'last_cycle': last_cycle,
+    })

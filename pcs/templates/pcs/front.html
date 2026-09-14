@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% load swf_fmt %}
+{% block title %}Pressure front{% endblock %}
+{% block content %}
+<style>
+  .front-section { background-color: #e7f1fb; padding: 0.4rem 0.6rem;
+                   border-radius: 0.25rem; margin-top: 1.6rem;
+                   margin-bottom: 0.8rem; }
+  .front-state-supplied, .front-state-fed, .front-state-would_feed { background-color: #d9f2df; }
+  .front-state-degraded, .front-state-oversize { background-color: #f8d7da; }
+  .front-state-held, .front-state-no_work, .front-state-idle_capacity,
+  .front-state-awaiting_observation { background-color: #f1f1f1; }
+</style>
+<div class="container-fluid">
+    <h1>Pressure front</h1>
+
+    <p class="mb-3">
+        The front keeps every production queue supplied from the ready task queue, in priority order,
+        against a set point in hours of work at the queue's capacity, and never feeds a queue whose
+        gates are red. Mode <strong>{{ mode }}</strong>{% if mode == 'shadow' %} (decides and records, submits nothing){% endif %};
+        front <strong>{% if enabled %}on{% else %}off{% endif %}</strong>.
+        {% if last_cycle %}Last cycle <span data-relative-time="{{ last_cycle.timestamp|date:'c' }}">{{ last_cycle.timestamp|fmt_dt }}</span>
+        ({{ last_cycle.extra_data.duration_ms }} ms).{% else %}No cycle has run yet.{% endif %}
+        The switches and set points are SysConfig keys under <code>front.*</code> on the
+        <a href="{% url 'monitor_app:system_status' %}">System page</a>; the plan is
+        <a href="https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/CONTINUOUS_PRODUCTION.md">CONTINUOUS_PRODUCTION.md</a>.
+    </p>
+
+    <h2 id="queues" class="front-section">Queues</h2>
+    <table class="table table-striped table-bordered table-sm align-middle w-auto mb-2">
+        <thead><tr>
+            <th>Queue</th><th>State</th><th>Reason</th>
+            <th>Committed (h)</th><th>Runnable (h)</th><th>Not started</th><th>Running</th><th>Ceiling</th>
+            <th>Set points (h)</th><th>Ready</th><th>Next candidate</th>
+            <th>Canary</th><th>Credential</th><th>Last 6 h</th>
+            <th>Breaker</th><th>Feed</th><th>Decided</th>
+        </tr></thead>
+        <tbody>
+        {% for r in rows %}
+            <tr>
+                <td><a href="{% url 'monitor_app:panda_queue_detail' queue_name=r.queue %}">{{ r.queue }}</a></td>
+                <td class="front-state-{{ r.state }}">{{ r.state_label }}</td>
+                <td>{{ r.reason }}</td>
+                <td>{% if r.committed_h != None %}{{ r.committed_h }}{% else %}<span class="text-muted">no calibration</span>{% endif %}</td>
+                <td>{% if r.runnable_h != None %}{{ r.runnable_h }}{% endif %}</td>
+                <td>{{ r.not_started }}</td>
+                <td>{{ r.running }}</td>
+                <td>{{ r.ceiling }}</td>
+                <td>{{ r.h_low }} to {{ r.h_high }}</td>
+                <td>{{ r.ready_eligible }} eligible of {{ r.ready_total }}</td>
+                <td>{% if r.candidate %}<a href="{% url 'pcs:prod_task_detail' name=r.candidate %}">{{ r.candidate }}</a>{% if r.candidate_rows %} ({{ r.candidate_rows }} jobs, priority {{ r.candidate_level|default:'unset' }}){% endif %}{% else %}<span class="text-muted">none</span>{% endif %}</td>
+                <td>{{ r.canary }}{% if r.canary_age_h != None %} ({{ r.canary_age_h }} h){% endif %}</td>
+                <td>{{ r.credential }}{% if r.credential_age_h != None %} ({{ r.credential_age_h }} h){% endif %}</td>
+                <td>{{ r.gate_finished }} finished, {{ r.gate_failed }} failed, {{ r.gate_fast_failed }} fast</td>
+                <td>{{ r.breaker }}</td>
+                <td>{% if r.feed_switch %}on{% else %}off{% endif %}</td>
+                <td>{% if r.decided_at %}<span data-relative-time="{{ r.decided_at|date:'c' }}">{{ r.decided_at|fmt_dt }}</span>{% else %}<span class="text-muted">never</span>{% endif %}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="17">No regulated queues are configured (<code>front.queues</code>).</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <p class="mb-2">
+        States: supplied (depth at or above the low-water mark), fed or would feed (a task released, or in shadow mode the one that would be),
+        awaiting observation (a feed younger than the activation window), idle capacity (work pending but the queue not pulling),
+        degraded (a gate red: canary, credential, burn-through, failure window, breaker), oversize (the next task exceeds the high-water mark; an operator's decision),
+        held (the front or the queue's feed switch off, or a cap), no work (nothing eligible in ready).
+        A hold is recorded when its reason changes and hourly; a feed always.
+    </p>
+
+    <h2 id="ready" class="front-section">Ready backlog</h2>
+    {% if backlog %}
+    <table class="table table-striped table-bordered table-sm align-middle w-auto mb-2">
+        <thead><tr><th>Queue</th><th>Order</th><th>Task</th><th>Priority</th><th>Jobs</th><th>Eligible</th></tr></thead>
+        <tbody>
+        {% for queue, entries in backlog.items %}
+            {% for e in entries %}
+            <tr>
+                <td>{{ queue }}</td>
+                <td>{{ forloop.counter }}</td>
+                <td><a href="{% url 'pcs:prod_task_detail' name=e.task %}">{{ e.task }}</a></td>
+                <td>{% if e.level %}{{ e.level }} ({{ e.level_source }}){% else %}<span class="text-muted">unset</span>{% endif %}</td>
+                <td>{% if e.rows %}{{ e.rows }}{% endif %}</td>
+                <td class="{% if e.problems %}failed_fill{% else %}finished_fill{% endif %}">{% if e.problems %}{{ e.problems|join:'; ' }}{% else %}yes{% endif %}</td>
+            </tr>
+            {% endfor %}
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="mb-2">No task is in <code>ready</code>. A task enters the backlog when an operator promotes it (Lock on its page) and the readiness checks pass.</p>
+    {% endif %}
+</div>
+{% endblock %}
