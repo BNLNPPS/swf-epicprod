@@ -82,6 +82,39 @@ The engine ignores work-queue shares: its configuration is keyed on the
 site and its statistics are read per site, so the epic work queues need
 no share.
 
+## The engine as built
+
+The engine is `swf_epicprod/jedi/EpicProdJobThrottler.py`, a
+`JobThrottlerBase` subclass; its decision is the pure function
+`swf_epicprod/jedi/epic_job_throttler.decide`, tested in
+`tests/test_epic_job_throttler.py` without a server. It reads the
+per-site statistics through `getJobStatisticsByResourceTypeSite` at the
+resource-type level, the limits through `getConfigValue` (component
+`epic_job_throttler`, app `jedi`, VO `epic`; `<TAG>_<site>`, then the
+work-queue-wide `<TAG>`, then the built-in default), and applies the
+rule above. It logs every site's reading and its answer to
+`panda-EpicProdJobThrottler.log`.
+
+`MODE` is `observe` unless the row says `throttle`. In `observe` the
+engine logs what it would do and answers unthrottled, which is the
+answer the server gives today; in `throttle` it returns the decision,
+sets the pass cap and the lack-of-jobs flag the generator reads, and
+exposes the saturated sites as `excluded_sites`.
+
+Registration in `panda_jedi.cfg`, section `[jobthrottle]`:
+
+    modConfig = epic:any:swf_epicprod.jedi.EpicProdJobThrottler:EpicProdJobThrottler
+
+The engine needs `swf_epicprod` importable by JEDI's interpreter and, for
+the site exclusion to take effect, the generator change of the previous
+section; without it the generator applies the pass cap and the
+throttled answer and ignores the saturated-site list. Both belong to
+the server upgrade. The priority valve is not in this engine: the
+ATLAS engine reads the highest queued priority from `JOB_STATS_HP`,
+which the ePIC server does not populate, and the waiting-task peek is
+not site-aware; a site-aware read of both is a server change for the
+same upgrade.
+
 ## Interaction with the front
 
 The front admits whole tasks; the engine paces their generation. With
