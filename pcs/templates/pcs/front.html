@@ -56,6 +56,7 @@
                 <strong>oversize_task</strong>; <strong>would_exceed_high</strong>; <strong>task_cap</strong>; <strong>job_cap</strong>;
                 <strong>would_feed:&lt;task&gt;</strong> or <strong>fed:&lt;task&gt;</strong>.
             </li>
+            <li><strong>Hours</strong>, wherever the page says (h): hours of work at the queue's capacity. One hour is the queue running at its ceiling for an hour; a queue with 3,600 running slots and 2-hour jobs holds 1,800 jobs per hour of capacity. A total over queues adds their hours and is not clock time.</li>
             <li><strong>Committed (h)</strong>: the queue's not-yet-running work in hours at its capacity, plus the front's feeds still awaiting observation: not-started jobs times the median walltime of a finished job, divided by the ceiling. The quantity the set points are read against.</li>
             <li><strong>Available (h)</strong>: the room below the high-water mark: the high-water mark minus the committed hours; what the front can still commit to the queue.</li>
             <li><strong>Runnable (h)</strong>: the same as committed without the awaiting feeds: what PanDA holds for the queue now.</li>
@@ -85,7 +86,8 @@
     {% endif %}
 
     <h2 id="supply" class="front-section">Supply and capacity</h2>
-    <p class="mb-2">Both bars are hours of work at the queues' capacity, on one scale.
+    <p class="mb-2">Both bars are hours of work at the queues' capacity, on one scale: one hour is the queue running at its ceiling for an hour,
+        and the totals add the queues, so 96 h of room is 24 h at each of four queues, not 96 hours of clock.
         Left, the ready work by priority: every sizable task in ready, each at its pinned queue's median walltime over ceiling.
         Right, the room by queue: the high-water mark minus the committed hours, what the front can still commit.</p>
     <table class="table table-borderless table-sm w-auto mb-1"><tbody>
