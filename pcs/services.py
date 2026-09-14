@@ -6056,7 +6056,7 @@ def _holler_walltime_cap(task, jedi_task_id, residual):
 def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
                                panda_tasks_id=None, task_name=None,
                                residual=None, payload_version=None,
-                               manifest_rows=None):
+                               manifest_rows=None, output_datasets=None):
     """
     Record outcome of a JEDI submission.
 
@@ -6066,6 +6066,10 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
     submission shipped (EPICPROD_PAYLOAD.md), kept on the PandaTasks row.
     ``manifest_rows`` are the rows the attempt runs, kept on the row in the
     compact form of ``pcs.manifests`` as the basis of a later residual.
+    ``output_datasets`` are the datasets the submission doer created for
+    this attempt's outputs before submitting, with their rule and
+    metadata outcome (RUCIO_REGISTRATION_CONTRACT.md § 2): the explicit
+    Rucio reference of the attempt's outputs, kept on the row.
     """
     try:
         incoming = int(jedi_task_id)
@@ -6143,6 +6147,9 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
             _holler_walltime_cap(task, incoming, residual)
         if payload_version:
             meta['payload_version'] = str(payload_version)
+        if output_datasets:
+            meta['output_datasets'] = [dict(d) for d in output_datasets
+                                       if isinstance(d, dict) and d.get('dataset')]
         if manifest_rows:
             from . import manifests
             parsed = manifests.parse_rows('\n'.join(str(r) for r in manifest_rows))
