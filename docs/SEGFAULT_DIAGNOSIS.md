@@ -777,14 +777,17 @@ is its input.
 Software experts ask what is broken. They receive the package and the
 handoff text, and nothing they have to assemble themselves.
 
-The production lead reviews segfault status as clear statements and
-action proposals: what is established, what was decided, and each open
-decision put as a question with a recommended answer that a yes settles
-(accept the stated loss, rerun the residual, file the issue whose draft
-is on the finding, send the note that is the finding's action). The
-resolutions are brought to the review, not extracted by asking, and
-filing an issue or writing to a site stays a human act (Torre,
-2026-09-13).
+The production lead runs the system and reviews segfault status as
+clear statements and action proposals: what is established, what was
+decided, and each open production decision put as a question with a
+recommended answer that a yes settles (accept the stated loss, rerun
+the residual). The resolutions are brought to the review, not
+extracted by asking. What the system produces beyond that is actionable
+handoffs, and they live in the findings: the issue draft with its row,
+image and command, the note to a site, complete and ready for the
+software experts and the sites to pick up from the findings page.
+Nothing is queued on the production lead, and no machinery offers to
+file an issue or write to a site (Torre, 2026-09-13).
 
 Two cases exceed the routine and call for a top model, selectively: a
 new crashing frame that no finding reads (the nightly study yields a
