@@ -786,6 +786,17 @@ resolutions are brought to the review, not extracted by asking, and
 filing an issue or writing to a site stays a human act (Torre,
 2026-09-13).
 
+Two cases exceed the routine and call for a top model, selectively: a
+new crashing frame that no finding reads (the nightly study yields a
+model reading; the finding is written only after its claims are
+checked against the source, and the frame's issue draft with it), and
+a crash cluster with no trace to read, whose reading comes from the
+per-host and per-day record (a node event, a site condition) or from
+reproduction. An LLM handling the nightly notice or a status review
+names such a case when it sees one and recommends the examination
+rather than reading it with a lesser model; everything else in the
+process is routine.
+
 ## Sequencing
 
 Each stage is a functional delivery, deployed and checked before the
