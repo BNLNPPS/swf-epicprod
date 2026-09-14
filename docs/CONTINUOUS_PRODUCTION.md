@@ -121,6 +121,40 @@ alarm surfacing is pending) and a renewal drumbeat. A non-interactive
 service credential is a later robustness improvement
 (JEDI_INTEGRATION.md follow-up 2), not a prerequisite.
 
+## Queue-side regulation: the ePIC job throttler
+
+JEDI can regulate job generation per queue. The ATLAS engine
+(`AtlasProdJobThrottler` over `JobThrottlerBase` in panda-server)
+generates jobs for a work queue only while the queued jobs (activated
+plus starting) stay under a multiple of the running jobs
+(`THROTTLE_THRESHOLD`, 2.0 by default) and under a queue limit
+(`NQUEUELIMIT`), and Harvester's `add_target_slots` raises that limit
+to build job pressure for a fleet. ePIC does not run it. The live
+`panda_jedi.cfg` registers `GenJobThrottler` for the epic VO, which
+returns unthrottled whenever the work queue has no share, and every
+epic work queue has none (verified 2026-09-14 in the configuration,
+the `jedi_work_queue` table and the throttler's log). A submitted task
+is therefore generated and activated in full within minutes
+(`nFiles=5000` per 10-second generator cycle), and the pressure front
+is today the only regulator of the activated pool at each queue.
+
+The target is two regulators in series. The front admits work from
+`ready` in priority order and never lets a queue run dry; an ePIC job
+throttler in JEDI paces generation per queue against what the queue
+is running, so a task's jobs enter `activated` at the rate the queue
+consumes them and a later high-priority task is not held behind a day
+of activated work. The engine is derived from the ATLAS one, twenty
+years of production experience, and tailored to ePIC: single-core
+jobs, tasks pinned to one queue, the epic work queues given shares,
+`NQUEUELIMIT` and `THROTTLE_THRESHOLD` set per queue from the measured
+record, corePower honest at every queue, and the front's canary and
+breaker state respected. We write the engine; registering it for the
+epic VO on the PanDA server and setting the work-queue shares are the
+PanDA team's actions. It follows the front, not precedes it: the front
+must run guarded before generation pacing is added underneath, and the
+engine's inputs (shares, corePower, honest job metrics) are the ones
+native scouts need as well.
+
 ## The submission ladder
 
 1. **Canary probe** — site integrity before production. A small
@@ -247,8 +281,12 @@ pressure front can reach.
    with notices and the operator recovery surface.
 6. Native scouts replace the canary payload gate for new
    configurations, once payload reporting and corePower are in place.
-7. Rucio exerciser and the Storage view.
-8. Probe and rider build-out (site-canary increments 8–9), extending
+7. The ePIC job throttler in JEDI: the engine derived from
+   `AtlasProdJobThrottler`, tailored to ePIC and registered for the
+   epic VO, with the work-queue shares and per-queue limits set from
+   the record; generation paced per queue under the front.
+8. Rucio exerciser and the Storage view.
+9. Probe and rider build-out (site-canary increments 8–9), extending
    node-level evidence to every node work reaches.
 
 ## Asks and open items
@@ -257,4 +295,7 @@ pressure front can reach.
   credential is in place; the action has not yet run for real).
 - corePower for the GREX queue; harvester refill and ceiling; the
   pull-mode trial (PanDA operations).
+- When the ePIC job throttler is ready: its registration for the epic
+  VO in `panda_jedi.cfg` and shares on the epic work queues (PanDA
+  operations).
 - Later: a non-interactive service credential for the dispatcher.
