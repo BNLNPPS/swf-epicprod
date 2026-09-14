@@ -779,15 +779,19 @@ handoff text, and nothing they have to assemble themselves.
 
 The production lead runs the system and reviews segfault status as
 clear statements and action proposals: what is established, what was
-decided, and each open production decision put as a question with a
-recommended answer that a yes settles (accept the stated loss, rerun
-the residual). The resolutions are brought to the review, not
-extracted by asking. What the system produces beyond that is actionable
-handoffs, and they live in the findings: the issue draft with its row,
-image and command, the note to a site, complete and ready for the
-software experts and the sites to pick up from the findings page.
-Nothing is queued on the production lead, and no machinery offers to
-file an issue or write to a site (Torre, 2026-09-13).
+decided, and the open questions, each with a recommended answer that a
+yes settles. Any question that brings the day's reading to a more
+complete and higher-quality close is legitimate to put to him, from a
+production decision (accept the stated loss, rerun the residual) to a
+reading he should confirm, a reproduction worth running, or a finding
+worth writing; the one thing never put to him is acting on the
+handoffs. The resolutions are brought to the review, not extracted by
+asking. What the system produces beyond that is actionable handoffs,
+and they live in the findings: the issue draft with its row, image and
+command, the note to a site, complete and ready for the software
+experts and the sites to pick up from the findings page. Nothing is
+queued on the production lead, and no machinery offers to file an
+issue or write to a site (Torre, 2026-09-13).
 
 Two cases exceed the routine and call for a top model, selectively: a
 new crashing frame that no finding reads (the nightly study yields a
