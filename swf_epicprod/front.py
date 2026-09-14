@@ -170,7 +170,7 @@ def _last_decision(queue):
     return (AppLog.objects.filter(app_name='epicprod',
                                   extra_data__action='front_decision',
                                   extra_data__subject_key=queue)
-            .order_by('-timestamp').values('timestamp', 'extra_data').first())
+            .order_by('-timestamp').values('id', 'timestamp', 'extra_data').first())
 
 
 def _recent_feeds(queue, window_s):
@@ -451,12 +451,16 @@ def run_cycle(*, dry_run=False, created_by='front'):
             changed = (last is None or last_extra.get('reason') != reason
                        or last_extra.get('state') != state)
             recorded = bool(is_feed or changed or stale or state == 'error')
-            decisions.append(dict(record, recorded=recorded))
+            # The record the page links to: this cycle's when written,
+            # else the standing one this decision repeats.
+            shown = dict(record, recorded=recorded,
+                         log_id=None if (recorded and not dry_run) else (last or {}).get('id'))
+            decisions.append(shown)
             if dry_run or not recorded:
                 continue
             depth = (f"{record.get('committed_h')} h" if record.get('committed_h') is not None
                      else 'no calibration')
-            _safe(f'{queue} record', lambda: log_epicprod_action(
+            shown['log_id'] = _safe(f'{queue} record', lambda: log_epicprod_action(
                 'front', 'front_decision', subject_type='panda_queue',
                 subject_key=queue, username=created_by, outcome=state,
                 sublevel='normal' if (is_feed or state == 'error') else 'low',

@@ -36,7 +36,7 @@
                     <li><strong>would feed</strong> (shadow mode) or <strong>fed</strong>: the next eligible task was released, or in shadow mode would have been.</li>
                     <li><strong>awaiting observation</strong>: a feed is younger than the activation window (600 s); it counts as committed depth until the census shows its jobs.</li>
                     <li><strong>idle capacity</strong>: work is pending but the queue runs below 30% of its ceiling, and has done so for longer than its start latency since the front's last feed; the worker supply or the site, not the front, is short.</li>
-                    <li><strong>degraded</strong>: a gate is red; the reason names it.</li>
+                    <li><strong>degraded</strong>: a gate is red (canary, credential, breaker, or a failure detector); the reason names which.</li>
                     <li><strong>oversize</strong>: the next eligible task alone exceeds the high-water mark; the operator decides.</li>
                     <li><strong>held</strong>: the front or the queue's feed switch is off, a cap would be passed, the feed would pass the high-water mark, the task cannot be sized, or the queue has no calibration.</li>
                     <li><strong>no work</strong>: nothing in ready is eligible for the queue.</li>
@@ -44,14 +44,14 @@
                 </ul>
             </li>
             <li><strong>Reason</strong>, the code behind the state:
-                <strong>front_off</strong>, <strong>queue_off</strong> (a switch);
-                <strong>breaker_&lt;state&gt;</strong> (the breaker is not closed);
+                <strong>front_off</strong> (the front is off), <strong>queue_off</strong> (the queue's feed is off);
+                <strong>breaker_open</strong> (the breaker is open);
                 <strong>credential</strong> (the nightly credential check is not ok, or older than 36 h);
                 <strong>canary</strong> (the passive canary verdict is failing, or its evidence older than 24 h);
                 <strong>burn_through</strong> (in the last 6 h at least 10 failures, half of them fast, none finished);
                 <strong>failure_window</strong> (in the last 6 h at least 50 outcomes, 60% failed);
                 <strong>awaiting_observation</strong>; <strong>no_calibration</strong> (no finished jobs in 14 days to size the queue);
-                <strong>supplied</strong>; <strong>not_pulling</strong>; <strong>no_eligible_task</strong>;
+                <strong>supplied</strong>; <strong>not_pulling</strong> (idle capacity); <strong>no_eligible_task</strong> (no work);
                 <strong>unsized_task</strong> (the next task's job count cannot be read);
                 <strong>oversize_task</strong>; <strong>would_exceed_high</strong>; <strong>task_cap</strong>; <strong>job_cap</strong>;
                 <strong>would_feed:&lt;task&gt;</strong> or <strong>fed:&lt;task&gt;</strong>.
@@ -62,15 +62,16 @@
             <li><strong>Running (jobs)</strong>: the queue's jobs running now.</li>
             <li><strong>Ceiling (jobs)</strong>: the queue's capacity as measured: the most jobs it ran at once in the last 14 days, or the running count now if higher.</li>
             <li><strong>Active tasks</strong>: production tasks pinned to the queue that have not ended; the task cap counts these.</li>
-            <li><strong>Set points (h)</strong>: the low-water mark, below which the front refills, and the high-water mark, which no feed passes; per queue on the System page.</li>
-            <li><strong>Caps</strong>: the task cap (active tasks after a feed) and, when set, the job cap (not-started jobs after a feed).</li>
-            <li><strong>Ready</strong>: tasks in ready pinned to the queue, and how many of them pass the readiness checks.</li>
+            <li><strong>Gates</strong>: the checks a queue must pass before the front feeds it: the canary, the credential, the breaker, and the two failure detectors (burn-through and the failure window). A red gate holds the queue.</li>
+            <li><strong>Set points (h)</strong>: two hours-of-work marks per queue. When the queue's committed hours fall below the low-water mark, the front feeds it; the front never feeds past the high-water mark. Set on the System page.</li>
+            <li><strong>Caps</strong>: the most active tasks the queue may hold after a feed and, when set, the most not-started jobs; a feed that would pass either is held.</li>
+            <li><strong>Ready</strong>: tasks in the ready state pinned to the queue, and how many of them pass the readiness checks.</li>
             <li><strong>Next candidate</strong>: the eligible task the front would release next, with its job count, its hours at capacity and its priority.</li>
-            <li><strong>Canary</strong>: the passive site canary's verdict for the queue and the age of its newest evidence.</li>
+            <li><strong>Canary</strong>: the site canary's verdict on the queue's health (healthy, degraded, failing) and the age of the evidence behind it.</li>
             <li><strong>Credential</strong>: the nightly production credential check's outcome and age.</li>
             <li><strong>Last 6 h</strong>: the queue's production jobs finished and failed in the last six hours, and the failures that died fast (in under a quarter of the median walltime).</li>
-            <li><strong>Breaker</strong>: the queue's latched stop, closed or open; opened by a detection or an operator, closed by an operator.</li>
-            <li><strong>Feed</strong>: the queue's feed switch.</li>
+            <li><strong>Breaker</strong>: a stop on feeding the queue that stays in place until someone clears it. Closed: feeding is allowed. Open: feeding is stopped. It opens when a failure detector trips or an operator opens it; an operator closes it.</li>
+            <li><strong>Feed</strong>: whether the front may feed this queue at all, on or off, set by an operator; the front switch above turns the whole front on or off.</li>
             <li>A feed is always recorded on the action stream; a hold when its reason changes, and hourly.</li>
         </ul>
     </details>
@@ -94,9 +95,9 @@
         <tbody>
         {% for r in rows %}
             <tr>
-                <td><a href="{% url 'monitor_app:panda_queue_detail' queue_name=r.queue %}">{{ r.queue }}</a></td>
+                <td><a href="{% url 'monitor_app:epic_queue_detail' queue_name=r.queue %}">{{ r.queue }}</a></td>
                 <td class="front-state-{{ r.state }}"><a href="{% url 'monitor_app:log_list' %}?app_name=epicprod&amp;instance_name=front" title="The decision records on the action stream">{{ r.state_label }}</a></td>
-                <td><a href="#definitions" class="front-def" title="What the reason means">{{ r.reason }}</a>{% if r.gate_reason %}: {{ r.gate_reason }}{% endif %}</td>
+                <td>{% if r.log_id %}<a href="{% url 'monitor_app:log_detail' log_id=r.log_id %}" title="This decision's record">{{ r.reason }}</a>{% else %}{{ r.reason }}{% endif %}{% if r.gate_reason %}: {{ r.gate_reason }}{% endif %}</td>
                 <td>{% if r.committed_h != None %}<a href="{% url 'monitor_app:panda_queue_census_json' %}" title="The queue census">{{ r.committed_h }}</a>{% else %}<span class="text-muted">no calibration</span>{% endif %}</td>
                 <td>{% if r.runnable_h != None %}<a href="{% url 'monitor_app:panda_queue_census_json' %}" title="The queue census">{{ r.runnable_h }}</a>{% endif %}</td>
                 <td><a href="{% url 'monitor_app:panda_jobs_list' %}?site={{ r.queue|urlencode }}" title="The queue's jobs">{{ r.not_started }}</a></td>

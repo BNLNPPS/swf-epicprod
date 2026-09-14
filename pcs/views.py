@@ -5985,6 +5985,7 @@ def front_page(request):
             'state': st or 'undecided',
             'state_label': labels.get(st, st or 'not yet decided'),
             'reason': d.get('reason', ''),
+            'log_id': d.get('log_id'),
             'gate_reason': d.get('gate_reason') or d.get('error') or '',
             'committed_h': d.get('committed_h'),
             'runnable_h': d.get('runnable_h'),
