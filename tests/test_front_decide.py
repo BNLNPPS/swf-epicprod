@@ -109,5 +109,22 @@ class DecideTest(unittest.TestCase):
         self.assertFalse(fast_detectors({'finished': 10, 'failed': 20, 'fast_failed': 20})['red'])
 
 
+
+class HoursSummaryTest(unittest.TestCase):
+    def test_ready_by_priority_and_available_room(self):
+        from swf_epicprod.front import hours_summary
+        backlog = {'Q': [entry('a', rows=1000, level=1), entry('b', rows=500, level=2),
+                         entry('c', rows=500, level=None), entry('d', rows=None)]}
+        latest = {'Q': {'median_walltime_h': 2.0, 'ceiling': 1000, 'committed_h': 6.0},
+                  'R': {'median_walltime_h': 1.0, 'ceiling': 100, 'committed_h': None}}
+        settings = {'Q': {'h_high': 24.0}, 'R': {'h_high': 24.0}}
+        out = hours_summary(backlog, latest, settings)
+        self.assertEqual(out['ready']['by_priority'], {'1': 2.0, '2': 1.0, '3': 0.0, 'unset': 1.0})
+        self.assertEqual(out['ready']['by_queue'], {'Q': 4.0})
+        self.assertEqual(out['ready']['total'], 4.0)
+        self.assertEqual(out['ready']['unsized_tasks'], 1)
+        self.assertEqual(out['available']['by_queue'], {'Q': 18.0, 'R': None})
+        self.assertEqual(out['available']['total'], 18.0)
+
 if __name__ == '__main__':
     unittest.main()

@@ -245,8 +245,10 @@ def ready_backlog():
             queue = pinned_site(task, cfg=cfg)
             entry['level'], entry['level_source'] = prodtask_priority_level(task)
             entry['problems'] = list(prodtask_readiness_problems(task))
-            if not entry['problems']:
-                entry['rows'] = task_rows(task, cfg)
+            # Rows are read for every ready task that can be sized, so
+            # the ready hours count the whole backlog, not only the
+            # eligible part; a task without a matched input has none.
+            entry['rows'] = task_rows(task, cfg)
         except Exception as exc:  # noqa: BLE001
             logger.exception('front: reading ready task %s failed', task.pk)
             entry['problems'].append(f'reading the task failed: {type(exc).__name__}: {exc}')
@@ -378,6 +380,45 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     return out
 
 
+def hours_summary(backlog, latest, settings_by_queue):
+    """The two quantities the front balances, in hours of work at the
+    queues' capacity. Pure.
+
+    ``ready``: the backlog's sizable tasks by priority level and by
+    queue, each task at its pinned queue's median walltime over ceiling.
+    ``available``: per queue the room below the high-water mark,
+    ``h_high - committed_h`` (None without a calibration), and the total.
+    """
+    ready = {'by_priority': {'1': 0.0, '2': 0.0, '3': 0.0, 'unset': 0.0},
+             'by_queue': {}, 'total': 0.0, 'unsized_tasks': 0}
+    for queue, entries in backlog.items():
+        d = latest.get(queue) or {}
+        median_h, ceiling = d.get('median_walltime_h'), int(d.get('ceiling') or 0)
+        for e in entries:
+            rows = e.get('rows')
+            if not rows or not median_h or ceiling <= 0:
+                ready['unsized_tasks'] += 1
+                continue
+            h = rows * median_h / ceiling
+            key = str(e['level']) if e.get('level') in (1, 2, 3) else 'unset'
+            ready['by_priority'][key] += h
+            ready['by_queue'][queue] = ready['by_queue'].get(queue, 0.0) + h
+            ready['total'] += h
+    available = {'by_queue': {}, 'total': 0.0}
+    for queue, d in latest.items():
+        committed = d.get('committed_h')
+        h_high = float((settings_by_queue.get(queue) or {}).get('h_high') or 0)
+        room = None if committed is None else max(0.0, h_high - float(committed))
+        available['by_queue'][queue] = None if room is None else round(room, 2)
+        available['total'] += room or 0.0
+    for k in list(ready['by_priority']):
+        ready['by_priority'][k] = round(ready['by_priority'][k], 2)
+    ready['by_queue'] = {q: round(v, 2) for q, v in ready['by_queue'].items()}
+    ready['total'] = round(ready['total'], 2)
+    available['total'] = round(available['total'], 2)
+    return {'ready': ready, 'available': available}
+
+
 # The cycle
 
 def run_cycle(*, dry_run=False, created_by='front'):
@@ -417,9 +458,11 @@ def run_cycle(*, dry_run=False, created_by='front'):
         'reason': f'credential check unreadable: {exc}'})
 
     decisions, written = [], 0
+    settings_by_queue = {}
     for queue in queues:
         settings = _safe(f'{queue} settings', lambda: queue_settings(queue),
                          lambda exc: dict(QUEUE_DEFAULTS))
+        settings_by_queue[queue] = settings
         canary = _safe(f'{queue} canary gate', lambda: _canary_gate(queue), lambda exc: {
             'status': 'unread', 'age_h': None, 'red': True,
             'reason': f'canary unreadable: {exc}'})
@@ -475,6 +518,8 @@ def run_cycle(*, dry_run=False, created_by='front'):
     latest = {}
     for d in decisions:
         latest[d['queue']] = d
+    hours = _safe('hours summary', lambda: hours_summary(backlog, latest, settings_by_queue),
+                  failed('hours summary'))
     summary = {'observed_at': (census or {}).get('observed_at') if census else None,
                'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
                'queues': len(queues), 'decisions_recorded': written,
@@ -485,7 +530,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
         state_payload = {'observed_at': summary['observed_at'], 'cycle_at': t0.isoformat(),
                          'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
                          'queues': latest, 'backlog': backlog, 'errors': errors,
-                         'duration_s': summary['duration_s']}
+                         'hours': hours, 'duration_s': summary['duration_s']}
         from monitor_app.cached_product import get_product
         _safe('state store', lambda: get_product(
             STATE_KEY, lambda: state_payload, ttl_seconds=STATE_TTL_S, refresh=True),
