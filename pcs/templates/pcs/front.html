@@ -56,7 +56,8 @@
                 <strong>oversize_task</strong>; <strong>would_exceed_high</strong>; <strong>task_cap</strong>; <strong>job_cap</strong>;
                 <strong>would_feed:&lt;task&gt;</strong> or <strong>fed:&lt;task&gt;</strong>.
             </li>
-            <li><strong>Hours</strong>, wherever the page says (h): hours of work at the queue's capacity. One hour is the queue running at its ceiling for an hour; a queue with 3,600 running slots and 2-hour jobs holds 1,800 jobs per hour of capacity. A total over queues adds their hours and is not clock time.</li>
+            <li><strong>Hours (h)</strong> in the table: hours of work at that queue's capacity, the time the queue takes to run the work at its ceiling. Not comparable across queues: 24 h at Google is 120 job-hours, 24 h at OSG is 86,000.</li>
+            <li><strong>Job-hours</strong> in the bars: one slot busy for one hour; comparable across queues, and a queue supplies its ceiling in job-hours per hour of clock.</li>
             <li><strong>Committed (h)</strong>: the queue's not-yet-running work in hours at its capacity, plus the front's feeds still awaiting observation: not-started jobs times the median walltime of a finished job, divided by the ceiling. The quantity the set points are read against.</li>
             <li><strong>Available (h)</strong>: the room below the high-water mark: the high-water mark minus the committed hours; what the front can still commit to the queue.</li>
             <li><strong>Runnable (h)</strong>: the same as committed without the awaiting feeds: what PanDA holds for the queue now.</li>
@@ -86,33 +87,32 @@
     {% endif %}
 
     <h2 id="supply" class="front-section">Supply and capacity</h2>
-    <p class="mb-2">Both bars are hours of work at the queues' capacity, on one scale: one hour is the queue running at its ceiling for an hour,
-        and the totals add the queues, so 96 h of room is 24 h at each of four queues, not 96 hours of clock.
-        Left, the ready work by priority: every sizable task in ready, each at its pinned queue's median walltime over ceiling.
-        Right, the room by queue: the high-water mark minus the committed hours, what the front can still commit.</p>
+    <p class="mb-2">Both bars are job-hours on one scale: one job-hour is one slot busy for one hour, so a queue with a ceiling of 5 jobs supplies 5 job-hours per hour of clock and one with 3,600 supplies 3,600.
+        Left, the ready work by priority: every sizable task in ready, its jobs times its queue's median walltime.
+        Right, the room by queue: the hours below the high-water mark times the queue's ceiling, what the front can still commit.</p>
     <table class="table table-borderless table-sm w-auto mb-1"><tbody>
         <tr>
-            <th class="pe-3 text-nowrap">Ready work</th>
+            <th class="pe-3 text-nowrap">Ready work (job-hours)</th>
             <td style="width: 40rem;">
                 <div style="display: flex; height: 1.6rem; background: #f1f1f1; border: 1px solid #ccc; border-radius: 0.2rem; overflow: hidden;">
                     {% for s in ready_segments %}<div title="{{ s.label }}: {{ s.hours }} h" style="width: {{ s.pct }}%; background: {{ s.color }};"></div>{% endfor %}
                 </div>
             </td>
-            <td class="text-nowrap ps-2"><strong>{{ ready_hours.total|default:0 }} h</strong>{% if unsized_tasks %} <span class="text-muted">({{ unsized_tasks }} task{{ unsized_tasks|pluralize }} not sizable)</span>{% endif %}</td>
+            <td class="text-nowrap ps-2"><strong>{{ ready_hours.total|default:0 }}</strong>{% if unsized_tasks %} <span class="text-muted">({{ unsized_tasks }} task{{ unsized_tasks|pluralize }} not sizable)</span>{% endif %}</td>
         </tr>
         <tr>
-            <th class="pe-3 text-nowrap">Available capacity</th>
+            <th class="pe-3 text-nowrap">Available capacity (job-hours)</th>
             <td>
                 <div style="display: flex; height: 1.6rem; background: #f1f1f1; border: 1px solid #ccc; border-radius: 0.2rem; overflow: hidden;">
                     {% for s in available_segments %}<div title="{{ s.label }}: {{ s.hours }} h" style="width: {{ s.pct }}%; background: {{ s.color }};"></div>{% endfor %}
                 </div>
             </td>
-            <td class="text-nowrap ps-2"><strong>{{ available_hours.total|default:0 }} h</strong></td>
+            <td class="text-nowrap ps-2"><strong>{{ available_hours.total|default:0 }}</strong></td>
         </tr>
     </tbody></table>
     <p class="mb-3 small">
-        {% for s in ready_segments %}<span style="display: inline-block; width: 0.9rem; height: 0.9rem; background: {{ s.color }}; vertical-align: middle;"></span> {{ s.label }} {{ s.hours }} h&nbsp;&nbsp; {% empty %}<span class="text-muted">No sizable task is in ready.</span>&nbsp;&nbsp; {% endfor %}
-        {% for s in available_segments %}<span style="display: inline-block; width: 0.9rem; height: 0.9rem; background: {{ s.color }}; vertical-align: middle;"></span> {{ s.label }} {{ s.hours }} h&nbsp;&nbsp; {% endfor %}
+        {% for s in ready_segments %}<span style="display: inline-block; width: 0.9rem; height: 0.9rem; background: {{ s.color }}; vertical-align: middle;"></span> {{ s.label }} {{ s.hours }}&nbsp;&nbsp; {% empty %}<span class="text-muted">No sizable task is in ready.</span>&nbsp;&nbsp; {% endfor %}
+        {% for s in available_segments %}<span style="display: inline-block; width: 0.9rem; height: 0.9rem; background: {{ s.color }}; vertical-align: middle;"></span> {{ s.label }} {{ s.hours }}&nbsp;&nbsp; {% endfor %}
     </p>
 
     <h2 id="queues" class="front-section">Queues</h2>

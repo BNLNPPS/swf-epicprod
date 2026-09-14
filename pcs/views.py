@@ -6016,7 +6016,7 @@ def front_page(request):
     ready = hours.get('ready') or {}
     available = hours.get('available') or {}
     for r in rows:
-        r['available_h'] = (available.get('by_queue') or {}).get(r['queue'])
+        r['available_h'] = (available.get('by_queue_h') or {}).get(r['queue'])
     scale = max(float(ready.get('total') or 0), float(available.get('total') or 0), 1.0)
     priority_colors = {'1': '#1f4e79', '2': '#2e75b6', '3': '#9dc3e6', 'unset': '#bfbfbf'}
     priority_labels = {'1': 'priority 1', '2': 'priority 2', '3': 'priority 3', 'unset': 'no priority'}

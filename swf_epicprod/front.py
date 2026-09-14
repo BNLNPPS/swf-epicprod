@@ -381,41 +381,46 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
 
 
 def hours_summary(backlog, latest, settings_by_queue):
-    """The two quantities the front balances, in hours of work at the
-    queues' capacity. Pure.
+    """The two quantities the front balances, in job-hours: one job-hour
+    is one slot for one hour, so a queue with a ceiling of N jobs
+    supplies N job-hours per hour of clock. Pure.
 
-    ``ready``: the backlog's sizable tasks by priority level and by
-    queue, each task at its pinned queue's median walltime over ceiling.
-    ``available``: per queue the room below the high-water mark,
-    ``h_high - committed_h`` (None without a calibration), and the total.
+    ``ready``: the backlog's sizable tasks, each rows times the pinned
+    queue's median walltime, by priority level and by queue.
+    ``available``: per queue the room below the high-water mark in hours
+    at capacity (``h_high - committed_h``, None without a calibration)
+    and that room times the ceiling in job-hours; and the totals.
     """
     ready = {'by_priority': {'1': 0.0, '2': 0.0, '3': 0.0, 'unset': 0.0},
              'by_queue': {}, 'total': 0.0, 'unsized_tasks': 0}
     for queue, entries in backlog.items():
         d = latest.get(queue) or {}
-        median_h, ceiling = d.get('median_walltime_h'), int(d.get('ceiling') or 0)
+        median_h = d.get('median_walltime_h')
         for e in entries:
             rows = e.get('rows')
-            if not rows or not median_h or ceiling <= 0:
+            if not rows or not median_h:
                 ready['unsized_tasks'] += 1
                 continue
-            h = rows * median_h / ceiling
+            jh = rows * median_h
             key = str(e['level']) if e.get('level') in (1, 2, 3) else 'unset'
-            ready['by_priority'][key] += h
-            ready['by_queue'][queue] = ready['by_queue'].get(queue, 0.0) + h
-            ready['total'] += h
-    available = {'by_queue': {}, 'total': 0.0}
+            ready['by_priority'][key] += jh
+            ready['by_queue'][queue] = ready['by_queue'].get(queue, 0.0) + jh
+            ready['total'] += jh
+    available = {'by_queue': {}, 'by_queue_h': {}, 'total': 0.0}
     for queue, d in latest.items():
         committed = d.get('committed_h')
+        ceiling = int(d.get('ceiling') or 0)
         h_high = float((settings_by_queue.get(queue) or {}).get('h_high') or 0)
-        room = None if committed is None else max(0.0, h_high - float(committed))
-        available['by_queue'][queue] = None if room is None else round(room, 2)
-        available['total'] += room or 0.0
+        room_h = None if committed is None else max(0.0, h_high - float(committed))
+        available['by_queue_h'][queue] = None if room_h is None else round(room_h, 2)
+        room_jh = None if room_h is None else round(room_h * ceiling, 1)
+        available['by_queue'][queue] = room_jh
+        available['total'] += room_jh or 0.0
     for k in list(ready['by_priority']):
-        ready['by_priority'][k] = round(ready['by_priority'][k], 2)
-    ready['by_queue'] = {q: round(v, 2) for q, v in ready['by_queue'].items()}
-    ready['total'] = round(ready['total'], 2)
-    available['total'] = round(available['total'], 2)
+        ready['by_priority'][k] = round(ready['by_priority'][k], 1)
+    ready['by_queue'] = {q: round(v, 1) for q, v in ready['by_queue'].items()}
+    ready['total'] = round(ready['total'], 1)
+    available['total'] = round(available['total'], 1)
     return {'ready': ready, 'available': available}
 
 
