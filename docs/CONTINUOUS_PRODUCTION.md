@@ -419,6 +419,18 @@ task breaker pauses the task and withholds it at every queue; a queue
 breaker withholds every task from the queue; the global breaker stops
 the front and takes precedence.
 
+Below the queue, the node: a black hole node kills every job it takes
+within minutes inside a queue that is otherwise healthy, and the queue
+breaker would stop the healthy queue to stop it. The node-level
+instrument is the site canary's node guard (site-canary
+docs/NODE_GUARD.md): every five minutes the window's terminal jobs per
+queue and host are judged, a node whose jobs mostly fail, fail fast and
+belong to tasks that finish on the queue's other nodes is a black hole,
+a burst past a node count is read as the queue's event and handed here,
+and the verdicts are on the Node guard page. It runs in shadow mode
+first; its exclusion (the published list, the wrapper and landing
+checks, the OSG clause) follows.
+
 Until the alarm-queue detection modules exist, the dispatcher's own
 gate computes the two fast conditions from the job record: burn-through
 (failures ending in under a quarter of the queue's median finished
