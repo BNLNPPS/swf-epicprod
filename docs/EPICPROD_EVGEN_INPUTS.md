@@ -205,7 +205,11 @@ A path is accepted when it is not already in the recorded inventory,
 is not marked obsolete, and is known: implied by produced data (the
 worklist) or named by a dataset definition, or a directory above such
 paths (one registration of a generator-version directory yields one
-dataset per subdirectory holding files). The doer lists the
+dataset per subdirectory holding files); a path known by neither is
+asked of the door, anonymously, and accepted when it is a directory
+there, so a sample whose files have landed is registrable before its
+definition is on record. A door that cannot be asked refuses the
+request with that reason rather than reading as absent. The doer lists the
 directory on the JLab production door, takes each file's size and
 adler32 from the door (`xrdfs query checksum`; the server computes it
 and no bytes are read), and registers one dataset per directory

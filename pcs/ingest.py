@@ -200,10 +200,14 @@ def _evgen_from_catalog(evgen_path):
     return None, count, False
 
 
-def _evgen_path_from_name(csv_path):
-    """Fallback derivation path from the CSV file name alone: the name's
-    underscore tokens after the directory (generator, area, species, beam,
-    Q²) laid out as path segments."""
+def _evgen_paths_from_name(csv_path):
+    """Candidate EVGEN directories from the CSV file name, for a line
+    whose definition is not on record: the name's underscore tokens
+    (generator, process, species, beam, Q²) as path segments, under the
+    CSV's directory and under its physics area alone. Neither form holds
+    across the definitions repository (DIS samples sit under the area,
+    EXCLUSIVE ones under the full directory), so a candidate stands only
+    when the door confirms it (``_evgen_path_on_door``)."""
     directory = _os.path.dirname(csv_path)
     stem = _os.path.splitext(_os.path.basename(csv_path))[0]
     tokens = [t for t in stem.split('_') if t]
@@ -217,7 +221,33 @@ def _evgen_path_from_name(csv_path):
         else:
             merged.append(tokens[i])
             i += 1
-    return 'EVGEN/' + '/'.join([s for s in directory.split('/') if s] + merged)
+    segments = [s for s in directory.split('/') if s]
+    candidates = ['EVGEN/' + '/'.join(segments + merged)]
+    if len(segments) > 1:
+        candidates.append('EVGEN/' + '/'.join(segments[:1] + merged))
+    return candidates
+
+
+def _evgen_path_on_door(candidates, cache):
+    """The first candidate that is a directory on the input door, or
+    ('', reason) when none is or the door could not be asked. One door
+    call per candidate per analysis (``cache``)."""
+    from .services import evgen_door_directory_exists
+    unreachable = False
+    for c in candidates:
+        if c not in cache:
+            cache[c] = evgen_door_directory_exists('/' + c)
+        if cache[c] is True:
+            return c, ''
+        if cache[c] is None:
+            unreachable = True
+    if unreachable:
+        return '', ('not in the dataset definitions inventory and the input '
+                    'door could not be asked to confirm the path; try again '
+                    'or define the dataset')
+    return '', ('not in the dataset definitions inventory and no directory on '
+                'the input door for ' + ' or '.join('/' + c for c in candidates)
+                + '; define the dataset or check the path')
 
 
 # ── resolution ───────────────────────────────────────────────────────────────
@@ -278,7 +308,8 @@ def _family(derived, generator):
     return members
 
 
-def resolve_line(parsed, definitions=None, definitions_stamp=None):
+def resolve_line(parsed, definitions=None, definitions_stamp=None,
+                 door_cache=None):
     """Classify one parsed line against the catalog. Returns the row dict
     the page renders and the accept step re-derives; ``state`` is one of
     identified / new / near_miss / unresolved / unparsed."""
@@ -325,9 +356,19 @@ def resolve_line(parsed, definitions=None, definitions_stamp=None):
     if not evgen_path and definition is not None and definition.get('tail'):
         evgen_path = 'EVGEN/' + str(definition['tail']).strip('/')
     if not evgen_path:
-        evgen_path = _evgen_path_from_name(parsed['csv_path'])
+        # No definition on record: the name suggests the directory and the
+        # door confirms it; nothing is minted on a guessed path.
+        if door_cache is None:
+            door_cache = {}
+        evgen_path, note = _evgen_path_on_door(
+            _evgen_paths_from_name(parsed['csv_path']), door_cache)
+        if not evgen_path:
+            row['reason'] = note
+            return row
+        row['definition_note'] = ('not in the dataset definitions inventory; '
+                                  f'path confirmed on the input door: /{evgen_path}')
     row['evgen_path'] = evgen_path
-    if definition is None:
+    if definition is None and not row.get('definition_note'):
         row['definition_note'] = ('not in the dataset definitions inventory; '
                                   'identity derived from the path alone')
 
@@ -468,12 +509,13 @@ def analyze(text):
     definitions, stamp = _definitions_by_path()
     import logging
     rows = []
+    door_cache = {}
     for raw in (text or '').splitlines():
         if not raw.strip():
             continue
         parsed = parse_line(raw)
         try:
-            rows.append(resolve_line(parsed, definitions, stamp))
+            rows.append(resolve_line(parsed, definitions, stamp, door_cache))
         except Exception as e:                                  # noqa: BLE001
             # One line's failure is that line's row, never the whole
             # analysis; the error is logged and shown on the row.

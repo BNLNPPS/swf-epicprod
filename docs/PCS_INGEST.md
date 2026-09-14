@@ -78,9 +78,14 @@ tags:
    (the `dataset-definitions.json` snapshot). The EVGEN directory of
    the definition's first file, read from the local definitions
    clone, is the derivation path (`EVGEN/DIS/BeAGLE1.03.02-3.1/eAu/9x100/q2_1to10`);
-   the inventory's lowercased tail is the fallback, and the CSV file
-   name's tokens the fallback after that. A line whose definition is
-   not in the inventory says so on its row.
+   the inventory's lowercased tail is the fallback. A line with no
+   definition on record has its directory derived from the CSV file
+   name's tokens, under the CSV's directory and under its physics area
+   alone (the repository holds both layouts), and the candidate that is
+   a directory on the input door is taken; with neither on the door, or
+   the door not answering, the line is left with the reason and nothing
+   is minted on a guessed path. A line whose definition is not in the
+   inventory says so on its row.
 2. `physics_match.derive_physics` scans the path into the physics
    parameters; `find_or_create_physics_tag` in dry-run resolves the
    tag or reports that one would be created. Backgrounds resolve to

@@ -1854,6 +1854,32 @@ EPIC_VOLATILE_PREFIX = '/volatile/eic/EPIC/'
 # endpoint the production payload streams EVGEN from
 # (simulation_campaign_hepmc3 run.sh: XRDRURL root://dtn-eic.jlab.org/).
 XROOTD_EPIC_BASE = 'root://dtn-eic.jlab.org//volatile/eic/EPIC'
+XROOTD_EPIC_DOOR = 'root://dtn-eic.jlab.org'
+XROOTD_EPIC_PATH = '/volatile/eic/EPIC'
+
+
+def evgen_door_directory_exists(path, timeout_s=15):
+    """Whether ``/EVGEN/...`` is a directory on the collaboration door,
+    asked anonymously (the door lists the volatile area without a
+    credential, as the payload streams from it). True or False from the
+    door's answer; None when the door could not be asked (timeout, no
+    client, another failure), which a caller must not read as absent.
+    An operator action's check, bounded, never a page render's."""
+    import subprocess
+    target = XROOTD_EPIC_PATH + '/' + str(path).strip('/')
+    try:
+        p = subprocess.run(
+            ['xrdfs', XROOTD_EPIC_DOOR, 'stat', target],
+            capture_output=True, text=True, timeout=timeout_s,
+            env={k: v for k, v in _os.environ.items()
+                 if not k.startswith('X509_')})
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if p.returncode == 0:
+        return 'IsDir' in (p.stdout or '')
+    if 'no such file or directory' in (p.stderr or '').lower() or '[3011]' in (p.stderr or ''):
+        return False
+    return None
 
 
 def _jlab_did_exists(scope, name):
@@ -6840,11 +6866,22 @@ def evgen_register_request(*, path, created_by, convention=None):
         tails = _definition_tails()
         known = tail in tails or any(t.startswith(tail + '/') for t in tails)
     if not known:
-        raise ServiceError(
-            f'{p} is neither implied by produced data nor named by a dataset '
-            f'definition; registration is limited to known EVGEN paths and '
-            f'directories above them',
-            status=400)
+        # A sample new to the record: its files are on the door before any
+        # definition or produced data names it, so the door is asked.
+        on_door = evgen_door_directory_exists(p)
+        if on_door is None:
+            raise ServiceError(
+                f'{p} is neither implied by produced data nor named by a '
+                f'dataset definition, and the input door could not be asked '
+                f'whether it exists; try again, or define the dataset first',
+                status=503)
+        if not on_door:
+            raise ServiceError(
+                f'{p} is neither implied by produced data nor named by a '
+                f'dataset definition, and is not a directory on the input '
+                f'door ({XROOTD_EPIC_BASE}{p}); registration is limited to '
+                f'EVGEN directories that exist',
+                status=400)
     msg = {'msg_type': 'evgen_register', 'namespace': 'prodops',
            'path': p, 'created_by': created_by}
     from monitor_app.activemq_connection import ActiveMQConnectionManager
