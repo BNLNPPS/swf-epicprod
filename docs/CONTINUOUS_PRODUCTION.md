@@ -217,31 +217,41 @@ production-operations agent's `front_cycle` doer (swf-monitor
 enqueue, in shadow mode: `front.mode` is `shadow` and `front.enabled`
 is false at their seeded defaults, so every queue reads `held
 (front_off)` until the switches are turned, and in shadow mode a feed
-decision records `would_feed` and submits nothing. The settings are the
+decision records `would_feed` and submits nothing; `shadow` is the only
+mode the cycle accepts until the feed is built, and any other value is
+recorded as an error and decided as shadow. The settings are the
 SysConfig keys named above plus `front.queues`, `front.max_per_cycle`
 and `front.activation_window_s`; the census is
-`monitor_app/panda/census.py`; the decision records are the
-`front_decision` and `front_cycle` actions. The gates in place: the
-passive canary verdict with the age of its newest evidence window
-(failing, or older than 24 hours, is red), the nightly credential check
-(not ok, or older than 36 hours, is red), the breaker key, and the two
-fast detectors computed from the census's six-hour window (burn-through:
-at least 10 failures, half of them fast, none finished; failure window:
-at least 50 outcomes with 60% failed). Declared downtime is not yet an
-input.
+`monitor_app/panda/census.py`, which also carries each queue's
+non-terminal production tasks (the task cap's count) and p90 start
+latency (the idle rule's clock); the decision records are the
+`front_decision` and `front_cycle` actions, and the cycle stores its
+whole state as the cached product `front_state`, which the front page
+reads without computing. Every read the cycle makes is fenced: a
+failed census, gate, backlog or decision is recorded for the queue it
+concerns and the cycle continues; a gate that cannot be read reads
+red. The gates in place: the passive canary verdict with the age of its
+newest evidence window (failing, or older than 24 hours, is red), the
+nightly credential check (not ok, or older than 36 hours, is red), the
+breaker key, and the two fast detectors computed from the census's
+six-hour window (burn-through: at least 10 failures, half of them fast,
+none finished; failure window: at least 50 outcomes with 60% failed).
+Declared downtime is not yet an input. A ready task's declared job
+count comes from its manifest, which reads the input catalog, and is
+cached a day per task, per-job count and matched inputs.
 
 ### States and reason codes
 
 | State | Condition | Action | Reason |
 |---|---|---|---|
 | supplied | depth ≥ `h_low`, gates green | hold | `supplied` |
-| refill | depth < `h_low`, gates green, feed on, no submission awaiting observation | submit the highest-priority eligible task; at most two per cycle, never past `h_high` | `fed:<task>` |
+| refill | depth < `h_low`, gates green, feed on, no submission awaiting observation | submit the highest-priority eligible task; at most `max_per_cycle` per cycle, never past `h_high`, never past the caps | `fed:<task>` |
 | awaiting observation | a submission is younger than one activation window (two cycles) | hold; count the submission as committed depth | `awaiting_observation` |
-| idle capacity | running below a fraction of the ceiling while depth > 0 for longer than the queue's p90 start latency | hold; notice (worker supply or site, not the front) | `not_pulling` |
+| idle capacity | running below a fraction of the ceiling while depth > 0, for longer than the queue's p90 start latency since the front's last feed | hold; notice (worker supply or site, not the front) | `not_pulling` |
 | degraded | a gate is red: canary failing or its window stale, burn-through or windowed failure rate over threshold, declared downtime inside the horizon, credential invalid | hold; breaker opens | `canary`, `burn_through`, `failure_window`, `downtime`, `credential` |
 | half open | the breaker's cause has cleared and policy allows automatic recovery | submit one task and wait for completions; on failure reopen with a doubled wait | `half_open` |
-| held by operator | queue feed off or front off | hold | `queue_off`, `front_off` |
-| oversize | the next eligible task exceeds `h_high` (phase one) | hold for the operator's decision | `oversize_task` |
+| held | queue feed off or front off; a feed that would pass `h_high`; the task or job cap; a task that cannot be sized; no calibration for the queue | hold | `queue_off`, `front_off`, `would_exceed_high`, `task_cap`, `job_cap`, `unsized_task`, `no_calibration` |
+| oversize | the next eligible task alone exceeds `h_high` (phase one) | hold for the operator's decision | `oversize_task` |
 | no work | nothing in `ready` is eligible for the queue | hold; the page states the starvation | `no_eligible_task` |
 
 Three rules cover delayed observation. A submission counts as
@@ -296,6 +306,9 @@ service credential is a later robustness improvement
 
 ## Queue-side regulation: the ePIC job throttler
 
+The engine's design and build plan are in
+[EPIC_JOB_THROTTLER.md](EPIC_JOB_THROTTLER.md).
+
 JEDI can regulate job generation per queue. The ATLAS engine
 (`AtlasProdJobThrottler` over `JobThrottlerBase` in panda-server)
 generates jobs for a work queue only while the queued jobs (activated
@@ -321,9 +334,7 @@ years of production experience, and tailored to ePIC: single-core
 jobs, tasks pinned to one queue, the epic work queues given shares,
 `NQUEUELIMIT` and `THROTTLE_THRESHOLD` set per queue from the measured
 record, corePower honest at every queue, and the front's canary and
-breaker state respected. We write the engine; registering it for the
-epic VO on the PanDA server and setting the work-queue shares are the
-PanDA team's actions. It is built as a parallel track while the front
+breaker state respected. It is built as a parallel track while the front
 commissions: the front runs guarded first, the engine's per-queue
 limits are set from the front's shadow-mode record, and its inputs
 (shares, corePower, honest job metrics) are the ones native scouts
@@ -500,7 +511,4 @@ pressure front can reach.
   credential is in place; the action has not yet run for real).
 - corePower for the GREX queue; harvester refill and ceiling; the
   pull-mode trial (PanDA operations).
-- When the ePIC job throttler is ready: its registration for the epic
-  VO in `panda_jedi.cfg` and shares on the epic work queues (PanDA
-  operations).
 - Later: a non-interactive service credential for the dispatcher.

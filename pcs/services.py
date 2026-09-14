@@ -1573,7 +1573,7 @@ def prodtask_readiness_problems(task):
     # (CONTINUOUS_PRODUCTION.md, The intake). Local reads only: readiness
     # renders on the compose page for every listed task.
     from .commands import (pinned_site, prodtask_events_per_job,
-                           prodtask_priority_level)
+                           prodtask_priority_level, prodtask_task_priority)
     data = cfg.get('data') or {}
     if not internal and task.dataset_id:
         if prodtask_events_per_job(task, cfg=cfg) <= 0:
@@ -1591,6 +1591,10 @@ def prodtask_readiness_problems(task):
         problems.append(
             'No priority: set it on the task, the campaign plan entry, or '
             'the request.')
+    try:
+        prodtask_task_priority(task, cfg=cfg)
+    except ValueError as exc:
+        problems.append(str(exc))
     site = pinned_site(task, cfg=cfg, ds=ds)
     maxtime, maxrss = _queue_limits(site)
     hours = cfg.get('target_hours_per_job')

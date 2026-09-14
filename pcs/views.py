@@ -5955,62 +5955,66 @@ def stash_page(request):
 
 def front_page(request):
     """The pressure front (docs/CONTINUOUS_PRODUCTION.md, The dispatcher):
-    per regulated queue its latest decision (state, reason, depth, set
-    points, gates), the switches, and the ordered ready backlog with
-    per-queue eligibility. Reads the decision records and PCS only: a
-    page that reaches PanDA to render hangs when PanDA does, so the
-    census numbers come from the records the cycle wrote.
+    per regulated queue the cycle's latest decision (state, reason,
+    depth, set points, gates), the switches, and the ready backlog in
+    priority order with each task's eligibility. The page reads the
+    state the cycle stored (the cached product ``front_state``) and the
+    switches; it computes nothing and reaches neither PanDA nor Rucio.
     """
-    from monitor_app.models import AppLog, SysConfig
-    from swf_epicprod.front import DEFAULT_QUEUES, QUEUE_DEFAULTS, ready_backlog
+    from monitor_app.models import CachedProduct, SysConfig
+    from swf_epicprod.front import DEFAULT_QUEUES, QUEUE_DEFAULTS, STATE_KEY
 
     config = SysConfig.get_config()
-    enabled = bool(config.get('front.enabled', False))
-    mode = str(config.get('front.mode', 'shadow'))
+    row = CachedProduct.objects.filter(key=STATE_KEY).first()
+    state = (row.value if row else None) or {}
     queues = list(config.get('front.queues') or DEFAULT_QUEUES)
     labels = {'supplied': 'supplied', 'fed': 'fed', 'would_feed': 'would feed',
               'awaiting_observation': 'awaiting observation',
               'idle_capacity': 'idle capacity', 'degraded': 'degraded',
-              'oversize': 'oversize', 'held': 'held', 'no_work': 'no work'}
+              'oversize': 'oversize', 'held': 'held', 'no_work': 'no work',
+              'error': 'error'}
+    latest = state.get('queues') or {}
     rows = []
     for queue in queues:
-        last = (AppLog.objects.filter(app_name='epicprod',
-                                      extra_data__action='front_decision',
-                                      extra_data__subject_key=queue)
-                .order_by('-timestamp').values('timestamp', 'extra_data').first())
-        extra = (last or {}).get('extra_data') or {}
-        settings = {k: config.get(f'front.queue.{queue}.{k}', d)
-                    for k, d in QUEUE_DEFAULTS.items()}
-        state = str(extra.get('state') or extra.get('outcome') or '')
+        d = latest.get(queue) or {}
+        settings = {k: config.get(f'front.queue.{queue}.{k}', v)
+                    for k, v in QUEUE_DEFAULTS.items()}
+        st = str(d.get('state') or '')
         rows.append({
             'queue': queue,
-            'state': state or 'undecided',
-            'state_label': labels.get(state, state or 'not yet decided'),
-            'reason': extra.get('reason', ''),
-            'committed_h': extra.get('committed_h'),
-            'runnable_h': extra.get('runnable_h'),
-            'not_started': extra.get('not_started', ''),
-            'running': extra.get('running', ''),
-            'ceiling': extra.get('ceiling', ''),
+            'state': st or 'undecided',
+            'state_label': labels.get(st, st or 'not yet decided'),
+            'reason': d.get('reason', ''),
+            'gate_reason': d.get('gate_reason') or d.get('error') or '',
+            'committed_h': d.get('committed_h'),
+            'runnable_h': d.get('runnable_h'),
+            'not_started': d.get('not_started', ''),
+            'running': d.get('running', ''),
+            'ceiling': d.get('ceiling', ''),
+            'tasks_active': d.get('tasks_active', ''),
             'h_low': settings['h_low'], 'h_high': settings['h_high'],
-            'ready_eligible': extra.get('ready_eligible', 0),
-            'ready_total': extra.get('ready_total', 0),
-            'candidate': extra.get('candidate', ''),
-            'candidate_rows': extra.get('candidate_rows'),
-            'candidate_level': extra.get('candidate_level'),
-            'canary': extra.get('canary', ''), 'canary_age_h': extra.get('canary_age_h'),
-            'credential': extra.get('credential', ''),
-            'credential_age_h': extra.get('credential_age_h'),
-            'gate_finished': extra.get('gate_finished', ''),
-            'gate_failed': extra.get('gate_failed', ''),
-            'gate_fast_failed': extra.get('gate_fast_failed', ''),
+            't_max': settings['t_max'], 'j_max': settings['j_max'],
+            'ready_eligible': d.get('ready_eligible', 0),
+            'ready_total': d.get('ready_total', 0),
+            'candidate': d.get('candidate', ''),
+            'candidate_rows': d.get('candidate_rows'),
+            'candidate_level': d.get('candidate_level'),
+            'candidate_h': d.get('candidate_h'),
+            'canary': d.get('canary', ''), 'canary_age_h': d.get('canary_age_h'),
+            'credential': d.get('credential', ''),
+            'credential_age_h': d.get('credential_age_h'),
+            'gate_finished': d.get('gate_finished', ''),
+            'gate_failed': d.get('gate_failed', ''),
+            'gate_fast_failed': d.get('gate_fast_failed', ''),
             'breaker': settings['breaker'], 'feed_switch': bool(settings['feed']),
-            'decided_at': (last or {}).get('timestamp'),
         })
-    last_cycle = (AppLog.objects.filter(app_name='epicprod',
-                                        extra_data__action='front_cycle')
-                  .order_by('-timestamp').values('timestamp', 'extra_data').first())
     return render(request, 'pcs/front.html', {
-        'enabled': enabled, 'mode': mode, 'rows': rows,
-        'backlog': ready_backlog(), 'last_cycle': last_cycle,
+        'enabled': bool(config.get('front.enabled', False)),
+        'mode': str(config.get('front.mode', 'shadow')),
+        'state': state,
+        'never_run': not state,
+        'cycle_at': state.get('cycle_at'),
+        'errors': state.get('errors') or [],
+        'rows': rows,
+        'backlog': state.get('backlog') or {},
     })

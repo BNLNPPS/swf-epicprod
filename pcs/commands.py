@@ -999,17 +999,23 @@ def prodtask_priority_level(task):
     return None, 'none'
 
 
-def prodtask_task_priority(task):
+def prodtask_task_priority(task, cfg=None):
     """The PanDA ``taskPriority`` of a task and how it was set: an
     explicit value on the task's overrides (an operator's escalation) or
-    on its configuration's ``task_priority``, else the band of its
-    priority level. Returns ``(value, {'level', 'source'})``."""
-    override = (task.overrides or {}).get('task_priority')
-    if override not in (None, ''):
-        return int(override), {'level': None, 'source': 'override'}
-    cfg_value = ((task.prod_config.data or {}) if task.prod_config_id else {}).get('task_priority')
-    if cfg_value not in (None, ''):
-        return int(cfg_value), {'level': None, 'source': 'config'}
+    on the effective configuration's ``task_priority``, else the band of
+    its priority level. Returns ``(value, {'level', 'source'})``; raises
+    ValueError when an explicit value is not an integer."""
+    if cfg is None:
+        cfg = task.get_effective_config()
+    for source, value in (('override', (task.overrides or {}).get('task_priority')),
+                          ('config', (cfg.get('data') or {}).get('task_priority'))):
+        if value in (None, ''):
+            continue
+        try:
+            return int(value), {'level': None, 'source': source}
+        except (TypeError, ValueError):
+            raise ValueError(
+                f'task_priority on the {source} is {value!r}, not an integer')
     level, source = prodtask_priority_level(task)
     return TASK_PRIORITY_BY_LEVEL.get(level, TASK_PRIORITY_UNSET), {'level': level, 'source': source}
 
@@ -1135,7 +1141,7 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         if cap:
             residual_coverage['walltime']['queue_limit'] = cap
 
-    task_priority, priority_source = prodtask_task_priority(task)
+    task_priority, priority_source = prodtask_task_priority(task, cfg=cfg)
 
     return {
         'outDS': out_ds,
