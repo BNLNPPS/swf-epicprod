@@ -248,6 +248,58 @@ def load_metadata_file(filepath: str) -> Dict[str, Any]:
     return metadata
 
 
+# The output name forms the payload registers, so a derived name keeps the
+# form: the attempt's mark goes before the level suffix, never after .root.
+OUTPUT_SUFFIXES = ('.eicrecon.edm4eic.root', '.edm4hep.root', '.hepmc3.tree.root')
+
+
+def derived_did_name(did_name: str, mark: str) -> str:
+    """``<name>.p<mark>.<level suffix>``: the original name carrying the
+    attempt's own mark, for an output whose name another attempt's
+    different content already holds (docs/EPICPROD_PAYLOAD.md)."""
+    for suffix in OUTPUT_SUFFIXES:
+        if did_name.endswith(suffix):
+            return f"{did_name[:-len(suffix)]}.p{mark}{suffix}"
+    return f"{did_name}.p{mark}"
+
+
+def _register_diverted(client, scope, upload_items, args):
+    """Register the job's validated outputs under derived names, in their
+    own datasets, when the names they owe hold different content. The
+    mark is the PanDA job id (``PANDAID``), the attempt's own identity.
+    Returns the derived DIDs, comma-joined, or '' when nothing could be
+    registered; the divergence is a person's to resolve through content
+    validation, so nothing here fails the job."""
+    mark = str(os.environ.get('PANDAID') or '').strip() or datetime_mark()
+    diverted = []
+    for item in upload_items:
+        derived = dict(item, did_name=derived_did_name(item['did_name'], mark))
+        derived.pop('dataset_meta', None)
+        derived.pop('lifetime', None)
+        try:
+            UploadClient(logger=logging.getLogger('upload_client')).upload([derived])
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger('upload_client').error(
+                "diverted registration of %s:%s failed: %s", scope, derived['did_name'], exc)
+            continue
+        if args.events is not None:
+            try:
+                client.set_metadata(scope, derived['did_name'], 'events', int(args.events))
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger('upload_client').error(
+                    "events not set on diverted %s:%s: %s", scope, derived['did_name'], exc)
+        logging.getLogger('upload_client').warning(
+            "output %s:%s holds different content; this attempt's output registered as %s:%s",
+            scope, item['did_name'], scope, derived['did_name'])
+        diverted.append(derived['did_name'])
+    return ','.join(diverted)
+
+
+def datetime_mark() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog='Register to RUCIO',
@@ -447,6 +499,15 @@ if __name__ == "__main__":
                 try:
                     declared = client.get_metadata(scope, ds_name, plugin='ALL')
                 except Exception as exc:  # noqa: BLE001
+                    # A dataset with no metadata of its own (a canary's flat
+                    # dataset) answers "no metadata found": it declares
+                    # nothing, which is a reading, not an error.
+                    if 'no metadata found' in str(exc).lower():
+                        comparison[ds_name] = {'declared': False, 'agree': 0, 'differ': {},
+                                               'absent': sorted(dataset_meta)}
+                        logger.info("dataset %s:%s declares no metadata; the job read %d keys",
+                                    scope, ds_name, len(dataset_meta))
+                        continue
                     logger.error("metadata on dataset %s:%s unread: %s", scope, ds_name, exc)
                     comparison[ds_name] = {'unread': str(exc)}
                     continue

@@ -253,18 +253,22 @@ def stash_record(path):
     return entries
 
 
-def registration_record(stages, compare_path=""):
+def registration_record(stages, entries=(), compare_path=""):
     """The registration outcome from the stage log: registered with its
     DIDs, failed with what failed, or not reached; and, when the
     registration wrote one, its comparison of each dataset's declared
     metadata with the job's own reading (register_to_rucio.py), under
-    ``metadata``: per dataset the keys that agree, differ and are absent."""
+    ``metadata``: per dataset the keys that agree, differ and are absent.
+    ``dids`` are the DIDs of the stage's end lines; ``failed`` is what its
+    fail lines name, never a start line's level."""
     reg = stages.get("registration")
     if reg is None:
         record = {"outcome": "not reached", "dids": [], "failed": []}
     else:
-        dids = [d for d in reg["detail"] if d.startswith("/")]
-        failed = [d for d in reg["detail"] if not d.startswith("/")]
+        lines = [e for e in entries if e["stage"] == "registration"]
+        dids = [e["detail"] for e in lines
+                if e["status"] not in ("start", "fail") and e["detail"].startswith("/")]
+        failed = [e["detail"] for e in lines if e["status"] == "fail" and e["detail"]]
         if reg["status"] == "ok":
             outcome = "registered"
         elif reg["status"] == "fail":
@@ -365,7 +369,7 @@ def build_report(args):
             "full": output_record(args.full, full_events),
             "reco": output_record(args.reco, reco_events),
         },
-        "registration": registration_record(stages, args.metadata_compare),
+        "registration": registration_record(stages, entries, args.metadata_compare),
         "stash": stash_record(args.stash),
     }
     if args.note:

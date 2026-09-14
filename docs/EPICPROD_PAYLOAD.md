@@ -264,7 +264,9 @@ Registration adopts or diverts, and never discards validated data. An
 available replica under the owed name carrying the same event count is
 the same work: the job adopts it and exits success. One carrying
 different content is a genuine clash, and the file registers under a
-derived name — the original name with the attempt's own mark — with the
+derived name — the original name with the attempt's own mark, the
+PanDA job id before the level suffix,
+`<name>.p<pandaid>.eicrecon.edm4eic.root` — with the
 divergence left for content validation and a person, rather than the
 job throwing away physics to protect a naming rule. A diverted
 registration is recorded as the registration stage's outcome with the
