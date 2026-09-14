@@ -15,7 +15,9 @@ from monitor_app.mcp.common import _monitor_url, requires_authority
 # The label a human reads for each proposal category.
 ACTION_LABELS = {'propagation': 'campaign propagation',
                  'campaign_plan': 'campaign plan',
-                 'ping': 'ping', 'ping_fulfil': 'ping fulfilled'}
+                 'ping': 'ping', 'ping_fulfil': 'ping fulfilled',
+                 'standard_config': 'standard configuration',
+                 'registered_sample': 'registered sample'}
 
 # SysConfig key: usernames allowed to decide proposals through this MCP
 # surface (the bot relay). Default empty — MCP decides are refused until
@@ -33,6 +35,13 @@ def _proposal_line(row):
     elif row.action == 'ping_fulfil':
         change = 'mark fulfilled'
         subject = payload.get('title') or row.subject_key
+    elif row.action == 'registered_sample':
+        # Approval needs a requestor, which the bot relay cannot supply:
+        # the line says so and points at the page.
+        change = (f"take into {payload.get('campaign', '?')} as a request and draft task "
+                  f"(approve on the EVGEN inputs page, where the requestor, target "
+                  f"and priority are entered)")
+        subject = row.subject_key
     else:
         change = f"{pre.get('prev_state', '?')} -> {payload.get('state', '?')}"
         if payload.get('replaced_by'):
@@ -129,6 +138,9 @@ def _decide_proposal_sync(ref, decision, username, quality):
     if result.get('stale'):
         outcome = (f'{row.ref} was STALE: the record changed since the '
                    f'proposal saw it, so it was withdrawn, not executed.')
+    elif decision == 'approve' and row.action == 'registered_sample':
+        outcome = (f'{row.ref} approved by {username} and executed: '
+                   f'{row.subject_key} taken into the record.')
     elif decision == 'approve' and row.action in ('ping', 'ping_fulfil'):
         outcome = (f'{row.ref} approved by {username} and executed: '
                    f"{(row.payload or {}).get('title', row.subject_key)}.")

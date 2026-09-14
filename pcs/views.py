@@ -1768,6 +1768,30 @@ def evgen_inputs(request):
         row['priority'] = int(mark.priority) if mark else 0
         row['pmark'] = mark if row['priority'] else None
 
+    # The pending intake proposals of samples nobody asked for, on their
+    # rows (EPICPROD_EVGEN_INPUTS.md § From a registered sample to a
+    # task): the reviewer completes requestor, target and priority there.
+    try:
+        from ai.models import Proposal
+        pending = {p.subject_key: p for p in Proposal.objects.filter(
+            action='registered_sample', status='proposed')}
+    except Exception as e:                                    # noqa: BLE001
+        logging.getLogger(__name__).error('evgen_inputs: registered-sample proposals unread: %s', e)
+        pending = {}
+    for row in rows:
+        p = pending.get(row['did'])
+        row['proposal'] = None
+        if p is not None:
+            payload = p.payload or {}
+            row['proposal'] = {
+                'id': p.pk, 'ref': p.ref, 'comment': p.comment,
+                'campaign': payload.get('campaign', ''),
+                'physics_tag': payload.get('physics_tag') or 'new',
+                'pc': payload.get('pc') or '', 'events': payload.get('events'),
+                'proposer': p.proposer,
+                'proposed_at': p.created_at,
+            }
+
     # Registration coverage of produced data: the convention-side EVGEN
     # path of every recorded RECO/FULL output (the payload's physics-path
     # law), diffed against the recorded inventory — a registration

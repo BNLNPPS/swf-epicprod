@@ -163,7 +163,28 @@
         <td class="text-nowrap" data-order="{{ r.updated|date:'Y-m-d H:i'|default:'' }}">{% if r.updated %}{{ r.updated|date:'Y-m-d' }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
         <td>{{ r.rses }}</td>
         <td>{% if r.complete %}yes{% else %}<span class="text-muted">partial</span>{% endif %}</td>
-        <td>{% if r.dataset %}<a href="{% url 'pcs:datasets_compose' %}?selected={{ r.dataset.dataset_name|urlencode }}">{{ r.dataset.composed_name }}</a>{% else %}<span class="text-muted">unmatched</span>{% endif %}</td>
+        <td>{% if r.dataset %}<a href="{% url 'pcs:datasets_compose' %}?selected={{ r.dataset.dataset_name|urlencode }}">{{ r.dataset.composed_name }}</a>{% else %}<span class="text-muted">unmatched</span>{% endif %}
+          {% if r.proposal %}
+          <div class="ai-fill rs-proposal mt-1 p-2" data-proposal-id="{{ r.proposal.id }}" style="font-size:.9rem; max-width:34rem;">
+            <div><span class="ai-attr-text"><strong>{{ r.proposal.ref }}</strong> proposed intake into {{ r.proposal.campaign }}</span>
+              {% if r.proposal.pc %} as {{ r.proposal.pc }}{% elif r.proposal.physics_tag == 'new' %}, a new physics configuration{% else %}, physics tag {{ r.proposal.physics_tag }}{% endif %}</div>
+            <div class="text-muted mb-1" title="{{ r.proposal.comment }}">{{ r.proposal.comment|truncatechars:220 }}</div>
+            {% if user.is_authenticated %}
+            <div class="d-flex flex-wrap gap-1 align-items-center">
+              <input type="text" class="form-control form-control-sm rs-requestor" style="width:11rem;" placeholder="requestor (required)">
+              <input type="number" min="1" class="form-control form-control-sm rs-nevents" style="width:9rem;" placeholder="target events" value="{{ r.proposal.events|default_if_none:'' }}">
+              <select class="form-select form-select-sm rs-priority" style="width:8rem;"><option value="">priority</option><option value="1">1 (highest)</option><option value="2">2</option><option value="3">3</option></select>
+              <input type="text" class="form-control form-control-sm rs-campaign" style="width:6rem;" value="{{ r.proposal.campaign }}" title="campaign">
+              <button type="button" class="btn btn-sm btn-success rs-approve">Approve</button>
+              <button type="button" class="btn btn-sm btn-secondary rs-deny">Deny</button>
+              <span class="rs-status text-muted"></span>
+            </div>
+            {% else %}
+            <div class="text-muted">Approve on the direct face (login required): the requestor, target and priority are entered there.</div>
+            {% endif %}
+          </div>
+          {% endif %}
+        </td>
         <td{% if r.obsolete %} class="warning_fill" data-comment="{{ r.mark.comment }}"{% endif %}>{% if r.obsolete %}{{ r.mark.set_by }}<br>{{ r.mark.set_at|date:'Y-m-d' }}{% endif %}</td>
       </tr>
       {% endfor %}
@@ -584,6 +605,58 @@
                        window.innerWidth - floater.offsetWidth - 8);
     floater.style.left = Math.max(x, 4) + 'px';
     floater.style.top = (e.clientY + 16) + 'px';
+  });
+})();
+
+// Registered-sample proposals (EPICPROD_EVGEN_INPUTS.md § From a registered
+// sample to a task): approve with the requestor, target, priority and
+// campaign as amendments, or deny; the decide API executes the intake.
+(function () {
+  document.querySelectorAll('.rs-proposal').forEach(function (box) {
+    const id = box.dataset.proposalId;
+    const status = box.querySelector('.rs-status');
+    function decide(decision) {
+      const amendments = {};
+      const requestor = (box.querySelector('.rs-requestor') || {}).value || '';
+      const nevents = (box.querySelector('.rs-nevents') || {}).value || '';
+      const priority = (box.querySelector('.rs-priority') || {}).value || '';
+      const campaign = (box.querySelector('.rs-campaign') || {}).value || '';
+      if (decision === 'approve' && !requestor.trim()) {
+        status.textContent = 'A requestor is required to approve.';
+        return;
+      }
+      amendments[id] = {requestor: requestor.trim(), nevents: nevents || null,
+                        priority: priority || null, campaign: campaign.trim()};
+      const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1];
+      box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+      status.textContent = decision === 'approve' ? 'Taking in…' : 'Denying…';
+      fetch('{{ request.META.SCRIPT_NAME }}/ai/api/proposals/decide/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf || ''},
+        body: JSON.stringify({ids: [parseInt(id, 10)], decision: decision, amendments: amendments}),
+      }).then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
+        .then(function (res) {
+          if (!res.ok) {
+            status.textContent = res.d.detail || res.d.error || ('HTTP error');
+            box.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+            return;
+          }
+          const d = res.d;
+          if ((d.stale || []).length) {
+            status.textContent = 'Stale: the record already holds this sample; withdrawn.';
+          } else if (decision === 'approve') {
+            status.textContent = 'Taken in: the request and draft task exist; reload to see the match after the next update.';
+          } else {
+            status.textContent = 'Denied.';
+          }
+        })
+        .catch(function (e) {
+          status.textContent = 'Failed: ' + e;
+          box.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+        });
+    }
+    box.querySelector('.rs-approve') && box.querySelector('.rs-approve').addEventListener('click', function () { decide('approve'); });
+    box.querySelector('.rs-deny') && box.querySelector('.rs-deny').addEventListener('click', function () { decide('deny'); });
   });
 })();
 </script>

@@ -5974,6 +5974,15 @@ def refresh_evgen_rucio(*, apply=False, snapshot_dir=RUCIO_SNAPSHOT_DIR,
             summary['coverage'] = refresh_evgen_coverage_products()
         except Exception as e:                                # noqa: BLE001
             summary['errors'].append(f'coverage worklist refresh: {e}')
+        # Then the samples nobody asked for: proposed for intake, the
+        # pending proposals of samples since taken in withdrawn
+        # (EPICPROD_EVGEN_INPUTS.md § From a registered sample to a task).
+        try:
+            from swf_epicprod.registered_sample_proposer import propose_registered_samples
+            summary['registered_sample_proposals'] = propose_registered_samples(
+                created_by='evgen_sweep')
+        except Exception as e:                                # noqa: BLE001
+            summary['errors'].append(f'registered-sample proposals: {e}')
     return summary
 
 

@@ -252,6 +252,43 @@ over it before use, so a renewed proxy is picked up without an operator
 step. The nightly credential check reports the private copy's days
 left.
 
+### From a registered sample to a task
+
+A registered EVGEN dataset that no PCS evgen dataset matches is a
+sample nobody has asked for in the record: its physics is readable from
+its path, and what the path cannot say is what a request says, the
+requestor, the event target and the priority. The `registered_sample`
+proposal category (swf-monitor AI_PROPOSALS.md) carries such a sample
+into the record as a proposal a person completes.
+
+The proposer, `registered-sample`, runs as the last step of the
+assimilation, nightly and on the Update button: for each unmatched
+registered dataset whose physics derives from its path
+(`physics_match.derive_physics`, `derive_evgen`, `derive_background`,
+the single-particle sample), it proposes one intake into the current
+production campaign, with the path, the derived identity, the file and
+event counts and the registration date code-filled in the comment; a
+dataset whose physics does not derive is listed unmatched as today and
+proposes nothing. The scan heartbeat withdraws and re-derives at each
+run; a denied proposal is not repeated while the inputs stand.
+
+Approval is edit-then-approve on the EVGEN inputs page's unmatched
+rows and on the proposals page: the requestor is required, the target
+events and priority may be given then or later on the plan, and the
+campaign may be changed. The executor,
+`pcs.services.registered_sample_intake`, is one operator action: the
+EVGEN-stage record with the dataset's tail as its source location, the
+production edition on the campaign's release pair (never s0.r0), the
+request anchored on the production edition with the requestor, target
+and priority, and the draft task on it, in one transaction, with one
+origin-stamped `registered_sample_intake` event. The next assimilation
+matches the record to the dataset it came from. The precondition is
+that no PCS evgen dataset matches the DID and no request anchors on
+the configuration; a sample that has been taken in by another route is
+stale, never doubled. Reversibility is mitigable: editions are
+permanent identities, and a request and task made in error are
+withdrawn.
+
 ## Current state
 
 Implemented: the assimilation sweep, the input matcher, the catalog
