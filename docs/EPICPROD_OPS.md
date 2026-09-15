@@ -464,6 +464,37 @@ deployed path. Remaining: the activity health chip, and the matching
 Auto-notify the operator the moment the agent finishes, removing the manual
 refresh.
 
+## Production notices
+
+`scripts/prod-notify.py` speaks production activity and health into the
+operators' working sessions when something changes, so that an operator
+and the AI session at the prompt see it at the moment it appears and act
+in context. It is not the alarm engine or the action stream, which write
+the record for later reading; it is the sparse, deliberate delivery into
+the session that TeamComms Notify LLM defines.
+
+A cron script with no Django. Every five minutes it reads the record
+through the monitor's MCP tools over the loopback endpoint (the task
+census, the activity summary, harvester workers, the campaign status
+document, the node guard) and keeps a state file
+(`/data/wenauseic/swf-epicprod/prod-notify-state.json`) so that each
+condition speaks once when it appears and once when it clears. The first
+run seeds the state and says nothing. Triggers: a production task starts
+or ends (with its counts); a running task's failure rate over at least
+200 completed jobs passes 10 percent (again when it doubles); a queue
+holds more than 100 activated jobs with nothing running for 30 minutes;
+a production platform check turns error; a production credential has
+under 14 days left; a task finished two hours ago with no output
+arrival recorded; the node guard trips on a node. A notice is two or
+three lines with the numbers and the page link.
+
+Delivery: TJAI messaging to the sessions on this host, and TeamComms
+Notify LLM to the `prod-notify` topic when `--teamcomms-config` names a
+program connector configuration (`PROD_NOTIFY_TEAMCOMMS_CONFIG`); a
+session opts in by subscribing to the topic. A delivery failure is
+printed and the run exits 1; the state is written either way, so a
+notice is never repeated because its delivery failed.
+
 ## Harvester stdout records
 
 The Kubernetes harvester queues (BNL_ePIC_GOOGLE today) upload a
