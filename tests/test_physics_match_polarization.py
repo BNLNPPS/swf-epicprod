@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pcs.physics_match import derive_physics  # noqa: E402
+from pcs.physics_match import derive_evgen, derive_physics  # noqa: E402
 
 DJANGOH = 'EVGEN/DIS/DJANGOH4.6.10-2.0/CC/Rad/%s/9x275/%s'
 
@@ -49,3 +49,17 @@ def test_upsilon_states_derive_distinct_physics():
     one = derive_physics(UPSILON % ('Upsilon1S', '9x130', 'hiAcc'), beam='9x130')
     two = derive_physics(UPSILON % ('Upsilon2S', '9x130', 'hiAcc'), beam='9x130')
     assert {k for k in one if one[k] != two.get(k)} == {'state'}
+
+
+def test_afterburner_preset_from_abconv_path():
+    ev = derive_evgen(UPSILON % ('Upsilon3S', '9x275', 'hiDiv'))
+    assert ev == {'generator': 'eSTARlight', 'generator_version': '1.3.0-1.0',
+                  'afterburner_preset': 'ip6_hiDiv_275x9'}
+    ev = derive_evgen(UPSILON % ('Upsilon1S', '9x130', 'hiAcc'))
+    assert ev['afterburner_preset'] == 'ip6_ep_130x9'
+
+
+def test_no_preset_without_abconv_in_the_path():
+    ev = derive_evgen('EVGEN/DIS/DJANGOH4.6.10-2.0/CC/Rad/eMinus-pMinus/9x275/q2_100to1000')
+    assert 'afterburner_preset' not in ev
+    assert ev['radiative'] == 'on'

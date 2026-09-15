@@ -75,7 +75,7 @@ def _source_path(dataset):
 def evgen_identity(dataset):
     """(identity, provenance) for the edition's evgen axis.
 
-    identity: (generator, generator_version, radiative) lowercased, or
+    identity: (generator, generator_version, radiative, afterburner_preset) lowercased, or
     None when unresolved. provenance: 'tag' | 'path' | 'tag+path' |
     'path-over-tag' (conflict, path won) | 'unresolved'.
     """
@@ -87,13 +87,15 @@ def evgen_identity(dataset):
     if params.get('generator'):
         tag_key = (str(params.get('generator', '')).lower(),
                    str(params.get('generator_version', '')).lower(),
-                   str(params.get('radiative', '')).lower())
+                   str(params.get('radiative', '')).lower(),
+                   str(params.get('afterburner_preset', '')).lower())
     derived = derive_evgen(_source_path(dataset))
     path_key = None
     if derived and derived.get('generator'):
         path_key = (str(derived.get('generator', '')).lower(),
                     str(derived.get('generator_version', '')).lower(),
-                    str(derived.get('radiative', '')).lower())
+                    str(derived.get('radiative', '')).lower(),
+                    str(derived.get('afterburner_preset', '')).lower())
 
     if tag_key and path_key:
         if tag_key == path_key:

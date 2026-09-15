@@ -45,6 +45,8 @@ _MASS_RE    = re.compile(r'^ma_[0-9]')
 _CHANNEL_RE = re.compile(r'^aem')
 _UPSILON_RE = re.compile(r'^upsilon(1s|2s|3s)(photo|_threshold)_ab_(hiAcc|hiDiv)_(\d+x\d+)')
 _BEAMCONFIG = {'hiAcc', 'hiDiv'}
+#: proton energies at which the afterburner has one configuration (ip6_ep_)
+_AB_SINGLE_CONFIG_HADRON = {'130', '250'}
 _DECAY      = {'edecay', 'mudecay'}
 _CHARGE     = {'hplus', 'hminus'}
 _HELICITY   = {'hel_plus', 'hel_minus'}
@@ -303,9 +305,32 @@ def derive_evgen(path, gen_version=''):
     elif 'Rad' in segs:
         radiative = 'on'
 
+    # The afterburner preset is a generation-step setting (the beam
+    # crossing and optics the generated events were converted with), so
+    # it is part of the evgen tag. It is stated only for samples whose
+    # path records the conversion (an _ABCONV class): the preset is the
+    # IP6 configuration named by the beam-configuration segment, or the
+    # plain electron-proton one where the path names none.
+    preset = ''
+    if any(seg.endswith(_ABCONV) for seg in segs):
+        beam = next((seg for seg in segs if _BEAM_RE.match(seg)), '')
+        if beam:
+            e, h = beam.split('x', 1)
+            cfg = next((seg for seg in segs if seg in _BEAMCONFIG), '')
+            # The afterburner names its proton configurations
+            # ip6_hiacc_/ip6_hidiv_ at 41, 100 and 275 GeV and ip6_ep_ at
+            # 130 and 250 GeV, where it has one configuration; the path's
+            # beam-configuration segment selects among the former only.
+            if h in _AB_SINGLE_CONFIG_HADRON or not cfg:
+                preset = f'ip6_ep_{h}x{e}'
+            else:
+                preset = f'ip6_{cfg}_{h}x{e}'
+
     def _with_rad(params):
         if radiative:
             params['radiative'] = radiative
+        if preset:
+            params['afterburner_preset'] = preset
         return params
 
     gv = (gen_version or '').strip()

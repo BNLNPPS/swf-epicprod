@@ -2267,6 +2267,8 @@ def find_or_create_evgen_tag(params, *, created_by='csv_import', dry_run=False):
     # generators keep matching by (generator, generator_version) alone.
     if params.get('radiative'):
         match['parameters__radiative'] = params['radiative']
+    if params.get('afterburner_preset'):
+        match['parameters__afterburner_preset'] = params['afterburner_preset']
     matches = sorted(
         EvgenTag.objects.active().filter(**match),
         key=lambda t: (0 if t.status == 'locked' else 1, t.tag_number),

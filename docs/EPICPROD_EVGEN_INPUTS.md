@@ -63,6 +63,8 @@ re-sweepable.
 
 ## Matching
 
+The evgen tag carries what the generation step set: generator and version, radiative corrections where the path names them (`Rad`/`noRad`), and, for the afterburner-converted classes (an `_ABCONV` path segment), the afterburner preset the events were converted with (`afterburner_preset`), named as the afterburner names its IP6 configurations: `ip6_hiAcc_`/`ip6_hiDiv_` with the beam-configuration segment at 41, 100 and 275 GeV protons, `ip6_ep_` at 130 and 250 GeV where the afterburner has one configuration. Two samples differing in any of these are distinct evgen tags.
+
 A request resolves to a Rucio dataset when the request's path tokens appear, in
 order, as a subsequence of the Rucio DID's tokens, compared **exactly except for
 the Q² token**. Two consequences follow, and they are the whole point:

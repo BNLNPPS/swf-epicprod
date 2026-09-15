@@ -77,6 +77,7 @@ TAG_SCHEMAS = {
         'required': ['generator', 'generator_version'],
         'optional': [
             'signal_freq', 'signal_status', 'radiative',
+            'afterburner_preset',
             'bg_tag_prefix', 'bg_files',
             'notes',
         ],
@@ -85,6 +86,7 @@ TAG_SCHEMAS = {
         'model': 'EvgenTag',
         'choices': {
             'radiative': ['on', 'off'],
+            'afterburner_preset': ['ip6_hiAcc_275x9', 'ip6_hiDiv_275x9', 'ip6_ep_130x9'],
             'generator': [
                 'pythia8', 'EpIC', 'BeAGLE', 'eSTARlight', 'sartre',
                 'DEMPgen', 'lAger', 'rapgap', 'particle_gun',

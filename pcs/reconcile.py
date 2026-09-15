@@ -251,11 +251,13 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
                 from .services import find_or_create_evgen_tag
                 ident, _source = evgen_identity(candidate)
                 if ident is not None:
-                    generator, gen_version, radiative = ident
+                    generator, gen_version, radiative, preset = ident
                     params = {'generator': generator,
                               'generator_version': gen_version}
                     if radiative:
                         params['radiative'] = radiative
+                    if preset:
+                        params['afterburner_preset'] = preset
                     evgen_tag, _action = find_or_create_evgen_tag(
                         params, created_by=created_by or 'rucio_reconcile')
                     candidate.evgen_tag = evgen_tag
