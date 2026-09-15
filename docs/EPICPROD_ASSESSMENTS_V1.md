@@ -87,6 +87,8 @@ status document and computes the **mechanical verdict floor** —
 | `assessment_arrivals_stall_days` | `2` | no arrivals while a validated production target is incomplete → at least `attention`; no stall verdict is inferred when target completion is unavailable |
 | `assessment_platform_floor_exclude` | `campaign-assessments` | comma-separated platform check names the floor ignores — the assessment system's own bookkeeping must not raise campaign verdicts about itself; floor reasons name the specific non-ok checks |
 
+The testbed's checks (`monitor_app.system_status.TESTBED_CHECKS`) never reach the floor: the platform status member omits them from the campaign's evidence, whatever this key lists.
+
 Credential warning/expiry reuses `CREDENTIAL_EXPIRY_WARN_DAYS`: warning →
 `attention`, expired/missing → `alarm`.
 

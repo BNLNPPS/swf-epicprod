@@ -870,10 +870,14 @@ def system_status(campaign, window_start, window_end):
         incident['recovery_minutes'] for incident in non_ok
         if incident['recovery_minutes'] is not None
     ]
+    # Production platform checks only: the testbed's checks never enter
+    # a campaign's evidence (monitor_app.system_status.TESTBED_CHECKS).
+    from monitor_app.system_status import TESTBED_CHECKS
     current_non_ok = [
         {'name': row['name'], 'status': str(row.get('status') or 'unknown')}
         for row in current_by_name.values()
         if str(row.get('status') or '') not in ('ok', 'healthy')
+        and row['name'] not in TESTBED_CHECKS
     ]
     return _block('system_status', window_start, window_end, {
         'available': bool(summary.get('total')),
