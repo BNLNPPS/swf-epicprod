@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 _ET = ZoneInfo('America/New_York')
 from urllib.request import urlopen
 from urllib.parse import quote as urlquote
+from django.utils.html import escape
 from django.shortcuts import render, get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.contrib.auth.decorators import login_required
@@ -1147,11 +1148,16 @@ def tags_datatable_ajax(request, tag_type):
         compose_url = reverse('pcs:tag_compose', args=[tag_type])
         tag_url = f'{compose_url}?selected={urlquote(tag.tag_label)}'
         tag_link = f'<a href="{tag_url}">{tag.tag_label}</a>'
-        status_badge = (
-            f'<span class="badge bg-secondary">{tag.status}</span>'
-            if tag.status == 'draft'
-            else f'<span class="badge bg-success">{tag.status}</span>'
-        )
+        if getattr(tag, 'lifecycle', 'active') != 'active':
+            # A retired or superseded identity reads as such, not as a draft.
+            successor = getattr(tag, 'superseded_by', None)
+            label = tag.lifecycle + (f' by {successor.tag_label}' if successor else '')
+            status_badge = (f'<span class="badge bg-dark" title="{escape(tag.lifecycle_reason)}">'
+                            f'{escape(label)}</span>')
+        elif tag.status == 'draft':
+            status_badge = f'<span class="badge bg-secondary">{tag.status}</span>'
+        else:
+            status_badge = f'<span class="badge bg-success">{tag.status}</span>'
         row = [tag_link]
         if tag_type == 'p':
             row.append(tag.category.name)
