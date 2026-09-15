@@ -451,14 +451,69 @@ record as a resilience item.
 ## Declared downtime
 
 Measured health is not the only evidence; planned downtime is
-published and collectable. A downtime collector joins the
-production-operations drumbeat: the OSG Topology downtime feed for
-grid resources, the NERSC status API for Perlmutter, and
-operator-entered windows for sites publishing no feed. Declared
-windows surface on the EIC queues page as the next planned
-maintenance per queue, and enter the dispatcher's gate: a queue
-entering a declared window within the submission horizon is not fed,
-and its canary cadence tightens at window end to confirm recovery.
+published and collectable, and the first source is the CRIC ePIC's
+PanDA reads (datalake-cric.cern.ch, the DOMA instance named in
+`/etc/panda/panda_server.cfg`). Three CRIC records carry declared
+state, verified 2026-09-15:
+
+- **PanDA queue status rules** (`api/atlas/pandaqueuestatus/query/?json`,
+  `showall=1` for expired rules): per queue and activity, the value
+  (`OFFLINE`, `BROKEROFF`, `TEST`), the expiration, the reason, who set
+  it and when. This is the channel operators use and the one the pilot
+  and JEDI obey: the BNL farm downtime of 2026-09-14 was four `OFFLINE`
+  rules set by Xin at 02:18 UTC ("scheduled downtime") with expirations
+  from 21:18 UTC to 00:21 UTC the next day. A rule has no start; it acts
+  from the moment it is set.
+- **DDM endpoint status rules** (`api/atlas/ddmendpointstatus/query/?json`):
+  the same shape per storage endpoint and activity (read, write,
+  delete). Storage downtime is declared here.
+- **Downtime objects** (`api/core/downtime/query/?json`): a window with a
+  start, an end, a severity, a classification, the affected services and
+  an information URL, attached to a resource centre. Empty for EIC today
+  and fed by nothing (BNL-OSG carries no GOCDB or OSG-topology link), but
+  the record where a future window is declared ahead of time.
+
+Reading any of the three needs an authenticated identity; the production
+Rucio proxy the ops agent holds is accepted. The anonymous `pandaqueue`
+query shows only a queue's effective status, no expiry or reason. The
+pilot reads CRIC's cached queuedata, which lags a rule's expiration by
+minutes: E1_BNL's rule expired at 00:21 UTC and a pilot at 00:24 UTC
+still read it OFFLINE and aborted its job.
+
+**The collector.** `cric_declared_state` on the ops agent
+(`scripts/cric-declared-state.py`, ten-minutely by cron enqueue, directly
+invokable) reads the three records with the proxy and keeps the
+**declared record** in the entry store (swf-monitor
+`monitor_app/declared.py`; kind `declared`, context `cric`): one entry per
+rule or window, named by its source identity, with kind (queue, endpoint,
+site), target name, value or severity, activity, start, end, reason, who
+declared it and when, and a standing: `active` (in force now), `future`
+(a window not yet begun), `expired` (its end passed) or `cleared` (gone
+from CRIC before its end, with the instant it went). Every change is a
+version of the entry and a `declared_state_sync` action naming what
+appeared, expired or cleared, so the history is on the record without a
+table of its own. The record holds the EIC queues, the endpoints those
+queues name, and the resource centres behind them, nothing else.
+
+**Where it shows.** The EIC queues list carries a Declared column beside
+Status: the rule in force ("offline until 09/15 00:21 UTC: scheduled
+downtime, Xin") or the next future window ("downtime 09/20 08:00 to
+16:00 UTC"), blank when nothing is declared; the queue detail page has a
+Declared state card with what is in force, what is coming, and the
+recent history. The Rucio endpoints list carries the same column. No
+calendar view: the lines and the cards are the surface, and the record
+answers "was it declared at that time" for the readers below.
+
+**Readers, in order of arrival.** Error attribution: a job failing on
+"specified queue is OFFLINE" inside a declared window, or within ten
+minutes after its end (the cache lag), is attributed to the declaration,
+not the site. The node guard, the canary assessment and the dispatcher's
+gate read the record next: a queue offline by declaration is not judged
+for black holes, its passive failure rate is not a site verdict, and a
+queue entering a declared window within the submission horizon is not
+fed; the canary cadence tightens at window end to confirm recovery. The
+OSG Topology feed, the NERSC status API and operator-entered windows are
+later sources into the same record.
 
 ## Payload metrics
 
