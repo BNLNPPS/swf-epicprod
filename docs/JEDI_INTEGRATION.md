@@ -631,6 +631,19 @@ means `skip_scout=true`. New configs use the last saved toggle state from the
 user's database-backed JSON preferences; with no remembered value, scout mode
 starts off.
 
+Memory is fixed: the spec's `ramCount` (the config's `ram_count`, default
+4096 MB per core) goes out with `ramUnit: MBPerCoreFixed`, and JEDI keeps it
+through the run. Scouts off does not stop JEDI's memory re-estimate: the
+watchdog's scout-data pass (`setScoutJobDataToTasks`) visits every running task
+with five finished jobs and no walltime unit and, for a `MBPerCore` task, resets
+`ramCount` to the 75th percentile of the finished jobs' PSS per core plus 10
+percent; each job then asks for 0.9 of the task's `ramCount`
+(`MEMORY_COMPENSATION`). Task 39951 (2026-09-14) went from 4096 to 2,841 MB that
+way, its retries asked 2,556 MB against a 2,790 MB RSS footprint, and the glideins
+that police `request_memory` evicted them: four rows lost (segfault finding
+f-12). `MBPerCoreFixed` is the pass's own exemption; a job's memory retry
+ladder still climbs.
+
 ## Implementation status (2026-06-29)
 
 The **live** Submit path is the **client-API EVGEN doer** (`submit_evgen_task`),
