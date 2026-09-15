@@ -491,11 +491,11 @@ prune of `panda-logs` never touches it:
 `/data/wenauseic/swf-monitor/harvester-stdout/<jeditaskid>/<pandaid>.stdout.gz`
 (the bytes as the server served them, 120 to 220 KB against about 4 MB
 of text, the whole pilot log), `.json` beside it (source, fetched, bytes,
-status) and `.error` for a failed fetch. Lifetime: kept until
-`harvester_stdout.keep_days` says otherwise; 0, the default, keeps
-them. Measured 2026-09-15: 13 failed and 299 finished such jobs in a
-week, so failed only is about 3 MB a week and finished switched on
-about 60 MB a week.
+status) and `.error` for a failed fetch. Lifetime:
+`harvester_stdout.keep_days`, 30 by default (0 keeps them); the hourly
+pass prunes copies older than that by their capture time. Measured
+2026-09-15: 13 failed and 299 finished such jobs in a week, so failed
+only is about 3 MB a week and finished switched on about 60 MB a week.
 
 Readers: the job page shows `harvester_stdout: our copy, whole` with
 the capture time and size (`/panda/jobs/<pandaid>/harvester-stdout/`)
