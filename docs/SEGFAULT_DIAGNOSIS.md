@@ -548,7 +548,15 @@ ones first, with each attempt's last observation), and the signature
 page. Execution and result are stated apart. Execution: queued for
 submission (a request without a run), submitting, queued, running,
 finishing, finished, failed, cancelled, submission failed; a job's
-terminal state outranks a run still flagged submitted. Result: pending,
+terminal state outranks a run still flagged submitted. A request the
+agent did not run is withdrawn on the record by the agent itself, with
+the reason, through the reconcile script's `--withdraw`: a duplicate the
+agent's dedup dropped (two sessions asking for the same row and queue
+in the same minute, 2026-09-15) reads cancelled, a dispatch that failed
+before a run existed reads submission failed; either counts for nothing
+in the pair and closes the request, so no request reads queued for
+submission forever or keeps its signature open to every pass. Nothing is
+withdrawn when a run carries the request id: the run is the record. Result: pending,
 awaiting report (the job ended, the report not yet collected), crash
 reproduced (the payload's exit in the crash class), completed without
 crash (exit 0), inconclusive with the reason; a finished PanDA job is
