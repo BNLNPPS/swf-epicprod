@@ -464,6 +464,46 @@ deployed path. Remaining: the activity health chip, and the matching
 Auto-notify the operator the moment the agent finishes, removing the manual
 refresh.
 
+## Harvester stdout records
+
+The Kubernetes harvester queues (BNL_ePIC_GOOGLE today) upload a
+worker's stdout alone, to the PanDA server's cache, and the server
+purges that cache on a flat seven-day mtime cutoff (panda-server
+`copyArchive.py`, a literal, not a configuration parameter); nothing
+else of those jobs' logs exists, and the job page's stderr and batch
+links were synthesized names of files that never existed. The record
+keeps its own copy of the stdout while the server holds it
+(`monitor_app/harvester_stdout.py`, doer
+`scripts/harvester-stdout-capture.py`, handler
+`harvester_stdout_capture` on the prod-ops agent, hourly by cron
+enqueue with `--prune`).
+
+Which jobs: every production job whose pilot id names a cache stdout
+(`…/cache/…_gz.out`), failed always, finished when
+`harvester_stdout.finished` is on (off: their account is the payload
+report). Each is fetched once; a fetch that fails leaves an `.error`
+marker with its reason, a 404 recorded as gone from the cache, so an
+absence is never silent. The first pass looks back
+`harvester_stdout.backfill_days` (7).
+
+The store is outside the reclaimable scratch cache, so the thirty-day
+prune of `panda-logs` never touches it:
+`/data/wenauseic/swf-monitor/harvester-stdout/<jeditaskid>/<pandaid>.stdout.gz`
+(the bytes as the server served them, 120 to 220 KB against about 4 MB
+of text, the whole pilot log), `.json` beside it (source, fetched, bytes,
+status) and `.error` for a failed fetch. Lifetime: kept until
+`harvester_stdout.keep_days` says otherwise; 0, the default, keeps
+them. Measured 2026-09-15: 13 failed and 299 finished such jobs in a
+week, so failed only is about 3 MB a week and finished switched on
+about 60 MB a week.
+
+Readers: the job page shows `harvester_stdout: our copy, whole` with
+the capture time and size (`/panda/jobs/<pandaid>/harvester-stdout/`)
+beside the live cache link while that still answers, or the failure's
+reason; the dig reads the copy as the job's log when no log tarball
+exists (`cached_payload_log_texts`). One `harvester_stdout_capture`
+action per pass carries the counts.
+
 ## Nightly catalog sync
 
 A `wenauseic` cron enqueues `catalog_sync` for the ops agent nightly at 02:47:

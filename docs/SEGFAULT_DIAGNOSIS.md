@@ -325,6 +325,12 @@ confirms on one representative job of each class that the tarball
 exists for a job that exited 139 and where the backtrace appears
 before building on it.
 
+A job at a cache-stdout queue (BNL_ePIC_GOOGLE) registers no log
+tarball; what it leaves is the harvester's stdout in the PanDA cache,
+which the record copies hourly before the cache's seven-day purge
+(EPICPROD_OPS.md, Harvester stdout records), and the dig reads that
+copy as the job's log when no tarball exists.
+
 The dig is bounded as in ERROR_ATTRIBUTION.md: one representative job
 per record-level signature, chosen as the job with the median time to
 death, fetched through the doer; then `trace_extract` in

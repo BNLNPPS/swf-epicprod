@@ -194,7 +194,7 @@ credential in the web tier.
 ## Current capabilities
 
 Verified against `agents/epicprod_ops_agent.py` and its doers, 2026-09-09. The
-agent accepts the forty-nine `msg_type` values in `KNOWN_TYPES`; a message of any
+agent accepts the fifty `msg_type` values in `KNOWN_TYPES`; a message of any
 other type is logged and dropped. Doers hold the credentials (see *Credential
 boundary*) and run on the background pool unless noted. Timeouts are the
 `EPICPROD_*_TIMEOUT` environment defaults, in seconds.
@@ -212,6 +212,7 @@ invokable on their own, so a single step can be rerun without the chain.
 | `panda_task_operations` | `panda-task-operation.py` | Run one paced batch of scalar PanDA pause/resume commands. | 120 |
 | `panda_sandbox_keepalive` | `panda-sandbox-keepalive.py` | Keep retryable tasks' sandbox tarballs alive in the PanDA server cache. | 600 |
 | `front_cycle` | `front-cycle.py` | One decision cycle of the pressure front (CONTINUOUS_PRODUCTION.md, The dispatcher): per regulated queue, the census, the gates and the ready backlog decide feed or hold, recorded as `front_decision`. Five-minutely by cron enqueue; shadow mode submits nothing. | 240 |
+| `harvester_stdout_capture` | `harvester-stdout-capture.py` | Copy the harvester's stdout of every failed job at a cache-stdout queue (finished behind a switch) into our store before the PanDA cache's seven-day purge; prune copies past `keep_days`. Hourly by cron enqueue (EPICPROD_OPS.md, Harvester stdout records). | 1800 |
 | `node_guard_cycle` | `node-guard-cycle.py` | One cycle of the node guard (site-canary docs/NODE_GUARD.md): the window's finished and failed production jobs per queue and host judged for black holes, recorded as `node_guard_decision`, the state stored for the Node guard page. Five-minutely by cron enqueue; shadow mode excludes nothing. | 240 |
 
 ### Rucio and storage
