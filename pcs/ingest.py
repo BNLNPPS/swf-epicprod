@@ -418,6 +418,8 @@ def resolve_line(parsed, definitions=None, definitions_stamp=None,
             evgen = {'generator': identity[0], 'generator_version': identity[1]}
             if identity[2]:
                 evgen['radiative'] = identity[2]
+            if len(identity) > 3 and identity[3]:
+                evgen['afterburner_preset'] = identity[3]
             row['evgen_source'] = 'catalog' if trusted else 'catalog-tag'
             row['note'] = (f'generator taken from the catalog\'s editions of '
                            f'this path ({n_recorded} dataset(s)'
@@ -440,7 +442,8 @@ def resolve_line(parsed, definitions=None, definitions_stamp=None,
     # (physics_config.evgen_identity); the display keeps the derived case.
     evgen_tuple = (str(evgen.get('generator', '')).lower(),
                    str(evgen.get('generator_version', '')).lower(),
-                   str(evgen.get('radiative', '')).lower())
+                   str(evgen.get('radiative', '')).lower(),
+                   str(evgen.get('afterburner_preset', '')).lower())
     detail = {'key': (row['physics_tag'] if not row['physics_tag_new'] else '',
                       evgen_tuple, background_label, row['sample']),
               'evgen': evgen_tuple}

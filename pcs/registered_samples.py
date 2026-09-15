@@ -70,12 +70,15 @@ def derive_registered_sample(did):
             evgen = {'generator': identity[0], 'generator_version': identity[1]}
             if identity[2]:
                 evgen['radiative'] = identity[2]
+            if len(identity) > 3 and identity[3]:
+                evgen['afterburner_preset'] = identity[3]
     if evgen is None:
         return None, 'generator and version not resolved from the path'
     sample = single_particle_angle(path)
     evgen_tuple = (str(evgen.get('generator', '')).lower(),
                    str(evgen.get('generator_version', '')).lower(),
-                   str(evgen.get('radiative', '')).lower())
+                   str(evgen.get('radiative', '')).lower(),
+                   str(evgen.get('afterburner_preset', '')).lower())
     key = ''
     pc = None
     if not physics_new:
