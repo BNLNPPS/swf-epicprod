@@ -4654,6 +4654,15 @@ def match_requests_to_rucio_snapshot(snapshot, *, campaign):
     summary = {'tasks_seen': 0, 'tasks_matched': 0, 'tasks_unmatched': 0}
     matched_dids = set()
     owner_names = _output_owner_names(campaign)
+    # A dataset PCS created at submission is its task's output on the
+    # strength of that record (precreated_output_owners), whatever the
+    # task's filters say: a composer-made task carries no ingest filters.
+    idx_by_did = {rec['did']: rec for _tail, rec in idx}
+    precreated_recs = {}
+    for did, name in precreated_output_owners(campaign).items():
+        rec = idx_by_did.get(did)
+        if rec is not None:
+            precreated_recs.setdefault(name, []).append(rec)
     for t in qs:
         summary['tasks_seen'] += 1
         # Prefer the persisted csv_import.filters block (already extracted
@@ -4665,10 +4674,11 @@ def match_requests_to_rucio_snapshot(snapshot, *, campaign):
                 if (t.dataset.metadata or {}) else ''
             req_filters = _extract_csv_filters(ds_path, t.dataset.detector_config) \
                 if ds_path else {}
-        matches = []
+        matches = list(precreated_recs.get(t.name, []))
+        seen = {m['did'] for m in matches}
         if req_filters and any(req_filters.get(k) for k in ('beam', 'physics')):
             for rec, did_filters in idx_filtered:
-                if _filter_match(req_filters, did_filters):
+                if rec['did'] not in seen and _filter_match(req_filters, did_filters):
                     matches.append(rec)
         for m in matches:
             matched_dids.add(m['did'])
