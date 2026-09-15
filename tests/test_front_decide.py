@@ -49,6 +49,24 @@ class DecideTest(unittest.TestCase):
         storm = census(gate={'finished': 30, 'failed': 70, 'fast_failed': 0})
         self.assertEqual(run(storm, [entry('t')])[0][:2], ('degraded', 'failure_window'))
 
+    def test_declared_downtime_holds_without_a_fault(self):
+        # A rule in force, or a window inside the horizon, holds the
+        # queue ahead of the measured gates: a hold, not degraded, so
+        # the breaker and recovery never engage; the reason is the line.
+        declared = dict(GREEN, declared={'red': True, 'state': 'in_force',
+                                         'reason': 'offline until 09/15 00:21 UTC: scheduled downtime (xzhao@bnl.gov)'})
+        out = run(census(not_started=5000), [entry('t')], gates=declared)
+        self.assertEqual(out[0][:2], ('held', 'declared'))
+        self.assertEqual(out[0][2]['gate_reason'], declared['declared']['reason'])
+        self.assertEqual(out[0][2]['declared'], 'in_force')
+        # Red canary and a declaration: the declaration is the reading.
+        both = dict(declared, canary=dict(GREEN['canary'], red=True, reason='canary failing'))
+        self.assertEqual(run(census(), [entry('t')], gates=both)[0][:2], ('held', 'declared'))
+        # Nothing declared: the gates decide as before.
+        none = dict(GREEN, declared={'red': False, 'state': '', 'reason': ''})
+        self.assertEqual(run(census(not_started=5000), [entry('t')], gates=none)[0][:2],
+                         ('supplied', 'supplied'))
+
     def test_supplied_and_no_work(self):
         # 5000 not started at 2 h over 1000 running slots: 10 h, above the low water mark.
         self.assertEqual(run(census(not_started=5000), [entry('t')])[0][:2], ('supplied', 'supplied'))

@@ -6037,6 +6037,7 @@ def front_page(request):
             'canary': d.get('canary', ''), 'canary_age_h': d.get('canary_age_h'),
             'credential': d.get('credential', ''),
             'credential_age_h': d.get('credential_age_h'),
+            'declared': d.get('declared', ''),
             'gate_finished': d.get('gate_finished', ''),
             'gate_failed': d.get('gate_failed', ''),
             'gate_fast_failed': d.get('gate_fast_failed', ''),

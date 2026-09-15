@@ -236,9 +236,11 @@ nightly credential check (not ok, or older than 36 hours, is red), the
 breaker key, and the two fast detectors computed from the census's
 six-hour window (burn-through: at least 10 failures, half of them fast,
 none finished; failure window: at least 50 outcomes with 60% failed).
-Declared downtime is not yet an input. A ready task's declared job
-count comes from its manifest, which reads the input catalog, and is
-cached a day per task, per-job count and matched inputs.
+Declared downtime is an input since 2026-09-15 (the `declared` hold
+below; the record and its other readers under Declared downtime). A
+ready task's declared job count comes from its manifest, which reads
+the input catalog, and is cached a day per task, per-job count and
+matched inputs.
 
 ### States and reason codes
 
@@ -248,9 +250,9 @@ cached a day per task, per-job count and matched inputs.
 | refill | depth < `h_low`, gates green, feed on, no submission awaiting observation | submit the highest-priority eligible task; at most `max_per_cycle` per cycle, never past `h_high`, never past the caps | `fed:<task>` |
 | awaiting observation | a submission is younger than one activation window (two cycles) | hold; count the submission as committed depth | `awaiting_observation` |
 | idle capacity | running below a fraction of the ceiling while depth > 0, for longer than the queue's p90 start latency since the front's last feed | hold; notice (worker supply or site, not the front) | `not_pulling` |
-| degraded | a gate is red: canary failing or its window stale, burn-through or windowed failure rate over threshold, declared downtime inside the horizon, credential invalid | hold; breaker opens | `canary`, `burn_through`, `failure_window`, `downtime`, `credential` |
+| degraded | a gate is red: canary failing or its window stale, burn-through or windowed failure rate over threshold, credential invalid | hold; breaker opens | `canary`, `burn_through`, `failure_window`, `credential` |
 | half open | the breaker's cause has cleared and policy allows automatic recovery | submit one task and wait for completions; on failure reopen with a doubled wait | `half_open` |
-| held | queue feed off or front off; a feed that would pass `h_high`; the task or job cap; a task that cannot be sized; no calibration for the queue | hold | `queue_off`, `front_off`, `would_exceed_high`, `task_cap`, `job_cap`, `unsized_task`, `no_calibration` |
+| held | queue feed off or front off; a declared downtime in force or starting within `h_high` hours (checked right after the breaker, ahead of the measured gates: a declaration is not a fault, the breaker stays closed and the hold lifts itself when the window ends); a feed that would pass `h_high`; the task or job cap; a task that cannot be sized; no calibration for the queue | hold | `queue_off`, `front_off`, `declared`, `would_exceed_high`, `task_cap`, `job_cap`, `unsized_task`, `no_calibration` |
 | oversize | the next eligible task alone exceeds `h_high` (phase one) | hold for the operator's decision | `oversize_task` |
 | no work | nothing in `ready` is eligible for the queue | hold; the page states the starvation | `no_eligible_task` |
 
@@ -504,16 +506,33 @@ recent history. The Rucio endpoints list carries the same column. No
 calendar view: the lines and the cards are the surface, and the record
 answers "was it declared at that time" for the readers below.
 
-**Readers, in order of arrival.** Error attribution: a job failing on
-"specified queue is OFFLINE" inside a declared window, or within ten
-minutes after its end (the cache lag), is attributed to the declaration,
-not the site. The node guard, the canary assessment and the dispatcher's
-gate read the record next: a queue offline by declaration is not judged
-for black holes, its passive failure rate is not a site verdict, and a
-queue entering a declared window within the submission horizon is not
-fed; the canary cadence tightens at window end to confirm recovery. The
-OSG Topology feed, the NERSC status API and operator-entered windows are
-later sources into the same record.
+**Readers.** Built 2026-09-15: **attribution**, at read time through
+the per-job error root (swf-monitor `panda/sql.py extract_errors`): a
+faulty job whose queue was under a rule or a site window at its end, or
+within ten minutes after the end (the pilot's cached queuedata lags a
+rule's expiration), carries the declaration on every error entry; the
+job page leads its Errors card with "Declared downtime: <line>", the job
+lists prefix it, the MCP job tools carry it, and the error summary
+counts the window's failures under each declaration (`declared` in the
+summary; a line above the errors table). Nothing is written on the
+job. **The front's gate** (`swf_epicprod/front.py`): a rule in force,
+or a window starting within the queue's `h_high` hours, holds the
+queue with reason `declared`, checked right after the breaker and
+ahead of the measured gates; a hold, not `degraded`, so the breaker
+never opens on a declaration and the hold lifts itself the cycle after
+the window ends; the front page's queue table shows it. An unreadable
+record reads as no declaration: the measured gates still stand.
+
+Next: the node guard drops jobs ended under a declaration from the
+rows it judges; the canary's passive verdict does not move a queue's
+status across a declaration and no probe is sent to a queue under a
+rule in force, with the first probe after the window's end sent at
+once; the sync emits a notice when a rule or window appears or clears;
+the front page carries one line when something is in force or coming.
+The OSG Topology feed, the NERSC status API and operator-entered
+windows are later sources into the same record. Endpoint rules are on
+the record and the endpoint pages; no reader attributes a stage-out
+failure to one yet.
 
 ## Payload metrics
 

@@ -127,6 +127,16 @@ def _canary_gate(queue):
     return {'status': status, 'age_h': age_h, 'red': red, 'reason': reason}
 
 
+def _declared_gate(queue, horizon_h):
+    """What CRIC declares for the queue (swf-monitor monitor_app/declared.py;
+    CONTINUOUS_PRODUCTION.md, Declared downtime): red with a rule in
+    force or a window starting within ``horizon_h`` hours, the committed
+    depth the front would otherwise fill. A hold, not a fault: the
+    breaker never opens on it, and it lifts itself when the window ends."""
+    from monitor_app.declared import gate_for_queue
+    return gate_for_queue(queue, horizon_h)
+
+
 def _credential_gate():
     """The nightly credential check's latest outcome and age."""
     from monitor_app.models import AppLog
@@ -288,6 +298,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
                    if runnable_h is not None else None)
     canary = gates.get('canary') or {}
     credential = gates.get('credential') or {}
+    declared = gates.get('declared') or {}
     fast = fast_detectors(q.get('gate'))
     eligible = [e for e in backlog if not e['problems']]
     h_low, h_high = float(qs['h_low']), float(qs['h_high'])
@@ -306,6 +317,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         'canary': canary.get('status', ''), 'canary_age_h': canary.get('age_h'),
         'credential': credential.get('outcome', ''),
         'credential_age_h': credential.get('age_h'),
+        'declared': declared.get('state', ''),
         'gate_finished': fast['finished'], 'gate_failed': fast['failed'],
         'gate_fast_failed': fast['fast_failed'],
         'ready_total': len(backlog), 'ready_eligible': len(eligible),
@@ -326,6 +338,11 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         return [('held', 'queue_off', rec())]
     if str(qs['breaker']) != 'closed':
         return [('degraded', f"breaker_{qs['breaker']}", rec())]
+    if declared.get('red'):
+        # A declared downtime in force, or one starting inside the
+        # committed-depth horizon: a hold, not a fault. The breaker does
+        # not open and no recovery is needed; the hold ends with the window.
+        return [('held', 'declared', rec(gate_reason=declared.get('reason', '')))]
     if credential.get('red'):
         return [('degraded', 'credential', rec(gate_reason=credential.get('reason', '')))]
     if canary.get('red'):
@@ -467,6 +484,12 @@ def run_cycle(*, dry_run=False, created_by='front'):
         canary = _safe(f'{queue} canary gate', lambda: _canary_gate(queue), lambda exc: {
             'status': 'unread', 'age_h': None, 'red': True,
             'reason': f'canary unreadable: {exc}'})
+        # An unreadable declared record reads as no declaration: the
+        # measured gates still stand between the front and a dead queue.
+        declared = _safe(f'{queue} declared gate',
+                         lambda: _declared_gate(queue, settings['h_high']),
+                         lambda exc: {'red': False, 'state': 'unread',
+                                      'reason': f'declared record unreadable: {exc}'})
         feeds = _safe(f'{queue} feeds', lambda: _recent_feeds(queue, activation_window_s), [])
         last_feed_age_h = _safe(f'{queue} last feed', lambda: _last_feed_age_h(queue), None)
         census_q = (census or {}).get('queues', {}).get(queue) if census else None
@@ -478,7 +501,8 @@ def run_cycle(*, dry_run=False, created_by='front'):
             outcomes = _safe(
                 f'{queue} decision',
                 lambda: decide(queue, census_q, backlog.get(queue, []), settings,
-                               {'canary': canary, 'credential': credential}, feeds,
+                               {'canary': canary, 'credential': credential,
+                                'declared': declared}, feeds,
                                enabled=enabled, mode=mode, max_per_cycle=max_per_cycle,
                                last_feed_age_h=last_feed_age_h),
                 lambda exc: [('error', 'decision_error',

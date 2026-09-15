@@ -38,7 +38,7 @@
                     <li><strong>idle capacity</strong>: work is pending but the queue runs below 30% of its ceiling, and has done so for longer than its start latency since the front's last feed; the worker supply or the site, not the front, is short.</li>
                     <li><strong>degraded</strong>: a gate is red (canary, credential, breaker, or a failure detector); the reason names which.</li>
                     <li><strong>oversize</strong>: the next eligible task alone exceeds the high-water mark; the operator decides.</li>
-                    <li><strong>held</strong>: the front or the queue's feed switch is off, a cap would be passed, the feed would pass the high-water mark, the task cannot be sized, or the queue has no calibration.</li>
+                    <li><strong>held</strong>: the front or the queue's feed switch is off, a downtime is declared for the queue, a cap would be passed, the feed would pass the high-water mark, the task cannot be sized, or the queue has no calibration.</li>
                     <li><strong>no work</strong>: nothing in ready is eligible for the queue.</li>
                     <li><strong>error</strong>: the decision itself failed; the reason carries the error.</li>
                 </ul>
@@ -48,6 +48,7 @@
                     <li><strong>front_off</strong>: the front is off (the front switch on the System page).</li>
                     <li><strong>queue_off</strong>: this queue's feed is off (its feed switch).</li>
                     <li><strong>breaker_open</strong>: this queue's breaker is open.</li>
+                    <li><strong>declared</strong>: CRIC declares a downtime for the queue, in force or starting within the high-water mark's hours; a hold that lifts itself when the window ends, never a breaker.</li>
                     <li><strong>credential</strong>: the nightly production credential check is not ok, or older than 36 h.</li>
                     <li><strong>canary</strong>: the site canary's verdict on the queue is failing, or its evidence is older than 24 h.</li>
                     <li><strong>burn_through</strong>: in the last 6 h at least 10 of the queue's jobs failed, half of them fast, and none finished.</li>
@@ -131,7 +132,7 @@
             <th>Queue</th><th>State</th><th>Reason</th>
             <th>Committed (h)</th><th>Runnable (h)</th><th>Not started (jobs)</th><th>Running (jobs)</th><th>Capacity (h/h)</th><th>Active tasks</th>
             <th>Set points (h)</th><th>Caps</th><th>Ready</th><th>Next candidate</th>
-            <th>Canary</th><th>Credential</th><th>Last 6 h</th>
+            <th>Canary</th><th>Credential</th><th title="What CRIC declares for the queue: a rule in force, or a window starting within the committed-depth horizon, holds the queue without opening the breaker">Declared</th><th>Last 6 h</th>
             <th>Breaker</th><th>Feed</th>
         </tr></thead>
         <tbody>
@@ -152,12 +153,13 @@
                 <td>{% if r.candidate %}<a href="{% url 'pcs:prod_task_detail' name=r.candidate %}">{{ r.candidate }}</a>{% if r.candidate_rows %} ({{ r.candidate_rows }} jobs{% if r.candidate_h %}, {{ r.candidate_h|floatformat:"-2" }} h{% endif %}, priority {{ r.candidate_level|default:'unset' }}){% endif %}{% else %}<span class="text-muted">none</span>{% endif %}</td>
                 <td><a href="{% url 'canary:canary_page' %}" title="The site canary's queue verdicts">{{ r.canary }}{% if r.canary_age_h != None %} ({{ r.canary_age_h|floatformat:"-2" }} h){% endif %}</a></td>
                 <td><a href="{% url 'monitor_app:log_list' %}?app_name=epicprod&amp;instance_name=ops-agent" title="The ops agent's records, the nightly credential check among them">{{ r.credential }}{% if r.credential_age_h != None %} ({{ r.credential_age_h|floatformat:"-2" }} h){% endif %}</a></td>
+                <td{% if r.declared == 'in_force' %} class="offline_fill"{% elif r.declared == 'coming' %} class="pending_fill"{% endif %}><a href="{% url 'monitor_app:epic_queue_detail' queue_name=r.queue %}#declared" style="color: inherit;" title="The queue's declared state">{% if r.declared == 'in_force' %}in force{% elif r.declared == 'coming' %}coming{% elif r.declared == 'unread' %}unread{% else %}none{% endif %}</a></td>
                 <td><a href="{% url 'monitor_app:panda_jobs_list' %}?site={{ r.queue|urlencode }}&amp;days=1" title="The queue's jobs of the last day">{{ r.gate_finished }} finished, {{ r.gate_failed }} failed, {{ r.gate_fast_failed }} fast</a></td>
                 <td><a href="{% url 'monitor_app:system_status' %}#sysconfig-view" title="The front settings on the System page">{{ r.breaker }}</a></td>
                 <td><a href="{% url 'monitor_app:system_status' %}#sysconfig-view" title="The front settings on the System page">{% if r.feed_switch %}on{% else %}off{% endif %}</a></td>
             </tr>
         {% empty %}
-            <tr><td colspan="18">No regulated queues are configured (the front queues setting).</td></tr>
+            <tr><td colspan="19">No regulated queues are configured (the front queues setting).</td></tr>
         {% endfor %}
         </tbody>
     </table>
