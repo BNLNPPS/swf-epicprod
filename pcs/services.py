@@ -4473,6 +4473,26 @@ def _path_aligned_match(did_segs, req_segs):
     return False
 
 
+def precreated_output_owners(campaign):
+    """did -> owning ProdTask name for the datasets PCS itself created at
+    submission (the submit doer's record on the PanDA attempt,
+    ``PandaTasks.metadata.output_datasets``). The record of creation is
+    the authoritative attribution of a produced dataset, ahead of any
+    physics derived from its path; the newest attempt wins."""
+    owners = {}
+    rows = (PandaTasks.objects
+            .filter(prod_task__campaign=campaign,
+                    metadata__has_key='output_datasets')
+            .order_by('pk')
+            .values_list('prod_task__name', 'metadata'))
+    for name, meta in rows:
+        for entry in (meta or {}).get('output_datasets') or []:
+            did = (entry or {}).get('dataset') or ''
+            if did:
+                owners[did] = name
+    return owners
+
+
 def _output_owner_names(campaign):
     """did -> owning ProdTask name for one campaign.
 
@@ -4517,8 +4537,10 @@ def _output_owner_names(campaign):
         if current is None or (current[1] == 'past_output'
                                and status != 'past_output'):
             task_by_composed[composed] = (name, status)
-    owners = {}
+    owners = precreated_output_owners(campaign)
     for loc, lst in candidates.items():
+        if loc in owners:
+            continue
         match = _re.match(r'^[^:]*:/([A-Za-z]+)/', loc)
         did_stage = match.group(1).upper() if match else ''
 

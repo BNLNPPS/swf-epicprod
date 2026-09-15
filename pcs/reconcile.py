@@ -111,6 +111,13 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
     if not snapshot or not snapshot.get('campaigns'):
         return {'error': f'no Rucio snapshot for {campaign_name}'}
 
+    from .services import precreated_output_owners
+    precreated = {}
+    for did, name in precreated_output_owners(campaign).items():
+        task = ProdTask.objects.filter(name=name).order_by('pk').first()
+        if task is not None:
+            precreated[did] = task
+
     existing_by_location = {}
     for dataset in Dataset.objects.filter(campaign=campaign):
         location = ((dataset.metadata or {}).get('source') or {}).get('location', '')
@@ -140,6 +147,18 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
             files, size, rses, complete = _replica_summary(
                 record.get('rse_replicas'))
             filters = _extract_past_filters(did)
+
+            owner = precreated.get(did)
+            if owner is not None:
+                # PCS created this dataset at submission: the attempt's
+                # record attributes it, ahead of the physics derived from
+                # its path and of any placeholder row registered at it.
+                _upsert_task_output(
+                    owner,
+                    _outputs_entry(did, stage, version, filters, rses,
+                                   files, size, complete))
+                attached += 1
+                continue
 
             row = existing_by_location.get(did)
             if row is not None:
