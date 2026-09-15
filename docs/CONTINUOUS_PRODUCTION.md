@@ -523,16 +523,27 @@ never opens on a declaration and the hold lifts itself the cycle after
 the window ends; the front page's queue table shows it. An unreadable
 record reads as no declaration: the measured gates still stand.
 
-Next: the node guard drops jobs ended under a declaration from the
-rows it judges; the canary's passive verdict does not move a queue's
-status across a declaration and no probe is sent to a queue under a
-rule in force, with the first probe after the window's end sent at
-once; the sync emits a notice when a rule or window appears or clears;
-the front page carries one line when something is in force or coming.
-The OSG Topology feed, the NERSC status API and operator-entered
-windows are later sources into the same record. Endpoint rules are on
-the record and the endpoint pages; no reader attributes a stage-out
-failure to one yet.
+Also built 2026-09-15: **the node guard** sets aside the jobs that
+ended under a declaration (plus the lag) before judgment and counts
+them on the cycle record and the Node guard page (site-canary
+NODE_GUARD.md); **the canary** leaves a queue's status alone while a
+rule is in force or its sample overlaps a declared span, sends no probe
+to a queue under a rule in force, and sends the first probe after a
+window's end at once, reading the record over `GET /api/declared/`
+(site-canary SWF_INTEGRATION.md, Declared downtime); the EIC queues
+list's Canary cell reads "declared" under a rule in force; **the
+notice**: the sync emits one `declared_state_changed` incident per
+rule or window that appeared, changed, expired or cleared (subject the
+target, outcome the change, the line as `summary`, the target's page
+as `url`, warning severity for an appearance), which a Capcom
+subscription delivers (docs/NOTICE_ROUTING.md); **the home**: the
+epicprod home carries one "Declared downtime" line when a queue or
+endpoint has a rule in force or a window coming, nothing otherwise.
+
+Later sources into the same record: the OSG Topology feed, the NERSC
+status API and operator-entered windows. Endpoint rules are on the
+record, the endpoint pages, the home line and the API; no reader
+attributes a stage-out failure to one yet.
 
 ## Payload metrics
 
