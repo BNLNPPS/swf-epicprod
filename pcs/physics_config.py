@@ -194,7 +194,7 @@ def config_name(detail):
     physics, evgen_part, background, sample = detail['key']
     evgen = detail['evgen']
     if evgen is not None:
-        generator, version, radiative = evgen
+        generator, version, radiative, preset = evgen
         segment = generator + (f'-{version}' if version else '')
         if radiative == 'off':
             segment += '.norad'
@@ -202,6 +202,8 @@ def config_name(detail):
             segment += '.rad'
         elif radiative:
             segment += f'.{radiative}'
+        if preset:
+            segment += f'.{preset}'
     else:
         segment = '.'.join(str(part) for part in evgen_part if part != '')
     parts = [physics or 'p0', segment]
@@ -217,7 +219,7 @@ def evgen_display(detail):
     evgen = detail['evgen']
     if evgen is None:
         return 'unresolved'
-    generator, version, radiative = evgen
+    generator, version, radiative, preset = evgen
     bits = [generator, version]
     if radiative == 'off':
         bits.append('noRad')
@@ -225,6 +227,8 @@ def evgen_display(detail):
         bits.append('Rad')
     elif radiative:
         bits.append(radiative)
+    if preset:
+        bits.append(preset)
     return ' '.join(bit for bit in bits if bit)
 
 
