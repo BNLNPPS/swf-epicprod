@@ -50,6 +50,8 @@ _CHARGE     = {'hplus', 'hminus'}
 _HELICITY   = {'hel_plus', 'hel_minus'}
 #: two-beam polarization state as the DJANGOH CC paths spell it
 _BEAM_POL_RE = re.compile(r'^e(Plus|Minus)-p(Plus|Minus)$')
+#: excited state as a directory segment (Upsilon1S, Upsilon2S, Upsilon3S)
+_UPSILON_STATE_RE = re.compile(r'^Upsilon([123])S$')
 _COHERENCE  = {'coherent', 'Coherent'}
 _MODEL      = {'bsat'}
 _POLAR      = {'unpolarised', 'polarised'}
@@ -163,6 +165,8 @@ def derive_physics(path, beam=''):
             elif _BEAM_POL_RE.match(tok):
                 sig['beam_polarization'] = tok
                 nucleons.append('ep')
+            elif _UPSILON_STATE_RE.match(tok):
+                sig['state'] = _UPSILON_STATE_RE.match(tok).group(1) + 's'
             elif tok in _COHERENCE:       sig['coherence'] = 'coherent'
             elif tok in _MODEL:           sig['model'] = tok
             elif tok in _POLAR:           sig['polarization'] = tok

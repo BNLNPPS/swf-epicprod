@@ -32,3 +32,20 @@ def test_paths_without_the_token_are_unchanged():
     sig = derive_physics('EVGEN/DIS/pythia8.316-1.0/NC/noRad/ep/10x100/q2_1to10', beam='10x100')
     assert 'beam_polarization' not in sig
     assert sig['beam_species'] == 'ep'
+
+
+UPSILON = 'EVGEN/EXCLUSIVE/UPSILON_ABCONV/eSTARlight1.3.0-1.0/%s/%s/q2_0to0.01/%s'
+
+
+def test_upsilon_state_read_from_directory_segment():
+    sig = derive_physics(UPSILON % ('Upsilon3S', '9x275', 'hiDiv'), beam='9x275')
+    assert sig['process'] == 'UPSILON'
+    assert sig['state'] == '3s'
+    assert sig['beam_config'] == 'hiDiv'
+    assert (sig['beam_energy_electron'], sig['beam_energy_hadron']) == ('9', '275')
+
+
+def test_upsilon_states_derive_distinct_physics():
+    one = derive_physics(UPSILON % ('Upsilon1S', '9x130', 'hiAcc'), beam='9x130')
+    two = derive_physics(UPSILON % ('Upsilon2S', '9x130', 'hiAcc'), beam='9x130')
+    assert {k for k in one if one[k] != two.get(k)} == {'state'}
