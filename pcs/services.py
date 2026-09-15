@@ -2128,7 +2128,8 @@ _PROCESS_CATEGORY = {
 _PHYSICS_MATCH_FIELDS = (
     'process', 'beam_energy_electron', 'beam_energy_hadron',
     'beam_species', 'nucleon', 'q2_range', 'decay_mode', 'hadron_charge',
-    'helicity', 'polarization', 'coherence', 'model', 'beam_config',
+    'helicity', 'polarization', 'beam_polarization', 'coherence', 'model',
+    'beam_config',
     'state', 'mechanism', 'final_state', 'channel', 'mass',
     'particle', 'gun_energy',
 )

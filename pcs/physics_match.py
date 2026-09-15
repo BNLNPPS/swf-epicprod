@@ -48,6 +48,8 @@ _BEAMCONFIG = {'hiAcc', 'hiDiv'}
 _DECAY      = {'edecay', 'mudecay'}
 _CHARGE     = {'hplus', 'hminus'}
 _HELICITY   = {'hel_plus', 'hel_minus'}
+#: two-beam polarization state as the DJANGOH CC paths spell it
+_BEAM_POL_RE = re.compile(r'^e(Plus|Minus)-p(Plus|Minus)$')
 _COHERENCE  = {'coherent', 'Coherent'}
 _MODEL      = {'bsat'}
 _POLAR      = {'unpolarised', 'polarised'}
@@ -158,6 +160,9 @@ def derive_physics(path, beam=''):
             elif tok in _DECAY:           sig['decay_mode'] = tok
             elif tok in _CHARGE:          sig['hadron_charge'] = tok
             elif tok in _HELICITY:        sig['helicity'] = tok
+            elif _BEAM_POL_RE.match(tok):
+                sig['beam_polarization'] = tok
+                nucleons.append('ep')
             elif tok in _COHERENCE:       sig['coherence'] = 'coherent'
             elif tok in _MODEL:           sig['model'] = tok
             elif tok in _POLAR:           sig['polarization'] = tok

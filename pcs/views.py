@@ -1112,6 +1112,7 @@ def tags_list(request, tag_type):
 
 
 def tags_datatable_ajax(request, tag_type):
+    _tag_schema_or_404(tag_type)
     model = TAG_MODELS[tag_type]
 
     if tag_type == 'p':
