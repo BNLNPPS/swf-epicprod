@@ -165,7 +165,7 @@
                 <div class="btn-group">
                     <span id="view-status-badge"></span>
                     <button type="button" class="btn btn-dark-green btn-sm" id="btn-edit-tag" style="display:none"
-                            {% if not user.is_authenticated %}disabled title="Edit your own draft tag — sign in to use"{% endif %}>Edit</button>
+                            {% if not user.is_authenticated %}disabled title="Edit a draft tag (creator or ops role) — sign in to use"{% endif %}>Edit</button>
                     <button type="button" class="btn btn-dark-green btn-sm" id="btn-copy-tag" style="display:none"
                             {% if not user.is_authenticated %}disabled title="Copy this tag into a new draft — sign in to use"{% endif %}>Copy</button>
                     <button type="button" class="btn btn-success btn-sm" id="btn-lock-tag" style="display:none" onclick="lockTag()">Lock</button>
@@ -273,6 +273,7 @@
     const nextSuffix = {{ next_suffix }};
     const initialSelectedLabel = {{ selected_tag_json|safe }};
     const currentUser = '{{ username }}';
+    const currentUserIsOps = {{ is_ops|yesno:"true,false" }};
     const tagType = '{{ tag_type }}';
     const tagPrefix = '{{ schema.prefix }}';
     const createTitle = document.getElementById('create-title');
@@ -507,8 +508,8 @@
             viewStatusBadge.appendChild(badge);
         }
 
-        const ownerDraft = currentUser && tag.created_by === currentUser && tag.status === 'draft' && tag.lifecycle === 'active';
-        // Edit: owner's drafts only
+        const ownerDraft = currentUser && (tag.created_by === currentUser || currentUserIsOps) && tag.status === 'draft' && tag.lifecycle === 'active';
+        // Edit: the creator's drafts, or any draft for an ops role holder
         if (btnEdit) btnEdit.style.display = ownerDraft ? 'inline-block' : 'none';
         // Copy: always visible when logged in
         if (btnCopy) btnCopy.style.display = currentUser ? 'inline-block' : 'none';

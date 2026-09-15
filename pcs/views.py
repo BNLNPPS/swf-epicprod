@@ -1243,6 +1243,22 @@ def tag_create(request, tag_type):
     return render(request, template, context)
 
 
+def _may_edit_tag(tag, user):
+    """A draft tag may be edited or locked by its creator or by a holder
+    of the ops role (PCS.md, Tag Lifecycle)."""
+    from monitor_app.authority import get_authority, is_ops
+    username = getattr(user, 'username', '') or ''
+    if not username:
+        return False
+    return tag.created_by == username or is_ops(get_authority(username))
+
+
+def _user_is_ops(user):
+    from monitor_app.authority import get_authority, is_ops
+    username = getattr(user, 'username', '') or ''
+    return bool(username) and is_ops(get_authority(username))
+
+
 def tag_compose(request, tag_type):
     """Split-panel browse + compose UI for physics tags."""
     schema = _tag_schema_or_404(tag_type)
@@ -1341,6 +1357,7 @@ def tag_compose(request, tag_type):
         'param_defs_json': json.dumps(param_defs),
         'next_suffix': next_suffix,
         'username': request.user.username if request.user.is_authenticated else '',
+        'is_ops': _user_is_ops(request.user),
         'selected_tag_json': json.dumps(selected_tag),
     }
     return render(request, 'pcs/tag_compose.html', context)
@@ -1468,8 +1485,8 @@ def tag_lock(request, tag_type, tag_number):
         return _post_only_redirect(request, selected_url, action_label='Tag lock')
     model = TAG_MODELS[tag_type]
     tag = get_object_or_404(model, tag_number=tag_number)
-    if tag.created_by != request.user.username:
-        messages.error(request, f"Only the creator ({tag.created_by}) can lock this tag.")
+    if not _may_edit_tag(tag, request.user):
+        messages.error(request, f"Only the creator ({tag.created_by}) or an ops role holder can lock this tag.")
     elif tag.lifecycle != 'active':
         messages.error(request, 'Reactivate this tag before locking it.')
     elif tag.status == 'locked':
@@ -1497,6 +1514,9 @@ def tag_edit(request, tag_type, tag_number):
     selected_url = f'{compose_url}?selected={tag_number}'
     if tag.status == 'locked' or tag.lifecycle != 'active':
         messages.error(request, f"Tag {tag.tag_label} must be an active draft to be edited.")
+        return redirect(selected_url)
+    if not _may_edit_tag(tag, request.user):
+        messages.error(request, f"Only the creator ({tag.created_by}) or an ops role holder can edit this tag.")
         return redirect(selected_url)
 
     if tag_type == 'p':

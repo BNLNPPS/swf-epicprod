@@ -42,7 +42,7 @@ draft  ──►  locked
 - **Draft** — editable. You can modify parameters or copy from other tags. Every issued identity is permanent.
 - **Locked** — immutable. One-way transition. Ensures reproducibility: once a tag is used in production, its meaning never changes.
 
-Only the tag creator can edit or lock their own drafts. Anyone can copy any tag to create their own variant.
+A draft can be edited or locked by its creator or by a holder of the ops role. Anyone can copy any tag to create their own variant.
 
 During alpha commissioning all tags remain draft and the lock requirement for datasets and submission is lifted; see [Commissioning Relaxations](COMMISSIONING_RELAXATIONS.md) for the current relaxation and how it is re-tightened.
 
