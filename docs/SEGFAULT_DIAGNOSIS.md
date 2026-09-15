@@ -220,7 +220,9 @@ runs with `EpicProdJob` rows alone.
 
 ```
 key              CharField, unique: 'exit139:task38661' at record level,
-                 'exit139:frame:<sha>' at trace level
+                 'exit139:task38661:simu' / ':reco' when the task's
+                 crashes split by stage, 'exit139:frame:<sha>' at trace
+                 level
 level            record | trace | reproduction
 exit_code        int
 signal           int
@@ -366,9 +368,24 @@ or from the payload digest.
 
 Task 39623 shows that a record-level signature (exit code by task) can
 hold two crashes: five reconstruction deaths and two simulation
-deaths. The dig reads one representative per signature, so the page
-states the stage mix from the digest where the jobs carry one, and the
-Dig control accepts a chosen job for the other stage. The log tarballs
+deaths. Since 2026-09-15 a task whose crashed jobs carry two or more
+stages (the payload digest names the stage; every new-payload job
+carries one, no legacy job does) splits by stage in the record pass:
+one entry per stage with the stage on the key
+(`exit139:task39623:simu`, `:reco`), the crashes of no recorded stage
+under the plain key, and a plain entry left with no crash retired,
+its trace, reproductions, verdict and marking handed to the stage
+entry they concern and its name in the findings' signature lists
+replaced by the stage entries'. A stage entry's jobs, representative
+and reproductions are its own stage's. A legacy task's two crashes
+cannot be told apart by the record; the reproduction tells them: a
+member whose reproduction settled it under another finding than the
+frame's (task 38864: the trace of one row's reconstruction crash,
+finding f-4; the reproduced rows the dRICH simulation crash, f-3)
+leaves the frame at the next merge, its crashes no longer counted
+there, its page saying so; the frame entries are recomputed from
+their members after every record pass (`remerge_frames`). The Dig
+control still accepts a chosen job for the other stage. The log tarballs
 of the storm, sparse and mixed representatives at BNL_OSG_EPIC_PROD_1
 have no replica in BNL Rucio (jobs 1801822, 2249415, 1951234); those
 signatures carry `log_unavailable` with the reason, and their cause
