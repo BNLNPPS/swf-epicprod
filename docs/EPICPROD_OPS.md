@@ -476,7 +476,8 @@ the session that TeamComms Notify LLM defines.
 A cron script with no Django. Every five minutes it reads the record
 through the monitor's MCP tools over the loopback endpoint (the task
 census, the activity summary, harvester workers, the campaign status
-document, the node guard) and keeps a state file
+document, the node guard, the JLab Rucio catalog) and the PCS task
+record over the monitor's REST face, and keeps a state file
 (`/data/wenauseic/swf-epicprod/prod-notify-state.json`) so that each
 condition speaks once when it appears and once when it clears. The first
 run seeds the state and says nothing. Triggers: a production task starts
@@ -484,9 +485,14 @@ or ends (with its counts); a running task's failure rate over at least
 200 completed jobs passes 10 percent (again when it doubles); a queue
 holds more than 100 activated jobs with nothing running for 30 minutes;
 a production platform check turns error; a production credential has
-under 14 days left; a task finished two hours ago with no output
-arrival recorded; the node guard trips on a node. A notice is two or
-three lines with the numbers and the page link.
+under 14 days left; two hours after a task finishes, one of the output
+datasets PCS pre-created for it holds fewer files in JLab Rucio than
+the task has finished jobs (the file listing's count, since an open
+dataset carries no length; rechecked hourly while short, and
+`arrivals.complete` when the count catches up; a task submitted without
+pre-created datasets has nothing to check); the node guard trips on a
+node. A notice is two or three lines with the numbers and the page
+link.
 
 Delivery: TJAI messaging to the sessions on this host, and TeamComms
 Notify LLM to the `prod-notify` topic when `--teamcomms-config` names a

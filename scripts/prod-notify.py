@@ -25,9 +25,11 @@ Triggers:
   platform.error          a production platform check turns error
   credential.expiry       a production credential has fewer than
                           CREDENTIAL_DAYS days left
-  arrivals.missing        a production task ended finished more than
-                          ARRIVALS_HOURS ago with no output attributed in
-                          the record
+  arrivals.missing        a production task finished more than
+                          ARRIVALS_HOURS ago and one of its pre-created
+                          output datasets holds fewer files in JLab Rucio
+                          than the task has finished jobs (checked once;
+                          arrivals.complete when the count catches up)
   nodeguard.trip          the node guard trips on a node for the first
                           time
 
@@ -36,9 +38,10 @@ Usage (cron, every five minutes)::
     source ~/.env && python3 scripts/prod-notify.py [--dry-run] [--state PATH]
         [--teamcomms-config /path/to/program.json]
 
-The environment supplies SWF_MONITOR_MCP_TOKEN (the monitor MCP) and
-TJAI_MCP_TOKEN (delivery). --dry-run prints the notices and writes no
-state.
+The environment supplies SWF_MONITOR_MCP_TOKEN (the monitor MCP),
+SWF_MONITOR_URL (the monitor's REST face, read anonymously for the PCS
+task record) and TJAI_MCP_TOKEN (delivery). --dry-run prints the notices
+and writes no state.
 """
 import argparse
 import datetime as dt
@@ -52,6 +55,8 @@ import uuid
 
 MONITOR_MCP_URL = os.environ.get('SWF_MONITOR_MCP_URL',
                                  'http://127.0.0.1:8001/swf-monitor/mcp/')
+MONITOR_URL = os.environ.get('SWF_MONITOR_URL',
+                             'https://pandaserver02.sdcc.bnl.gov/swf-monitor').rstrip('/')
 TJAI_MCP_URL = os.environ.get('TJAI_MCP_URL', 'https://etaverse.com/tjai/mcp/')
 LOCATION = os.environ.get('TJAI_LOCATION_NAME', 'swf-testbed')
 TJAI_RESOURCE = f'host:{LOCATION}'
@@ -65,7 +70,9 @@ STARVED_ACTIVATED = 100
 STARVED_MINUTES = 30
 CREDENTIAL_DAYS = 14
 ARRIVALS_HOURS = 2
+ARRIVALS_RECHECK_MINUTES = 60
 TERMINAL = ('done', 'finished', 'failed', 'broken', 'aborted', 'exhausted')
+SUCCEEDED = ('done', 'finished')
 
 
 def _mcp(url, token, tool, arguments, timeout=90):
@@ -122,6 +129,30 @@ def read_nodeguard():
             return json.loads(r.read().decode())
     except Exception:  # noqa: BLE001
         return None
+
+
+def read_output_datasets(taskname, tid):
+    """The DIDs PCS pre-created for this PanDA task, from the task's PCS
+    record (`PandaTasks.metadata.output_datasets`, read over the monitor's
+    REST face); empty for a task submitted without them."""
+    url = f'{MONITOR_URL}/pcs/api/prod-tasks/{taskname}/'
+    with urllib.request.urlopen(url, timeout=30) as r:
+        rec = json.loads(r.read().decode())
+    for pt in rec.get('panda_tasks') or []:
+        if int(pt.get('jedi_task_id') or 0) == int(tid):
+            return [d['dataset'] for d in (pt.get('metadata') or {}).get('output_datasets') or []
+                    if d.get('dataset')]
+    return []
+
+
+def count_rucio_files(did):
+    """Files registered in a JLab Rucio dataset (an open dataset carries no
+    length in its metadata; the file listing's total is the count)."""
+    scope, name = did.split(':', 1)
+    out = monitor('jlab_rucio_list_files', scope=scope, name=name, limit=1)
+    if int(out.get('status') or 0) != 200:
+        raise RuntimeError(f'jlab_rucio_list_files {did}: status {out.get("status")}')
+    return int((out.get('pagination') or {}).get('total_count') or 0)
 
 
 # ---------------------------------------------------------------- triggers
@@ -236,25 +267,53 @@ def platform_triggers(campaign, state):
     return notices
 
 
-def arrivals_triggers(tasks, campaign, state):
-    """arrivals.missing: a task finished hours ago with nothing attributed."""
+def arrivals_triggers(tasks, state, failures):
+    """arrivals.missing / arrivals.complete: a finished task's pre-created
+    output datasets in JLab Rucio against its finished jobs, read once
+    ARRIVALS_HOURS after the end and then every ARRIVALS_RECHECK_MINUTES
+    while a dataset is short. A task without pre-created datasets has
+    nothing to check and is recorded as such. A failed read is reported
+    and retried next run."""
     notices = []
-    told = state.setdefault('arrivals', {})
-    progress = ((campaign.get('members') or {}).get('rucio_arrivals') or {}).get('data') or {}
-    last = progress.get('last_arrival_at') or ''
-    for tid, t in tasks.items():
-        if str(t.get('status')) != 'finished' or not t.get('endtime'):
+    record = state.setdefault('arrivals', {})
+    for tid, t in sorted(tasks.items()):
+        key = str(tid)
+        if str(t.get('status')) not in SUCCEEDED or not t.get('endtime'):
             continue
-        ended = _parse(t['endtime'])
-        if ended is None or (dt.datetime.now(dt.timezone.utc) - ended).total_seconds() < ARRIVALS_HOURS * 3600:
+        if _age_hours(t['endtime']) < ARRIVALS_HOURS:
             continue
-        if last and _parse(last) and _parse(last) > ended:
+        prev = record.get(key)
+        if isinstance(prev, str):
+            # state written by the earlier form of this trigger: told, unresolved
+            prev = {'checked': prev, 'missing': True}
+        if prev and not prev.get('missing'):
             continue
-        if not told.get(str(tid)):
-            notices.append(('arrivals.missing', str(tid),
-                            f'No output arrivals recorded {ARRIVALS_HOURS} h after '
-                            f'{_fmt_task(t)} finished.', f'{FACE}/panda/tasks/{tid}/'))
-            told[str(tid)] = _now()
+        if prev and _age_minutes(prev.get('checked')) < ARRIVALS_RECHECK_MINUTES:
+            continue
+        nfin = int(t.get('nfinished') or 0)
+        link = f'{FACE}/panda/tasks/{tid}/'
+        try:
+            dids = read_output_datasets(t['taskname'], tid)
+            counts = {did: count_rucio_files(did) for did in dids}
+        except Exception as e:  # noqa: BLE001
+            failures.append(f'arrivals {tid}: {e}')
+            continue
+        short = sorted((did, n) for did, n in counts.items() if n < nfin)
+        if short and not prev:
+            did, n = short[0]
+            more = f' (and {len(short) - 1} more)' if len(short) > 1 else ''
+            notices.append(('arrivals.missing', key,
+                            f'Outputs missing in Rucio {ARRIVALS_HOURS} h after '
+                            f'{_fmt_task(t)} finished: {n} of {nfin} files in {did}{more}.',
+                            link))
+        elif prev and not short:
+            notices.append(('arrivals.complete', key,
+                            f'Outputs complete in Rucio: {_fmt_task(t)}; '
+                            f'{nfin} files in each of {len(counts)} dataset(s).', link))
+        record[key] = {'checked': _now(), 'missing': bool(short), 'datasets': len(dids)}
+    for key in list(record):
+        if int(key) not in tasks:
+            del record[key]
     return notices
 
 
@@ -359,11 +418,12 @@ def main(argv):
     campaign = read_campaign()
     nodeguard = read_nodeguard()
 
+    failures = []
     notices = []
     notices += task_triggers(tasks, state)
     notices += queue_triggers(activity, workers, state)
     notices += platform_triggers(campaign, state)
-    notices += arrivals_triggers(tasks, campaign, state)
+    notices += arrivals_triggers(tasks, state, failures)
     notices += nodeguard_triggers(nodeguard, state)
     if first_run:
         # The first pass seeds the state; the record's standing conditions
@@ -371,7 +431,6 @@ def main(argv):
         notices = []
     state['last_run'] = _now()
 
-    failures = []
     for trigger, key, text, link in notices:
         line = f'[prod-notify {trigger}] {text} {link}'
         print(line)
@@ -394,7 +453,7 @@ def main(argv):
             json.dump(state, f, indent=1, sort_keys=True)
         os.replace(tmp, args.state)
     for f in failures:
-        print(f'DELIVERY FAILED: {f}', file=sys.stderr)
+        print(f'FAILED: {f}', file=sys.stderr)
     print(f'prod-notify: {len(notices)} notice(s)' + (' (seeded)' if first_run else ''))
     return 1 if failures else 0
 
