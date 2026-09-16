@@ -70,6 +70,43 @@ for d in $(ls -dt "$WORKBASE"/run-* 2>/dev/null | tail -n +$((KEEP_RUNS + 1))); 
 done
 find "$WORKBASE" -maxdepth 1 -name 'run-*' -type d -mtime +"$TRIM_KEEP_DAYS" -exec rm -rf {} + 2>/dev/null
 
+# The node guard's exclusion (site-canary docs/NODE_GUARD.md, Actuation):
+# the document the guard publishes beside the pilot, fetched once per
+# pass. A live document in force that lists this host on this queue
+# ends the pass before a pilot starts, after a pause so the launcher
+# loop does not spin; anything else proceeds.
+NODE_EXCLUSION_URL=${NODE_EXCLUSION_URL:-https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/node-exclusion.json}
+EXCLUSION_DOC=$(curl -sfL -m 10 "$NODE_EXCLUSION_URL" 2>/dev/null)
+EXCLUDED=$(python3 - "$QUEUE" "$EXCLUSION_DOC" <<'PY' 2>/dev/null
+import json, socket, sys
+from datetime import datetime, timezone
+queue = sys.argv[1]
+try:
+    d = json.loads(sys.argv[2])
+    until = datetime.fromisoformat(str(d.get("valid_until", "")).replace("Z", "+00:00"))
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    if d.get("mode") == "live" and datetime.now(timezone.utc) <= until:
+        names = set()
+        for n in (socket.gethostname(), socket.getfqdn()):
+            n = (n or "").strip().lower()
+            names.update({n, n.split(".", 1)[0]})
+        bare = {x.split(".", 1)[0] for x in names}
+        for e in d.get("nodes") or []:
+            h = str(e.get("host") or "").strip().lower()
+            if h and (not e.get("queue") or e["queue"] == queue) and (h in names or ("." not in h and h in bare)):
+                print(f'{h} on {e.get("queue")} since {e.get("since")} ({e.get("reason")})')
+                break
+except Exception:
+    pass
+PY
+)
+if [[ -n "$EXCLUDED" ]]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) node guard excludes this node: $EXCLUDED; no pilot this pass"
+    sleep 300
+    exit 0
+fi
+
 RUNDIR="$WORKBASE/run-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$RUNDIR"
 cd "$RUNDIR"

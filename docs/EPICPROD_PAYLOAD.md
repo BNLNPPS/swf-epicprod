@@ -35,7 +35,7 @@ The stages of run.sh, as cloned:
 |---|---|---|
 | Environment | sources `environment*.sh` from the working directory by glob; prints host, site, disk, condor ads | the sandbox env file |
 | Software | sources the detector setup for `DETECTOR_VERSION`; sets `RUCIO_CONFIG` to its own `rucio.cfg`, account `eicprod` | the container |
-| Landing | `landing_check.py`: a TLS handshake with the Rucio server named in `rucio.cfg` and a TCP connect to the input door, each with a short timeout and one retry; a definite negative exits 80 in seconds with the reason in the stage log and the report, doubt proceeds | `RUCIO_CONFIG`, `XRDRURL` |
+| Landing | `landing_check.py`: a TLS handshake with the Rucio server named in `rucio.cfg` and a TCP connect to the input door, each with a short timeout and one retry, and the node guard's published exclusion fetched once (this node listed by a live document in force); a definite negative exits 80 in seconds with the reason in the stage log and the report, doubt proceeds | `RUCIO_CONFIG`, `XRDRURL`, `NODE_EXCLUSION_URL` |
 | Geometry | resolves the detector compact file for the beams, `<config>_<e>x<p>.xml`, or for the stand-in beams `DETECTOR_BEAMS` names when the image has no geometry for the physics beams; a missing file exits 83 in seconds, before any generation or simulation | the container, `EBEAM`, `PBEAM`, `DETECTOR_BEAMS` |
 | Input | stats a `hepmc3.tree.root` input at the JLab door (`xrdfs stat`, twice; the door's "no such file" exits 85 in seconds, any other answer proceeds) and streams it; copies other inputs with `xrdcp` | `XRDRURL`, `XRDRBASE` |
 | Background | merges signal and background with `SignalBackgroundMerger` from `BG_FILES`, rate-scaled skips and a seed mixed from the input name | the container, staged `BG_FILES` |
@@ -243,7 +243,7 @@ path adds one rather than exiting 1.
 | 66 | The podio metadata was not produced as JSON, so nothing could be registered with it. |
 | 78 | Registration in the catalog of record failed after the output was produced. |
 | 79 | The output name is held by a failed earlier attempt of this job and cannot be regenerated under it; the residual rerun as a new try is the route. |
-| 80 | The landing was declined: the Rucio server or the input door could not be reached from this worker, twice, in the payload's first seconds, so no work was started. The reason is in the stage log and the report; PanDA's retry sends the job elsewhere. |
+| 80 | The landing was declined: the Rucio server or the input door could not be reached from this worker, twice, or the node guard's published exclusion lists this node (a live document in force), in the payload's first seconds, so no work was started. The reason is in the stage log and the report; PanDA's retry sends the job elsewhere. |
 | 82 | Event generation failed (internal EVGEN, EPICPROD_INTERNAL_EVGEN.md): the steering could not be composed, the driver did not build or run, the afterburner did not build from the shipped source, or the afterburner refused the beams. Nothing downstream ran; the step that refused is the last ERROR line of the evgen stage log. |
 | 128+N | The stage's program died on signal N (134 SIGABRT, 135 SIGBUS, 136 SIGFPE, 139 SIGSEGV); the stage log names the stage. The payload does not map these to its own codes, so the signal number survives; the crash trap puts the last 200 lines of the failing stage's log into the report's note and runs the log upload before exiting (SEGFAULT_DIAGNOSIS.md). |
 | 83 | No detector geometry for the beams: the image has no compact file for the physics tag's beam energies (or for the stand-in `DETECTOR_BEAMS` names), so no work was started. The image's ep geometries are 5x41, 5x100, 9x100, 9x130, 9x250, 9x275, 10x100, 10x130, 10x250, 10x275 and 18x275 (26.07.1); a trial at another pair declares a stand-in through the configuration's `detector_beams`. |
@@ -398,6 +398,22 @@ In order, each a committed step on the clone:
    The stat makes the same condition a ten-second input error with its
    own exit code, countable per task and per queue from the PanDA
    record.
+10. **The node guard's exclusion at the landing** (2026-09-16, payload
+    0.18.0; site-canary docs/NODE_GUARD.md, Actuation). The landing
+    check fetches the exclusion document the guard publishes on the
+    devcloud bucket's public pilot prefix
+    (`https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/node-exclusion.json`,
+    `NODE_EXCLUSION_URL`), once, with a 10 s timeout. This worker is
+    excluded when the document is live, inside its validity
+    (`valid_until`, twenty minutes from the cycle that wrote it), and
+    lists this host on this queue: the full name, or the bare name when
+    the record holds a bare name, and the queue from `PILOT_SITENAME`
+    when the pilot's environment reaches the payload. Excluded: exit 80
+    with the node, queue, reason and the time of the trip in the stage
+    log and the report, so PanDA's retry lands elsewhere. A shadow
+    document is read and reported ("would decline") and never
+    declines; a document that cannot be fetched or read proceeds. The
+    cost of a decline is one attempt; the guard's expiry bounds it.
 
 ## Container contract
 

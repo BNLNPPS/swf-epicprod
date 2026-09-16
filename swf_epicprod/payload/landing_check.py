@@ -14,6 +14,15 @@ a short timeout and one retry:
   the Rucio server, from ``auth_host`` in RUCIO_CONFIG, over TLS
   the input door, from XRDRURL (root://host:port), TCP only
 
+And the node guard's exclusion (site-canary docs/NODE_GUARD.md,
+Actuation): the document the guard publishes on the devcloud bucket's
+public pilot prefix (NODE_EXCLUSION_URL), fetched once with a short
+timeout. This worker is excluded when the document is live, inside its
+validity, and lists this host (by its full name, or by its bare name
+when the record holds a bare name) on this queue when the queue is
+known here (PILOT_SITENAME). A shadow document only says what it would
+do. A document that cannot be fetched or read proceeds.
+
 Usage: landing_check.py
 
 Prints one line per check. Exit 0 when every check passes, 4 when any
@@ -21,15 +30,92 @@ definite negative stands after the retry (the reasons are on stdout),
 and 0 with a note when a check cannot be formed, since doubt proceeds.
 """
 import configparser
+import json
 import os
 import socket
 import ssl
 import sys
 import time
+import urllib.request
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 TIMEOUT_S = 15
 RETRY_AFTER_S = 10
+EXCLUSION_URL = os.environ.get(
+    "NODE_EXCLUSION_URL",
+    "https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/node-exclusion.json")
+EXCLUSION_TIMEOUT_S = 10
+
+
+def _host_names():
+    """This worker's names as the job record may hold them: the full
+    name and the bare one."""
+    names = set()
+    for fn in (socket.gethostname, socket.getfqdn):
+        try:
+            n = (fn() or "").strip().lower()
+        except OSError:
+            continue
+        if n:
+            names.add(n)
+            names.add(n.split(".", 1)[0])
+    return names
+
+
+def excluded_here(document, names, queue, now):
+    """The matching entry when this worker is excluded by a live document
+    in force, else None. Pure: the document, the names, the queue and the
+    clock come in."""
+    if not isinstance(document, dict) or document.get("mode") != "live":
+        return None
+    try:
+        until = datetime.fromisoformat(str(document.get("valid_until", "")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    if now > until:
+        return None
+    full = {n for n in names if "." in n}
+    bare = {n.split(".", 1)[0] for n in names}
+    for entry in document.get("nodes") or []:
+        host = str(entry.get("host") or "").strip().lower()
+        if not host:
+            continue
+        if queue and entry.get("queue") and entry["queue"] != queue:
+            continue
+        if host in full or host in names or ("." not in host and host in bare):
+            return entry
+    return None
+
+
+def check_exclusion():
+    """Fetch the published exclusion and read it for this worker; print
+    the outcome. True when the landing may proceed."""
+    try:
+        with urllib.request.urlopen(EXCLUSION_URL, timeout=EXCLUSION_TIMEOUT_S) as r:
+            document = json.loads(r.read().decode())
+    except Exception as exc:  # noqa: BLE001
+        print(f"landing exclusion: not read ({exc.__class__.__name__}: {exc}); proceeding")
+        return True
+    names = _host_names()
+    queue = os.environ.get("PILOT_SITENAME", "").strip()
+    now = datetime.now(timezone.utc)
+    entry = excluded_here(document, names, queue, now)
+    if entry is not None:
+        print(f"landing exclusion FAILED: this node {entry['host']} on {entry['queue']} is excluded "
+              f"by the node guard since {entry.get('since')} ({entry.get('reason')}); "
+              f"declining the landing")
+        return False
+    shadow = excluded_here(dict(document, mode="live"), names, queue, now)
+    if document.get("mode") != "live" and shadow is not None:
+        print(f"landing exclusion: this node {shadow['host']} is listed by the node guard "
+              f"in {document.get('mode')} mode; would decline, proceeding")
+    else:
+        print(f"landing exclusion: not excluded ({len(document.get('nodes') or [])} nodes listed, "
+              f"{document.get('mode')} mode)")
+    return True
 
 
 def _target(url):
@@ -104,10 +190,14 @@ def main():
     else:
         print("landing input-door: no XRDRURL; not checked")
 
-    if not formed:
-        print("landing: nothing to check; proceeding")
+    # The node guard's exclusion, whatever the reachability checks found:
+    # an excluded node is a definite negative of its own.
+    excluded_ok = check_exclusion()
+
+    if not formed and excluded_ok:
+        print("landing: no reachability check could be formed; proceeding")
         return 0
-    return 0 if ok else 4
+    return 0 if (ok and excluded_ok) else 4
 
 
 if __name__ == "__main__":

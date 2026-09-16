@@ -44,6 +44,39 @@ mkdir -p "$WORKDIR" && cd "$WORKDIR" || { log "cannot enter $WORKDIR"; exit 1; }
 log "queue $PQ worker ${HARVESTER_WORKER_ID:-?} harvester ${HARVESTER_ID:-?} task ${SLURM_PROCID:-0} host $(hostname -s) workdir $PWD"
 unset TMPDIR
 
+# The node guard's exclusion (site-canary docs/NODE_GUARD.md, Actuation):
+# the document the guard publishes beside the pilot, fetched once. A live
+# document in force that lists this host on this queue ends the launch
+# here, before a pilot fetches a job; anything else, a shadow document, a
+# fetch that fails, a document that does not parse, proceeds.
+NODE_EXCLUSION_URL=${NODE_EXCLUSION_URL:-https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/node-exclusion.json}
+EXCLUSION_DOC=$(curl -sfL -m 10 "$NODE_EXCLUSION_URL" 2>/dev/null)
+EXCLUDED=$(python3 - "$PQ" "$EXCLUSION_DOC" <<'PY' 2>/dev/null
+import json, socket, sys
+from datetime import datetime, timezone
+queue = sys.argv[1]
+try:
+    d = json.loads(sys.argv[2])
+    until = datetime.fromisoformat(str(d.get("valid_until", "")).replace("Z", "+00:00"))
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    if d.get("mode") == "live" and datetime.now(timezone.utc) <= until:
+        names = set()
+        for n in (socket.gethostname(), socket.getfqdn()):
+            n = (n or "").strip().lower()
+            names.update({n, n.split(".", 1)[0]})
+        bare = {x.split(".", 1)[0] for x in names}
+        for e in d.get("nodes") or []:
+            h = str(e.get("host") or "").strip().lower()
+            if h and (not e.get("queue") or e["queue"] == queue) and (h in names or ("." not in h and h in bare)):
+                print(f'{h} on {e.get("queue")} since {e.get("since")} ({e.get("reason")})')
+                break
+except Exception:
+    pass
+PY
+)
+if [[ -n "$EXCLUDED" ]]; then log "node guard excludes this node: $EXCLUDED; no pilot started"; exit 0; fi
+
 # The pilot.
 curl -sfL "$PILOT_TARBALL_URL" -o pilot3.tar.gz || { log "pilot tarball fetch failed: $PILOT_TARBALL_URL"; exit 1; }
 echo "$PILOT_TARBALL_SHA256  pilot3.tar.gz" | sha256sum -c --quiet || { log "pilot tarball checksum mismatch"; exit 1; }
