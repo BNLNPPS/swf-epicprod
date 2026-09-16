@@ -29,15 +29,22 @@ reading is fair where brokerage spreads a task's jobs over sites, as in
 ATLAS. ePIC's tasks are pinned to one queue each, so a count over all
 sites puts a saturated queue and a starved one in the same group: a
 skip starves the starved one and a pass overfills the saturated one.
-For the epic VO JEDI registers `GenJobThrottler`, which returns
-unthrottled for a work queue without a share, as the epic work queues
-are.
+For the `wlcg` and `epic` VOs JEDI registers `GenJobThrottler`, which
+returns unthrottled for a work queue without a share, as the ePIC work
+queues are. Production tasks carry `wlcg`: the server was commissioned
+with the generic JEDI plugins under that key, and the production
+team's recipe and PCS's Standard Production configuration both submit
+`vo wlcg`, `prodSourceLabel managed`. The `epic` VO carries the test
+paths (canary probes, GPU tests, client-API test submissions).
 
 ## The ePIC engine
 
 `EpicProdJobThrottler`, a `JobThrottlerBase` subclass beside the ATLAS
-one, registered for the epic VO. It keeps the ATLAS rule and the ATLAS
-configuration keys and applies them per site.
+one, registered for both VOs. It keeps the ATLAS rule and the ATLAS
+configuration keys and applies them per site. JEDI's site statistics
+are per VO, so each registration sees its own VO's jobs at a site;
+with production on `wlcg` alone that is the reading wanted, and the
+`epic` limits bound the test traffic separately.
 
 Statistics per site come from the taskbuffer's
 `getJobStatisticsByResourceTypeSite`: for each computing site of the
@@ -103,7 +110,11 @@ exposes the saturated sites as `excluded_sites`.
 
 Registration in `panda_jedi.cfg`, section `[jobthrottle]`:
 
-    modConfig = epic:any:swf_epicprod.jedi.EpicProdJobThrottler:EpicProdJobThrottler
+    modConfig = wlcg:any:swf_epicprod.jedi.EpicProdJobThrottler:EpicProdJobThrottler,epic:any:swf_epicprod.jedi.EpicProdJobThrottler:EpicProdJobThrottler
+
+The configuration rows (component `epic_job_throttler`, app `jedi`)
+are keyed by VO as well: `MODE` and the limits for `wlcg` govern
+production; the `epic` rows govern the test traffic.
 
 The engine needs `swf_epicprod` importable by JEDI's interpreter and, for
 the site exclusion to take effect, the generator change of the previous
