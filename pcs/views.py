@@ -1736,6 +1736,35 @@ def evgen_inputs(request):
             did = entry.get('did')
             if did and did not in matched:
                 matched[did] = ds
+    # The edition a matched sample is represented by: the EVGEN-stage
+    # record is what the match is written against (s0.r0, request
+    # material), and the production edition composed beside it, the same
+    # configuration on a release pair, is what carries the request and the
+    # task (ingest._production_edition; "no default sits on s0.r0"). The
+    # page shows the production edition with its task when one exists and
+    # the record otherwise. Read only: nothing is composed here.
+    production = {}
+    evgen_records = list({ds.pk: ds for ds in matched.values()}.values())
+    if evgen_records:
+        def _identity(d):
+            return (d.scope, d.detector_version, d.detector_config, d.physics_tag_id,
+                    d.evgen_tag_id, d.background_tag_id, d.sample_name)
+        by_identity = {}
+        for d in evgen_records:
+            by_identity.setdefault(_identity(d), []).append(d)
+        siblings = (Dataset.objects
+                    .filter(physics_tag_id__in={d.physics_tag_id for d in evgen_records},
+                            evgen_tag_id__in={d.evgen_tag_id for d in evgen_records})
+                    .exclude(pk__in=[d.pk for d in evgen_records])
+                    .exclude(metadata__contains={'stage': 'evgen'})
+                    .prefetch_related('prod_tasks').order_by('pk'))
+        for sib in siblings:
+            for rec in by_identity.get(_identity(sib), ()):
+                tasks = list(sib.prod_tasks.all())
+                held = production.get(rec.pk)
+                # the edition with a task wins, then the newest
+                if held is None or (tasks and not held[1]) or (bool(tasks) == bool(held[1])):
+                    production[rec.pk] = (sib, tasks[-1] if tasks else None)
 
     from datetime import datetime as _dt
 
@@ -1762,6 +1791,8 @@ def evgen_inputs(request):
             'rses': ', '.join(r['rse'] for r in entry['rses']),
             'complete': entry['complete'],
             'dataset': ds,
+            'edition': production[ds.pk][0] if ds is not None and ds.pk in production else ds,
+            'task': production[ds.pk][1] if ds is not None and ds.pk in production else None,
         })
     # Newest Rucio update first — the standing question this page answers;
     # every column stays click-sortable.

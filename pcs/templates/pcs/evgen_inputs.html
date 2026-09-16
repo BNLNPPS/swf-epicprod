@@ -163,7 +163,7 @@
         <td class="text-nowrap" data-order="{{ r.updated|date:'Y-m-d H:i'|default:'' }}">{% if r.updated %}{{ r.updated|date:'Y-m-d' }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
         <td>{{ r.rses }}</td>
         <td>{% if r.complete %}yes{% else %}<span class="text-muted">partial</span>{% endif %}</td>
-        <td>{% if r.dataset %}<a href="{% url 'pcs:datasets_compose' %}?selected={{ r.dataset.dataset_name|urlencode }}">{{ r.dataset.composed_name }}</a>{% else %}<span class="text-muted">unmatched</span>{% endif %}
+        <td>{% if r.edition %}<a href="{% url 'pcs:datasets_compose' %}?selected={{ r.edition.dataset_name|urlencode }}">{{ r.edition.composed_name }}</a>{% if r.task %} <span class="text-muted">task</span> <a href="{% url 'pcs:prod_task_detail' name=r.task.composed_name %}">{{ r.task.status }}{% if r.task.panda_task_id %} {{ r.task.panda_task_id }}{% endif %}</a>{% endif %}{% else %}<span class="text-muted">unmatched</span>{% endif %}
           {% if r.proposal %}
           <div class="ai-fill rs-proposal mt-1 p-2" data-proposal-id="{{ r.proposal.id }}" style="font-size:.9rem; max-width:34rem;">
             <div><span class="ai-attr-text"><strong>{{ r.proposal.ref }}</strong> proposed intake into {{ r.proposal.campaign }}</span>

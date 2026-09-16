@@ -127,9 +127,15 @@ The **EVGEN inputs page** (`/pcs/evgen/`) presents the assimilated inventory:
 every registered EVGEN dataset with its file count, size, event count
 (Rucio's `events` attribute, set at registration; empty for datasets
 registered before counting), last Rucio update,
-RSEs, completeness, and the PCS evgen dataset it resolves to, newest update
-first; a dataset no request claims shows as unmatched. The page reads the recorded snapshot and matched references only —
-no Rucio call in the render path — and carries the same "Update EVGEN from
+RSEs, completeness, and the PCS edition that represents it, newest update
+first; a dataset no request claims shows as unmatched. The match is
+written against the EVGEN-stage record (s0.r0, request material); the
+column shows the production edition composed beside it, the same
+configuration on a release pair, with its task when one exists, and the
+EVGEN-stage record only when no production edition exists (the 9/14
+rule that no default sits on s0.r0; a matched sample reported as its
+s0.r0 record on 9/16 was this column). The page reads the recorded snapshot and matched references only —
+no Rucio call in the render path, nothing composed — and carries the same "Update EVGEN from
 Rucio" action as the catalog. Its second view, registration coverage,
 lists the EVGEN paths that recorded produced datasets imply but the
 inventory lacks — the registration worklist. The worklist and the
