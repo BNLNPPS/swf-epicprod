@@ -584,8 +584,12 @@
         if (btnEdit) btnEdit.style.display = currentUser ? 'inline-block' : 'none';
         if (btnCopy) btnCopy.style.display = currentUser ? 'inline-block' : 'none';
         let tagsHtml = '';
-        const tagRows = [['Physics', ds.physics_tag], ['EvGen', ds.evgen_tag], ['Simu', ds.simu_tag], ['Reco', ds.reco_tag]];
-        if (ds.background_tag) tagRows.push(['Background', ds.background_tag]);
+        // The edition carries each tag's id and label; the description and
+        // parameters come from allTags, the one copy of every tag on the page.
+        const fullTag = (tt, ref) => (ref && (allTags[tt]||[]).find(t => t.id === ref.id)) || ref;
+        const tagRows = [['Physics', fullTag('p', ds.physics_tag)], ['EvGen', fullTag('e', ds.evgen_tag)],
+                         ['Simu', fullTag('s', ds.simu_tag)], ['Reco', fullTag('r', ds.reco_tag)]];
+        if (ds.background_tag) tagRows.push(['Background', fullTag('k', ds.background_tag)]);
         tagRows.forEach(([label, tag]) => {
             const params = Object.entries(tag.parameters||{})
                 .filter(([,v])=>v)

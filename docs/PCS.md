@@ -251,7 +251,12 @@ rule the page keeps: 2026-09-16 the tasks blob had grown to 4 MB and
 the render to 24 s and 3,200 queries for 1,100 tasks, the third time
 the page had grown this way; the light-entry rule, the once-per-page
 reads and the rows as facts took it to 3.9 MB, 4 s and 19 queries, of
-which the editions blob is 1 MB and the row facts 1.5 MB.
+which the editions blob is 1 MB and the row facts 1.5 MB. The datasets
+compose page keeps the same rule: an edition's entry names its tags by
+id and label, and the page resolves a tag's description and parameters
+from its one list of tags (`allTags`); embedding each tag's document
+per edition had made that page 7.4 MB and 7 s for 6,500 editions, now
+4.2 MB and 3 s.
 
 ### Composed-name Suffixes
 

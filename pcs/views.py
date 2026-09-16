@@ -1636,8 +1636,20 @@ def datasets_compose(request):
                 sublevel='normal', live_default=True)
             return redirect(f"{reverse('pcs:datasets_compose')}?selected={urlquote(ds.dataset_name)}")
 
+    # Every edition, light: the page's JS resolves a tag's description and
+    # parameters from allTags by id, so the entry carries the tag's id and
+    # label only; embedding each tag's document per edition made the blob
+    # 7 MB for 6,500 editions (2026-09-16), the same tags repeated
+    # thousands of times. The tag documents are not read here either, so
+    # they are not loaded.
     qs = Dataset.objects.filter(block_num=1).select_related(
         'physics_tag', 'evgen_tag', 'simu_tag', 'reco_tag', 'background_tag',
+    ).defer(
+        'physics_tag__parameters', 'physics_tag__description',
+        'evgen_tag__parameters', 'evgen_tag__description',
+        'simu_tag__parameters', 'simu_tag__description',
+        'reco_tag__parameters', 'reco_tag__description',
+        'background_tag__parameters', 'background_tag__description',
     ).order_by('-created_at')
     # PWG priority of an evgen dataset's EVGEN input(s), keyed by the
     # /EVGEN/... path as on the EVGEN inputs page (EPICPROD_EVGEN_INPUTS.md,
@@ -1662,16 +1674,11 @@ def datasets_compose(request):
             'blocks': ds.blocks,
             'created_by': ds.created_by,
             'created_at': ds.created_at.strftime('%Y-%m-%d %H:%M'),
-            'physics_tag': {'id': ds.physics_tag_id, 'label': ds.physics_tag.tag_label,
-                            'description': ds.physics_tag.description, 'parameters': ds.physics_tag.parameters},
-            'evgen_tag': {'id': ds.evgen_tag_id, 'label': ds.evgen_tag.tag_label,
-                          'description': ds.evgen_tag.description, 'parameters': ds.evgen_tag.parameters},
-            'simu_tag': {'id': ds.simu_tag_id, 'label': ds.simu_tag.tag_label,
-                         'description': ds.simu_tag.description, 'parameters': ds.simu_tag.parameters},
-            'reco_tag': {'id': ds.reco_tag_id, 'label': ds.reco_tag.tag_label,
-                         'description': ds.reco_tag.description, 'parameters': ds.reco_tag.parameters},
-            'background_tag': ({'id': ds.background_tag_id, 'label': ds.background_tag.tag_label,
-                                'description': ds.background_tag.description, 'parameters': ds.background_tag.parameters}
+            'physics_tag': {'id': ds.physics_tag_id, 'label': ds.physics_tag.tag_label},
+            'evgen_tag': {'id': ds.evgen_tag_id, 'label': ds.evgen_tag.tag_label},
+            'simu_tag': {'id': ds.simu_tag_id, 'label': ds.simu_tag.tag_label},
+            'reco_tag': {'id': ds.reco_tag_id, 'label': ds.reco_tag.tag_label},
+            'background_tag': ({'id': ds.background_tag_id, 'label': ds.background_tag.tag_label}
                                if ds.background_tag_id else None),
         })
 
