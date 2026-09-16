@@ -6148,6 +6148,8 @@ def front_page(request):
             'runnable_h': d.get('runnable_h'),
             'not_started': d.get('not_started', ''),
             'running': d.get('running', ''),
+            'ungenerated': d.get('ungenerated', ''),
+            'ungenerated_h': d.get('ungenerated_h'),
             'ceiling': d.get('ceiling', ''),
             'tasks_active': d.get('tasks_active', ''),
             'h_low': settings['h_low'], 'h_high': settings['h_high'],
@@ -6189,6 +6191,7 @@ def front_page(request):
     return render(request, 'pcs/front.html', {
         'enabled': bool(config.get('front.enabled', False)),
         'mode': str(config.get('front.mode', 'shadow')),
+        'jedi_throttled': bool(config.get('front.jedi_throttled', False)),
         'state': state,
         'never_run': not state,
         'cycle_at': state.get('cycle_at'),

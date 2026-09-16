@@ -6221,7 +6221,7 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
 
 
 def prodtask_submit_request(*, task, residual=False, residual_of=None,
-                            changed_by=''):
+                            changed_by='', source=None):
     """Publish a submit_task request for a locked (ready) task to the prod-ops
     agent. The web tier holds no PanDA credential — it only asks the agent to
     run the submission, which records the jediTaskID back. Gates mirror
@@ -6229,7 +6229,9 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
     would then be refused. Raises ServiceError on a bad state or an
     unreachable queue. This is the single submit trigger, behind the REST
     `submit` action (compose view + the task detail page's "Submit in Compose"
-    link); the legacy page-view submit was retired."""
+    link) and the pressure front's feed (swf_epicprod.front, which passes
+    ``source='pcs_front_feed'`` so the attempt records its origin); the
+    legacy page-view submit was retired."""
     import json as _json
     if task.panda_task_id is not None:
         raise ServiceError(
@@ -6248,7 +6250,7 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
         task.refresh_from_db()
     panda_tasks = prodtask_allocate_panda_tasks(
         task=task,
-        source='pcs_rerun_residual' if residual else 'pcs_submit_request')
+        source=source or ('pcs_rerun_residual' if residual else 'pcs_submit_request'))
     if residual:
         meta = dict(panda_tasks.metadata or {})
         meta['residual_of'] = residual_of

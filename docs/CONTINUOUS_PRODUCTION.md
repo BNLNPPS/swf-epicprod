@@ -242,6 +242,30 @@ ready task's declared job count comes from its manifest, which reads
 the input catalog, and is cached a day per task, per-job count and
 matched inputs.
 
+The feed (2026-09-16): `front.mode` takes `active`, and a `fed`
+decision submits the task through `prodtask_submit_request`, the same
+call the compose panel's Submit makes, with `front` as the editor and
+`pcs_front_feed` as the attempt's association source (the manual path
+records `pcs_submit_request`). The cycle still holds no credential: the
+call allocates the attempt and enqueues the credentialed
+`submit_evgen_task` doer, which records the jediTaskID back. A feed the
+call refuses (the task already submitted, the agent queue unreachable)
+is recorded as `error (feed_failed)` with the refusal and is not counted
+as committed depth, so the next cycle decides again. A ready task with
+an open attempt, an allocated `PandaTasks` row without a jediTaskID
+that is not marked `submit_failed`, is ineligible with the problem
+named on the page (a submission in flight, or an orphan the operator
+records), so the front never submits a task twice. Phase two is the key
+`front.jedi_throttled` (False): once the ePIC job throttler paces
+generation in JEDI, the operator sets it true and committed depth
+gains, per queue, the ungenerated rows of the queue's non-terminal
+production tasks (`nFilesToBeUsed - nFilesUsed` over their input
+datasets, carried by the census as `ungenerated`); the job cap and the
+oversize hold then retire, as § Two regulators says, and the record
+carries `phase`. The switches for commissioning one queue: `front.enabled`
+true, `front.mode` active, `front.queue.<queue>.feed` true, `t_max` the
+task cap; `max_per_cycle` and the activation window bound a cycle.
+
 ### States and reason codes
 
 | State | Condition | Action | Reason |

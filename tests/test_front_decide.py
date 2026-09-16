@@ -6,11 +6,12 @@ from swf_epicprod.front import decide, fast_detectors
 
 
 def census(not_started=0, running=0, ceiling=1000, median_h=2.0, hours=None,
-           tasks_active=0, p90_start_h=1.0, gate=None):
+           tasks_active=0, p90_start_h=1.0, gate=None, ungenerated=0):
     if hours is None and ceiling:
         hours = round(not_started * median_h / ceiling, 2)
     return {'not_started': not_started, 'running': running, 'ceiling': ceiling,
-            'tasks_active': tasks_active, 'hours_at_capacity': hours,
+            'tasks_active': tasks_active, 'ungenerated': ungenerated,
+            'hours_at_capacity': hours,
             'calibration': {'median_walltime_h': median_h,
                             'p90_start_latency_h': p90_start_h},
             'gate': gate or {'finished': 0, 'failed': 0, 'fast_failed': 0}}
@@ -28,10 +29,11 @@ GREEN = {'canary': {'status': 'healthy', 'age_h': 0.5, 'red': False, 'reason': '
 
 
 def run(census_q, backlog, settings=SETTINGS, gates=GREEN, feeds=(), *,
-        enabled=True, mode='shadow', max_per_cycle=2, last_feed_age_h=None):
+        enabled=True, mode='shadow', max_per_cycle=2, last_feed_age_h=None,
+        jedi_throttled=False):
     return decide('Q', census_q, list(backlog), dict(settings), gates, list(feeds),
                   enabled=enabled, mode=mode, max_per_cycle=max_per_cycle,
-                  last_feed_age_h=last_feed_age_h)
+                  last_feed_age_h=last_feed_age_h, jedi_throttled=jedi_throttled)
 
 
 class DecideTest(unittest.TestCase):
@@ -104,6 +106,30 @@ class DecideTest(unittest.TestCase):
 
     def test_unsized_candidate_holds(self):
         self.assertEqual(run(census(), [entry('t', rows=None)])[0][:2], ('held', 'unsized_task'))
+
+    def test_active_mode_feeds_and_names_the_task(self):
+        out = run(census(), [entry('t')], mode='active')
+        self.assertEqual(out[0][:2], ('fed', 'fed:t'))
+        self.assertEqual(out[0][2]['candidate_pk'], 1)
+        self.assertEqual(out[0][2]['phase'], 'unthrottled')
+
+    def test_throttled_phase_counts_ungenerated_rows_and_retires_the_caps(self):
+        # 5000 ungenerated rows are 10 h at capacity: unthrottled they are
+        # invisible (JEDI activated everything it generated, the rest is
+        # not yet committed); throttled they are the queue's committed depth.
+        q = census(ungenerated=5000)
+        self.assertEqual(run(q, [entry('t')])[0][0], 'would_feed')
+        out = run(q, [entry('t')], jedi_throttled=True)
+        self.assertEqual(out[0][:2], ('supplied', 'supplied'))
+        self.assertEqual(out[0][2]['committed_h'], 10.0)
+        self.assertEqual(out[0][2]['ungenerated_h'], 10.0)
+        self.assertEqual(out[0][2]['phase'], 'throttled')
+        # The job cap and the oversize hold retire: the pool is JEDI's to bound.
+        capped = dict(SETTINGS, j_max=1500)
+        self.assertEqual(run(census(not_started=1000), [entry('t', rows=1000)], settings=capped,
+                             jedi_throttled=True)[0][0], 'would_feed')
+        self.assertEqual(run(census(), [entry('huge', rows=13000)], jedi_throttled=True)[0][:2],
+                         ('held', 'would_exceed_high'))
 
     def test_awaiting_observation_counts_the_feed(self):
         feeds = [{'candidate_rows': 2000}]

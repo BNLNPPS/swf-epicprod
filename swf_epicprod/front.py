@@ -6,16 +6,21 @@ and record the decision on the action stream.
 The cycle runs as the production-operations agent's ``front_cycle``
 doer (swf-monitor ``scripts/front-cycle.py``), every five minutes by
 cron enqueue. It holds no credential: a feed is the existing PCS submit
-action, which enqueues the credentialed submitter. In shadow mode (the
-first build, and the only mode until the feed is built) the cycle
-decides and records but never submits; the decision it would have made
-reads ``would_feed``.
+request (``pcs.services.prodtask_submit_request``, the compose panel's
+Submit), which allocates the attempt and enqueues the credentialed
+submitter. In shadow mode the cycle decides and records but never
+submits; the decision it would have made reads ``would_feed``. In
+active mode a ``fed`` decision submits; a refused feed is recorded as
+``error (feed_failed)`` and decided again next cycle.
 
 Settings live in SysConfig under ``front.*`` and are seeded at their
 defaults on first read, so every knob is visible on the System page:
 
 - ``front.enabled`` (False): the global switch.
-- ``front.mode`` ('shadow'): shadow, or active once the feed exists.
+- ``front.mode`` ('shadow'): shadow, or active.
+- ``front.jedi_throttled`` (False): phase two, once the ePIC job
+  throttler paces generation in JEDI: committed depth counts the
+  queue's ungenerated rows, and the job cap and oversize hold retire.
 - ``front.queues``: the regulated queues.
 - ``front.max_per_cycle`` (2): feeds per queue per cycle.
 - ``front.activation_window_s`` (600): a feed counts as committed depth
@@ -49,7 +54,8 @@ DEFAULT_QUEUES = ['BNL_OSG_EPIC_PROD_1', 'UM_GREX_PanDA_1',
                   'NERSC_Perlmutter_epic', 'BNL_ePIC_GOOGLE']
 QUEUE_DEFAULTS = {'feed': False, 'h_low': 8.0, 'h_high': 24.0,
                   'j_max': 0, 't_max': 3, 'breaker': 'closed'}
-MODES = ('shadow',)
+MODES = ('shadow', 'active')
+FEED_SOURCE = 'pcs_front_feed'
 HEARTBEAT_S = 3600
 CANARY_STALE_H = 24
 CREDENTIAL_STALE_H = 36
@@ -233,6 +239,21 @@ def task_rows(task, cfg):
     return rows
 
 
+def open_attempt_problem(task):
+    """The readiness problem of a task whose submission is in flight or
+    orphaned: an allocated ``PandaTasks`` attempt without a jediTaskID
+    that is not marked ``submit_failed``. The front never submits such a
+    task again; an orphan is the operator's to record."""
+    row = (task.panda_tasks.filter(jedi_task_id__isnull=True)
+           .exclude(status_snapshot='submit_failed')
+           .order_by('-try_number').first())
+    if row is None:
+        return None
+    return (f'a submission attempt is open: try {row.try_number} allocated '
+            f'{row.created_at:%m/%d %H:%M} ({row.association_source or "unknown source"}), '
+            f'no jediTaskID yet')
+
+
 def ready_backlog():
     """The ``ready`` tasks by pinned queue, eligible ones first in
     priority order (level 1 first, unset last, then oldest), each with
@@ -255,6 +276,9 @@ def ready_backlog():
             queue = pinned_site(task, cfg=cfg)
             entry['level'], entry['level_source'] = prodtask_priority_level(task)
             entry['problems'] = list(prodtask_readiness_problems(task))
+            open_attempt = open_attempt_problem(task)
+            if open_attempt:
+                entry['problems'].append(open_attempt)
             # Rows are read for every ready task that can be sized, so
             # the ready hours count the whole backlog, not only the
             # eligible part; a task without a matched input has none.
@@ -271,7 +295,7 @@ def ready_backlog():
 # The decision
 
 def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
-           max_per_cycle, last_feed_age_h):
+           max_per_cycle, last_feed_age_h, jedi_throttled=False):
     """One queue's decisions, pure: a list of ``(state, reason, record)``,
     one per feed, else one for the queue's state.
 
@@ -280,6 +304,10 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     values, ``gates`` the canary and credential gates, ``feeds`` the
     front's feeds younger than the activation window, ``last_feed_age_h``
     the hours since its latest feed (None when it never fed the queue).
+    ``jedi_throttled`` is phase two (CONTINUOUS_PRODUCTION.md, Two
+    regulators): the ePIC job throttler bounds the activated pool, so
+    committed depth counts the queue's ungenerated rows and the job cap
+    and the oversize hold retire.
     """
     qs = settings
     q = census_q or {}
@@ -290,11 +318,16 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     not_started = int(q.get('not_started') or 0)
     running = int(q.get('running') or 0)
     tasks_active = int(q.get('tasks_active') or 0)
+    ungenerated = int(q.get('ungenerated') or 0)
     runnable_h = q.get('hours_at_capacity')
     inflight_rows = sum(int(f.get('candidate_rows') or 0) for f in feeds)
     inflight_h = (round(inflight_rows * median_h / ceiling, 2)
                   if median_h and ceiling > 0 else 0.0)
-    committed_h = (round((runnable_h or 0.0) + inflight_h, 2)
+    ungenerated_h = (round(ungenerated * median_h / ceiling, 2)
+                     if median_h and ceiling > 0 else 0.0)
+    phase = 'throttled' if jedi_throttled else 'unthrottled'
+    committed_h = (round((runnable_h or 0.0) + inflight_h
+                         + (ungenerated_h if jedi_throttled else 0.0), 2)
                    if runnable_h is not None else None)
     canary = gates.get('canary') or {}
     credential = gates.get('credential') or {}
@@ -305,9 +338,10 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     j_max, t_max = int(qs['j_max'] or 0), int(qs['t_max'] or 0)
 
     base = {
-        'queue': queue, 'mode': mode,
+        'queue': queue, 'mode': mode, 'phase': phase,
         'not_started': not_started, 'running': running, 'ceiling': ceiling,
         'tasks_active': tasks_active,
+        'ungenerated': ungenerated, 'ungenerated_h': ungenerated_h,
         'median_walltime_h': median_h, 'p90_start_latency_h': p90_start_h,
         'runnable_h': runnable_h,
         'inflight_feeds': len(feeds), 'inflight_h': inflight_h,
@@ -327,6 +361,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     def rec(candidate=None, **more):
         r = dict(base)
         r['candidate'] = candidate['task'] if candidate else ''
+        r['candidate_pk'] = candidate.get('pk') if candidate else None
         r['candidate_rows'] = candidate['rows'] if candidate else None
         r['candidate_level'] = candidate['level'] if candidate else None
         r.update(more)
@@ -372,7 +407,12 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
             out.append(('held', 'unsized_task', rec(candidate)))
             break
         candidate_h = round(rows * median_h / ceiling, 2)
-        if candidate_h > h_high:
+        # Phase one: everything a task declares is activated at once, so
+        # one task past the high-water mark is the operator's call and
+        # the job cap bounds the pool. Phase two: JEDI paces generation,
+        # the pool is its to bound, and only the water marks and the
+        # task cap remain.
+        if not jedi_throttled and candidate_h > h_high:
             out.append(('oversize', 'oversize_task', rec(candidate, candidate_h=candidate_h)))
             break
         if committed + candidate_h > h_high:
@@ -383,7 +423,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         if t_max and tasks_active + fed + 1 > t_max:
             out.append(('held', 'task_cap', rec(candidate, candidate_h=candidate_h)))
             break
-        if j_max and not_started + fed_rows + rows > j_max:
+        if not jedi_throttled and j_max and not_started + fed_rows + rows > j_max:
             out.append(('held', 'job_cap', rec(candidate, candidate_h=candidate_h)))
             break
         state = 'fed' if mode == 'active' else 'would_feed'
@@ -437,6 +477,44 @@ def hours_summary(backlog, latest):
     return {'ready': ready, 'capacity': capacity, 'drain_h': drain_h}
 
 
+# The feed
+
+def feed_task(candidate_pk, created_by='front'):
+    """Submit one ready task: the PCS submit request, which allocates the
+    attempt (association source ``pcs_front_feed``) and enqueues the
+    credentialed ``submit_evgen_task`` doer. Raises on refusal
+    (``ServiceError``: already submitted, agent queue unreachable) or a
+    missing task; the caller records the refusal."""
+    from pcs.models import ProdTask
+    from pcs.services import prodtask_submit_request
+    task = ProdTask.objects.get(pk=candidate_pk)
+    prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE)
+    return task
+
+
+def _apply_feeds(outcomes, *, created_by):
+    """Active mode: perform each ``fed`` decision. A refused feed becomes
+    ``error (feed_failed)`` carrying the refusal; it is not a feed on the
+    record, so the next cycle decides the queue again."""
+    applied = []
+    for state, reason, record in outcomes:
+        if state != 'fed':
+            applied.append((state, reason, record))
+            continue
+        pk = record.get('candidate_pk')
+        try:
+            if pk is None:
+                raise ValueError('the candidate carries no task pk')
+            feed_task(pk, created_by=created_by)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('front: feed of %s (pk %s) refused', record.get('candidate'), pk)
+            applied.append(('error', 'feed_failed',
+                            dict(record, error=f'{type(exc).__name__}: {exc}')))
+            continue
+        applied.append((state, reason, dict(record, submitted=True)))
+    return applied
+
+
 # The cycle
 
 def run_cycle(*, dry_run=False, created_by='front'):
@@ -459,10 +537,11 @@ def run_cycle(*, dry_run=False, created_by='front'):
     mode_requested = str(setting('front.mode', 'shadow'))
     mode = mode_requested
     if mode not in MODES:
-        logger.error('front.mode %r is not available (the feed is not built); deciding as shadow',
-                     mode_requested)
-        errors.append(f'front.mode {mode_requested!r} is not available; decided as shadow')
+        logger.error('front.mode %r is not one of %s; deciding as shadow',
+                     mode_requested, MODES)
+        errors.append(f'front.mode {mode_requested!r} is not one of {MODES}; decided as shadow')
         mode = 'shadow'
+    jedi_throttled = bool(setting('front.jedi_throttled', False))
     queues = regulated_queues()
     max_per_cycle = max(1, int(setting('front.max_per_cycle', 2) or 1))
     activation_window_s = int(setting('front.activation_window_s', 600))
@@ -504,11 +583,14 @@ def run_cycle(*, dry_run=False, created_by='front'):
                                {'canary': canary, 'credential': credential,
                                 'declared': declared}, feeds,
                                enabled=enabled, mode=mode, max_per_cycle=max_per_cycle,
-                               last_feed_age_h=last_feed_age_h),
+                               last_feed_age_h=last_feed_age_h,
+                               jedi_throttled=jedi_throttled),
                 lambda exc: [('error', 'decision_error',
                               {'queue': queue, 'mode': mode, 'error': f'{type(exc).__name__}: {exc}',
                                'h_low': settings['h_low'], 'h_high': settings['h_high'],
                                'ready_total': len(backlog.get(queue, [])), 'ready_eligible': 0})])
+            if mode == 'active' and not dry_run:
+                outcomes = _apply_feeds(outcomes, created_by=created_by)
         last = _safe(f'{queue} last decision', lambda: _last_decision(queue), None)
         last_extra = (last or {}).get('extra_data') or {}
         stale = (last is not None and (t0 - last['timestamp']).total_seconds() >= HEARTBEAT_S)
@@ -536,7 +618,8 @@ def run_cycle(*, dry_run=False, created_by='front'):
                 message=(f'front {queue}: {state} ({reason}); committed {depth} '
                          f'of {record.get("h_low")}-{record.get("h_high")} h; '
                          f'{record.get("ready_eligible", 0)} eligible of '
-                         f'{record.get("ready_total", 0)} ready'),
+                         f'{record.get("ready_total", 0)} ready'
+                         + (f'; {record["error"]}' if record.get('error') else '')),
                 **{k: v for k, v in record.items() if k != 'queue'}), failed(f'{queue} record'))
             written += 1
 
@@ -547,6 +630,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
                   failed('hours summary'))
     summary = {'observed_at': (census or {}).get('observed_at') if census else None,
                'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
+               'jedi_throttled': jedi_throttled,
                'queues': len(queues), 'decisions_recorded': written,
                'errors': errors,
                'states': {q: d['state'] for q, d in latest.items()},
@@ -554,6 +638,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
     if not dry_run:
         state_payload = {'observed_at': summary['observed_at'], 'cycle_at': t0.isoformat(),
                          'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
+                         'jedi_throttled': jedi_throttled,
                          'queues': latest, 'backlog': backlog, 'errors': errors,
                          'hours': hours, 'duration_s': summary['duration_s']}
         from monitor_app.cached_product import get_product
