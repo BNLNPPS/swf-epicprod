@@ -414,6 +414,18 @@ In order, each a committed step on the clone:
     document is read and reported ("would decline") and never
     declines; a document that cannot be fetched or read proceeds. The
     cost of a decline is one attempt; the guard's expiry bounds it.
+11. **The registrar's exit reaches its handling** (2026-09-16, payload
+    0.18.1). Since 0.4.2 the three registration calls were bare
+    commands under the script's ERR trap, so a registrar that exited
+    nonzero ended the job with that raw code, 1 or 81, before the
+    pending, stash and 78 paths of item 2 could run: the paths were
+    dead. Task 39994 showed it, 113 jobs with 100 events simulated,
+    reconstructed and validated thrown away at registration while the
+    JLab catalog faltered under three 50,000-job tasks. The calls now
+    run in an `if`, the exit code reaches `REG_RC`, and the handling
+    is live: 81 records the registration pending and the job exits on
+    its physics, other failures stash the output at BNL, 78 only when
+    the stash refuses too.
 
 ## Container contract
 

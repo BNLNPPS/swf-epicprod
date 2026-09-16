@@ -891,8 +891,15 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
     # recorded pending and the job carries on (docs/RUCIO_RESILIENCE.md,
     # Measure 2). A catalog that answers, and answers that the output is not
     # there, is a real failure and still exits 78.
-    monitor registration_full python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}
-    REG_RC=$?
+    # In an if, so the registrar's exit reaches the handling below rather
+    # than the ERR trap: a bare call ended the job with the registrar's raw
+    # code (1, 81) before the pending, stash and 78 paths could run (task
+    # 39994, 2026-09-16: 113 finished jobs lost at registration).
+    if monitor registration_full python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}; then
+      REG_RC=0
+    else
+      REG_RC=$?
+    fi
     if [ ${REG_RC} -eq 0 ]; then
       stage registration ok "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
     elif [ ${REG_RC} -eq 81 ]; then
@@ -956,8 +963,15 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     stage registration start RECO
     # Pending rather than failed when the catalog cannot answer; see the FULL
     # step above and docs/RUCIO_RESILIENCE.md, Measure 2.
-    monitor registration_reco python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}
-    REG_RC=$?
+    # In an if, so the registrar's exit reaches the handling below rather
+    # than the ERR trap: a bare call ended the job with the registrar's raw
+    # code (1, 81) before the pending, stash and 78 paths could run (task
+    # 39994, 2026-09-16: 113 finished jobs lost at registration).
+    if monitor registration_reco python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}; then
+      REG_RC=0
+    else
+      REG_RC=$?
+    fi
     if [ ${REG_RC} -eq 0 ] && [ -s "${DIVERTED_OUT}" ]; then
       DIVERTED_DID=$(cat "${DIVERTED_OUT}")
       echo "RECO registered under a derived name: ${DIVERTED_DID}"
@@ -1010,8 +1024,15 @@ if [ "${EVGEN_INTERNAL:-false}" == "true" ] && [ "${COPYEVGEN:-false}" == "true"
     EVGEN_EVENTS_ARGS=(--events "${EVGEN_EVENTS}")
   fi
   stage registration start EVGEN
-  monitor registration_evgen python $SCRIPT_DIR/register_to_rucio.py -f "${EVGEN_LOCAL}" -d "/${EVGEN_DIR}/${EVGEN_NAME}" -s epic -r ${OUT_RSE:-EIC-XRD} ${EVGEN_EVENTS_ARGS[@]+"${EVGEN_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}
-  REG_RC=$?
+  # In an if, so the registrar's exit reaches the handling below rather
+  # than the ERR trap: a bare call ended the job with the registrar's raw
+  # code (1, 81) before the pending, stash and 78 paths could run (task
+  # 39994, 2026-09-16: 113 finished jobs lost at registration).
+  if monitor registration_evgen python $SCRIPT_DIR/register_to_rucio.py -f "${EVGEN_LOCAL}" -d "/${EVGEN_DIR}/${EVGEN_NAME}" -s epic -r ${OUT_RSE:-EIC-XRD} ${EVGEN_EVENTS_ARGS[@]+"${EVGEN_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}; then
+    REG_RC=0
+  else
+    REG_RC=$?
+  fi
   if [ ${REG_RC} -eq 0 ]; then
     stage registration ok "/${EVGEN_DIR}/${EVGEN_NAME}"
   elif [ ${REG_RC} -eq 81 ]; then
