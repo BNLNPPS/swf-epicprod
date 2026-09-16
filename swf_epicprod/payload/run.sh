@@ -389,6 +389,35 @@ if [ "${EVGEN_INTERNAL:-false}" == "true" ]; then
   # The sample generated above, in the place a streamed one is read from.
   INPUT_FILE=${EVGEN_LOCAL}
 elif [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
+  # A streamed input is touched by nothing before npsim opens it minutes
+  # into the job, and npsim segfaults on an open the door refuses (task
+  # 39973, 2026-09-15: the door answered "no such file" for four minutes
+  # and 443 jobs died six minutes in). So stat the file at the door
+  # first, twice: the door's "no such file or directory" is a definite
+  # negative and exits 85 in seconds with nothing started; any other
+  # answer (a timeout, an unreachable door) proceeds, since doubt
+  # proceeds and the landing check has spoken for reachability.
+  INPUT_MISSING=""
+  for attempt in 1 2; do
+    if INPUT_STAT=$(timeout "${INPUT_STAT_TIMEOUT_S:-30}" xrdfs ${XRDRURL} stat ${XRDRBASE}/${INPUT_FILE} 2>&1); then
+      INPUT_MISSING=""
+      echo "input at the door: $(echo "${INPUT_STAT}" | grep -E '^Size' | tr -s ' ')"
+      break
+    elif echo "${INPUT_STAT}" | grep -qi "no such file or directory"; then
+      INPUT_MISSING="$(echo "${INPUT_STAT}" | grep -i 'no such file or directory' | head -1)"
+      if [ "${attempt}" -eq 1 ]; then sleep 10; fi
+    else
+      echo "input stat gave no answer (proceeding): $(echo "${INPUT_STAT}" | head -3)"
+      INPUT_MISSING=""
+      break
+    fi
+  done
+  if [ -n "${INPUT_MISSING}" ]; then
+    stage input fail "input not at the door, twice: ${XRDRBASE}/${INPUT_FILE}; ${INPUT_MISSING}"
+    REPORT_NOTE="input not at the door: ${INPUT_MISSING}"
+    echo "ERROR: input file not at the door; no work started. ${INPUT_MISSING}"
+    exit 85
+  fi
   # Define location on xrootd from where to stream input file from
   INPUT_FILE=${XRDRURL}/${XRDRBASE}/${INPUT_FILE}
 else

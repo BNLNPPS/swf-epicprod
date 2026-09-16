@@ -37,7 +37,7 @@ The stages of run.sh, as cloned:
 | Software | sources the detector setup for `DETECTOR_VERSION`; sets `RUCIO_CONFIG` to its own `rucio.cfg`, account `eicprod` | the container |
 | Landing | `landing_check.py`: a TLS handshake with the Rucio server named in `rucio.cfg` and a TCP connect to the input door, each with a short timeout and one retry; a definite negative exits 80 in seconds with the reason in the stage log and the report, doubt proceeds | `RUCIO_CONFIG`, `XRDRURL` |
 | Geometry | resolves the detector compact file for the beams, `<config>_<e>x<p>.xml`, or for the stand-in beams `DETECTOR_BEAMS` names when the image has no geometry for the physics beams; a missing file exits 83 in seconds, before any generation or simulation | the container, `EBEAM`, `PBEAM`, `DETECTOR_BEAMS` |
-| Input | streams `hepmc3.tree.root` input from the JLab door, copies other inputs with `xrdcp` | `XRDRURL`, `XRDRBASE` |
+| Input | stats a `hepmc3.tree.root` input at the JLab door (`xrdfs stat`, twice; the door's "no such file" exits 85 in seconds, any other answer proceeds) and streams it; copies other inputs with `xrdcp` | `XRDRURL`, `XRDRBASE` |
 | Background | merges signal and background with `SignalBackgroundMerger` from `BG_FILES`, rate-scaled skips and a seed mixed from the input name | the container, staged `BG_FILES` |
 | Simulation | `npsim` under `prmon`, seeded per chunk | the container |
 | Reconstruction | `eicrecon` under `prmon` | the container |
@@ -247,6 +247,7 @@ path adds one rather than exiting 1.
 | 82 | Event generation failed (internal EVGEN, EPICPROD_INTERNAL_EVGEN.md): the steering could not be composed, the driver did not build or run, the afterburner did not build from the shipped source, or the afterburner refused the beams. Nothing downstream ran; the step that refused is the last ERROR line of the evgen stage log. |
 | 128+N | The stage's program died on signal N (134 SIGABRT, 135 SIGBUS, 136 SIGFPE, 139 SIGSEGV); the stage log names the stage. The payload does not map these to its own codes, so the signal number survives; the crash trap puts the last 200 lines of the failing stage's log into the report's note and runs the log upload before exiting (SEGFAULT_DIAGNOSIS.md). |
 | 83 | No detector geometry for the beams: the image has no compact file for the physics tag's beam energies (or for the stand-in `DETECTOR_BEAMS` names), so no work was started. The image's ep geometries are 5x41, 5x100, 9x100, 9x130, 9x250, 9x275, 10x100, 10x130, 10x250, 10x275 and 18x275 (26.07.1); a trial at another pair declares a stand-in through the configuration's `detector_beams`. |
+| 85 | The input is not at the door: `xrdfs stat` of the streamed `hepmc3.tree.root` input was answered "no such file or directory" twice, ten seconds apart, so no work was started. The door's answer is in the stage log and the report; PanDA's retry runs the job again. A stat that gets no answer (a timeout, an unreachable door) proceeds. |
 
 Codes 65, 78 and 79 also appear in the run script's stage log and in
 the payload report, so a job that dies before its report is sent is
@@ -382,6 +383,21 @@ In order, each a committed step on the clone:
    job compares what it reads from its own output file with the
    dataset's metadata and reports a difference in the stage log and
    the payload report, never as a failure.
+9. **The input at the door** (2026-09-16, payload 0.17.0). Before a
+   streamed `hepmc3.tree.root` input is handed to npsim, the input
+   stage stats it at the door (`xrdfs stat`, a 30 s timeout, one retry
+   after 10 s). The door's "no such file or directory" twice is a
+   definite negative: the stage records the door's answer, the report
+   carries it as its note, and the payload exits 85 having started
+   nothing. Any other answer proceeds, since doubt proceeds and the
+   landing check has spoken for reachability. Why: task 39973
+   (2026-09-15) lost 443 jobs in three and a half minutes when the door
+   answered "no such file" for its input; nothing in the job had
+   touched the file before npsim opened it six minutes in, and npsim
+   dies on SIGSEGV on the open it is refused (segfault finding f-13).
+   The stat makes the same condition a ten-second input error with its
+   own exit code, countable per task and per queue from the PanDA
+   record.
 
 ## Container contract
 
