@@ -39,9 +39,9 @@ Usage (cron, every five minutes)::
         [--teamcomms-config /path/to/program.json]
 
 The environment supplies SWF_MONITOR_MCP_TOKEN (the monitor MCP),
-SWF_MONITOR_URL (the monitor's REST face, read anonymously for the PCS
-task record) and TJAI_MCP_TOKEN (delivery). --dry-run prints the notices
-and writes no state.
+SWF_MONITOR_HTTP_URL (the monitor's http face, read anonymously for the
+PCS task record and the node guard) and TJAI_MCP_TOKEN (delivery).
+--dry-run prints the notices and writes no state.
 """
 import argparse
 import datetime as dt
@@ -55,8 +55,10 @@ import uuid
 
 MONITOR_MCP_URL = os.environ.get('SWF_MONITOR_MCP_URL',
                                  'http://127.0.0.1:8001/swf-monitor/mcp/')
-MONITOR_URL = os.environ.get('SWF_MONITOR_URL',
-                             'https://pandaserver02.sdcc.bnl.gov/swf-monitor').rstrip('/')
+# The monitor's http face on this host serves page JSON and the PCS REST
+# API anonymously; the https face redirects page routes to CILogon.
+MONITOR_URL = os.environ.get('SWF_MONITOR_HTTP_URL',
+                             'http://127.0.0.1/swf-monitor').rstrip('/')
 TJAI_MCP_URL = os.environ.get('TJAI_MCP_URL', 'https://etaverse.com/tjai/mcp/')
 LOCATION = os.environ.get('TJAI_LOCATION_NAME', 'swf-testbed')
 TJAI_RESOURCE = f'host:{LOCATION}'
@@ -123,12 +125,9 @@ def read_campaign():
 
 
 def read_nodeguard():
-    try:
-        with urllib.request.urlopen(
-                f'{FACE}/panda/node-guard/?format=json', timeout=30) as r:
-            return json.loads(r.read().decode())
-    except Exception:  # noqa: BLE001
-        return None
+    """The node guard's last cycle and record (panda/node-guard/json/)."""
+    with urllib.request.urlopen(f'{MONITOR_URL}/panda/node-guard/json/', timeout=30) as r:
+        return json.loads(r.read().decode())
 
 
 def read_output_datasets(taskname, tid):
@@ -317,21 +316,28 @@ def arrivals_triggers(tasks, state, failures):
     return notices
 
 
-def nodeguard_triggers(record, state):
-    """nodeguard.trip: the first trip of any node."""
+def nodeguard_triggers(guard, state):
+    """nodeguard.trip: the first time a node is tripped, keyed by
+    queue/host. A trip is a black hole on the node record (written in
+    shadow mode too; the exclusion is published only live), or a node the
+    last cycle judged would_exclude / excluded before the record shows it."""
     notices = []
-    if not isinstance(record, dict):
-        return notices
     told = set(state.get('nodeguard') or [])
-    trips = []
-    for row in record.get('nodes') or record.get('excluded') or []:
-        node = row.get('node') or row.get('name')
-        if node and str(row.get('status') or row.get('state') or '') in ('excluded', 'tripped'):
-            trips.append(node)
-    for node in trips:
-        if node not in told:
-            notices.append(('nodeguard.trip', node,
-                            f'Node guard tripped on {node}.', f'{FACE}/panda/node-guard/'))
+    trips = {}
+    for r in guard.get('record') or []:
+        if r.get('status') == 'black_hole':
+            trips[f"{r.get('queue')}/{r.get('host')}"] = ('tripped', r)
+    for n in guard.get('tripped') or []:
+        key = f"{n.get('queue')}/{n.get('host')}"
+        if key not in trips:
+            trips[key] = ('excluded' if n.get('state') == 'excluded' else 'would exclude', n)
+    for key, (verb, n) in sorted(trips.items()):
+        if key not in told:
+            site = f", {n['site']}" if n.get('site') else ''
+            notices.append(('nodeguard.trip', key,
+                            f"Node guard {verb} {n.get('host')} on {n.get('queue')}{site}: "
+                            f"{n.get('reason') or 'no reason given'} ({guard.get('mode')} mode).",
+                            f'{FACE}/panda/node-guard/'))
     state['nodeguard'] = sorted(set(trips) | told)
     return notices
 
