@@ -243,11 +243,15 @@ dataset's tag parameters, all come from the `compose-detail` routes
 when an item is opened; only the item the URL selects carries its own
 on the page. What is computed per task for the list (readiness,
 priority) reads the campaign plan and each edition's standard
-configuration once for the page, never once per task. This is the rule
-the page keeps: 2026-09-16 the tasks blob had grown to 4 MB and the
-render to 24 s and 3,200 queries for 1,100 tasks, the third time the
-page had grown this way; the light-entry rule and the once-per-page
-reads took it to 1.2 MB and 6 s with 21 queries.
+configuration once for the page, never once per task. The task list's
+rows go out as facts (`pcs.views._compose_task_row`, one small JSON
+list) and the list partial's script builds their markup, so the server
+renders no row and the campaign's tasks are loaded once. This is the
+rule the page keeps: 2026-09-16 the tasks blob had grown to 4 MB and
+the render to 24 s and 3,200 queries for 1,100 tasks, the third time
+the page had grown this way; the light-entry rule, the once-per-page
+reads and the rows as facts took it to 3.9 MB, 4 s and 19 queries, of
+which the editions blob is 1 MB and the row facts 1.5 MB.
 
 ### Composed-name Suffixes
 

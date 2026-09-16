@@ -5623,25 +5623,9 @@ def prod_task_compose(request):
             'updated_at': pc.updated_at.strftime('%Y-%m-%d %H:%M'),
         })
 
-    # Left-panel task list: same campaign scope, dataset-name order, the
-    # partial-friendly shape the catalog uses.
-    campaign_tasks = []
-    if campaign is not None:
-        campaign_tasks = list(
-            ProdTask.objects
-            .select_related(
-                'campaign', 'dataset', 'prod_config', 'request',
-                # The compose list falls back to dataset.composed_name (5 tag
-                # FKs) when a row has no source path; prefetch so native-dataset
-                # campaigns don't hit the same 1 + 5N as the catalog (a9a93ae).
-                'dataset__physics_tag', 'dataset__evgen_tag',
-                'dataset__simu_tag', 'dataset__reco_tag',
-                'dataset__background_tag',
-            )
-            .filter(campaign=campaign)
-            .order_by('dataset__dataset_name')
-        )
-        campaign_tasks = _annotate_task_questionnaire_matches(campaign_tasks)
+    # Left-panel task list: the same task objects, in dataset-name order
+    # (a second query of the campaign loaded every row twice).
+    campaign_tasks = sorted(tasks_list, key=lambda t: (t.dataset.dataset_name if t.dataset_id else '', t.pk))
 
     context = {
         'datasets_json': json.dumps(datasets_data),
@@ -5649,8 +5633,12 @@ def prod_task_compose(request):
         'tasks_json': json.dumps(tasks_data),
         'selected_item_json': json.dumps(selected_name),
         'username': request.user.username if request.user.is_authenticated else '',
-        # Left-panel task-list context (consumed by the list partial):
-        'tasks': campaign_tasks,
+        # Left-panel task-list context (consumed by the list partial): the
+        # rows as facts, built into their markup by the partial's script;
+        # 1,113 server-rendered rows were 3.4 MB and half the render time
+        # (2026-09-16), the same facts are a few hundred KB.
+        'task_rows_json': json.dumps([_compose_task_row(t) for t in campaign_tasks]),
+        'task_count': len(campaign_tasks),
         'ai_executed_names': _executed_proposal_names(),
         'focused_task_id': focused_task.id if focused_task else None,
         'focused_campaign': campaign,
@@ -5659,6 +5647,55 @@ def prod_task_compose(request):
         'filters': {},
     }
     return render(request, 'pcs/prod_task_compose.html', context)
+
+
+def _compose_task_row(t):
+    """One row of the compose view's task list as facts, for
+    pcs/_task_compose_list.html to build into its markup: the facet
+    values its filter reads and the three lines it shows. The formatted
+    strings are the template filters' (state class, label, title; millions;
+    file sizes), so the row reads as it did when the template rendered it."""
+    from django.template.defaultfilters import filesizeformat
+    from monitor_app.templatetags.swf_fmt import millions, state_class, state_label, state_title
+    ov = t.overrides or {}
+    csv = ov.get('csv_import') or {}
+    path_filters = csv.get('filters') or {}
+    bg = str(csv.get('background') or '').lower() == 'yes'
+    ds = t.dataset if t.dataset_id else None
+    proposal = ((ds.metadata or {}).get('proposal') if ds is not None else None) or None
+    cfg_data = (t.prod_config.data or {}) if t.prod_config_id else {}
+    return {
+        'id': t.pk,
+        'name': t.composed_name,
+        'status': t.status or '',
+        'status_class': state_class(t.status), 'status_label': state_label(t.status),
+        'status_title': state_title(t.status),
+        'requestor': t.requestor or '',
+        'submission_path': 'panda' if cfg_data.get('submission_path') == 'panda' else 'condor',
+        'pre_tdr': bool(t.pre_tdr_use), 'early_science': bool(t.early_science_use),
+        'other': bool(t.other_use), 'new_request': bool(t.new_request), 'background': bg,
+        'priority': t.priority or '',
+        'nevents': millions(csv.get('nevents')),
+        'gen_version': csv.get('gen_version') or '',
+        'evgen': csv.get('evgen') or '',
+        'detector': path_filters.get('detector') or '', 'beam': path_filters.get('beam') or '',
+        'physics': path_filters.get('physics') or '', 'q2': path_filters.get('q2') or '',
+        'species': path_filters.get('species') or '', 'energy': path_filters.get('energy') or '',
+        'has_output': bool(t.has_output), 'incomplete_output': bool(t.output_incomplete),
+        'has_simu': 'FULL' in t.output_stages, 'has_reco': 'RECO' in t.output_stages,
+        'search': f"{t.composed_name} {(ds.source_location if ds is not None else '') or ''} "
+                  f"{t.description or ''}".lower(),
+        'modified': t.updated_at.isoformat() if t.updated_at else '',
+        'propagation': (ds.propagation if ds is not None else '') or '',
+        'proposal': ({'prev_state': proposal.get('prev_state'),
+                      'state': (proposal.get('payload') or {}).get('state')}
+                     if isinstance(proposal, dict) else None),
+        'outputs': [{'stage': o.get('stage'), 'files': o.get('file_count'),
+                     'size': filesizeformat(o.get('bytes') or 0), 'complete': o.get('complete', True)}
+                    for o in t.outputs],
+        'output_refs': [{'stage': r.get('stage'), 'owner': r.get('owner')} for r in t.output_refs],
+        'campaign': t.campaign.name if t.campaign_id else '',
+    }
 
 
 @_login_required_flash

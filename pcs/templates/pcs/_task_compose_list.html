@@ -8,7 +8,8 @@ filter bar where facet titles render in a wrapping row and clicking a
 title reveals only that facet's values.
 
 Context expected:
-  tasks            : iterable of ProdTask, select_related(campaign, dataset, prod_config)
+  task_rows_json   : JSON list of row facts (pcs.views._compose_task_row), one per task
+  task_count       : int
   focused_task_id  : int | None — task to highlight on initial render
   focused_campaign : Campaign | None — campaign of the focused task (caption)
   filters          : dict — initial filter values (usually empty for compose view)
@@ -161,85 +162,16 @@ Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
     <div class="pcs-cl-values" id="pcs-cl-values"></div>
   </div>
 
-  <div class="pcs-cl-list" id="pcs-cl-list" tabindex="0">
-    {% for t in tasks %}
-    {% with task_name=t.composed_name source_path=t.dataset.source_location|default:'' gen_ver=t.overrides.csv_import.gen_version evgen=t.overrides.csv_import.evgen|default:'' bg=t.overrides.csv_import.background nev=t.overrides.csv_import.nevents path_filters=t.overrides.csv_import.filters %}
-    <div class="pcs-cl-row{% if focused_task_id == t.pk %} selected{% endif %}"
-         data-task-id="{{ t.pk }}"
-         data-status="{{ t.status|default:'' }}"
-         data-requestor="{{ t.requestor|default:'' }}"
-         data-submission-path="{% if t.prod_config.data.submission_path == 'panda' %}panda{% else %}condor{% endif %}"
-         data-pre-tdr="{% if t.pre_tdr_use %}1{% else %}0{% endif %}"
-         data-early-science="{% if t.early_science_use %}1{% else %}0{% endif %}"
-         data-other="{% if t.other_use %}1{% else %}0{% endif %}"
-         data-new-request="{% if t.new_request %}1{% else %}0{% endif %}"
-         data-background="{% if bg|lower == 'yes' %}1{% else %}0{% endif %}"
-         data-priority="{{ t.priority|default:'' }}"
-         data-nevents="{{ nev|millions }}"
-         data-evgen="{{ evgen }}"
-         data-detector="{{ path_filters.detector|default:'' }}"
-         data-beam="{{ path_filters.beam|default:'' }}"
-         data-physics="{{ path_filters.physics|default:'' }}"
-         data-q2="{{ path_filters.q2|default:'' }}"
-         data-species="{{ path_filters.species|default:'' }}"
-         data-energy="{{ path_filters.energy|default:'' }}"
-         data-has-output="{% if t.has_output %}1{% else %}0{% endif %}"
-         data-no-output="{% if t.has_output %}0{% else %}1{% endif %}"
-         data-incomplete-output="{% if t.output_incomplete %}1{% else %}0{% endif %}"
-         data-has-simu="{% if 'FULL' in t.output_stages %}1{% else %}0{% endif %}"
-         data-has-reco="{% if 'RECO' in t.output_stages %}1{% else %}0{% endif %}"
-         data-search="{{ task_name|lower }} {{ source_path|lower }} {{ t.description|default:''|lower }}"
-         data-name="{{ task_name|lower }}"
-         data-modified="{{ t.updated_at|date:'c' }}">
-
-      <div class="r1">
-        <span class="ds-path" title="{{ task_name }}">{{ task_name }}</span>
-        <span class="status-badge {{ t.status|state_class }}" title="{{ t.status|state_title }}">{{ t.status|state_label }}</span>
-        {% if t.dataset and t.dataset.propagation != 'continue' %}<span class="status-badge" style="background:#ffe9b0;color:#6b4e00" title="Campaign propagation: {{ t.dataset.propagation }}">{{ t.dataset.propagation }}</span>{% endif %}
-        {% if t.dataset.metadata.proposal %}<span class="status-badge ai-attr" title="Pending AI proposal: {{ t.dataset.metadata.proposal.prev_state }} &rarr; {{ t.dataset.metadata.proposal.payload.state }}">AI</span>{% endif %}
-        {% if t.priority %}<span class="prio">P={{ t.priority }}</span>{% endif %}
-      </div>
-
-      <div class="r2">
-        <span class="req-chip{% if t.requestor %} pwg-{{ t.requestor|lower }}{% endif %}">{{ t.requestor|default:"—" }}</span>
-        {% if gen_ver %}<span class="sample">{{ gen_ver }}</span>{% endif %}
-        {% if nev %}<span class="nev">{{ nev|millions }} M</span>{% endif %}
-        {% if bg|lower == 'yes' %}<span class="flag-pill pill-bg" title="Background-study dataset">Bg</span>{% endif %}
-        {% if t.new_request %}<span class="flag-pill pill-new" title="New request">New</span>{% endif %}
-        {% if t.pre_tdr_use %}<span class="flag-pill pill-ptdr" title="Possible pre-TDR use">pTDR</span>{% endif %}
-        {% if t.early_science_use %}<span class="flag-pill pill-es" title="Early-science use">ES</span>{% endif %}
-        {% if t.other_use %}<span class="flag-pill pill-other" title="Other use">Other</span>{% endif %}
-      </div>
-
-      {% if t.has_output or t.campaign %}
-      <div class="r3">
-        {% if t.has_output %}
-          {% for o in t.outputs %}
-            <span class="{% if o.stage == 'FULL' %}out-simu{% else %}out-reco{% endif %}">
-              {% if o.stage == 'FULL' %}Simu{% else %}Reco{% endif %}
-              {{ o.file_count }}f/{{ o.bytes|filesizeformat }}{% if not o.complete %} <span class="out-incomplete">!</span>{% endif %}
-            </span>
-          {% endfor %}
-          {% for r in t.output_refs %}
-            <span class="{% if r.stage == 'FULL' %}out-simu{% else %}out-reco{% endif %}" title="Produced data record held by task {{ r.owner }}">
-              {% if r.stage == 'FULL' %}Simu{% else %}Reco{% endif %} → {{ r.owner }}
-            </span>
-          {% endfor %}
-        {% else %}
-          <span class="flag-pill pill-noout">no output</span>
-        {% endif %}
-        {% if t.campaign %}<span style="margin-left:auto;">{{ t.campaign.name }}</span>{% endif %}
-      </div>
-      {% endif %}
-    </div>
-    {% endwith %}
-    {% empty %}
-    <div class="pcs-cl-empty">No tasks in this campaign.</div>
-    {% endfor %}
+  {% comment %}The rows as facts (pcs.views._compose_task_row), built into their
+     markup by the script below before the filter reads them; the server renders
+     no row.{% endcomment %}
+  <script type="application/json" id="pcs-cl-rows-json">{{ task_rows_json|safe }}</script>
+  <div class="pcs-cl-list" id="pcs-cl-list" tabindex="0" data-focused="{{ focused_task_id|default:'' }}">
+    {% if not task_count %}<div class="pcs-cl-empty">No tasks in this campaign.</div>{% endif %}
   </div>
 
   <div class="pcs-cl-foot">
-    <span><span id="pcs-cl-visible">{{ tasks|length }}</span> of {{ tasks|length }} task{{ tasks|length|pluralize }}</span>
+    <span><span id="pcs-cl-visible">{{ task_count }}</span> of {{ task_count }} task{{ task_count|pluralize }}</span>
     <span id="pcs-cl-filter-summary"></span>
   </div>
 </div>
@@ -278,6 +210,55 @@ Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
   const root      = document.getElementById('pcs-cl-root');
   if (!root) return;
   const listEl    = root.querySelector('#pcs-cl-list');
+
+  /* The rows, from the facts the view ships (one JSON list) into the same
+     markup the template rendered until 2026-09-16: the facet values as
+     data attributes the filter below reads, the three lines the operator
+     sees. Built once, before the filter reads the rows. */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function b(v) { return v ? '1' : '0'; }
+  function rowHtml(r, focusedId) {
+    const outs = (r.outputs || []).map(o =>
+      `<span class="${o.stage === 'FULL' ? 'out-simu' : 'out-reco'}">${o.stage === 'FULL' ? 'Simu' : 'Reco'} ${esc(o.files)}f/${esc(o.size)}${o.complete ? '' : ' <span class="out-incomplete">!</span>'}</span>`).join('');
+    const refs = (r.output_refs || []).map(x =>
+      `<span class="${x.stage === 'FULL' ? 'out-simu' : 'out-reco'}" title="Produced data record held by task ${esc(x.owner)}">${x.stage === 'FULL' ? 'Simu' : 'Reco'} &rarr; ${esc(x.owner)}</span>`).join('');
+    const r3 = (r.has_output || r.campaign)
+      ? `<div class="r3">${r.has_output ? outs + refs : '<span class="flag-pill pill-noout">no output</span>'}${r.campaign ? `<span style="margin-left:auto;">${esc(r.campaign)}</span>` : ''}</div>`
+      : '';
+    return `<div class="pcs-cl-row${String(r.id) === String(focusedId) ? ' selected' : ''}"`
+      + ` data-task-id="${r.id}" data-status="${esc(r.status)}" data-requestor="${esc(r.requestor)}"`
+      + ` data-submission-path="${esc(r.submission_path)}" data-pre-tdr="${b(r.pre_tdr)}"`
+      + ` data-early-science="${b(r.early_science)}" data-other="${b(r.other)}" data-new-request="${b(r.new_request)}"`
+      + ` data-background="${b(r.background)}" data-priority="${esc(r.priority)}" data-nevents="${esc(r.nevents)}"`
+      + ` data-evgen="${esc(r.evgen)}" data-detector="${esc(r.detector)}" data-beam="${esc(r.beam)}"`
+      + ` data-physics="${esc(r.physics)}" data-q2="${esc(r.q2)}" data-species="${esc(r.species)}" data-energy="${esc(r.energy)}"`
+      + ` data-has-output="${b(r.has_output)}" data-no-output="${b(!r.has_output)}" data-incomplete-output="${b(r.incomplete_output)}"`
+      + ` data-has-simu="${b(r.has_simu)}" data-has-reco="${b(r.has_reco)}"`
+      + ` data-search="${esc(r.search)}" data-name="${esc(String(r.name).toLowerCase())}" data-modified="${esc(r.modified)}">`
+      + `<div class="r1"><span class="ds-path" title="${esc(r.name)}">${esc(r.name)}</span>`
+      + `<span class="status-badge ${esc(r.status_class)}" title="${esc(r.status_title)}">${esc(r.status_label)}</span>`
+      + (r.propagation && r.propagation !== 'continue' ? `<span class="status-badge" style="background:#ffe9b0;color:#6b4e00" title="Campaign propagation: ${esc(r.propagation)}">${esc(r.propagation)}</span>` : '')
+      + (r.proposal ? `<span class="status-badge ai-attr" title="Pending AI proposal: ${esc(r.proposal.prev_state)} &rarr; ${esc(r.proposal.state)}">AI</span>` : '')
+      + (r.priority ? `<span class="prio">P=${esc(r.priority)}</span>` : '')
+      + `</div><div class="r2"><span class="req-chip${r.requestor ? ' pwg-' + esc(String(r.requestor).toLowerCase()) : ''}">${r.requestor ? esc(r.requestor) : '&mdash;'}</span>`
+      + (r.gen_version ? `<span class="sample">${esc(r.gen_version)}</span>` : '')
+      + (r.nevents ? `<span class="nev">${esc(r.nevents)} M</span>` : '')
+      + (r.background ? '<span class="flag-pill pill-bg" title="Background-study dataset">Bg</span>' : '')
+      + (r.new_request ? '<span class="flag-pill pill-new" title="New request">New</span>' : '')
+      + (r.pre_tdr ? '<span class="flag-pill pill-ptdr" title="Possible pre-TDR use">pTDR</span>' : '')
+      + (r.early_science ? '<span class="flag-pill pill-es" title="Early-science use">ES</span>' : '')
+      + (r.other ? '<span class="flag-pill pill-other" title="Other use">Other</span>' : '')
+      + `</div>${r3}</div>`;
+  }
+  (function buildRows() {
+    const tag = document.getElementById('pcs-cl-rows-json');
+    let facts = [];
+    try { facts = JSON.parse(tag ? tag.textContent : '[]') || []; } catch (e) { facts = []; }
+    if (facts.length) listEl.innerHTML = facts.map(r => rowHtml(r, listEl.dataset.focused)).join('');
+  })();
   const rows      = Array.from(listEl.querySelectorAll('.pcs-cl-row'));
   const qInput    = root.querySelector('#pcs-cl-q');
   const clearBtn  = root.querySelector('#pcs-cl-clear');
