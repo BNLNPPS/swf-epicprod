@@ -5459,20 +5459,37 @@ def prod_task_compose(request):
             ProdTask.objects.select_related(
                 'dataset', 'dataset__physics_tag', 'dataset__evgen_tag',
                 'dataset__simu_tag', 'dataset__reco_tag',
-                'dataset__background_tag', 'prod_config',
-            ).prefetch_related('panda_tasks').filter(campaign=campaign).order_by('-updated_at')
+                'dataset__background_tag', 'dataset__physics_config',
+                'prod_config', 'campaign', 'request',
+            ).filter(campaign=campaign).order_by('-updated_at')
         )
-    # Light task entries: EVGEN submission spec + cached commands omitted, hydrated on
-    # open (prod_task_compose_task_detail). Readiness (cheap) is included so the
-    # detail panel can show submit-readiness without a round trip.
-    from .services import prodtask_readiness_problems
+    # Light task entries: EVGEN submission spec, cached commands, the
+    # overrides and the PanDA association rows omitted, hydrated on open
+    # (prod_task_compose_task_detail); the focused task carries its own
+    # so the auto-selected detail renders from the page. Readiness is
+    # included so the detail panel can show submit-readiness without a
+    # round trip, computed with the campaign plan read once: read per
+    # task, with the plan and the related rows fetched per task, this
+    # loop took 20 s and 3,000 queries for 1,100 tasks (2026-09-16).
+    from .services import prodtask_readiness_problems, campaign_plan_get, standard_prodconfig_name
+    plan = campaign_plan_get(campaign.name) if campaign is not None else {}
+    # The standard configuration of each edition, read once per edition
+    # rather than once per task (the effective configuration fills from it).
+    editions = {str(t.dataset.detector_version or '').strip() for t in tasks_list if t.dataset_id}
+    standard_by_name = {c.name: c for c in ProdConfig.objects.filter(
+        name__in=[standard_prodconfig_name(e) for e in editions if e])}
+    for t in tasks_list:
+        edition = str(t.dataset.detector_version or '').strip() if t.dataset_id else ''
+        t._campaign_standard_config = standard_by_name.get(standard_prodconfig_name(edition), False) if edition else False
     tasks_list = _annotate_task_questionnaire_matches(tasks_list)
     tasks_list = _annotate_task_pc_requests(tasks_list)
     tasks_list = annotate_pwg_priority(tasks_list)
     pwg_marks = {m.path: int(m.priority)
                  for m in EvgenMark.objects.filter(priority__gt=0)}
+    focused_id = focused_task.pk if focused_task is not None else None
     tasks_data = []
     for t in tasks_list:
+        heavy = (t.pk == focused_id)
         tasks_data.append({
             'id': t.id,
             'name': t.name,
@@ -5490,20 +5507,20 @@ def prod_task_compose(request):
             # to show the PanDA-task link + the operator Reset control. Omitting it
             # left every submitted task with only the Copy button on page load.
             'panda_task_id': t.panda_task_id,
-            'panda_tasks': services.panda_tasks_summary(t),
+            'panda_tasks': services.panda_tasks_summary(t) if heavy else None,
             'dataset_id': t.dataset_id,
             'dataset_name': t.dataset.dataset_name,
             'prod_config_id': t.prod_config_id,
             'prod_config_name': t.prod_config.name,
             'csv_file': t.csv_file,
-            'overrides': t.overrides or {},
+            'overrides': (t.overrides or {}) if heavy else None,
             'ai_content': ai_content_summary(t.overrides or {}),
             'propagation': t.dataset.propagation if t.dataset_id else '',
             'proposal': ((t.dataset.metadata or {}).get('proposal')
                          if t.dataset_id else None),
             'description': t.description,
             'created_by': t.created_by,
-            'readiness': prodtask_readiness_problems(t),
+            'readiness': prodtask_readiness_problems(t, plan=plan),
             'updated_at': format_datetime(t.updated_at),
             'questionnaire_matches': [
                 {
@@ -5756,6 +5773,8 @@ def prod_task_compose_task_detail(request, name):
         'condor_command': task.condor_command,
         'panda_command': task.panda_command,
         'panda_tasks': services.panda_tasks_summary(task, include_live=True),
+        # The task's overrides ride here, not in the page's task list.
+        'overrides': task.overrides or {},
         'ai_content': ai_content_summary(task.overrides or {}),
         'trial_blocked': trial_blocked,
         'trial_config': trial_config.name if trial_config else '',

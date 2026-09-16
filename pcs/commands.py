@@ -978,19 +978,23 @@ def pinned_site(task, cfg=None, ds=None):
     return trial_site or cfg.get('panda_site') or EVGEN_DEFAULT_SITE
 
 
-def prodtask_priority_level(task):
+def prodtask_priority_level(task, plan=None):
     """The production priority level of a task (1 to 3, or None) and its
     source: the task's own value (seeded from its request, carried by
     instancing), else the campaign plan's entry for the task's physics
     configuration, else the request's. ``(level, source)`` with source
-    one of task, plan, request, none."""
+    one of task, plan, request, none. ``plan`` is the campaign's plan
+    document when the caller holds it (a page reading a thousand tasks
+    reads the plan once); absent, it is read here."""
     if task.priority in PRIORITY_LEVELS:
         return task.priority, 'task'
     ds = task.dataset
     pc = getattr(ds, 'physics_config', None) if ds is not None else None
     if pc is not None and task.campaign_id:
-        from .services import campaign_plan_get
-        entry = campaign_plan_get(task.campaign.name).get(pc.label) or {}
+        if plan is None:
+            from .services import campaign_plan_get
+            plan = campaign_plan_get(task.campaign.name)
+        entry = plan.get(pc.label) or {}
         if entry.get('priority') in PRIORITY_LEVELS:
             return entry['priority'], 'plan'
     req = task.request
@@ -999,12 +1003,13 @@ def prodtask_priority_level(task):
     return None, 'none'
 
 
-def prodtask_task_priority(task, cfg=None):
+def prodtask_task_priority(task, cfg=None, plan=None):
     """The PanDA ``taskPriority`` of a task and how it was set: an
     explicit value on the task's overrides (an operator's escalation) or
     on the effective configuration's ``task_priority``, else the band of
     its priority level. Returns ``(value, {'level', 'source'})``; raises
-    ValueError when an explicit value is not an integer."""
+    ValueError when an explicit value is not an integer. ``plan`` as in
+    ``prodtask_priority_level``."""
     if cfg is None:
         cfg = task.get_effective_config()
     for source, value in (('override', (task.overrides or {}).get('task_priority')),
@@ -1016,7 +1021,7 @@ def prodtask_task_priority(task, cfg=None):
         except (TypeError, ValueError):
             raise ValueError(
                 f'task_priority on the {source} is {value!r}, not an integer')
-    level, source = prodtask_priority_level(task)
+    level, source = prodtask_priority_level(task, plan=plan)
     return TASK_PRIORITY_BY_LEVEL.get(level, TASK_PRIORITY_UNSET), {'level': level, 'source': source}
 
 

@@ -236,6 +236,19 @@ composed name as the link text. The pk detail route
 identity, and composed identity governs URLs and API references
 throughout (the convention already applied to task URLs).
 
+The compose page carries the campaign's tasks and editions as light
+inline entries, the heavy fields hydrated on open: a task's submission
+spec, cached commands, overrides and PanDA association rows, a
+dataset's tag parameters, all come from the `compose-detail` routes
+when an item is opened; only the item the URL selects carries its own
+on the page. What is computed per task for the list (readiness,
+priority) reads the campaign plan and each edition's standard
+configuration once for the page, never once per task. This is the rule
+the page keeps: 2026-09-16 the tasks blob had grown to 4 MB and the
+render to 24 s and 3,200 queries for 1,100 tasks, the third time the
+page had grown this way; the light-entry rule and the once-per-page
+reads took it to 1.2 MB and 6 s with 21 queries.
+
 ### Composed-name Suffixes
 
 PCS separates the logical composed name from dynamic physical suffixes. The logical name is the stable PCS dataset/task identity. Physical PanDA and Rucio names may append suffixes so repeated submissions and Rucio block subdivisions have unique names.

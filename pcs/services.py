@@ -1497,8 +1497,10 @@ def resolve_dataset(name, queryset=None):
     raise Dataset.DoesNotExist(f"No Dataset matches {name!r}")
 
 
-def prodtask_readiness_problems(task):
+def prodtask_readiness_problems(task, plan=None):
     """Reasons a task is NOT ready to lock/submit; empty list = ready.
+    ``plan`` is the campaign plan document when the caller holds it
+    (the compose page reads it once for its thousand tasks).
 
     Checks what a valid PanDA submission needs, independent of how the task was
     built (composed tags or imported catalog metadata):
@@ -1586,13 +1588,13 @@ def prodtask_readiness_problems(task):
         problems.append(
             "No event target: set the edition's target (the campaign plan) "
             'or a request with an event count.')
-    level, _source = prodtask_priority_level(task)
+    level, _source = prodtask_priority_level(task, plan=plan)
     if level is None:
         problems.append(
             'No priority: set it on the task, the campaign plan entry, or '
             'the request.')
     try:
-        prodtask_task_priority(task, cfg=cfg)
+        prodtask_task_priority(task, cfg=cfg, plan=plan)
     except ValueError as exc:
         problems.append(str(exc))
     site = pinned_site(task, cfg=cfg, ds=ds)

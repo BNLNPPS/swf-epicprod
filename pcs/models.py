@@ -1053,7 +1053,13 @@ class ProdTask(models.Model):
 
     def campaign_standard_config(self):
         """The campaign's ``<edition> Standard Production``, which every
-        unattended value is filled from. None when the campaign has none."""
+        unattended value is filled from. None when the campaign has none.
+        A caller holding many tasks sets ``_campaign_standard_config`` on
+        each (the config, or False for none) so a page does not read the
+        same row once per task."""
+        held = getattr(self, '_campaign_standard_config', None)
+        if held is not None:
+            return held or None
         from .services import standard_prodconfig_name
         edition = ''
         if self.dataset_id:
