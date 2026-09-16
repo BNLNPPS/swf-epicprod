@@ -1791,7 +1791,10 @@ def evgen_inputs(request):
             'rses': ', '.join(r['rse'] for r in entry['rses']),
             'complete': entry['complete'],
             'dataset': ds,
-            'edition': production[ds.pk][0] if ds is not None and ds.pk in production else ds,
+            # the production edition and its task, or None: the s0.r0 record
+            # is never shown, a matched sample without a production edition
+            # says so
+            'edition': production[ds.pk][0] if ds is not None and ds.pk in production else None,
             'task': production[ds.pk][1] if ds is not None and ds.pk in production else None,
         })
     # Newest Rucio update first — the standing question this page answers;
