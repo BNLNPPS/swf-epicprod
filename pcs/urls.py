@@ -105,11 +105,15 @@ urlpatterns = [
     # literal routes above are matched first. A stale /tasks/<pk>/ link still
     # resolves (resolve_prodtask tolerates a bare pk) and the detail view 301s
     # it to the composed-name URL. No task URL ever emits a pk.
-    path('tasks/<str:name>/', views.prod_task_detail, name='prod_task_detail'),
     path('tasks/<str:name>/delete/', views.prod_task_delete, name='prod_task_delete'),
     path('tasks/<str:name>/commands/', views.prod_task_generate_commands, name='prod_task_generate_commands'),
     # On-demand compose hydration (taskParamMap + commands) — light payload, fetched on open
     path('tasks/<str:name>/compose-detail/', views.prod_task_compose_task_detail, name='compose_task_detail'),
+    # The detail route carries every identity the resolver takes, including a
+    # stored name with slashes (a task born from a registered EVGEN sample:
+    # EVGEN/DIS/...), so a link built from any task name reverses and lands
+    # on the compose view. It is last so the sub-routes above match first.
+    path('tasks/<path:name>/', views.prod_task_detail, name='prod_task_detail'),
 
     # Production dashboard preference save + panel refresh (EPICPROD_DASHBOARD.md)
     path('dashboard/prefs/', dashboard.dashboard_prefs, name='dashboard_prefs'),
