@@ -1,10 +1,15 @@
 """The ePIC job throttler's decision over fake per-site statistics
-(swf_epicprod.jedi.epic_job_throttler.decide is pure)."""
+(swf_epicprod.jedi.epic_job_throttler.decide is pure) and its grant
+ledger over a temporary file."""
+import os
+import tempfile
 import unittest
 
+import swf_epicprod.jedi.epic_job_throttler as ejt
 from swf_epicprod.jedi.epic_job_throttler import (
     DEFAULT_NQUEUELIMIT,
     PASS_MAX_JOBS,
+    GrantLedger,
     SiteReading,
     decide,
     readings_from_stats,
@@ -42,13 +47,36 @@ class DecideTest(unittest.TestCase):
         self.assertTrue(d.throttled)
 
     def test_saturated_site_is_excluded_while_the_other_passes(self):
-        d = decide([
+        readings = [
             site("OSG", running=1000, not_run=2500, nqueuelimit=100),
             site("GREX", running=100, not_run=50, nqueuelimit=100),
-        ])
+        ]
+        d = decide(readings, exclusion_honored=True)
         self.assertFalse(d.throttled)
         self.assertEqual(d.excluded_sites, ["OSG"])
         self.assertEqual(d.max_num_jobs, 150)  # GREX: max(200, 100) - 50
+        self.assertEqual(d.granted_sites, ["GREX"])
+
+    def test_saturated_site_throttles_when_the_generator_cannot_exclude(self):
+        # 2026-09-17: BNL_PanDA_1's room let the generator fill BNL_OSG_PanDA_1 to 23,000
+        d = decide([
+            site("BNL_OSG_PanDA_1", running=0, not_run=6621, nqueuelimit=3123),
+            site("BNL_PanDA_1", running=30, not_run=0, nqueuelimit=2000),
+        ])
+        self.assertTrue(d.throttled)
+        self.assertEqual(d.excluded_sites, ["BNL_OSG_PanDA_1"])
+
+    def test_grants_count_as_pending_until_the_reading_carries_them(self):
+        r = site("OSG", running=0, not_run=748, nqueuelimit=3123)
+        r.granted = 2375
+        self.assertEqual(r.room, 0)
+        d = decide([r])
+        self.assertTrue(d.throttled)  # no room: never an uncapped pass
+        r.granted = 2000
+        d = decide([r])
+        self.assertFalse(d.throttled)
+        self.assertEqual(d.max_num_jobs, PASS_MAX_JOBS)
+        self.assertEqual(d.granted_sites, ["OSG"])
 
     def test_caps(self):
         d = decide([site("A", running=50, not_run=10, nrunningcap=40)])
@@ -56,11 +84,52 @@ class DecideTest(unittest.TestCase):
         d = decide([site("A", running=50, not_run=60, nqueuecap=55)])
         self.assertTrue(d.throttled)
 
-    def test_lack_of_jobs_below_the_floor(self):
-        d = decide([site("A", running=10, not_run=10, nqueuelimit=1000)])
-        self.assertTrue(d.lack_of_jobs)
-        d = decide([site("A", running=10, not_run=950, nqueuelimit=1000)])
-        self.assertFalse(d.lack_of_jobs)
+
+
+class LedgerTest(unittest.TestCase):
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        self.ledger = GrantLedger(self.path)
+
+    def tearDown(self):
+        os.unlink(self.path)
+
+    def test_grants_accumulate_against_one_reading_and_reset_when_it_changes(self):
+        readings = [site("OSG", running=0, not_run=748, nqueuelimit=3123)]
+        self.ledger.charge(readings)
+        self.assertEqual(readings[0].granted, 0)
+        self.ledger.grant(readings, ["OSG"], 300)
+        self.ledger.grant(readings, ["OSG"], 300)
+        again = [site("OSG", running=0, not_run=748, nqueuelimit=3123)]
+        self.ledger.charge(again)
+        self.assertEqual(again[0].granted, 600)
+        moved = [site("OSG", running=0, not_run=2316, nqueuelimit=3123)]
+        self.ledger.charge(moved)
+        self.assertEqual(moved[0].granted, 0)
+        self.ledger.grant(moved, ["OSG"], 100)
+        self.ledger.charge(moved)
+        self.assertEqual(moved[0].granted, 100)
+
+    def test_grants_age_out(self):
+        readings = [site("OSG", running=0, not_run=748, nqueuelimit=3123)]
+        self.ledger.grant(readings, ["OSG"], 300)
+        ttl = ejt.LEDGER_TTL_S
+        try:
+            ejt.LEDGER_TTL_S = 0
+            self.ledger.charge(readings)
+        finally:
+            ejt.LEDGER_TTL_S = ttl
+        self.assertEqual(readings[0].granted, 0)
+
+    def test_survives_a_garbled_file(self):
+        with open(self.path, "w") as fh:
+            fh.write("{not json")
+        readings = [site("OSG", running=0, not_run=748, nqueuelimit=3123)]
+        self.ledger.charge(readings)
+        self.ledger.grant(readings, ["OSG"], 300)
+        self.ledger.charge(readings)
+        self.assertEqual(readings[0].granted, 300)
 
 
 class ReadingsTest(unittest.TestCase):

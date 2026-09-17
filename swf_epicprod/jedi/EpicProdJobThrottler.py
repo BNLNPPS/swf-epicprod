@@ -19,19 +19,29 @@ as ``<TAG>``: ``THROTTLE_THRESHOLD``, ``NQUEUELIMIT``, ``NRUNNINGCAP``,
 ``NQUEUECAP``. The engine's log is ``panda-EpicProdJobThrottler.log``.
 
 The saturated sites are exposed as ``excluded_sites`` for the job
-generator to keep out of task selection; a generator without that
-parameter ignores the attribute and applies the pass cap only.
+generator to keep out of task selection. Whether the installed
+generator honors them is read from the task buffer's
+``getTasksToBeProcessed_JEDI`` signature; without it a saturated site
+throttles the work queue (the decision's ``exclusion_honored``).
+
+The statistics are pre-cached tables refreshed about once a minute
+while passes come every second or so, so the engine keeps a ledger of
+the jobs granted against each site's reading, shared by the generator
+processes through a file, and charges them to the reading until it
+changes or the grants age out.
 """
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from pandacommon.pandalogger.PandaLogger import PandaLogger
+from pandajedi.jedicore.JediTaskBuffer import JediTaskBuffer
 from pandajedi.jedicore.MsgWrapper import MsgWrapper
 from pandajedi.jedithrottle.JobThrottlerBase import JobThrottlerBase
 
-from swf_epicprod.jedi.epic_job_throttler import CONFIG_TAGS, decide, readings_from_stats
+from swf_epicprod.jedi.epic_job_throttler import CONFIG_TAGS, LEDGER_TTL_S, GrantLedger, decide, ledger_path, readings_from_stats
 
 logger = PandaLogger().getLogger(__name__.split(".")[-1])
 
@@ -40,6 +50,9 @@ APP = "jedi"
 MODE_OBSERVE = "observe"
 MODE_THROTTLE = "throttle"
 
+# The installed generator passes the saturated sites to task selection
+# only when its task buffer takes them.
+EXCLUSION_HONORED = "excluded_sites" in inspect.signature(JediTaskBuffer.getTasksToBeProcessed_JEDI).parameters
 
 class EpicProdJobThrottler(JobThrottlerBase):
     """Per-site pacing of job generation for the epic VO."""
@@ -49,6 +62,8 @@ class EpicProdJobThrottler(JobThrottlerBase):
         self.comp_name = COMPONENT
         self.app = APP
         self.excluded_sites: list[str] = []
+        self.ledger = GrantLedger(ledger_path())
+        MsgWrapper(logger).info(f"engine up: exclusion_honored={EXCLUSION_HONORED} ledger={self.ledger.path} ttl={LEDGER_TTL_S}s")
 
     def refresh(self) -> None:
         JobThrottlerBase.refresh(self)
@@ -93,7 +108,11 @@ class EpicProdJobThrottler(JobThrottlerBase):
         # with none has nothing queued to hold and is read once it has.
         sites = sorted(s for s, by_rt in stats.items() if resource_name in by_rt)
         readings = readings_from_stats(stats, resource_name, self._site_config(vo, sites))
-        decision = decide(readings)
+        try:
+            self.ledger.charge(readings)
+        except OSError as e:
+            tmp_log.error(f"{header} ledger read failed ({self.ledger.path}): {e}; deciding on the reading alone")
+        decision = decide(readings, exclusion_honored=EXCLUSION_HONORED)
         mode = self._mode(vo)
 
         for line in decision.lines:
@@ -108,12 +127,13 @@ class EpicProdJobThrottler(JobThrottlerBase):
 
         self.excluded_sites = list(decision.excluded_sites)
         if decision.throttled:
-            tmp_log.info(f"{header} SKIP throttled: every site saturated {self.excluded_sites}")
+            tmp_log.info(f"{header} SKIP throttled: saturated {self.excluded_sites}")
             return self.retThrottled
         if decision.max_num_jobs is not None:
             self.setMaxNumJobs(decision.max_num_jobs)
-        if decision.lack_of_jobs:
-            self.notEnoughJobsQueued()
-        self.excluded_sites = list(decision.excluded_sites)
-        tmp_log.info(f"{header} PASS max_num_jobs={self.maxNumJobs} excluded={self.excluded_sites} lack_of_jobs={decision.lack_of_jobs}")
+            try:
+                self.ledger.grant(readings, decision.granted_sites, decision.max_num_jobs)
+            except OSError as e:
+                tmp_log.error(f"{header} ledger write failed ({self.ledger.path}): {e}")
+        tmp_log.info(f"{header} PASS max_num_jobs={self.maxNumJobs} excluded={self.excluded_sites} charged={decision.granted_sites}")
         return self.retUnThrottled

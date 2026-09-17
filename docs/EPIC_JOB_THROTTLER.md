@@ -73,7 +73,11 @@ site is saturated; otherwise unthrottled, with the pass cap set to the
 room of the unsaturated sites (the sum of
 `max(threshold × running, NQUEUELIMIT) - queued` over them, bounded by
 the ATLAS engine's per-pass maximum) and the saturated sites named, so
-that task selection serves the unsaturated sites only. The priority
+that task selection serves the unsaturated sites only. A pass with no
+room is throttled, never uncapped. On a server whose generator does
+not take the saturated-site list (below), any saturated site throttles
+the work queue: an unthrottled answer would generate for that site's
+tasks. The priority
 valve is the ATLAS one applied per site: a saturated site with a
 waiting task of higher priority than anything queued there is not named,
 and the pass carries that priority as its minimum.
@@ -88,6 +92,25 @@ changes nothing, so the ATLAS engines are unaffected.
 The engine ignores work-queue shares: its configuration is keyed on the
 site and its statistics are read per site, so the epic work queues need
 no share.
+
+The statistics are the server's pre-cached share tables, refreshed about
+once a minute, while the generator asks the engine every second or so
+and generates up to the pass cap each time. Read alone, one reading
+would grant its whole room on every pass until the next refresh: on
+2026-09-17 three tasks submitted to BNL_OSG_PanDA_1 reached 23,000
+queued jobs in eight minutes against a limit of 3,123, the first
+minute's passes each reading 748 queued and the later ones passing on
+BNL_PanDA_1's room because the generator ignored the exclusion. The
+engine therefore keeps a ledger of grants: each pass charges its cap to
+the open sites against their current reading (running, queued), and a
+later pass reading the same numbers counts those grants as pending
+until the reading changes or the grants are 180 s old. The ledger is a
+JSON file locked with `flock`, shared by the generator processes:
+`/var/log/panda/panda-EpicProdJobThrottler.ledger.json` (the system
+temporary directory when that directory is not writable). The ATLAS
+engine's lack-of-jobs flag, which releases the process lock so several
+generators fill in parallel, is not raised: one generator at 300 jobs a
+pass fills a queue faster than any of ours consumes.
 
 ## The engine as built
 
@@ -105,7 +128,7 @@ rule above. It logs every site's reading and its answer to
 `MODE` is `observe` unless the row says `throttle`. In `observe` the
 engine logs what it would do and answers unthrottled, which is the
 answer the server gives today; in `throttle` it returns the decision,
-sets the pass cap and the lack-of-jobs flag the generator reads, and
+sets the pass cap the generator reads, charges it to the ledger, and
 exposes the saturated sites as `excluded_sites`.
 
 Registration in `panda_jedi.cfg`, section `[jobthrottle]`:
@@ -119,8 +142,14 @@ production; the `epic` rows govern the test traffic.
 The engine needs `swf_epicprod` importable by JEDI's interpreter and, for
 the site exclusion to take effect, the generator change of the previous
 section; without it the generator applies the pass cap and the
-throttled answer and ignores the saturated-site list. Both belong to
-the server upgrade. The priority valve is not in this engine: the
+throttled answer and ignores the saturated-site list. The engine reads
+at import whether the installed task buffer's
+`getTasksToBeProcessed_JEDI` takes `excluded_sites` and, when it does
+not, throttles the work queue on any saturated site (the decision's
+`exclusion_honored`); the server upgraded on 2026-09-16 (master
+8f155ac9) does not, so production on BNL_OSG_PanDA_1 pauses every
+other site of the `wlcg` work queue while it is saturated. The
+generator change lifts that. The priority valve is not in this engine: the
 ATLAS engine reads the highest queued priority from `JOB_STATS_HP`,
 which the ePIC server does not populate, and the waiting-task peek is
 not site-aware; a site-aware read of both is a server change for the
