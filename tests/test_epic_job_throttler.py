@@ -21,11 +21,18 @@ def site(name, running=0, not_run=0, defined=0, **limits):
 
 
 class DecideTest(unittest.TestCase):
-    def test_no_sites_is_unthrottled_and_uncapped(self):
+    def test_no_sites_is_one_capped_pass_never_uncapped(self):
         d = decide([])
         self.assertFalse(d.throttled)
-        self.assertIsNone(d.max_num_jobs)
-        self.assertEqual(d.excluded_sites, [])
+        self.assertEqual(d.max_num_jobs, PASS_MAX_JOBS)
+        self.assertEqual(d.granted_sites, [ejt.NO_SITE])
+
+    def test_no_site_reading_is_charged_like_a_site(self):
+        # 2026-09-18: the MCORE passes read no site and passed uncapped
+        r = readings_from_stats({}, "MCORE", {})
+        self.assertEqual([x.site for x in r], [ejt.NO_SITE])
+        r[0].granted = 2000
+        self.assertTrue(decide(r).throttled)
 
     def test_one_site_under_its_bound_passes_with_its_room(self):
         # 1000 running, threshold 2: bound 2000; 500 queued leaves 1500, capped per pass
@@ -133,18 +140,21 @@ class LedgerTest(unittest.TestCase):
 
 
 class ReadingsTest(unittest.TestCase):
-    def test_folds_statuses_at_the_resource_type_and_applies_site_limits(self):
+    def test_folds_statuses_over_every_resource_type_and_applies_site_limits(self):
+        # A site's queue is one pool: the SCORE pass and the MCORE pass
+        # must read the same site the same way (2026-09-18, Perlmutter).
         stats = {
             "OSG": {"SCORE": {"running": 5, "activated": 3, "assigned": 1, "starting": 1, "defined": 2},
-                    "MCORE": {"running": 99}},
+                    "MCORE": {"running": 99, "activated": 4}},
             "GREX": {"MCORE": {"running": 7}},
         }
         r = readings_from_stats(stats, "SCORE", {"OSG": {"THROTTLE_THRESHOLD": 3, "NQUEUELIMIT": 20}})
-        self.assertEqual([x.site for x in r], ["OSG"])  # GREX has no SCORE jobs
-        osg = r[0]
-        self.assertEqual((osg.running, osg.not_run, osg.defined), (5, 5, 2))
+        self.assertEqual([x.site for x in r], ["GREX", "OSG"])
+        osg = r[1]
+        self.assertEqual((osg.running, osg.not_run, osg.defined), (104, 9, 2))
         self.assertEqual((osg.threshold, osg.nqueuelimit), (3.0, 20))
-        self.assertEqual(osg.bound, 20)  # max(3 x 5, 20)
+        self.assertEqual(osg.bound, 312)  # max(3 x 104, 20)
+        self.assertEqual(readings_from_stats(stats, "MCORE", {})[1].queued, osg.queued)
 
 
 if __name__ == "__main__":

@@ -45,6 +45,12 @@ DEFAULT_NQUEUELIMIT = 4 * 500
 DEFAULT_THRESHOLD = 2.0
 NOT_RUN_STATES = ("assigned", "activated", "starting")
 CONFIG_TAGS = ("THROTTLE_THRESHOLD", "NQUEUELIMIT", "NRUNNINGCAP", "NQUEUECAP")
+# The reading a pass is charged to while no site has jobs at all: a pass
+# with nothing queued anywhere is not unbounded, it is bounded by the
+# default floor and the ledger like any site (2026-09-18: the MCORE
+# passes read no site and passed uncapped while the SCORE passes held
+# NERSC_Perlmutter_epic saturated; 140,000 jobs generated in 30 minutes).
+NO_SITE = "(no site has jobs)"
 
 
 @dataclass
@@ -127,7 +133,9 @@ def decide(readings: list[SiteReading], exclusion_honored: bool = False) -> Deci
             room += r.room
             lines.append(f"{r.site}: room {r.room} (bound {r.bound:.0f}, queued {r.queued}, granted {r.granted}, running {r.running})")
     if not readings:
-        return Decision(False, None, [], [], ["no site has jobs: unthrottled"])
+        # Unreachable when the caller charges the no-site reading; kept as
+        # the bounded answer for a caller that does not.
+        return Decision(False, PASS_MAX_JOBS, [], [NO_SITE], ["no site has jobs: one capped pass"])
     if len(saturated) == len(readings):
         return Decision(True, None, saturated, [], lines + ["every site saturated: THROTTLED"])
     if saturated and not exclusion_honored:
@@ -145,29 +153,38 @@ def readings_from_stats(
     site_config: dict[str, dict[str, Any]],
 ) -> list[SiteReading]:
     """Fold ``getJobStatisticsByResourceTypeSite`` output and per-site
-    configuration into readings, at the resource-type level.
+    configuration into readings, one per site over every resource type.
 
-    ``stats`` is ``{site: {resource_type: {status: count}}}``. A site is
-    read when it has jobs of the resource type; ``site_config`` carries
-    the limits of the sites that have one, keyed by ``CONFIG_TAGS``.
+    ``stats`` is ``{site: {resource_type: {status: count}}}``. A site's
+    queue is one pool whatever the resource type of the jobs in it, and
+    the generator asks once per resource type: a reading per resource
+    type let the MCORE pass see an empty site while the SCORE pass held
+    it saturated (``resource_name`` is kept for the caller's log line).
+    With no site at all the reading is ``NO_SITE`` at the default floor,
+    so the pass is charged like any other.
     """
     readings: list[SiteReading] = []
-    sites = sorted(s for s, by_rt in stats.items() if resource_name in by_rt)
-    for site in sites:
-        by_status = stats[site][resource_name]
+    for site in sorted(stats):
+        running = not_run = defined = 0
+        for by_status in (stats[site] or {}).values():
+            running += int(by_status.get("running", 0) or 0)
+            not_run += sum(int(by_status.get(s, 0) or 0) for s in NOT_RUN_STATES)
+            defined += int(by_status.get("defined", 0) or 0)
         cfg = site_config.get(site, {})
         readings.append(
             SiteReading(
                 site=site,
-                running=int(by_status.get("running", 0) or 0),
-                not_run=sum(int(by_status.get(s, 0) or 0) for s in NOT_RUN_STATES),
-                defined=int(by_status.get("defined", 0) or 0),
+                running=running,
+                not_run=not_run,
+                defined=defined,
                 threshold=float(cfg.get("THROTTLE_THRESHOLD", DEFAULT_THRESHOLD)),
                 nqueuelimit=int(cfg.get("NQUEUELIMIT", DEFAULT_NQUEUELIMIT)),
                 nrunningcap=cfg.get("NRUNNINGCAP"),
                 nqueuecap=cfg.get("NQUEUECAP"),
             )
         )
+    if not readings:
+        readings.append(SiteReading(site=NO_SITE))
     return readings
 
 

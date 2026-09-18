@@ -104,9 +104,10 @@ class EpicProdJobThrottler(JobThrottlerBase):
             tmp_log.error(f"{header} failed to get per-site job statistics")
             return self.retTmpError
 
-        # The sites read are those with jobs of this resource type; a site
-        # with none has nothing queued to hold and is read once it has.
-        sites = sorted(s for s, by_rt in stats.items() if resource_name in by_rt)
+        # Every site with jobs of any resource type is read: a site's
+        # queue is one pool, and a pass of another resource type must see
+        # it saturated too.
+        sites = sorted(stats)
         readings = readings_from_stats(stats, resource_name, self._site_config(vo, sites))
         try:
             self.ledger.charge(readings)

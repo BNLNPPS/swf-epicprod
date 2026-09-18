@@ -49,7 +49,13 @@ with production on `wlcg` alone that is the reading wanted, and the
 Statistics per site come from the taskbuffer's
 `getJobStatisticsByResourceTypeSite`: for each computing site of the
 work queue, running, not-run (assigned, activated, starting) and
-defined jobs at resource-type level.
+defined jobs, summed over every resource type. A site's queue is one
+pool whatever the resource type of the jobs in it, and the generator
+asks once per resource type: read per resource type, the MCORE pass saw
+NERSC_Perlmutter_epic empty while the SCORE pass held it saturated, and
+passed uncapped (2026-09-18, 140,000 jobs in 30 minutes). A pass that
+finds no site with jobs at all is charged to a standing reading at the
+default floor, never uncapped.
 
 Configuration per site, from the `config` table (component
 `epic_job_throttler`, app `jedi`, VO `epic`), a work-queue-wide value
