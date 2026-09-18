@@ -451,6 +451,22 @@ In order, each a committed step on the clone:
     A copy that cannot be made or verified falls back to the upload
     client and the paths of item 11. `register_to_rucio.py
     --preserve-door --preserve-prefix --preserve-timeout`.
+13. **One catalog question per job, none about the whole dataset**
+    (2026-09-18, payload 0.19.1). Since the events contract of 9/6
+    every job, after registering its file, listed every file of its
+    output dataset to verify the dataset's derived event count: 50,000
+    rows streamed per job on a 50,000-job task, a server thread held
+    for seconds each time, at one to three jobs a second; the JLab
+    server, one 4-CPU VM for auth, API and daemons, saturated under it
+    on 9/16 and 9/17 (Anil Panta's reading of the server logs, and his
+    PR #1). The per-job dataset listing is gone; the dataset's derived
+    total is verified once per task in the lineage sweep. The
+    registration in place is one call, `add_files_to_datasets` with the
+    RSE (the pilot's stage-out call, from PR #1), which registers the
+    replica and attaches the file together, in place of `add_replicas`
+    + `attach_dids`; the event count is written once. A job now makes
+    about five small catalog calls: the dataset check, the registration,
+    the event count, and the dataset metadata read of the comparison.
 
 ## Container contract
 

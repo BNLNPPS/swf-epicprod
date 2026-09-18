@@ -32,15 +32,21 @@ during a wave of finishing jobs is what the stash covers.
   registration it is owed, and why. The job exits on its physics. A
   stash that refuses the file too is still exit 78.
 - **The drain** (`swf-monitor/scripts/stash-drain.py`, ops-agent handler
-  `stash_drain`, hourly at :47): reads what jobs stashed from their
-  reports, confirms each file at the door with its size and checksum,
-  probes JLab, and when the catalog answers registers each file by
-  logical name at the stash RSE with its event count, through the
-  registrar's own registration, and verifies the replica reads
-  AVAILABLE. Nothing is copied and nothing is removed. A file that will
-  not register keeps its entry and is tried again hourly, eight times at
-  most, with its reason kept in the drain's state file beside the
-  storage store. An output under `/TEST/` carries a seven-day lifetime
+  `stash_drain`, every 30 minutes at :17 and :47): reads what jobs
+  stashed from their reports, probes JLab first (a silent catalog ends
+  the pass in seconds with the state recorded), then registers each due
+  file by logical name at the stash RSE with its event count through
+  the registrar's own registration, which confirms the file at the door
+  by size and checksum and makes one call that registers the replica
+  and attaches it to its dataset, and verifies the replica reads
+  AVAILABLE. Eight registrations run in parallel, the state is saved
+  after every one, and a pass stops at its budget (1,500 s, inside the
+  agent's timeout) leaving the rest to the next pass, which skips what
+  went home (2026-09-18: 41,780 entries after the JLab outage, at about
+  2.5 files a second). Nothing is copied and nothing is removed. A file
+  that will not register keeps its entry and is tried again on later
+  passes, eight times at most, with its reason kept in the drain's
+  state file beside the storage store. An output under `/TEST/` carries a seven-day lifetime
   once registered, as the payload canaries' do. `--entry <logical name>`
   registers a file already at its deterministic path with no report, the
   hand test of the path and the operator's tool for a lost report.
@@ -153,22 +159,23 @@ owes that the catalog does not know; the listing is not built yet.
 
 ### The registrar
 
-A production operations agent doer, `stash_drain`, enqueued hourly by
-cron and on demand from the pending view, on the prod-ops pattern
-(EPICPROD_OPS_AGENT.md). One pass:
+A production operations agent doer, `stash_drain`, enqueued every 30
+minutes by cron and on demand from the pending view, on the prod-ops
+pattern (EPICPROD_OPS_AGENT.md). One pass:
 
 1. Reads the stash entries from the reports and reconciles them with its
    own state, a JSON file beside the storage store,
    `/data/wenauseic/swf-delivery/stash-drain-state.json`: one entry per
    file with its outcome (home, failed), attempts, last attempt and
    reason.
-2. Confirms each file at the stash door with the size and checksum the
-   storage reports.
-3. Probes JLab. If it does not answer, the probe is recorded and the
+2. Probes JLab. If it does not answer, the probe is recorded and the
    pass ends without touching entries.
-4. Registers each file in JLab Rucio: the replica by logical name at the
-   stash RSE, the attachment to its dataset, the file metadata including
-   `events`; then verifies the replica reads AVAILABLE. Every
+3. Registers each due file in JLab Rucio, eight at a time within the
+   pass budget: the file confirmed at the stash door with the size and
+   checksum the storage reports, then one call registering the replica
+   by logical name at the stash RSE and attaching it to its dataset,
+   the file metadata including `events`; then verifies the replica
+   reads AVAILABLE. The state is saved after every outcome. Every
    registration is an action-stream record with outcome and duration
    (ACTION_STREAM.md). A file whose registration fails keeps its entry
    and is retried on later passes with hour-scale backoff; after

@@ -295,12 +295,18 @@ def _register_diverted(client, scope, upload_items, args):
     return ','.join(diverted)
 
 
-def after_registration(client, scope, upload_items, args, dataset_meta, logger, noregister=False):
+def after_registration(client, scope, upload_items, args, dataset_meta, logger, noregister=False,
+                       events_done=False):
     """What follows a registration whichever way it was made: the
-    lifetime on a canary run's DIDs, the event count on each file and
-    its verification through the dataset's derived total, and the
-    comparison of the dataset's declared metadata with the job's own
-    reading. Reported, never a failure: the registration stands."""
+    lifetime on a canary run's DIDs, the event count on each file
+    (unless the registration already wrote it), and the comparison of
+    the dataset's declared metadata with the job's own reading.
+    Reported, never a failure: the registration stands.
+
+    The dataset's derived event total is not read back here: that read
+    listed every file of the output dataset on every job (50,000 rows a
+    job on a 50,000-job task, held on a server thread each time), and it
+    belongs once per task in the lineage sweep (payload 0.19.1)."""
     if args.lifetime and not noregister:
         # Every DID registered expires with the run's lifetime, the
         # files and their dataset alike, so the catalog forgets a canary
@@ -312,33 +318,16 @@ def after_registration(client, scope, upload_items, args, dataset_meta, logger, 
                     client.set_metadata(scope, name, 'lifetime', int(args.lifetime))
                 except Exception as exc:  # noqa: BLE001
                     logger.error("lifetime not set on %s:%s: %s", scope, name, exc)
-    if args.events is not None and not noregister:
+    if args.events is not None and not noregister and not events_done:
         # The event count on every file DID, from which Rucio derives
-        # the dataset's total (RUCIO_REGISTRATION_CONTRACT.md). The
-        # derived total is read back and held to the sum of the
-        # dataset's files; a count that cannot be written or does not
-        # verify is reported by name, and the upload stands.
+        # the dataset's total (RUCIO_REGISTRATION_CONTRACT.md). A count
+        # that cannot be written is reported by name, and the upload stands.
         for item in upload_items:
             try:
                 client.set_metadata(scope, item['did_name'], 'events', int(args.events))
                 logger.info("events %d registered on %s:%s", int(args.events), scope, item['did_name'])
             except Exception as exc:  # noqa: BLE001
                 logger.error("events not set on %s:%s: %s", scope, item['did_name'], exc)
-        for ds_name in sorted({item['dataset_name'] for item in upload_items}):
-            try:
-                counts = [f.get('events') for f in client.list_files(scope, ds_name)]
-                derived = client.get_metadata(scope, ds_name).get('events')
-            except Exception as exc:  # noqa: BLE001
-                logger.error("events on dataset %s:%s unverified: %s", scope, ds_name, exc)
-                continue
-            if any(c is None for c in counts):
-                logger.error("events on dataset %s:%s unverified: %d of %d files carry no count",
-                             scope, ds_name, sum(1 for c in counts if c is None), len(counts))
-            elif derived != sum(counts):
-                logger.error("events on dataset %s:%s unverified: derived %s differs from the sum of its files %d",
-                             scope, ds_name, derived, sum(counts))
-            else:
-                logger.info("events on dataset %s:%s verified: %d over %d files", scope, ds_name, derived, len(counts))
     if dataset_meta and not noregister:
         # The dataset carries what the task declared at submission; the
         # job reports whether what it reads from its own output file
@@ -490,16 +479,18 @@ def register_in_place(client, scope, did_name, rse, size, adler, events, logger)
             logger.warning("%s:%s is already registered with an available replica: adopted", scope, did_name)
             return 'adopted'
     entry = {'scope': scope, 'name': did_name, 'bytes': int(size), 'adler32': adler}
+    # One call registers the replica at the RSE and attaches the file to
+    # its dataset, committed or rolled back together (the pilot's own
+    # stage-out call; Anil Panta, swf-epicprod PR #1): no orphaned replica,
+    # and one request where there were two.
     try:
-        client.add_replicas(rse=rse, files=[entry], ignore_availability=True)
+        client.add_files_to_datasets(
+            [{'scope': scope, 'name': dataset, 'rse': rse, 'dids': [entry]}],
+            ignore_duplicate=True)
     except Exception as exc:  # noqa: BLE001
-        if 'already added' not in str(exc).lower():
-            raise CatalogUnreachable(f'add_replicas {scope}:{did_name} at {rse}: {exc}')
-    try:
-        client.attach_dids(scope=scope, name=dataset, dids=[{'scope': scope, 'name': did_name}])
-    except Exception as exc:  # noqa: BLE001
-        if 'already attached' not in str(exc).lower():
-            raise CatalogUnreachable(f'attach_dids {scope}:{did_name} to {dataset}: {exc}')
+        text = str(exc).lower()
+        if not ('already' in text or 'duplicate' in text):
+            raise CatalogUnreachable(f'add_files_to_datasets {scope}:{did_name} at {rse}: {exc}')
     if events is not None:
         try:
             client.set_metadata(scope, did_name, 'events', int(events))
@@ -732,7 +723,8 @@ if __name__ == "__main__":
                 sys.exit(PENDING_EXIT)
             items_as_registered = [dict(item, did_name=name) for item, (name, _s, _a) in homed]
             try:
-                after_registration(client, scope, items_as_registered, args, dataset_meta, logger, noregister)
+                after_registration(client, scope, items_as_registered, args, dataset_meta, logger, noregister,
+                                   events_done=True)
             except Exception as exc:  # noqa: BLE001
                 # The registration stands; what follows it is reported, never a failure.
                 logger.error("after the registration: %s", exc)

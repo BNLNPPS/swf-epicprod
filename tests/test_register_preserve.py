@@ -107,13 +107,12 @@ class FakeClient:
             raise RuntimeError('503')
         return iter(self.replicas)
 
-    def add_replicas(self, rse, files, ignore_availability=False):
+    def add_files_to_datasets(self, attachments, ignore_duplicate=False):
         if self.fail == 'add':
             raise RuntimeError('503')
-        self.added.append((rse, files))
-
-    def attach_dids(self, scope, name, dids):
-        self.attached.append((name, dids))
+        for a in attachments:
+            self.added.append((a['rse'], a['dids']))
+            self.attached.append((a['name'], a['dids']))
 
     def set_metadata(self, scope, name, key, value):
         self.meta.append((name, key, value))
