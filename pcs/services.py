@@ -6214,9 +6214,31 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
         ])
         locked.panda_task_id = incoming
         locked.status = new_status
-        locked.save(update_fields=['panda_task_id', 'status', 'updated_at'])
+        fields = ['panda_task_id', 'status', 'updated_at']
+        # A task submitted on the Placeholder ran on the campaign's
+        # Standard Production configuration (the fill, ProdTask
+        # _effective_config_and_fills), and the fill stops once the task
+        # has run. What ran is recorded at the moment it runs: the
+        # configuration that filled the submission becomes the task's own,
+        # so a rerun of any kind can always be built from it (2026-09-18:
+        # three finished 50,000-job tasks could not be rerun, their
+        # Placeholder carrying no container, RSE or events per job).
+        if (locked.prod_config_id is None
+                or getattr(locked.prod_config, 'name', '') == PLACEHOLDER_PRODCONFIG_NAME):
+            standard = locked.campaign_standard_config()
+            if standard is not None:
+                locked.prod_config = standard
+                fields.append('prod_config')
+                log_epicprod_action(
+                    'pcs', 'config_bound_at_submission', outcome='ok',
+                    subject_type='prod_task',
+                    subject_key=locked.composed_name or locked.name,
+                    reason=f'ran on the campaign fill; bound {standard.name!r} '
+                           f'at submission of JEDI task {incoming}')
+        locked.save(update_fields=fields)
         task.panda_task_id = locked.panda_task_id
         task.status = locked.status
+        task.prod_config = locked.prod_config
     return task
 
 
