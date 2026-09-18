@@ -1,0 +1,99 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ePICRucioMetadataTags",
+    "description": "Optimized metadata tags for ePIC Rucio datasets using searchable slugs.",
+    "type": "object",
+    "properties": {
+        "software_release": {
+            "type": "string",
+            "description": "Container version tag (e.g. 26.03.0-stable, nightly, unstable, or default)",
+            "pattern": "^([0-9]+\\.[0-9]+\\.[0-9]+-stable|nightly|unstable|default)$"
+        },
+        "requester_pwg": {
+            "type": "string",
+            "description": "PWG requesting the dataset.",
+            "enum": ["edt", "inclusive", "jets_hf", "semi_inclusive", "ew_bsm", "other"]
+        },
+        "q2_min_gev2": {
+            "type": "number",
+            "description": "Minimum Q2 value (GeV^2). Optional - not applicable to all datasets."
+        },
+        "q2_max_gev2": {
+            "type": "number",
+            "description": "Maximum Q2 value (GeV^2). Optional - not applicable to all datasets."
+        },
+        "electron_beam_energy_gev": {"type": "number", "description": "Electron beam energy (GeV)"},
+        "ion_beam_energy_gev": {"type": "number", "description": "Ion/nucleus beam energy (GeV)"},
+        "is_background_mixed": {
+            "type": "boolean",
+            "description": "True if the sample includes background mixing; false if it is a regular/pure signal sample."
+        },
+        "ion_species": {
+            "type": "string",
+            "description": "Ion species.",
+            "enum": ["p", "Au197", "Cu63", "He3", "H2", "Ru96", "Pb208", "Pb207"]
+        },
+        "data_level": {
+            "type": "string",
+            "description": "Data processing level.",
+            "enum": ["simulation", "reconstruction"]
+        },
+        "gun_particle": {
+            "type": "string",
+            "description": "Single particle type. Optional - only applicable to single particle datasets.",
+            "enum": [
+                "e-", "e+", "proton", "neutron", "pi+", "pi-", "pi0",
+                "kaon-", "kaon+", "gamma", "mu-"
+            ]
+        },
+        "geometry_config": {
+            "type": "string",
+            "description": "Geometry configuration tag (e.g. craterlake_18x275, craterlake_5x41_He3)",
+            "pattern": "^[a-z][a-z0-9_]*_[0-9]+x[0-9]+(_.+)?$"
+        },
+        "gun_momentum_min_gev": {
+            "type": "number",
+            "description": "Minimum particle gun momentum (GeV). For fixed-energy runs, equals gun_momentum_max_gev."
+        },
+        "gun_momentum_max_gev": {
+            "type": "number",
+            "description": "Maximum particle gun momentum (GeV). For fixed-energy runs, equals gun_momentum_min_gev."
+        },
+        "gun_theta_min_deg": {
+            "type": "number",
+            "description": "Minimum polar angle (degrees) for particle gun angular distribution."
+        },
+        "gun_theta_max_deg": {
+            "type": "number",
+            "description": "Maximum polar angle (degrees) for particle gun angular distribution."
+        },
+        "gun_phi_min_deg": {
+            "type": "number",
+            "description": "Minimum azimuthal angle (degrees) for particle gun distribution. Default is 0."
+        },
+        "gun_phi_max_deg": {
+            "type": "number",
+            "description": "Maximum azimuthal angle (degrees) for particle gun distribution. Default is 360."
+        },
+        "gun_distribution": {
+            "type": "string",
+            "description": "Angular distribution type for particle gun.",
+            "enum": ["uniform", "cos(theta)", "eta", "pseudorapidity", "ffbar"]
+        },
+        "requester_dsc": {
+            "type": "string",
+            "description": "Detector Subsystem Collaboration requesting the dataset. Optional.",
+            "enum": ["tracking", "other"]
+        },
+        "generator": {
+            "type": "string",
+            "description": "Generator name",
+            "enum": [
+                "pythia6", "pythia8", "beagle", "djangoh", "rapgap", "dempgen",
+                "sartre", "lager", "estarlight", "epic", "getalm", "eicmesonsfgen",
+                "eic_sr_geant4", "eic_esr_xsuite", "sherpa", "single_particle", "other"
+            ]
+        }
+    },
+    "required": ["software_release", "is_background_mixed", "data_level", "geometry_config", "generator"]
+}
