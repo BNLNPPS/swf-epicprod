@@ -524,7 +524,20 @@ export METADATA_COMPARE_OUT=${TMPDIR}/${TASKNAME}.metadata-compare.json
 # adds it where the file lies when JLab answers. Nothing is moved.
 STASH_DOOR=${STASH_DOOR:-"root://epicxrd1.sdcc.bnl.gov:1094"}
 STASH_PREFIX=${STASH_PREFIX:-"/eic/EPIC"}
+STASH_RSE=${STASH_RSE:-"BNL-XRD"}
 STASH_OUT=${TMPDIR}/${TASKNAME}.stash
+
+# Preserve first (payload 0.19.0; docs/RUCIO_RESILIENCE.md, Measure 2 as
+# built): when the output RSE is the one behind the stash door, the
+# registration script copies every output to its home there before it
+# asks the catalog anything and registers it in place; a catalog that
+# does not answer then leaves the file home and the entry owed (exit 81,
+# recorded pending), never a file lost with the job. On another RSE the
+# upload client's path stands.
+PRESERVE_ARGS=()
+if [ "${OUT_RSE:-EIC-XRD}" == "${STASH_RSE}" ]; then
+  PRESERVE_ARGS=(--preserve-door "${STASH_DOOR}" --preserve-prefix "${STASH_PREFIX}" --preserve-timeout "${STASH_TIMEOUT:-600}")
+fi
 
 stash_output() {
   # $1 local file, $2 the DID it owes JLab, $3 why we are stashing
@@ -895,7 +908,8 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
     # than the ERR trap: a bare call ended the job with the registrar's raw
     # code (1, 81) before the pending, stash and 78 paths could run (task
     # 39994, 2026-09-16: 113 finished jobs lost at registration).
-    if monitor registration_full python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}; then
+    rm -f "${DIVERTED_OUT}"
+    if monitor registration_full python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} ${PRESERVE_ARGS[@]+"${PRESERVE_ARGS[@]}"}; then
       REG_RC=0
     else
       REG_RC=$?
@@ -903,8 +917,10 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
     if [ ${REG_RC} -eq 0 ]; then
       stage registration ok "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
     elif [ ${REG_RC} -eq 81 ]; then
-      echo "WARNING: catalog unreachable for FULL; registration pending."
-      stage registration pending "/${FULL_DIR}/${TASKNAME}.edm4hep.root"
+      PENDING_DID="/${FULL_DIR}/${TASKNAME}.edm4hep.root"
+      [ -s "${DIVERTED_OUT}" ] && PENDING_DID=$(cat "${DIVERTED_OUT}")
+      echo "WARNING: catalog unreachable for FULL; the output is home and its registration is pending: ${PENDING_DID}"
+      stage registration pending "${PENDING_DID}"
     elif [ ${REG_RC} -eq 84 ]; then
       # The dataset was not created at submission: a failure of the
       # submission path, not a catalog outage, so no stash and no pending.
@@ -967,7 +983,8 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     # than the ERR trap: a bare call ended the job with the registrar's raw
     # code (1, 81) before the pending, stash and 78 paths could run (task
     # 39994, 2026-09-16: 113 finished jobs lost at registration).
-    if monitor registration_reco python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}; then
+    rm -f "${DIVERTED_OUT}"
+    if monitor registration_reco python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} ${PRESERVE_ARGS[@]+"${PRESERVE_ARGS[@]}"}; then
       REG_RC=0
     else
       REG_RC=$?
@@ -979,8 +996,10 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     elif [ ${REG_RC} -eq 0 ]; then
       stage registration ok "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
     elif [ ${REG_RC} -eq 81 ]; then
-      echo "WARNING: catalog unreachable for RECO; registration pending."
-      stage registration pending "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
+      PENDING_DID="/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
+      [ -s "${DIVERTED_OUT}" ] && PENDING_DID=$(cat "${DIVERTED_OUT}")
+      echo "WARNING: catalog unreachable for RECO; the output is home and its registration is pending: ${PENDING_DID}"
+      stage registration pending "${PENDING_DID}"
     elif [ ${REG_RC} -eq 84 ]; then
       echo "ERROR: output dataset /${RECO_DIR} does not exist; it is created at submission."
       stage registration fail "RECO: output dataset /${RECO_DIR} not created at submission"
@@ -1028,7 +1047,8 @@ if [ "${EVGEN_INTERNAL:-false}" == "true" ] && [ "${COPYEVGEN:-false}" == "true"
   # than the ERR trap: a bare call ended the job with the registrar's raw
   # code (1, 81) before the pending, stash and 78 paths could run (task
   # 39994, 2026-09-16: 113 finished jobs lost at registration).
-  if monitor registration_evgen python $SCRIPT_DIR/register_to_rucio.py -f "${EVGEN_LOCAL}" -d "/${EVGEN_DIR}/${EVGEN_NAME}" -s epic -r ${OUT_RSE:-EIC-XRD} ${EVGEN_EVENTS_ARGS[@]+"${EVGEN_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"}; then
+  rm -f "${DIVERTED_OUT}"
+  if monitor registration_evgen python $SCRIPT_DIR/register_to_rucio.py -f "${EVGEN_LOCAL}" -d "/${EVGEN_DIR}/${EVGEN_NAME}" -s epic -r ${OUT_RSE:-EIC-XRD} ${EVGEN_EVENTS_ARGS[@]+"${EVGEN_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} ${PRESERVE_ARGS[@]+"${PRESERVE_ARGS[@]}"}; then
     REG_RC=0
   else
     REG_RC=$?
@@ -1036,8 +1056,10 @@ if [ "${EVGEN_INTERNAL:-false}" == "true" ] && [ "${COPYEVGEN:-false}" == "true"
   if [ ${REG_RC} -eq 0 ]; then
     stage registration ok "/${EVGEN_DIR}/${EVGEN_NAME}"
   elif [ ${REG_RC} -eq 81 ]; then
-    echo "WARNING: catalog unreachable for EVGEN; registration pending."
-    stage registration pending "/${EVGEN_DIR}/${EVGEN_NAME}"
+    PENDING_DID="/${EVGEN_DIR}/${EVGEN_NAME}"
+    [ -s "${DIVERTED_OUT}" ] && PENDING_DID=$(cat "${DIVERTED_OUT}")
+    echo "WARNING: catalog unreachable for EVGEN; the sample is home and its registration is pending: ${PENDING_DID}"
+    stage registration pending "${PENDING_DID}"
   elif [ ${REG_RC} -eq 84 ]; then
     echo "WARNING: dataset /${EVGEN_DIR} does not exist (created at submission); the generated sample is not registered, the job's physics is unaffected."
     stage registration fail "EVGEN: dataset /${EVGEN_DIR} not created at submission"

@@ -426,6 +426,31 @@ In order, each a committed step on the clone:
     is live: 81 records the registration pending and the job exits on
     its physics, other failures stash the output at BNL, 78 only when
     the stash refuses too.
+12. **Preserve first** (2026-09-18, payload 0.19.0). Item 11 made the
+    registration failure survivable and left a hole the day proved:
+    the registration script asked the catalog whether the output
+    dataset existed before it moved a byte, and `rucio upload` itself
+    registers before it copies, so a catalog that did not answer
+    produced a job that exited success with "registration pending" and
+    no file anywhere. Of the 31,000 such jobs of 2026-09-17 the
+    registrar's first sample found five in six with no output at the
+    storage. Now, when the output RSE is the one behind the stash door
+    (`OUT_RSE` = `STASH_RSE`, BNL-XRD, every production configuration),
+    the first act with a finished output is `xrdcp` to its home at the
+    RSE, the path the RSE's naming gives its logical name, with the
+    job's own credential and no word to the catalog; the copy is
+    verified at the door by size and adler32 against the local file;
+    only then is the catalog asked (dataset present, replica
+    registered in place with the verified size and checksum, attached,
+    the event count set). A catalog that does not answer at any of
+    those steps leaves the file home and exits 81, recorded pending
+    with the name the file is under; the registrar completes the entry
+    where the file already lies. Never overwrites: a file already at
+    the path is an earlier attempt's, and this attempt's bytes go under
+    the derived name (Measure 3), pending or registered under that name.
+    A copy that cannot be made or verified falls back to the upload
+    client and the paths of item 11. `register_to_rucio.py
+    --preserve-door --preserve-prefix --preserve-timeout`.
 
 ## Container contract
 

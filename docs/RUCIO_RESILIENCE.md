@@ -23,6 +23,8 @@ As built (2026-09-13, payload 0.15.0): the payload waits once, a random 0 to `RE
 
 BNL storage operations are asked to confirm the allocation behind BNL_PROD_DISK_1 supports science-scale temporary overflow. Site-side buffering is the last option when no wide-area path works.
 
+As built (2026-09-18, payload 0.19.0; EPICPROD_PAYLOAD.md item 12): the order of the first bullet is enforced, not assumed. The 0.18.1 build kept `rucio upload`, which asks the catalog before it copies, and asked the catalog once more before that for the dataset, so "pending" could be recorded with no file anywhere; on 2026-09-17 most of 31,000 pending registrations were outputs lost with their jobs. The job now copies each output to its home at the RSE of record itself (`xrdcp`, verified by size and checksum, never overwriting), and only then registers it in place; every catalog failure after the copy is a pending registration of a file that is home, which the registrar completes where it lies. The stash of the third bullet is the same path for the remaining failure codes and for an RSE other than the one behind the door.
+
 ## Measure 3 — the record is the authority, and registration never clashes
 
 The second failure type is structural rather than load-driven: a retry regenerates an output whose name an earlier attempt already registered, the regenerated file differs byte for byte, and the job dies at its final step. In the seven days to 2026-09-06 this was 9,578 jobs and 14,836 core-hours, two thirds of all core-hours wasted in the window, and it recurs at that scale every week the record covers.

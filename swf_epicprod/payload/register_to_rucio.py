@@ -295,6 +295,233 @@ def _register_diverted(client, scope, upload_items, args):
     return ','.join(diverted)
 
 
+def after_registration(client, scope, upload_items, args, dataset_meta, logger, noregister=False):
+    """What follows a registration whichever way it was made: the
+    lifetime on a canary run's DIDs, the event count on each file and
+    its verification through the dataset's derived total, and the
+    comparison of the dataset's declared metadata with the job's own
+    reading. Reported, never a failure: the registration stands."""
+    if args.lifetime and not noregister:
+        # Every DID registered expires with the run's lifetime, the
+        # files and their dataset alike, so the catalog forgets a canary
+        # run as its replica is reaped. A failure here is logged, never
+        # a failed job: the upload stands and the cleanup is by hand.
+        for item in upload_items:
+            for name in (item['did_name'], item['dataset_name']):
+                try:
+                    client.set_metadata(scope, name, 'lifetime', int(args.lifetime))
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("lifetime not set on %s:%s: %s", scope, name, exc)
+    if args.events is not None and not noregister:
+        # The event count on every file DID, from which Rucio derives
+        # the dataset's total (RUCIO_REGISTRATION_CONTRACT.md). The
+        # derived total is read back and held to the sum of the
+        # dataset's files; a count that cannot be written or does not
+        # verify is reported by name, and the upload stands.
+        for item in upload_items:
+            try:
+                client.set_metadata(scope, item['did_name'], 'events', int(args.events))
+                logger.info("events %d registered on %s:%s", int(args.events), scope, item['did_name'])
+            except Exception as exc:  # noqa: BLE001
+                logger.error("events not set on %s:%s: %s", scope, item['did_name'], exc)
+        for ds_name in sorted({item['dataset_name'] for item in upload_items}):
+            try:
+                counts = [f.get('events') for f in client.list_files(scope, ds_name)]
+                derived = client.get_metadata(scope, ds_name).get('events')
+            except Exception as exc:  # noqa: BLE001
+                logger.error("events on dataset %s:%s unverified: %s", scope, ds_name, exc)
+                continue
+            if any(c is None for c in counts):
+                logger.error("events on dataset %s:%s unverified: %d of %d files carry no count",
+                             scope, ds_name, sum(1 for c in counts if c is None), len(counts))
+            elif derived != sum(counts):
+                logger.error("events on dataset %s:%s unverified: derived %s differs from the sum of its files %d",
+                             scope, ds_name, derived, sum(counts))
+            else:
+                logger.info("events on dataset %s:%s verified: %d over %d files", scope, ds_name, derived, len(counts))
+    if dataset_meta and not noregister:
+        # The dataset carries what the task declared at submission; the
+        # job reports whether what it reads from its own output file
+        # agrees. A difference or an absent value is reported, never a
+        # failure (docs/RUCIO_REGISTRATION_CONTRACT.md § 2). To a file,
+        # never to stdout, which the monitor shares.
+        comparison = {}
+        for ds_name in sorted({item['dataset_name'] for item in upload_items}):
+            try:
+                declared = client.get_metadata(scope, ds_name, plugin='ALL')
+            except Exception as exc:  # noqa: BLE001
+                # A dataset with no metadata of its own (a canary's flat
+                # dataset) answers "no metadata found": it declares
+                # nothing, which is a reading, not an error.
+                if 'no metadata found' in str(exc).lower():
+                    comparison[ds_name] = {'declared': False, 'agree': 0, 'differ': {},
+                                           'absent': sorted(dataset_meta)}
+                    logger.info("dataset %s:%s declares no metadata; the job read %d keys",
+                                scope, ds_name, len(dataset_meta))
+                    continue
+                logger.error("metadata on dataset %s:%s unread: %s", scope, ds_name, exc)
+                comparison[ds_name] = {'unread': str(exc)}
+                continue
+            differ = {k: {'dataset': declared.get(k), 'job': v} for k, v in dataset_meta.items()
+                      if declared.get(k) is not None and declared.get(k) != v}
+            absent = [k for k in dataset_meta if declared.get(k) is None]
+            agree = len(dataset_meta) - len(differ) - len(absent)
+            comparison[ds_name] = {'agree': agree, 'differ': differ, 'absent': absent}
+            if differ or absent:
+                logger.warning("metadata on dataset %s:%s: %d agree, differ %s, absent %s",
+                               scope, ds_name, agree, differ or '{}', absent or '[]')
+            else:
+                logger.info("metadata on dataset %s:%s agrees with the job's reading (%d keys)",
+                            scope, ds_name, agree)
+        marker = os.environ.get('METADATA_COMPARE_OUT')
+        if marker:
+            try:
+                with open(marker, 'w') as handle:
+                    json.dump(comparison, handle)
+            except OSError as exc:  # noqa: BLE001
+                logger.error("metadata comparison not written: %s", exc)
+
+
+class CatalogUnreachable(Exception):
+    """The catalog of record did not answer; the file is home and the
+    registration is owed (docs/RUCIO_RESILIENCE.md, Measure 2)."""
+
+
+def local_adler32(path: str) -> str:
+    import zlib
+    value = 1
+    with open(path, 'rb') as handle:
+        for chunk in iter(lambda: handle.read(8 << 20), b''):
+            value = zlib.adler32(chunk, value)
+    return f'{value & 0xffffffff:08x}'
+
+
+def _xrd(args, timeout):
+    import subprocess
+    return subprocess.run(['xrdfs'] + list(args), capture_output=True, text=True, timeout=timeout)
+
+
+def stored_at(door: str, path: str, timeout: int = 120):
+    """(bytes, adler32 or '') of the file at a door path, or None when it
+    is not there. The storage is asked, never the catalog."""
+    stat = _xrd([door, 'stat', path], timeout)
+    if stat.returncode != 0:
+        return None
+    size = None
+    for line in (stat.stdout or '').splitlines():
+        if line.strip().startswith('Size:'):
+            size = int(line.split(':', 1)[1].strip())
+    if size is None:
+        return None
+    adler = ''
+    check = _xrd([door, 'query', 'checksum', path], max(timeout, 300))
+    if check.returncode == 0:
+        parts = (check.stdout or '').split()
+        if len(parts) >= 2 and parts[0].startswith('adler32'):
+            adler = parts[1]
+    return size, adler
+
+
+def preserve(file_path: str, did_name: str, door: str, prefix: str, timeout: int, logger):
+    """The first act with a finished output: copy it to its home at the RSE
+    of record, the path the RSE's naming gives its logical name, with the
+    job's own credential and no word to the catalog. Never overwrites: a
+    file already at that path is an earlier attempt's, delivered or
+    stashed, and this attempt's bytes go under the derived name instead
+    (docs/RUCIO_RESILIENCE.md, Measure 3). Verified at the door by size and
+    checksum against the local file. Returns (did registered under, size,
+    adler32) or None when the copy could not be made or verified."""
+    import subprocess
+    size = os.path.getsize(file_path)
+    adler = local_adler32(file_path)
+    mark = str(os.environ.get('PANDAID') or '').strip() or datetime_mark()
+    for name in (did_name, derived_did_name(did_name, mark)):
+        path = f"{prefix.rstrip('/')}/{name.lstrip('/')}"
+        try:
+            existing = stored_at(door, path)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("preserve: the door did not answer for %s: %s", path, exc)
+            return None
+        if existing is not None:
+            if name == did_name:
+                logger.warning("preserve: %s already holds a file (%s bytes); this attempt's "
+                               "output goes under its derived name", path, existing[0])
+                continue
+            logger.error("preserve: %s already holds a file too; not overwriting", path)
+            return None
+        try:
+            copy = subprocess.run(['xrdcp', file_path, f'{door}/{path}'],
+                                  capture_output=True, text=True, timeout=timeout)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("preserve: xrdcp to %s/%s failed: %s", door, path, exc)
+            return None
+        if copy.returncode != 0:
+            logger.error("preserve: xrdcp to %s/%s exited %s: %s", door, path, copy.returncode,
+                         (copy.stderr or '').strip()[-400:])
+            return None
+        try:
+            stored = stored_at(door, path)
+        except Exception as exc:  # noqa: BLE001
+            stored = None
+            logger.error("preserve: verification of %s failed: %s", path, exc)
+        if stored is None or stored[0] != size or (stored[1] and stored[1] != adler):
+            logger.error("preserve: %s does not verify (door %s, local %s bytes adler32 %s)",
+                         path, stored, size, adler)
+            return None
+        logger.info("preserved %s at %s/%s: %s bytes, adler32 %s", did_name, door, path, size, adler)
+        return name, size, adler
+    return None
+
+
+def register_in_place(client, scope, did_name, rse, size, adler, events, logger):
+    """Register a file that already lies at its deterministic path on the
+    RSE: the replica with the size and checksum verified at the door, the
+    attachment to its dataset, the event count. Every catalog call that
+    does not answer raises CatalogUnreachable: the file is home, the
+    registrar completes the entry later. Returns 'registered' or
+    'adopted' (an available replica of the same work was already there)."""
+    dataset = did_name.rsplit('/', 1)[0]
+    try:
+        replicas = list(client.list_replicas([{'scope': scope, 'name': did_name}], all_states=True))
+    except Exception as exc:  # noqa: BLE001
+        raise CatalogUnreachable(f'list_replicas {scope}:{did_name}: {exc}')
+    for replica in replicas:
+        if 'AVAILABLE' in (replica.get('states') or {}).values():
+            logger.warning("%s:%s is already registered with an available replica: adopted", scope, did_name)
+            return 'adopted'
+    entry = {'scope': scope, 'name': did_name, 'bytes': int(size), 'adler32': adler}
+    try:
+        client.add_replicas(rse=rse, files=[entry], ignore_availability=True)
+    except Exception as exc:  # noqa: BLE001
+        if 'already added' not in str(exc).lower():
+            raise CatalogUnreachable(f'add_replicas {scope}:{did_name} at {rse}: {exc}')
+    try:
+        client.attach_dids(scope=scope, name=dataset, dids=[{'scope': scope, 'name': did_name}])
+    except Exception as exc:  # noqa: BLE001
+        if 'already attached' not in str(exc).lower():
+            raise CatalogUnreachable(f'attach_dids {scope}:{did_name} to {dataset}: {exc}')
+    if events is not None:
+        try:
+            client.set_metadata(scope, did_name, 'events', int(events))
+        except Exception as exc:  # noqa: BLE001
+            raise CatalogUnreachable(f'set_metadata events on {scope}:{did_name}: {exc}')
+    logger.info("registered %s:%s in place at %s: %s bytes, adler32 %s", scope, did_name, rse, size, adler)
+    return 'registered'
+
+
+def _write_marker(env_name: str, content: str, logger) -> None:
+    """A result for the run script, to a file named by the environment,
+    never to stdout, which the monitor shares."""
+    marker = os.environ.get(env_name)
+    if not marker or not content:
+        return
+    try:
+        with open(marker, 'w') as handle:
+            handle.write(content)
+    except OSError as exc:  # noqa: BLE001
+        logger.error("%s marker not written: %s", env_name, exc)
+
+
 def datetime_mark() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -345,6 +572,22 @@ if __name__ == "__main__":
         help="Seconds the registration lives: the rule of a dataset this "
              "upload creates, and the expiry of every DID registered, so a "
              "canary run's output removes itself (epicprod payload canary)"
+    )
+    parser.add_argument(
+        '--preserve-door', dest="preserve_door", default=None,
+        help="Preserve first: the xrootd door of the RSE (root://host:port). "
+             "The output is copied to its deterministic path there before "
+             "the catalog is asked anything, and registered in place; a "
+             "catalog that does not answer leaves the file home and the "
+             "registration owed (docs/RUCIO_RESILIENCE.md, Measure 2)"
+    )
+    parser.add_argument(
+        '--preserve-prefix', dest="preserve_prefix", default='/eic/EPIC',
+        help="The RSE's path prefix under the door (default /eic/EPIC)"
+    )
+    parser.add_argument(
+        '--preserve-timeout', dest="preserve_timeout", type=int, default=600,
+        help="Seconds allowed for the copy home (default 600)"
     )
     parser.add_argument(
         '--events', dest="events", type=int, default=None,
@@ -424,7 +667,7 @@ if __name__ == "__main__":
         # attaches the file and carries no dataset metadata and no lifetime.
         # The catalog is asked once per dataset: absent is a failure of the
         # submission path, not of this job's work, and no bytes move for it.
-        if not noregister:
+        if not noregister and not args.preserve_door:
             try:
                 present = _dataset_exists(parent_directory)
             except Exception as exc:  # noqa: BLE001
@@ -445,90 +688,67 @@ if __name__ == "__main__":
     logger.addHandler(logging.StreamHandler())
     logger.setLevel(logging.INFO)
 
+    if args.preserve_door and not noregister:
+        # Preserve first (docs/RUCIO_RESILIENCE.md, Measure 2 as built,
+        # payload 0.19.0): every output is copied to its home at the RSE
+        # before the catalog is asked anything. A copy that cannot be made
+        # or verified falls back to the upload client below, the path that
+        # held before; once home, no catalog failure costs the file.
+        homed = []
+        for item in upload_items:
+            home = preserve(item['path'], item['did_name'], args.preserve_door,
+                            args.preserve_prefix, args.preserve_timeout, logger)
+            if home is None:
+                break
+            homed.append((item, home))
+        if len(homed) == len(upload_items):
+            registered_as = []
+            try:
+                for item, (name, size, adler) in homed:
+                    if not _dataset_exists(item['dataset_name']):
+                        print(f"ERROR: output dataset {scope}:{item['dataset_name']} does not exist; "
+                              f"it is created at submission (RUCIO_REGISTRATION_CONTRACT.md § 2). "
+                              f"The output is home at {args.preserve_door} {args.preserve_prefix}/{name}",
+                              file=sys.stderr)
+                        sys.exit(NO_DATASET_EXIT)
+                    register_in_place(client, scope, name, rse, size, adler, args.events, logger)
+                    registered_as.append(name)
+            except CatalogUnreachable as exc:
+                # The file is home; only the catalog entry is owed.
+                diverted = ','.join(n for (item, (n, _s, _a)) in homed if n != item['did_name'])
+                _write_marker('DIVERTED_OUT', diverted, logger)
+                print(f"Catalog unreachable after the output was preserved: {exc}. "
+                      f"Exiting pending; the file is home and the registrar completes the registration.",
+                      file=sys.stderr)
+                sys.exit(PENDING_EXIT)
+            except SystemExit:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                _write_marker('DIVERTED_OUT',
+                              ','.join(n for (item, (n, _s, _a)) in homed if n != item['did_name']), logger)
+                print(f"Registration in place failed after the output was preserved: {exc}. "
+                      f"Exiting pending; the file is home and the registrar completes the registration.",
+                      file=sys.stderr)
+                sys.exit(PENDING_EXIT)
+            items_as_registered = [dict(item, did_name=name) for item, (name, _s, _a) in homed]
+            try:
+                after_registration(client, scope, items_as_registered, args, dataset_meta, logger, noregister)
+            except Exception as exc:  # noqa: BLE001
+                # The registration stands; what follows it is reported, never a failure.
+                logger.error("after the registration: %s", exc)
+            diverted = ','.join(n for (item, (n, _s, _a)) in homed if n != item['did_name'])
+            if diverted:
+                logger.warning("this attempt's output registered under a derived name: %s", diverted)
+                _write_marker('DIVERTED_OUT', diverted, logger)
+            sys.exit(0)
+        logger.error("preserve-first could not home every output; falling back to the upload client")
+
     upload_client = UploadClient(logger=logger)
 
     try:
         upload_client.upload(upload_items)
         logger.info("Upload completed successfully!")
-        if args.lifetime and not noregister:
-            # Every DID registered expires with the run's lifetime, the
-            # files and their dataset alike, so the catalog forgets a canary
-            # run as its replica is reaped. A failure here is logged, never
-            # a failed job: the upload stands and the cleanup is by hand.
-            for item in upload_items:
-                for name in (item['did_name'], item['dataset_name']):
-                    try:
-                        client.set_metadata(scope, name, 'lifetime', int(args.lifetime))
-                    except Exception as exc:  # noqa: BLE001
-                        logger.error("lifetime not set on %s:%s: %s", scope, name, exc)
-        if args.events is not None and not noregister:
-            # The event count on every file DID, from which Rucio derives
-            # the dataset's total (RUCIO_REGISTRATION_CONTRACT.md). The
-            # derived total is read back and held to the sum of the
-            # dataset's files; a count that cannot be written or does not
-            # verify is reported by name, and the upload stands.
-            for item in upload_items:
-                try:
-                    client.set_metadata(scope, item['did_name'], 'events', int(args.events))
-                    logger.info("events %d registered on %s:%s", int(args.events), scope, item['did_name'])
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("events not set on %s:%s: %s", scope, item['did_name'], exc)
-            for ds_name in sorted({item['dataset_name'] for item in upload_items}):
-                try:
-                    counts = [f.get('events') for f in client.list_files(scope, ds_name)]
-                    derived = client.get_metadata(scope, ds_name).get('events')
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("events on dataset %s:%s unverified: %s", scope, ds_name, exc)
-                    continue
-                if any(c is None for c in counts):
-                    logger.error("events on dataset %s:%s unverified: %d of %d files carry no count",
-                                 scope, ds_name, sum(1 for c in counts if c is None), len(counts))
-                elif derived != sum(counts):
-                    logger.error("events on dataset %s:%s unverified: derived %s differs from the sum of its files %d",
-                                 scope, ds_name, derived, sum(counts))
-                else:
-                    logger.info("events on dataset %s:%s verified: %d over %d files", scope, ds_name, derived, len(counts))
-        if dataset_meta and not noregister:
-            # The dataset carries what the task declared at submission; the
-            # job reports whether what it reads from its own output file
-            # agrees. A difference or an absent value is reported, never a
-            # failure (docs/RUCIO_REGISTRATION_CONTRACT.md § 2). To a file,
-            # never to stdout, which the monitor shares.
-            comparison = {}
-            for ds_name in sorted({item['dataset_name'] for item in upload_items}):
-                try:
-                    declared = client.get_metadata(scope, ds_name, plugin='ALL')
-                except Exception as exc:  # noqa: BLE001
-                    # A dataset with no metadata of its own (a canary's flat
-                    # dataset) answers "no metadata found": it declares
-                    # nothing, which is a reading, not an error.
-                    if 'no metadata found' in str(exc).lower():
-                        comparison[ds_name] = {'declared': False, 'agree': 0, 'differ': {},
-                                               'absent': sorted(dataset_meta)}
-                        logger.info("dataset %s:%s declares no metadata; the job read %d keys",
-                                    scope, ds_name, len(dataset_meta))
-                        continue
-                    logger.error("metadata on dataset %s:%s unread: %s", scope, ds_name, exc)
-                    comparison[ds_name] = {'unread': str(exc)}
-                    continue
-                differ = {k: {'dataset': declared.get(k), 'job': v} for k, v in dataset_meta.items()
-                          if declared.get(k) is not None and declared.get(k) != v}
-                absent = [k for k in dataset_meta if declared.get(k) is None]
-                agree = len(dataset_meta) - len(differ) - len(absent)
-                comparison[ds_name] = {'agree': agree, 'differ': differ, 'absent': absent}
-                if differ or absent:
-                    logger.warning("metadata on dataset %s:%s: %d agree, differ %s, absent %s",
-                                   scope, ds_name, agree, differ or '{}', absent or '[]')
-                else:
-                    logger.info("metadata on dataset %s:%s agrees with the job's reading (%d keys)",
-                                scope, ds_name, agree)
-            marker = os.environ.get('METADATA_COMPARE_OUT')
-            if marker:
-                try:
-                    with open(marker, 'w') as handle:
-                        json.dump(comparison, handle)
-                except OSError as exc:  # noqa: BLE001
-                    logger.error("metadata comparison not written: %s", exc)
+        after_registration(client, scope, upload_items, args, dataset_meta, logger, noregister)
     except Exception as e:
         logger.error(f"Upload failed: {e}")
 
