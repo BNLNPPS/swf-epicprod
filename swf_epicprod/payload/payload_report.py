@@ -338,6 +338,40 @@ def job_metrics(report):
     return metrics
 
 
+POOL_SAMPLE_NAME = "pool-sample.json"
+
+
+def pool_sample(path, cwd=None):
+    """The batch pool as the worker found it, when the pilot launch took a
+    sample (swf-epicprod docs/NERSC_PERLMUTTER.md, the pool sample): the
+    file named by ``path`` (EPICPROD_POOL_SAMPLE from the launch's
+    environment file), or a pool-sample.json in the working directory or
+    one of its three ancestors. None where no sample was taken, which is
+    every site without a launcher of ours; a sample that exists and
+    cannot be read is reported as an error, never dropped silently."""
+    candidates = [path] if path else []
+    here = os.path.abspath(cwd or os.getcwd())
+    for _ in range(4):
+        candidates.append(os.path.join(here, POOL_SAMPLE_NAME))
+        parent = os.path.dirname(here)
+        if parent == here:
+            break
+        here = parent
+    for candidate in candidates:
+        if not candidate or not os.path.isfile(candidate):
+            continue
+        try:
+            with open(candidate) as handle:
+                sample = json.load(handle)
+        except (OSError, ValueError) as exc:
+            return {"error": f"pool sample {candidate} unreadable: {exc}"}
+        if not isinstance(sample, dict):
+            return {"error": f"pool sample {candidate} is not an object"}
+        sample.setdefault("path", candidate)
+        return sample
+    return None
+
+
 def write_json(path, body):
     """Write one JSON file in place of any previous one, atomically: the
     pilot reads these files while the job runs, and must never catch one
@@ -374,6 +408,9 @@ def build_report(args):
     }
     if args.note:
         report["note"] = args.note
+    pool = pool_sample(args.pool_sample)
+    if pool is not None:
+        report["pool"] = pool
     for path in sorted(glob.glob(os.path.join(args.prmon_dir, glob.escape(args.taskname) + '.*.fatal.json'))):
         try:
             with open(path) as handle:
@@ -406,6 +443,10 @@ def main():
     ap.add_argument("--full-events", default="")
     ap.add_argument("--reco-events", default="")
     ap.add_argument("--note", default="")
+    ap.add_argument("--pool-sample", default="",
+                    help="the batch pool sample the pilot launch took, if "
+                         "any (EPICPROD_POOL_SAMPLE); a pool-sample.json in "
+                         "the working directory or its ancestors otherwise")
     ap.add_argument("--job-report", default="",
                     help="the pilot's job report to refresh alongside this "
                          "one, so the metrics the payload declares ride the "

@@ -467,6 +467,17 @@ In order, each a committed step on the clone:
     + `attach_dids`; the event count is written once. A job now makes
     about five small catalog calls: the dataset check, the registration,
     the event count, and the dataset metadata read of the comparison.
+14. **The pool sample in the report** (2026-09-19, payload 0.19.2).
+    Where the pilot launch is ours and sampled the batch pool before
+    the container started (NERSC_PERLMUTTER.md, the pool sample:
+    `squeue` and `sinfo` on the node, `pool-sample/1`), the report
+    carries the sample under `pool`: from the path the launch's
+    environment names (`EPICPROD_POOL_SAMPLE`), else a
+    `pool-sample.json` in the working directory or an ancestor. No
+    sample, no block; a sample that cannot be read is an error in the
+    block. The monitor reads it as the reading of a pool no collector
+    answers for (swf-monitor docs/POOL_REPORTER.md, Pools we cannot
+    read).
 
 ## Container contract
 

@@ -153,6 +153,7 @@ payload_report() {
     --full "${FULL_TEMP:+${FULL_TEMP}/${TASKNAME:-}.edm4hep.root}" \
     --reco "${RECO_TEMP:+${RECO_TEMP}/${TASKNAME:-}.eicrecon.edm4eic.root}" \
     --full-events "${FULL_EVENTS}" --reco-events "${RECO_EVENTS}" --note "${REPORT_NOTE}" \
+    --pool-sample "${EPICPROD_POOL_SAMPLE:-}" \
     || echo "payload report not written (payload_report.py exit $?)"
   report_send || true
 }
