@@ -107,21 +107,37 @@ on the node and starts it. It lives in this repository at
 named to travel alone (a cached copy in the site's tree, a copy in
 every worker directory): whose it is, where it runs, what it does. It
 is served from `main`, as everything in this repository is: `main` is what
-runs. It is written against the interface the site's Slurm job
-provides (the two arguments, the three environment variables, one
-task per pilot under `srun`), not copied from the site's wrapper, and
-it carries what the test queue needs: the pilot from a tarball
-production operations builds and serves from the public `pilot/`
-prefix of the devcloud bucket ([DEVCLOUD_STAGEOUT.md](DEVCLOUD_STAGEOUT.md)
-§ 4; every place a pilot of ours goes, and how each is fed, is the
-table in [OSG_SUBMISSION.md](OSG_SUBMISSION.md) § Our canary pilot
-directory), the `queuedata.json` above
-placed in the pilot's working directory, `PILOT_ES_EXECUTOR_TYPE` and
-yampl, the messaging library the Event Service executor hands event
-ranges to the payload through (its Python binding built for ALRB's Python inside the same container by
-`perlmutter/build-es-channel.sh`, served from the bucket's pilot prefix
-beside the pilot and pinned by URL and checksum the same way), and the pilot
-options.
+runs.
+
+Its nucleus is the site's own production wrapper, on the pattern of the
+payload ([EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md): the production
+team's script taken in as it stands and evolved here). The wrapper's
+source is not published, but the public worker record carries
+everything it does: its working directory, the environment file and
+the payload script it writes for the container (both reproduced byte
+for byte), the pilot it runs from the harvester installation, the
+container ALRB starts and its mounts, and the signal forwarding. The
+launcher reproduces those from production job 3102135 (worker 20721,
+2026-09-19) and marks what is ours: the pool sample below and the node
+guard's exclusion, both before the container starts. The Event Service
+material the first version carried (a pilot from the devcloud bucket,
+the `queuedata.json` above, the yampl channel built by
+`perlmutter/build-es-channel.sh`) is in the file's history
+(swf-epicprod b24baf1) and returns as an evolution step once the
+nucleus has run; the `queuedata.json` in the directory is not fetched
+until then.
+
+The first thing the launcher does that the site's wrapper does not is
+read the batch pool: the first task of each worker runs `squeue` and
+`sinfo` on the node, outside the container where they answer, and
+writes `pool-sample.json` above the tasks' working directories
+(`pool-sample/1`: the machine's and the account's running and pending
+jobs and nodes, the account's oldest pending age, the partition's node
+states). The environment file names the path as `EPICPROD_POOL_SAMPLE`;
+the payload reads it and carries it in its report, and the monitor
+shows it as the Perlmutter pool (swf-monitor docs/POOL_REPORTER.md,
+Pools we cannot read). This is the only reading of that pool: no
+collector answers us and no NERSC credential is held here.
 
 The site's Slurm job takes it by queue name, keeping a cached copy in
 the harvester installation, where the job script now copies the site's
@@ -151,7 +167,23 @@ wrapper; every change in either direction is a publication on `main`.
 The request to PanDA operations is these four lines in the Slurm job
 script, the seed, and that the Perlmutter harvester configuration,
 Slurm template and wrapper be kept in a repository, so that a change
-like this one is a pull request.
+like this one is a pull request. PanDA operations changed the
+`NERSC_Perlmutter_epic_es` Slurm script on 2026-09-13 to fetch the
+launcher from its fixed URL (not the `${PQ}` form, so the production
+queue keeps the site's wrapper); the first worker to run it is the
+payload canary of the section below.
+
+## Payload canaries on the test queue
+
+The production queue's landing probe (below) runs the site's wrapper
+and says what production sees. The test queue runs the launcher, so a
+payload canary there (site-canary IMPLEMENTATION.md § Payload canaries:
+one manifest row of a standard-configuration task, the production
+payload, a verdict from its report) is the launcher's proof and the
+pool sample's carrier: every run leaves a sample of the machine as
+the worker found it, whatever the verdict. A payload canary on
+`NERSC_Perlmutter_epic_es` every twelve hours is the standing reading
+of the Perlmutter pool until production runs the launcher.
 
 ## Canary probes at the site
 
