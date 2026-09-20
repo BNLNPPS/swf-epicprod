@@ -30,6 +30,20 @@ HARVESTER_DIR=/global/common/software/m3763/panda-harvester
 NERSC_PILOT_VERSION=3.14.3.3
 PILOT_PY=$HARVESTER_DIR/pilot/pilot3-$NERSC_PILOT_VERSION/pilot3/pilot.py
 
+# OURS, the Event Service step (docs/NODE_EVENT_DISPATCHER.md): the
+# pilot from the devcloud bucket, the site's release with the two
+# event-service fixes (pilot3 PRs 220 and 221), pinned by checksum; the
+# queue's pilot-side configuration with the es_events activities; and
+# yampl, the library the generic executor hands ranges through, built
+# for the container's Python. Each is fetched into this directory,
+# which is /srv inside the container. A fetch that fails leaves the
+# site's own pilot and configuration in place, so ordinary jobs run.
+QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/$PQ
+PILOT_TARBALL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-3.14.3.3-epic3.tar.gz
+PILOT_TARBALL_SHA256=b7b0e27141a9d6f6b7e4fb9a2c3dea91bc5669f90aa39c3b360c9ad6b6e02721
+ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py311-el9.tar.gz
+ES_CHANNEL_SHA256=f6c11690f046ae8ceb90886d034e4fbba0f494203f839a16e8a85f687efcc938
+
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
@@ -177,6 +191,34 @@ PY
 )
 if [[ -n "$EXCLUDED" ]]; then log "node guard excludes this node: $EXCLUDED; no pilot started"; exit 0; fi
 
+# OURS: the Event Service step's material (above), fetched by every
+# task; the pilot runs from /srv/pilot3 when ours arrived whole.
+if curl -sfL -m 60 "$PILOT_TARBALL_URL" -o pilot3.tar.gz \
+    && echo "$PILOT_TARBALL_SHA256  pilot3.tar.gz" | sha256sum -c --quiet \
+    && tar -xzf pilot3.tar.gz && [[ -f pilot3/pilot.py ]]; then
+    PILOT_PY=/srv/pilot3/pilot.py
+    log "pilot $(cat pilot3/PILOTVERSION 2>/dev/null || echo unknown)-epic3 from $PILOT_TARBALL_URL"
+else
+    rm -rf pilot3 pilot3.tar.gz
+    log "our pilot not usable (fetch, checksum or unpack failed): $PILOT_TARBALL_URL; the site's pilot runs"
+fi
+if curl -sfL -m 30 "$QUEUE_URL/queuedata.json" -o queuedata.json; then
+    log "queuedata.json from $QUEUE_URL"
+else
+    rm -f queuedata.json
+    log "no queuedata.json published for $PQ; the pilot uses the server cache"
+fi
+ES_PYTHONPATH=
+if curl -sfL -m 60 "$ES_CHANNEL_URL" -o es-channel.tar.gz \
+    && echo "$ES_CHANNEL_SHA256  es-channel.tar.gz" | sha256sum -c --quiet \
+    && tar -xzf es-channel.tar.gz; then
+    ES_PYTHONPATH=/srv/es-channel/python
+    log "event service channel library from $ES_CHANNEL_URL"
+else
+    rm -rf es-channel es-channel.tar.gz
+    log "event service channel library not usable (fetch, checksum or unpack failed): $ES_CHANNEL_URL"
+fi
+
 # The container's environment file, as the site wrapper writes it (ALRB
 # sources it inside the container).
 cat > myEnv.sh <<EOF
@@ -200,7 +242,12 @@ export X509_CERT_DIR=/cvmfs/oasis.opensciencegrid.org/mis/certificates
 # for its own ENV, and /pscratch is bound in that container.
 export EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
 export APPTAINERENV_EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
+# OURS: the Event Service executor and its channel library (the pilot
+# runs an event-service payload in this environment, not in the job's
+# container, so the payload sees them too).
+export PILOT_ES_EXECUTOR_TYPE=generic
 EOF
+[[ -n "$ES_PYTHONPATH" ]] && echo "export PYTHONPATH=$ES_PYTHONPATH\${PYTHONPATH:+:\$PYTHONPATH}" >> myEnv.sh
 
 # The payload script (runs inside the container), as the site wrapper
 # writes it: the pilot in the background, Slurm's signals forwarded to

@@ -119,13 +119,21 @@ for byte), the pilot it runs from the harvester installation, the
 container ALRB starts and its mounts, and the signal forwarding. The
 launcher reproduces those from production job 3102135 (worker 20721,
 2026-09-19) and marks what is ours: the pool sample below and the node
-guard's exclusion, both before the container starts. The Event Service
-material the first version carried (a pilot from the devcloud bucket,
-the `queuedata.json` above, the yampl channel built by
-`perlmutter/build-es-channel.sh`) is in the file's history
-(swf-epicprod b24baf1) and returns as an evolution step once the
-nucleus has run; the `queuedata.json` in the directory is not fetched
-until then.
+guard's exclusion, both before the container starts, and, since
+2026-09-20 with the nucleus proven (three healthy canaries on worker
+21108 and 21117), the Event Service step: the pilot from the devcloud
+bucket (the site's release with pilot3 PRs 220 and 221, pinned by
+checksum, run from `/srv/pilot3`), the `queuedata.json` above (the
+server cache plus the `es_events` and `es_failover` activities), the
+yampl channel built by `perlmutter/build-es-channel.sh` on the
+container's Python (`PYTHONPATH` in the environment file), and
+`PILOT_ES_EXECUTOR_TYPE=generic`. Each is fetched by every task; one
+that cannot be fetched whole leaves the site's own pilot and
+configuration in place, so ordinary jobs run either way. The pilot runs
+an event-service payload in its own environment, not in the job's
+container, so the payload sees the channel library; the dispatcher's
+`es` mode (swf-monitor `scripts/evgen_job_dispatcher.py`) starts the
+task's image itself, once per range.
 
 The first thing the launcher does that the site's wrapper does not is
 read the batch pool: the first task of each worker runs `squeue` and
