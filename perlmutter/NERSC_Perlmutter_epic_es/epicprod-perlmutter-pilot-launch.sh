@@ -255,6 +255,12 @@ chmod +x myPayload.sh
 # Slurm's signals reach it and, through the payload script, the pilot.
 export ATLAS_LOCAL_ROOT_BASE=/cvmfs/atlas.cern.ch/repo/ATLASLocalRootBase
 export ALRB_CONT_CHOME=/pscratch/sd/x/xin/panda/.alrb/container/apptainer
+# The harvester's proxy, as the site wrapper exports it on the host: ALRB
+# copies the file X509_USER_PROXY names into the container's dummy home
+# as /alrb/harvesterproxy and points the variable there, which is how the
+# pilot finds its credential. Without it the pilot reports "SSL
+# communication is impossible" and never asks for a job (worker 21107).
+export X509_USER_PROXY=$HARVESTER_DIR/globus/harvesterproxy
 export ALRB_CONT_SETUPFILE=/srv/myEnv.sh
 export ALRB_CONT_RUNPAYLOAD=/srv/myPayload.sh
 mkdir -p "$ALRB_CONT_CHOME"
