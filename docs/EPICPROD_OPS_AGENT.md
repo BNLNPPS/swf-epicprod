@@ -231,7 +231,7 @@ invokable on their own, so a single step can be rerun without the chain.
 
 | `msg_type` | Doer | Purpose | Timeout |
 |---|---|---|---|
-| `outputs_ingest` | `outputs-ingest.py` | Write the production record of what tasks produced. Runs hourly, before the registrar. | 900 |
+| `outputs_ingest` | `outputs-ingest.py` | Write the production record of what tasks produced (`DeliveredOutput`). On demand since 2026-09-20 (`--task <jeditaskid>` for one task), no longer hourly: the registrar takes its worklist from the metatable and the swept reports, not from the record, and content validation, the record's one reader, runs on demand; the hourly rewrite of every job of every task touched in 48 h (167k rows through the web tier, 13 min when it finished, timeouts when the box was loaded) served nothing that runs. | 900 |
 | `registrar` | `registrar.py` | Complete the registrations the payload left pending. Hourly. | 1800 |
 | `content_validate` | `content-validate.py` | Reconcile a sample's dataset against the record. | 1800 |
 | `content_accept` | `content-accept.py` | Accept one dataset's content as a single operator action. | 900 |
