@@ -133,7 +133,11 @@ read the batch pool: the first task of each worker runs `squeue` and
 writes `pool-sample.json` above the tasks' working directories
 (`pool-sample/1`: the machine's and the account's running and pending
 jobs and nodes, the account's oldest pending age, the partition's node
-states). The environment file names the path as `EPICPROD_POOL_SAMPLE`;
+states). The environment file names the path as `EPICPROD_POOL_SAMPLE`
+and again as `APPTAINERENV_EPICPROD_POOL_SAMPLE`: the payload runs in a
+second container the pilot starts with a clean environment, which
+apptainer lets only prefixed variables through (the first `_es` job
+of the launcher, 3492628, carried no pool block for want of it);
 the payload reads it and carries it in its report, and the monitor
 shows it as the Perlmutter pool (swf-monitor docs/POOL_REPORTER.md,
 Pools we cannot read). This is the only reading of that pool: no

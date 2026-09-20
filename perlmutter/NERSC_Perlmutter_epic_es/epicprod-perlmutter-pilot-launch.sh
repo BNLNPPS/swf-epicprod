@@ -74,10 +74,11 @@ command -v python3 >/dev/null || log "no python3 on the host: the pool sample an
 # outside the container and nowhere inside it, so the sample is taken
 # here, once per worker, by the first task only, and written above the
 # tasks' working directories as pool-sample.json. /pscratch is mounted
-# at its own path in the container, so the payload reads the file at
-# the path the environment file names (EPICPROD_POOL_SAMPLE) and carries
-# it in its report. A sample that cannot be taken is recorded as such,
-# never a failure.
+# at its own path in both containers, so the payload reads the file at
+# the path the environment file names (EPICPROD_POOL_SAMPLE, carried
+# into the payload's container by its APPTAINERENV_ copy below) and
+# carries it in its report. A sample that cannot be taken is recorded
+# as such, never a failure.
 POOL_SAMPLE=$ACCESS_POINT/${SLURM_JOBID:-nojob}/pool-sample.json
 if [[ ${SLURM_PROCID:-0} == 0 ]]; then
     PART=${SLURM_JOB_PARTITION:-}
@@ -192,7 +193,13 @@ export X509_VOMS_DIR=/cvmfs/oasis.opensciencegrid.org/mis/vodata/grid-security/v
 export X509_VOMSES=/cvmfs/oasis.opensciencegrid.org/mis/vodata/vomses
 export X509_CERT_DIR=/cvmfs/oasis.opensciencegrid.org/mis/certificates
 # OURS: where the pool sample is (this worker's, taken by its first task).
+# The payload runs in a second container the pilot starts with a clean
+# environment (-C), so the plain variable stops at the pilot (worker
+# 21108, job 3492628: no pool block); apptainer injects APPTAINERENV_-
+# prefixed variables through a clean environment, the route ALRB uses
+# for its own ENV, and /pscratch is bound in that container.
 export EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
+export APPTAINERENV_EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
 EOF
 
 # The payload script (runs inside the container), as the site wrapper
