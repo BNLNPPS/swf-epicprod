@@ -32,11 +32,42 @@ PILOT_PY=$HARVESTER_DIR/pilot/pilot3-$NERSC_PILOT_VERSION/pilot3/pilot.py
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
+SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 WORKDIR=$ACCESS_POINT/${SLURM_JOBID:-nojob}/${SLURM_PROCID:-0}
 mkdir -p "$WORKDIR" && cd "$WORKDIR" || { log "cannot enter $WORKDIR"; exit 1; }
+
+# OURS: the launch's own account of itself, published. The site copies a
+# task's output to the public worker record only when a job ran, so a
+# launch that dies before its pilot takes a job leaves nothing readable
+# from outside. The first four tasks of each worker therefore write
+# their output to a file as well and, at exit, copy it into the
+# project's web directory, which portal.nersc.gov serves:
+#   https://portal.nersc.gov/cfs/m3763/panda/jobs/<queue>/launch/<worker>/task<n>.out
+# A copy that cannot be made is said in the task's own output and
+# changes nothing else.
+LAUNCH_LOG=$WORKDIR/launch.out
+LAUNCH_PUBLISH_DIR=/global/cfs/cdirs/m3763/www/panda/jobs/$PQ/launch/${HARVESTER_WORKER_ID:-noworker}
+publish_launch_log() {
+    local rc=$?
+    log "launch exiting with code $rc"
+    if [[ ${SLURM_PROCID:-0} -lt 4 ]]; then
+        sleep 1   # let tee write the last lines before the copy
+        if mkdir -p "$LAUNCH_PUBLISH_DIR" 2>/dev/null \
+            && cp "$LAUNCH_LOG" "$LAUNCH_PUBLISH_DIR/task${SLURM_PROCID:-0}.out" 2>/dev/null; then
+            chmod -R a+rX "$LAUNCH_PUBLISH_DIR" 2>/dev/null
+        else
+            log "launch log not published to $LAUNCH_PUBLISH_DIR"
+        fi
+    fi
+}
+exec > >(tee -a "$LAUNCH_LOG") 2>&1
+trap publish_launch_log EXIT
+
 log "queue $PQ worker ${HARVESTER_WORKER_ID:-?} harvester ${HARVESTER_ID:-?} task ${SLURM_PROCID:-0} host $(hostname -s) workdir $PWD"
+log "launcher $(sha256sum "$SELF" 2>/dev/null | cut -c1-12) from $SELF"
 unset TMPDIR
 [[ -f $PILOT_PY ]] || { log "no pilot at $PILOT_PY"; exit 1; }
+command -v python3 >/dev/null || log "no python3 on the host: the pool sample and the node guard read are skipped"
 
 # OURS: the pool as this worker finds it (swf-monitor docs/POOL_REPORTER.md,
 # Pools we cannot read). squeue and sinfo answer on the compute node
@@ -244,7 +275,10 @@ log "starting the container"
 # setupATLAS is this source line; the subshell keeps the sourced setup
 # out of this script's own environment, and drops set -u, under which
 # ALRB's setup fails on its own unbound variables.
-( set +u; source "$ATLAS_LOCAL_ROOT_BASE/user/atlasLocalSetup.sh" -c el9 -s /srv/myEnv.sh -r /srv/myPayload.sh --pwd /srv -m /global -m /pscratch ) &
+# The setup file and the payload script travel in ALRB_CONT_SETUPFILE and
+# ALRB_CONT_RUNPAYLOAD, exported above as the site wrapper exports them;
+# the two mounts give ALRB's option string the site's exact form.
+( set +u; source "$ATLAS_LOCAL_ROOT_BASE/user/atlasLocalSetup.sh" -c el9 -m /global -m /pscratch ) &
 setup_pid=$!
 wait "$setup_pid"; rc=$?
 log "container finished with code $rc"
