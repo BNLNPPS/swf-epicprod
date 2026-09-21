@@ -331,6 +331,18 @@ share a working directory, since the geometry's file loader builds its
 slots died on the race (each slot now runs the payload in its own run
 directory with the sandbox's files linked in).
 
+**The drain, proven (2026-09-21, task 40124).** Two slots, units of
+five, a deadline of 120 s with a 60 s margin over twenty events: the
+first job took two units at its start, passed the margin, took no
+more, and ended `fg_partial` with ten events; the server set its ten
+finished ranges done, cancelled the ten it never took, and JEDI's next
+job over the file (attempt 2) held exactly those ten. That job's
+units were declined at landing (JLab Rucio refused connections for a
+minute; exit 80, nothing started, the cause in the range record) and
+the job ended `fg_stumble`; attempt 3 ran the ten and ended
+`fg_done`; the task is done. The task's `maxAttempt` bounds the jobs
+over a file, so it is the drain's retry budget.
+
 Per-range reporting also closes the events-source gap: each completed
 range carries its exact event count, entering the measurement store as
 a highest-provenance tier (`reported`) in place of today's
