@@ -452,13 +452,31 @@ beside slots that produce one or two events a second between them.
 `hadd` is eight times faster but leaves one metadata entry per
 input, readable today and a liability with a stricter podio.
 
+**The Package as built (2026-09-21, payload 0.21.0, on Torre's
+choice of the merged podio file).** With `ES_CLOSE_S` set
+(`--es-close-s` at submission) a unit's run.sh hands its validated
+RECO to the harness instead of registering it (`EPICPROD_RECO_HANDOFF`:
+the file and a record of its registration terms, the dataset, RSE,
+metadata, lifetime and preservation it would have used), and the
+harness, every `ES_CLOSE_S` seconds and once more when nothing else is
+coming, runs a close in the image (`es/es_close.sh`): the units since
+the last close merged by `podio-merge-files` into
+`<row>.<PanDA job id>.<close index>.eicrecon.edm4eic.root`, validated
+(the merged file's own event count against the units' sum), registered
+by the payload's registrar under the units' terms with that count, the
+unit files removed. A unit's ranges are reported to the pilot only
+when its close stands (registered, or pending on an unreachable
+catalog with the file preserved), so a close that fails sends its
+events back to the server rather than counting them done; the
+deadline's margin must cover the last close. The closes are in the job
+report under `es.closes`. Without `ES_CLOSE_S` each unit registers its
+own file, as before.
+
 ## Open questions
 
-- The consumer contract for the packaged output, on the trial above:
-  a merged podio file per close (transparent to every consumer, the
-  merge as the harness's background trickle) against the per-unit
-  files that run today; the zip container is out on uproot. Torre's
-  call.
+- The close's cadence and the merge's cost at production rates: a
+  merge is a Python pass at about five events a second, so a close of
+  a 20-minute cadence over eight slots is minutes of one core.
 - The worker-shape configuration for one-job-per-allocation
   submission (the harvester and Globus Compute endpoint on the
   site's login node). The 4-hour allocation itself stays: short

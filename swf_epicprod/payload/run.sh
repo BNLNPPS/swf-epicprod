@@ -1031,7 +1031,28 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     stage events fail RECO
   fi
 
-  if [ "${USERUCIO:-false}" == "true" ] ; then
+  if [ -n "${EPICPROD_RECO_HANDOFF:-}" ]; then
+    # An Event Service unit (docs/NODE_EVENT_DISPATCHER.md, Package): the
+    # validated RECO goes to the node harness with its registration terms
+    # instead of to the catalog; the harness merges a close's units into
+    # one file and registers that (es/es_close.sh), under the same
+    # dataset, metadata, lifetime and preservation this unit would have.
+    mkdir -p "${EPICPROD_RECO_HANDOFF}"
+    mv "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" "${EPICPROD_RECO_HANDOFF}/${TASKNAME}.eicrecon.edm4eic.root"
+    jq -n --arg file "${EPICPROD_RECO_HANDOFF}/${TASKNAME}.eicrecon.edm4eic.root" \
+          --arg events "${RECO_EVENTS:-}" --arg dataset "/${RECO_DIR}" --arg rse "${OUT_RSE:-EIC-XRD}" \
+          --arg name "$(basename "${BASENAME}")" --argjson metadata "${METADATA_JSON_RECO}" \
+          --arg lifetime "${CANARY_LIFETIME_S:-${TRIAL_LIFETIME_S:-}}" \
+          --arg preserve_door "${STASH_DOOR:-}" --arg preserve_prefix "${STASH_PREFIX:-}" --arg preserve_timeout "${STASH_TIMEOUT:-600}" \
+          --arg preserve "$([ "${OUT_RSE:-EIC-XRD}" == "${STASH_RSE}" ] && echo yes || echo no)" \
+          '{file: $file, events: ($events | tonumber? // null), dataset: $dataset, rse: $rse, name: $name,
+            metadata: $metadata, lifetime_s: ($lifetime | tonumber? // null),
+            preserve: ($preserve == "yes"), preserve_door: $preserve_door, preserve_prefix: $preserve_prefix,
+            preserve_timeout: ($preserve_timeout | tonumber? // 600)}' \
+       > "${EPICPROD_RECO_HANDOFF}/${TASKNAME}.handoff.json"
+    echo "RECO handed to the harness: ${EPICPROD_RECO_HANDOFF}/${TASKNAME}.eicrecon.edm4eic.root (${RECO_EVENTS:-?} events)"
+    stage registration deferred "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
+  elif [ "${USERUCIO:-false}" == "true" ] ; then
     registration_stagger
     stage registration start RECO
     # Pending rather than failed when the catalog cannot answer; see the FULL

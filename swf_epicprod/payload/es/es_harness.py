@@ -17,7 +17,14 @@ given); --ranges-file feeds a list of range dicts instead, the loopback
 without a pilot. A unit is one range, or with --events-per-unit K (a
 fine-grained task, one event per range) up to K consecutive ranges of
 one block of K events, run as one chunk of the row and reported range by
-range after; K is the loss quantum, the block's index names the chunk. The input file is the pilot's staged copy of the range's
+range after; K is the loss quantum, the block's index names the chunk.
+With --close-s S (ES_CLOSE_S) the units hand their validated RECO to the
+harness instead of registering it, and every S seconds, and at the end,
+the harness merges the units since the last close into one podio file
+and registers it (es_close.sh in the image: the Package of the design);
+a unit's ranges are reported to the pilot only once its close stands,
+so a close that fails sends its events back to the server. The
+deadline's margin must cover the last close. The input file is the pilot's staged copy of the range's
 LFN in the job directory (the parent of the working directory), or
 --input. The deadline is seconds of wall since start; at deadline minus
 margin no further range is taken, the ranges in flight finish and are
@@ -92,6 +99,57 @@ class FileFeed:
         log(f"report: {text[:160]}")
 
 
+def container_command(args, inner, extra_binds=()):
+    """The task's image run over the sandbox and the work tree, as the
+    slots and the close run it."""
+    runtime = shutil.which('apptainer') or shutil.which('singularity') or \
+        '/cvmfs/atlas.cern.ch/repo/containers/sw/apptainer/x86_64-el8/current/bin/apptainer'
+    cmd = [runtime, 'exec', '--cleanenv', '-B', args.sandbox, '-B', args.work]
+    for b in extra_binds:
+        cmd += ['-B', b]
+    if os.path.isdir('/cvmfs'):
+        cmd += ['-B', '/cvmfs']
+    cmd += ['--pwd', args.sandbox, args.image, '/bin/bash', '-c', inner]
+    return cmd
+
+
+class Close:
+    """One close: the pending units' RECO merged and registered by
+    es_close.sh in the image, in the background; the units' ranges are
+    reported when it ends."""
+
+    def __init__(self, index, args, units):
+        self.index = index
+        self.units = units                      # [(slot, uid, record, range_ids)]
+        self.dir = os.path.join(args.work, 'closes', f'{index:04d}')
+        os.makedirs(self.dir, exist_ok=True)
+        first = units[0][2]['handoff']
+        self.name = f"{first['name']}.{os.environ.get('PANDAID') or 'loopback'}.{index:04d}.eicrecon.edm4eic.root"
+        handoffs = [u[2]['handoff']['handoff_file'] for u in units]
+        inner = (f"cd {args.sandbox} && bash {args.payload}/es/es_close.sh {self.dir} {self.name} "
+                 + " ".join(handoffs))
+        self.started = time.time()
+        self.proc = subprocess.Popen(container_command(args, inner),
+                                     stdout=open(os.path.join(self.dir, 'container.log'), 'w'),
+                                     stderr=subprocess.STDOUT)
+        log(f"close {index}: {len(units)} unit(s), {sum(int(u[2]['handoff'].get('events') or 0) for u in units)} events -> {self.name} (pid {self.proc.pid})")
+
+    def result(self):
+        """The close's record when it has ended, else None."""
+        if self.proc.poll() is None:
+            return None
+        rec = {'index': self.index, 'name': self.name, 'units': [u[1] for u in self.units],
+               'rc': self.proc.returncode, 'wall_s': round(time.time() - self.started, 1)}
+        try:
+            with open(os.path.join(self.dir, 'close.json')) as f:
+                rec.update(json.load(f))
+        except (OSError, ValueError):
+            rec.setdefault('outcome', 'failed')
+            rec.setdefault('message', f'close exited {self.proc.returncode} without a record')
+        rec['ok'] = self.proc.returncode == 0 and rec.get('outcome') in ('registered', 'pending')
+        return rec
+
+
 class Slot:
     def __init__(self, index, args, input_path):
         self.index = index
@@ -108,13 +166,9 @@ class Slot:
         inner = (f"cd {args.sandbox} && python3 {args.payload}/es/es_slot.py "
                  f"--work {self.work} --payload {args.payload} --sandbox {args.sandbox} "
                  + (f" --input {input_path}" if input_path else "")
+                 + (" --handoff" if args.close_s > 0 else "")
                  + "".join(f" --env {kv}" for kv in (args.env or [])))
-        cmd = [runtime, 'exec', '--cleanenv', '-B', args.sandbox, '-B', args.work]
-        if input_path:
-            cmd += ['-B', os.path.dirname(input_path)]
-        if os.path.isdir('/cvmfs'):
-            cmd += ['-B', '/cvmfs']
-        cmd += ['--pwd', args.sandbox, args.image, '/bin/bash', '-c', inner]
+        cmd = container_command(args, inner, extra_binds=[os.path.dirname(input_path)] if input_path else [])
         self.log = open(os.path.join(self.work, 'slot.log'), 'w')
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT)
         log(f"slot {index} started (pid {self.proc.pid})")
@@ -237,6 +291,8 @@ def main():
     ap.add_argument('--summary', default='es_summary.json')
     ap.add_argument('--events-per-unit', type=int, default=int(os.environ.get('ES_EVENTS_PER_UNIT', '0')),
                     help='consecutive events per unit for a fine-grained task (one event per range); 0 = one range per unit')
+    ap.add_argument('--close-s', type=float, default=float(os.environ.get('ES_CLOSE_S', '0')),
+                    help='seconds between closes: the units since the last close merged into one file and registered; 0 = each unit registers its own')
     args = ap.parse_args()
     args.sandbox = os.path.abspath(args.sandbox)
     args.work = os.path.abspath(args.work)
@@ -252,29 +308,60 @@ def main():
     started = time.time()
     os.makedirs(args.work, exist_ok=True)
     slots, summary = [], {'stamp': args.stamp, 'slots': args.slots, 'image': args.image,
-                          'done': [], 'failed': [], 'untaken_at_deadline': False}
+                          'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False}
     input_path = args.input
     pool = []
+    pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
     log(f"harness up: {args.slots} slots, image {args.image}, row {row[:2]}, "
         f"unit {args.events_per_unit or 'one range'} events, "
+        f"close every {args.close_s or 'unit'} s, "
         f"deadline {args.deadline_s or 'none'} s, margin {args.margin_s} s")
+
+    def report(slot, uid, record, ok, range_ids, extra=''):
+        wall = record.get('wall_s') or 0
+        for rid in range_ids:
+            if ok:
+                feed.report(f"{os.path.join(slot.outbox, uid, 'unit.json')},ID:{rid},CPU:{wall},WALL:{wall}")
+            else:
+                feed.report(f"ERR_ATHENAMP_PROCESS {rid}: {extra or record.get('message', 'failed')}")
+
     while True:
-        # Results first: a finished unit frees its slot and is reported.
+        # Results first: a finished unit frees its slot; it is reported now,
+        # or held for its close when it handed its RECO over.
         for s in slots:
             r = s.result()
             if r is None:
                 continue
             uid, record, ok = r
-            wall = record.get('wall_s') or round(time.time() - (s.taken_at or time.time()), 1)
-            # Every range of the unit is reported, with the unit's receipt.
-            for rid in s.range_ids:
-                if ok:
-                    receipt = os.path.join(s.outbox, uid, 'unit.json')
-                    feed.report(f"{receipt},ID:{rid},CPU:{wall},WALL:{wall}")
-                else:
-                    feed.report(f"ERR_ATHENAMP_PROCESS {rid}: {record.get('message', 'failed')}")
+            record.setdefault('wall_s', round(time.time() - (s.taken_at or time.time()), 1))
+            range_ids = list(s.range_ids)
+            if ok and record.get('handoff'):
+                pending.append((s, uid, record, range_ids))
+                log(f"unit {uid} ({len(range_ids)} ranges): done in {record['wall_s']} s, "
+                    f"{record['handoff'].get('events')} events handed over; {len(pending)} awaiting a close")
+                continue
+            report(s, uid, record, ok, range_ids)
             (summary['done'] if ok else summary['failed']).append(record)
-            log(f"unit {uid} ({len(s.range_ids)} ranges): {'done' if ok else 'failed'} in {wall} s, dids {record.get('dids')}")
+            log(f"unit {uid} ({len(range_ids)} ranges): {'done' if ok else 'failed'} in {record['wall_s']} s, dids {record.get('dids')}")
+        # Closes that ended: their units' ranges are reported by the outcome.
+        for c in list(closes):
+            rec = c.result()
+            if rec is None:
+                continue
+            closes.remove(c)
+            summary['closes'].append(rec)
+            for slot, uid, record, range_ids in c.units:
+                record['close'] = rec['index']
+                if rec['ok']:
+                    record['dids'] = [rec.get('did')]
+                    report(slot, uid, record, True, range_ids)
+                    summary['done'].append(record)
+                else:
+                    report(slot, uid, record, False, range_ids, extra=f"close {rec['index']} failed: {rec.get('message')}")
+                    summary['failed'].append(record)
+            log(f"close {rec['index']}: {rec.get('outcome')} {rec.get('did')} "
+                f"({rec.get('events')} events, {len(c.units)} units) in {rec['wall_s']} s"
+                + ('' if rec['ok'] else f"; {rec.get('message')}"))
         past_deadline = args.deadline_s and time.time() - started > args.deadline_s - args.margin_s
         if past_deadline and (pool or not feed.exhausted):
             # The ranges never taken, on the pilot's side or pooled here,
@@ -305,7 +392,13 @@ def main():
                     free[0].give(unit_spec(members, args.events_per_unit, file_path, ext, args.stamp))
                     continue
         in_flight = [s for s in slots if s.unit is not None]
-        if feed.exhausted and not pool and not in_flight:
+        # A close: on the cadence, or the last one when nothing else is
+        # coming; one at a time.
+        if pending and not closes and (time.time() - last_close >= args.close_s
+                                       or (feed.exhausted and not pool and not in_flight)):
+            closes.append(Close(len(summary['closes']) + len(closes) + 1, args, pending))
+            pending, last_close = [], time.time()
+        if feed.exhausted and not pool and not in_flight and not pending and not closes:
             break
         time.sleep(2)
     log(f"no more ranges: {len(summary['done'])} done, {len(summary['failed'])} failed; stopping slots")

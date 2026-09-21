@@ -103,8 +103,10 @@ def run_unit(spec_path, args):
     for kv in args.env or []:
         k, _, v = kv.partition('=')
         env[k] = v
+    handoff = os.path.join(args.work, 'handoff', uid) if args.handoff else ''
     env.update({
         'EPICPROD_REPORT_ID': f"{env.get('PANDAID') or 'unidentified'}/{uid}",
+        'EPICPROD_RECO_HANDOFF': handoff,
         'EPICPROD_SKIP_EVENTS': str(start - 1),
         'EPICPROD_CHUNK_LABEL': label or '',
         'EPICPROD_RECO_SOCKET': sock_path(args),
@@ -128,19 +130,43 @@ def run_unit(spec_path, args):
     except (OSError, ValueError):
         pass
     dids = list((report.get('registration') or {}).get('dids') or [])
-    ok = rc == 0 and dids
+    # With a handoff the unit's RECO and its registration terms are the
+    # harness's to merge and register at the close (run.sh, the handoff).
+    handed = read_handoff(handoff) if handoff else None
+    ok = rc == 0 and (dids if not handoff else handed is not None)
     record.update(rc=rc, ended_at=time.time(),
                   wall_s=round(time.time() - record['started_at'], 1),
                   events_reconstructed=(report.get('events') or {}).get('reconstructed'),
-                  dids=dids, registration=(report.get('registration') or {}).get('outcome'),
+                  dids=dids if not handoff else [],
+                  registration=(report.get('registration') or {}).get('outcome'),
+                  handoff=handed,
                   status='ok' if ok else 'error',
-                  message='' if ok else f'payload exit {rc}' + ('' if dids else ', nothing registered'))
+                  message='' if ok else f'payload exit {rc}' + ('' if (dids or handed) else ', nothing registered'))
     if not ok:
         # The payload's own account travels with the range's record, which
         # reaches the job report and the server: the pilot removes the
         # job directory, logs included, when the job ends.
         record['message'] += failure_detail(out)
     return uid, record, out
+
+
+def read_handoff(handoff_dir):
+    """The unit's handed-off RECO and its registration terms (run.sh
+    writes ``<name>.handoff.json`` beside the file), or None."""
+    try:
+        names = [n for n in os.listdir(handoff_dir) if n.endswith('.handoff.json')]
+    except OSError:
+        return None
+    if not names:
+        return None
+    try:
+        path = os.path.join(handoff_dir, names[0])
+        with open(path) as f:
+            h = json.load(f)
+        h['handoff_file'] = path
+        return h if os.path.isfile(h.get('file') or '') else None
+    except (OSError, ValueError):
+        return None
 
 
 def failure_detail(out):
@@ -174,6 +200,8 @@ def main():
     ap.add_argument('--input', default='', help='the staged input file; empty: the payload reads the door per range')
     ap.add_argument('--env', action='append')
     ap.add_argument('--idle-exit', type=int, default=0)
+    ap.add_argument('--handoff', action='store_true',
+                    help='hand each unit\'s validated RECO to the harness for the close instead of registering it')
     args = ap.parse_args()
     inbox = os.path.join(args.work, 'inbox')
     os.makedirs(inbox, exist_ok=True)

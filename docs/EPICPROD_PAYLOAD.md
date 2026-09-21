@@ -513,6 +513,14 @@ In order, each a committed step on the clone:
     open its block apart from the block's own. A unit's reports on the
     object channel go under the job and the unit
     (`EPICPROD_REPORT_ID`, 0.20.3; JOB_REPORTING.md).
+16. **The close** (2026-09-21, payload 0.21.0; NODE_EVENT_DISPATCHER.md,
+    The Package as built). `EPICPROD_RECO_HANDOFF` names a directory:
+    run.sh moves its validated RECO there with a record of the
+    registration terms it would have used (`<name>.handoff.json`) and
+    marks the registration `deferred` in the stage log; the harness's
+    `es/es_close.sh` merges the units of a close into one podio file,
+    validates it and registers it under those terms with the merged
+    file's own event count.
 
 ## Container contract
 
