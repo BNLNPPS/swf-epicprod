@@ -110,7 +110,7 @@
  "countrygroup": "",
  "depthboost": null,
  "description": "",
- "direct_access_lan": false,
+ "direct_access_lan": true,
  "direct_access_wan": true,
  "environ": "RUCIO_CONFIG=/cvmfs/eic.opensciencegrid.org/rucio-clients/rucio.cfg RUCIO_ACCOUNT=panda",
  "envsetup": "",

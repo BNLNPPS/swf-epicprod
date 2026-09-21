@@ -103,10 +103,11 @@ class Slot:
             '/cvmfs/atlas.cern.ch/repo/containers/sw/apptainer/x86_64-el8/current/bin/apptainer'
         inner = (f"cd {args.sandbox} && python3 {args.payload}/es/es_slot.py "
                  f"--work {self.work} --payload {args.payload} --sandbox {args.sandbox} "
-                 f"--input {input_path}"
+                 + (f" --input {input_path}" if input_path else "")
                  + "".join(f" --env {kv}" for kv in (args.env or [])))
-        cmd = [runtime, 'exec', '--cleanenv', '-B', args.sandbox, '-B', args.work,
-               '-B', os.path.dirname(input_path)]
+        cmd = [runtime, 'exec', '--cleanenv', '-B', args.sandbox, '-B', args.work]
+        if input_path:
+            cmd += ['-B', os.path.dirname(input_path)]
         if os.path.isdir('/cvmfs'):
             cmd += ['-B', '/cvmfs']
         cmd += ['--pwd', args.sandbox, args.image, '/bin/bash', '-c', inner]
@@ -230,12 +231,12 @@ def main():
                 if rng is not None:
                     uid = rng['eventRangeID']
                     if input_path is None:
-                        input_path = find_input(os.path.dirname(args.sandbox), rng.get('LFN', ''))
-                        if input_path is None:
-                            log(f"ERROR: input {rng.get('LFN')} not staged in {os.path.dirname(args.sandbox)}")
-                            feed.report(f"ERR_ATHENAMP_PROCESS {uid}: input not staged")
-                            summary['failed'].append({'unit_id': uid, 'message': 'input not staged'})
-                            continue
+                        # The pilot's staged copy of the range's LFN; without
+                        # one (direct-access queues, npps0 outside the SCDF
+                        # perimeter) the payload streams from the door per
+                        # range, as production does.
+                        input_path = find_input(os.path.dirname(args.sandbox), rng.get('LFN', '')) or ''
+                        log(f"input: {input_path or 'not staged; the payload reads the door per range'}")
                     if not free:
                         slots.append(Slot(len(slots), args, input_path))
                         free = [slots[-1]]

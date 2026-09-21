@@ -70,13 +70,14 @@ def run_unit(spec_path, args):
         k, _, v = kv.partition('=')
         env[k] = v
     env.update({
-        'EPICPROD_INPUT_LOCAL': args.input,
         'EPICPROD_RECO_SOCKET': sock_path(args),
         'REGISTRATION_STAGGER_MAX_S': '0',
         'PAYLOAD_STAGES_LOG': os.path.join(out, 'stages.log'),
         'PAYLOAD_REPORT': os.path.join(out, 'payload-report.json'),
         'PAYLOAD_JOB_REPORT': os.path.join(out, 'jobReport.json'),
     })
+    if args.input:
+        env['EPICPROD_INPUT_LOCAL'] = args.input
     cmd = [os.path.join(args.payload, 'run.sh'), f"EVGEN/{spec['file_path']}",
            spec['ext'], str(count), chunk]
     log(f"unit {uid}: events {start}-{last}, chunk {chunk}")
@@ -104,7 +105,7 @@ def main():
     ap.add_argument('--work', required=True)
     ap.add_argument('--payload', required=True, help='the sandbox payload/ directory')
     ap.add_argument('--sandbox', required=True, help='the sandbox directory run.sh sources its environment from')
-    ap.add_argument('--input', required=True, help='the staged input file')
+    ap.add_argument('--input', default='', help='the staged input file; empty: the payload reads the door per range')
     ap.add_argument('--env', action='append')
     ap.add_argument('--idle-exit', type=int, default=0)
     args = ap.parse_args()
