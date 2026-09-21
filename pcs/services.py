@@ -6227,6 +6227,7 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
                 or getattr(locked.prod_config, 'name', '') == PLACEHOLDER_PRODCONFIG_NAME):
             standard = locked.campaign_standard_config()
             if standard is not None:
+                from monitor_app.epicprod_logging import log_epicprod_action
                 locked.prod_config = standard
                 fields.append('prod_config')
                 log_epicprod_action(
