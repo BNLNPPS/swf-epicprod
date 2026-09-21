@@ -343,6 +343,22 @@ the job ended `fg_stumble`; attempt 3 ran the ten and ended
 `fg_done`; the task is done. The task's `maxAttempt` bounds the jobs
 over a file, so it is the drain's retry budget.
 
+**Both queues, and the record (2026-09-21).** The same submission
+closed on `NERSC_Perlmutter_epic_es` (task 40125: one slot, the
+queue's 128-pilots-per-node shape, a node in 4.5 minutes, twenty
+events in four sequential units in 11.7 minutes) and on
+`BNL_NPPS_GPU` (task 40126: four slots, four units of about 100 s
+each, the job 5.5 minutes). An Event Service task carries none of the
+container pre- and post-process steps of an ordinary submission: the
+harness runs outside the pilot's container in one step, the
+post-process runGen ran after the work directory was gone and every
+ES job carried pilot error 1357 though the server finished it, and
+the server discards a failed job's metadata, so no job report reached
+the record until the steps were dropped. The report now lands
+(`metaTable`): the harness's summary under `es`, each unit's record
+with its events, wall, outputs and, for a failed unit, the payload's
+failed stage and error lines.
+
 Per-range reporting also closes the events-source gap: each completed
 range carries its exact event count, entering the measurement store as
 a highest-provenance tier (`reported`) in place of today's
