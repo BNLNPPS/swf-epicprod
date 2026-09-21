@@ -389,6 +389,18 @@ stage input start
 if [ "${EVGEN_INTERNAL:-false}" == "true" ]; then
   # The sample generated above, in the place a streamed one is read from.
   INPUT_FILE=${EVGEN_LOCAL}
+elif [ -n "${EPICPROD_INPUT_LOCAL:-}" ]; then
+  # An Event Service range (docs/NODE_EVENT_DISPATCHER.md): the node
+  # harness staged the input once for the job, so no door is asked
+  # per range.
+  if [ ! -s "${EPICPROD_INPUT_LOCAL}" ]; then
+    stage input fail "local input missing: ${EPICPROD_INPUT_LOCAL}"
+    REPORT_NOTE="local input missing: ${EPICPROD_INPUT_LOCAL}"
+    echo "ERROR: local input file missing; no work started. ${EPICPROD_INPUT_LOCAL}"
+    exit 85
+  fi
+  INPUT_FILE=${EPICPROD_INPUT_LOCAL}
+  echo "input staged by the harness: ${INPUT_FILE}"
 elif [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
   # A streamed input is touched by nothing before npsim opens it minutes
   # into the job, and npsim segfaults on an open the door refuses (task
@@ -710,6 +722,35 @@ fi
 
 # Run eicrecon reconstruction
 stage reconstruction start
+if [ -n "${EPICPROD_RECO_SOCKET:-}" ]; then
+  # An Event Service range: reconstruction by the resident EICrecon on
+  # its managed PODIO socket (docs/NODE_EVENT_DISPATCHER.md, the
+  # harness), started here on the slot's first range with this
+  # configuration's geometry and left running for the next; the
+  # request names the FULL file, the RECO file and the event count.
+  # A fresh eicrecon costs 25 s of setup per range; the resident one
+  # answers in the events' own time.
+  {
+    date
+    if [ ! -S "${EPICPROD_RECO_SOCKET}" ]; then
+      echo "starting the resident eicrecon on ${EPICPROD_RECO_SOCKET}"
+      setsid nohup eicrecon \
+        -Pdd4hep:xml_files="${DETECTOR_COMPACT}" \
+        -Ppodio:managed_socket_path="${EPICPROD_RECO_SOCKET}" \
+        -Pjana:warmup_timeout=0 -Pjana:timeout=0 \
+        > "${EPICPROD_RECO_SOCKET}.log" 2>&1 < /dev/null &
+      for i in $(seq 1 "${EPICPROD_RECO_STARTUP_S:-600}"); do [ -S "${EPICPROD_RECO_SOCKET}" ] && break; if ! pgrep -f "managed_socket_path=${EPICPROD_RECO_SOCKET}" >/dev/null; then echo "ERROR: resident eicrecon exited before its socket appeared"; tail -30 "${EPICPROD_RECO_SOCKET}.log"; exit 86; fi; sleep 1; done
+      [ -S "${EPICPROD_RECO_SOCKET}" ] || { echo "ERROR: resident eicrecon gave no socket in ${EPICPROD_RECO_STARTUP_S:-600} s"; tail -20 "${EPICPROD_RECO_SOCKET}.log"; exit 86; }
+      echo "resident eicrecon up after ${i} s"
+    fi
+    python "${SCRIPT_DIR}/es/zmq_request.py" "${EPICPROD_RECO_SOCKET}" \
+      "{\"input_file\": \"$(realpath ${FULL_TEMP}/${TASKNAME}.edm4hep.root)\", \"output_file\": \"$(realpath ${RECO_TEMP})/${TASKNAME}.eicrecon.edm4eic.root\", \"nskip\": 0, \"nevents\": ${FULL_EVENTS:-${EVENTS_PER_TASK}}, \"run_id\": \"${TASKNAME}\"}" \
+      | tee "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json"
+    grep -q '"status": *"completed"' "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json" \
+      || { echo "ERROR: resident eicrecon did not complete the range"; exit 86; }
+    ls -al ${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root
+  } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.eicrecon.log | tail -n1000
+else
 {
   date
   eic-info
@@ -727,6 +768,7 @@ stage reconstruction start
   if [ -f jana.dot ] ; then mv jana.dot ${LOG_TEMP}/${TASKNAME}.eicrecon.dot ; fi
   ls -al ${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root
 } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.eicrecon.log | tail -n1000
+fi
 stage reconstruction ok
 # The reconstructed event count, the count a job delivers. When the
 # output is copied, the validation below takes it from the ROOT open it

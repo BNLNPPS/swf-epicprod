@@ -478,6 +478,26 @@ In order, each a committed step on the clone:
     block. The monitor reads it as the reading of a pool no collector
     answers for (swf-monitor docs/POOL_REPORTER.md, Pools we cannot
     read).
+15. **The Event Service range as a chunk, and the node harness**
+    (2026-09-21, payload 0.20.0; NODE_EVENT_DISPATCHER.md). A range
+    runs through run.sh as a chunk of its manifest row (the range's
+    length of events, skipped start minus one), so registration,
+    validation and the report are the one payload. Two switches for
+    the harness: `EPICPROD_INPUT_LOCAL` names the input the harness
+    staged once for the job, read in place of the door;
+    `EPICPROD_RECO_SOCKET` names the slot's resident EICrecon on its
+    managed PODIO socket, started on the slot's first range with the
+    configuration's geometry and asked per range through
+    `es/zmq_request.py` (libzmq through ctypes; the image has no
+    pyzmq), exit 86 when it does not answer. With the stagger off
+    (`REGISTRATION_STAGGER_MAX_S=0`) a 5-event range on the loopback
+    costs the events' own time plus npsim's start, reconstruction 4 s
+    against 25 s for a fresh eicrecon, registration 7 s. The harness
+    itself is `es/es_harness.py` (the front end on the pilot's range
+    channel, N slots, the deadline) and `es/es_slot.py` (one long-lived
+    container per slot, the inbox/outbox contract of
+    WORK_UNIT_CONTRACT.md); a Unix socket path is at most 108 bytes, so
+    the socket lives in /tmp.
 
 ## Container contract
 
