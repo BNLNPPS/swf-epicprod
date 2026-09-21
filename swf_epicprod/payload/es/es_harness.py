@@ -42,6 +42,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 
@@ -217,24 +218,74 @@ class Slot:
         self.log.close()
 
 
-def drain(feed, pool):
-    """Every range the feed has into the pool, kept in event order: the
-    server hands a job's ranges in no particular order (job 3556341 got
-    6 8 10 3 15 4 ...), and a unit needs consecutive events."""
-    while not feed.exhausted:
-        rng = feed.ask()
-        if rng is None:
-            break
-        pool.append(rng)
-    pool.sort(key=lambda r: (r.get('LFN', ''), int(r['startEvent'])))
+class Pool:
+    """The job's ranges as the pilot hands them, gathered in the
+    background and kept in event order: the server hands them in no
+    particular order within a fetch (job 3556341 got 6 8 10 3 15 4 ...),
+    and the pilot fetches a few at a time on its own cadence (two a
+    fetch every half minute for a one-core job, job 3556537), so a unit
+    is cut as soon as its block is whole rather than after every range
+    has arrived."""
+
+    def __init__(self, feed):
+        self.feed = feed
+        self.ranges = []
+        self.lock = threading.Lock()
+        self.thread = threading.Thread(target=self._gather, name='pool', daemon=True)
+        self.thread.start()
+
+    def _gather(self):
+        while not self.feed.exhausted:
+            rng = self.feed.ask()
+            if rng is None:
+                break
+            with self.lock:
+                self.ranges.append(rng)
+                self.ranges.sort(key=lambda r: (r.get('LFN', ''), int(r['startEvent'])))
+
+    @property
+    def exhausted(self):
+        return self.feed.exhausted and not self.thread.is_alive()
+
+    def __len__(self):
+        with self.lock:
+            return len(self.ranges)
+
+    def clear(self):
+        with self.lock:
+            self.ranges = []
+
+    def take_unit(self, per_unit):
+        """The ranges of the next unit: one range, or up to per_unit
+        consecutive ranges within one block of per_unit events (block b
+        is events b*K+1 to (b+1)*K), so that a unit is a chunk of the row
+        and its block index names its outputs. A block is cut when it is
+        whole, or when no more ranges are coming; empty otherwise."""
+        with self.lock:
+            if not self.ranges:
+                return []
+            if per_unit < 1:
+                return [self.ranges.pop(0)]
+            first = self.ranges[0]
+            block = (int(first['startEvent']) - 1) // per_unit
+            members = [first]
+            for rng in self.ranges[1:]:
+                prev = members[-1]
+                start = int(rng['startEvent'])
+                if (rng.get('LFN') != first.get('LFN') or start != int(prev['lastEvent']) + 1
+                        or (start - 1) // per_unit != block or len(members) >= per_unit):
+                    break
+                members.append(rng)
+            whole = (len(members) == per_unit
+                     or int(members[-1]['lastEvent']) == (block + 1) * per_unit)
+            if not whole and not self.exhausted:
+                return []                       # its block is still arriving
+            del self.ranges[:len(members)]
+            return members
 
 
 def take_unit(pool, per_unit):
-    """The ranges of the next unit off the pool: one range, or up to
-    per_unit consecutive ranges within one block of per_unit events
-    (block b is events b*K+1 to (b+1)*K), so that a unit is a chunk of
-    the row and its block index names its outputs. Empty when the pool
-    is."""
+    """The next unit off a plain list (the tests' form of the pool)."""
     if not pool:
         return []
     members = [pool.pop(0)]
@@ -310,8 +361,9 @@ def main():
     slots, summary = [], {'stamp': args.stamp, 'slots': args.slots, 'image': args.image,
                           'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False}
     input_path = args.input
-    pool = []
+    pool = Pool(feed)
     pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
+    taking = True                                          # False past the deadline's margin
     log(f"harness up: {args.slots} slots, image {args.image}, row {row[:2]}, "
         f"unit {args.events_per_unit or 'one range'} events, "
         f"close every {args.close_s or 'unit'} s, "
@@ -363,20 +415,20 @@ def main():
                 f"({rec.get('events')} events, {len(c.units)} units) in {rec['wall_s']} s"
                 + ('' if rec['ok'] else f"; {rec.get('message')}"))
         past_deadline = args.deadline_s and time.time() - started > args.deadline_s - args.margin_s
-        if past_deadline and (pool or not feed.exhausted):
+        if past_deadline and taking:
             # The ranges never taken, on the pilot's side or pooled here,
             # go back to the server unreported when the job ends.
             log(f"deadline margin reached: taking no further range ({len(pool)} pooled)")
+            taking = False
             feed.exhausted = True
-            pool = []
+            pool.clear()
             summary['untaken_at_deadline'] = True
-        drain(feed, pool)
-        if pool:
+        if taking and len(pool):
             # Feed a free slot, starting slots lazily so the first range's
             # input names the file before any container starts.
             free = [s for s in slots if s.free()]
             if free or len(slots) < args.slots:
-                members = take_unit(pool, args.events_per_unit)
+                members = pool.take_unit(args.events_per_unit)
                 if members:
                     rng = members[0]
                     if input_path is None:
@@ -394,11 +446,12 @@ def main():
         in_flight = [s for s in slots if s.unit is not None]
         # A close: on the cadence, or the last one when nothing else is
         # coming; one at a time.
+        drained = not taking or (pool.exhausted and not len(pool))
         if pending and not closes and (time.time() - last_close >= args.close_s
-                                       or (feed.exhausted and not pool and not in_flight)):
+                                       or (drained and not in_flight)):
             closes.append(Close(len(summary['closes']) + len(closes) + 1, args, pending))
             pending, last_close = [], time.time()
-        if feed.exhausted and not pool and not in_flight and not pending and not closes:
+        if drained and not in_flight and not pending and not closes:
             break
         time.sleep(2)
     log(f"no more ranges: {len(summary['done'])} done, {len(summary['failed'])} failed; stopping slots")

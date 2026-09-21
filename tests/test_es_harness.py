@@ -1,0 +1,98 @@
+"""The node harness's unit cutting (payload es/es_harness.py): the pool
+over a feed, blocks of K single-event ranges cut when whole, partial
+blocks at the end, one range per unit without K.
+
+Plain unittest over the payload files; no pilot, no container.
+"""
+import json
+import os
+import random
+import sys
+import tempfile
+import time
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, '..', 'swf_epicprod', 'payload', 'es'))
+
+import es_harness as h  # noqa: E402
+
+
+def ranges(events, lfn='f'):
+    return [{'eventRangeID': f'r-{e}', 'startEvent': e, 'lastEvent': e, 'LFN': lfn} for e in events]
+
+
+class SlowFeed(h.FileFeed):
+    """A feed that hands one range per ask with a pause, as the pilot does."""
+
+    def __init__(self, rs, pause=0.01):
+        path = tempfile.mktemp()
+        with open(path, 'w') as f:
+            json.dump(rs, f)
+        super().__init__(path)
+        self.pause = pause
+
+    def ask(self):
+        time.sleep(self.pause)
+        return super().ask()
+
+
+def cut_all(pool, K, wait=2.0):
+    """Every unit the pool yields until it is drained."""
+    units, t0 = [], time.time()
+    while time.time() - t0 < wait:
+        m = pool.take_unit(K)
+        if m:
+            spec = h.unit_spec(m, K, 'p', 'x', 's')
+            units.append((m[0]['startEvent'], m[-1]['lastEvent'], spec.get('block')))
+        elif pool.exhausted and not len(pool):
+            break
+        else:
+            time.sleep(0.01)
+    return units
+
+
+class PoolTests(unittest.TestCase):
+    def test_blocks_cut_whole_from_a_shuffled_feed(self):
+        ev = list(range(1, 21))
+        random.seed(1)
+        random.shuffle(ev)
+        pool = h.Pool(SlowFeed(ranges(ev)))
+        self.assertEqual(cut_all(pool, 5), [(1, 5, 0), (6, 10, 1), (11, 15, 2), (16, 20, 3)])
+
+    def test_a_block_waits_until_it_is_whole(self):
+        # events 1..4 present, 5 still coming: block 0 is not cut yet
+        feed = SlowFeed(ranges([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), pause=0.2)
+        pool = h.Pool(feed)
+        time.sleep(0.95)                        # about four ranges in
+        self.assertEqual(pool.take_unit(5), [])
+        self.assertEqual(cut_all(pool, 5, wait=5), [(1, 5, 0), (6, 10, 1)])
+
+    def test_partial_last_block_and_holes_cut_at_the_end(self):
+        pool = h.Pool(SlowFeed(ranges([1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18])))
+        self.assertEqual(cut_all(pool, 5), [(1, 2, 0), (5, 5, 0), (6, 10, 1), (11, 15, 2), (16, 18, 3)])
+
+    def test_one_range_per_unit_without_k(self):
+        pool = h.Pool(SlowFeed([{'eventRangeID': 'b', 'startEvent': 6, 'lastEvent': 10, 'LFN': 'f'},
+                                {'eventRangeID': 'a', 'startEvent': 1, 'lastEvent': 5, 'LFN': 'f'}]))
+        units = cut_all(pool, 0)
+        # a range is its own unit, taken as it arrives
+        self.assertEqual(sorted(u[:2] for u in units), [(1, 5), (6, 10)])
+        self.assertTrue(all(u[2] is None for u in units))
+
+    def test_lfn_change_breaks_a_unit(self):
+        pool = h.Pool(SlowFeed(ranges([1, 2]) + ranges([3, 4], lfn='g')))
+        self.assertEqual([u[:2] for u in cut_all(pool, 5)], [(1, 2), (3, 4)])
+
+    def test_unit_spec_names_the_block_and_carries_the_members(self):
+        m = ranges([6, 7, 8, 9, 10])
+        spec = h.unit_spec(m, 5, 'row/path', 'hepmc3.tree.root', 'stamp')
+        self.assertEqual(spec['unit_id'], 'r-6')
+        self.assertEqual((spec['range']['startEvent'], spec['range']['lastEvent']), (6, 10))
+        self.assertEqual(spec['block'], 1)
+        self.assertEqual(spec['unit_events'], 5)
+        self.assertEqual(len(spec['ranges']), 5)
+
+
+if __name__ == '__main__':
+    unittest.main()

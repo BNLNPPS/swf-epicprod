@@ -484,6 +484,17 @@ events; a test queue with no production of its own measures on the
 queue whose nodes it runs (`--es-measure-queue`). No measurement, no
 submission.
 
+The pilot's cadence sets when a unit can start: it serves one range per
+ask from a cache it refills with `corecount` times two ranges per
+fetch, a fetch every half minute or so through its communication
+manager (job 3556537 on a one-core Perlmutter pilot: forty ranges in
+ten minutes), so a job's 326 ranges take over an hour to arrive on a
+one-core pilot and a few minutes on an eight-core one. The harness
+therefore gathers the ranges in the background and cuts a unit as soon
+as its block is whole (payload 0.21.1), rather than after every range
+has arrived; the first unit of a one-core job still waits for its
+block, which is one more reason for the one-job-per-node worker shape.
+
 ## Open questions
 
 - The close's cadence and the merge's cost at production rates: a
