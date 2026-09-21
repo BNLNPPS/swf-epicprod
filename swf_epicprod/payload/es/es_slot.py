@@ -104,6 +104,7 @@ def run_unit(spec_path, args):
         k, _, v = kv.partition('=')
         env[k] = v
     env.update({
+        'EPICPROD_REPORT_ID': f"{env.get('PANDAID') or 'unidentified'}/{uid}",
         'EPICPROD_SKIP_EVENTS': str(start - 1),
         'EPICPROD_CHUNK_LABEL': label or '',
         'EPICPROD_RECO_SOCKET': sock_path(args),

@@ -267,11 +267,23 @@ reachable collector ever exists, and the mismatch is worth reporting to
 PanDA operations, since the configuration implies a facility that
 cannot work for the sites ePIC actually uses.
 
+## Event Service units
+
+A job of the node harness (NODE_EVENT_DISPATCHER.md) runs its ranges
+as units through the payload concurrently, and each unit reports on
+this channel as a job does: under `reports/<PanDA job id>/<unit
+id>/<n>.json` (payload 0.20.3), since each unit counts its writes from
+zero and under the job id alone the units overwrote one another's
+objects. The sweep's per-job prefix still lists them all. The job's
+own report, the pilot's, carries the harness's summary under `es` with
+every unit's record (NODE_EVENT_DISPATCHER.md, The record).
+
 ## Open items
 
-- PanDA's fine-grained processing is not expected to help: its
-  granularity distributes work inward rather than carrying reports
-  outward. Worth confirming before it is dismissed.
+- PanDA's fine-grained processing (`fineGrainedProc`) is the Event
+  Service flavor the node harness runs on (2026-09-21), for the
+  record's sake rather than this channel's: it carries no report
+  outward, as expected, and this channel carries the units' reports.
 
 ## Reach, measured
 

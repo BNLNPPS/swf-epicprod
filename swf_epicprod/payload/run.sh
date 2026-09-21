@@ -117,6 +117,11 @@ REPORT_ID=${PANDAID:-}
 case "${REPORT_ID}" in
   ''|*[!0-9]*) REPORT_ID="unidentified-$(hostname -s 2>/dev/null || echo host)-$$-$(date -u +%s)" ;;
 esac
+# An Event Service unit reports under its job and its own name
+# (es/es_slot.py sets EPICPROD_REPORT_ID to <job id>/<unit id>): the
+# job's units run concurrently and each counts its writes from zero,
+# so under the job id alone they overwrite one another's objects.
+REPORT_ID=${EPICPROD_REPORT_ID:-${REPORT_ID}}
 report_send() {
   [ -n "${REPORT_OUT_BUCKET:-}" ] || return 0
   [ "${REPORT_SEND_OFF}" -eq 0 ] || return 0

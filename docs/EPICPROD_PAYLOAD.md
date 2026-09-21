@@ -510,7 +510,9 @@ In order, each a committed step on the clone:
     and sorts the job's ranges): the block's index names the chunk,
     `EPICPROD_SKIP_EVENTS` tells run.sh where the unit starts, and
     `EPICPROD_CHUNK_LABEL` names the outputs of a unit that does not
-    open its block apart from the block's own.
+    open its block apart from the block's own. A unit's reports on the
+    object channel go under the job and the unit
+    (`EPICPROD_REPORT_ID`, 0.20.3; JOB_REPORTING.md).
 
 ## Container contract
 
