@@ -497,7 +497,10 @@ In order, each a committed step on the clone:
     channel, N slots, the deadline) and `es/es_slot.py` (one long-lived
     container per slot, the inbox/outbox contract of
     WORK_UNIT_CONTRACT.md); a Unix socket path is at most 108 bytes, so
-    the socket lives in /tmp.
+    the socket lives in /tmp. A failed range's record carries the
+    payload's own account (the failed stage line and the log tail,
+    0.20.1), since the pilot removes the job directory, logs included,
+    when the job ends, and an Event Service job has no log tarball.
 
 ## Container contract
 
