@@ -424,11 +424,41 @@ proven ones; the substantial work is validation at the site.
 - The memory-bound half-thread occupancy is a payload property,
   untouched here.
 
+## The packaging trial (2026-09-21)
+
+Four units of five events from task 40126 (per-unit RECO files at
+JLab, 2.5-3.6 MB each, 12.5 MB in all) packaged three ways in the
+production image and read back by every consumer that matters,
+through the JLab door where the reader allows it:
+
+| package | size | to build | podio-dump | ROOT, RDataFrame, TChain | EICrecon | uproot | through the door |
+|---|---|---|---|---|---|---|---|
+| per-unit files (today) | 12.5 MB, 4 files | nothing | yes | yes | yes | yes | yes |
+| stored zip, members read as `file.zip#member` | 12.5 MB | 0.3 s | yes | yes | yes, 5 events from a remote member | no | yes: 676 kB read of a 2.9 MB member |
+| `podio-merge-files` | 7.4 MB | 19.7 s, about 5 events/s | yes: runs 4, metadata 1, events 20 | yes | yes | yes | yes |
+| `hadd -k` | 10.6 MB | 2.5 s | yes, with 4 `podio_metadata` entries | yes | not tried | yes | yes |
+
+What the numbers say. The zip is free to build and every ROOT-based
+reader, EICrecon included, reads a member through the door without
+unpacking; its one cost is uproot, which cannot open a member and
+which the working groups' analyses use, so the zip would need an
+unpack step at the consuming site or a reader change there. A merged
+podio file is transparent to every reader and, at five events a
+unit, 40 percent smaller than the units it merges: over half of a
+five-event file is podio's per-file overhead, which falls to a few
+percent at the 200-event units of a 20-minute quantum. The merge is
+a Python pass at about five events a second, a background trickle
+beside slots that produce one or two events a second between them.
+`hadd` is eight times faster but leaves one metadata entry per
+input, readable today and a liability with a stricter podio.
+
 ## Open questions
 
-- The consumer contract for the packaged output: downstream steps
-  reading range members from the zip container directly, versus an
-  unpack step at the consuming site.
+- The consumer contract for the packaged output, on the trial above:
+  a merged podio file per close (transparent to every consumer, the
+  merge as the harness's background trickle) against the per-unit
+  files that run today; the zip container is out on uproot. Torre's
+  call.
 - The worker-shape configuration for one-job-per-allocation
   submission (the harvester and Globus Compute endpoint on the
   site's login node). The 4-hour allocation itself stays: short
