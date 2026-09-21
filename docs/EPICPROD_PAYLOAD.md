@@ -501,6 +501,16 @@ In order, each a committed step on the clone:
     payload's own account (the failed stage line and the log tail,
     0.20.1), since the pilot removes the job directory, logs included,
     when the job ends, and an Event Service job has no log tarball.
+    Each slot runs the payload in its own run directory with the
+    sandbox's files linked in (0.20.1): the geometry's file loader
+    builds its `calibrations/` cache under the working directory on
+    the first npsim, and concurrent cold slots in one directory raced
+    on it. A unit of a fine-grained task is up to K consecutive
+    single-event ranges of one block of K (0.20.2; the harness pools
+    and sorts the job's ranges): the block's index names the chunk,
+    `EPICPROD_SKIP_EVENTS` tells run.sh where the unit starts, and
+    `EPICPROD_CHUNK_LABEL` names the outputs of a unit that does not
+    open its block apart from the block's own.
 
 ## Container contract
 

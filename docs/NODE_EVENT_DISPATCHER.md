@@ -293,6 +293,44 @@ completion diffed against campaign assignments by the produced-output
 machinery of EPICPROD_DATA_LINEAGE.md — was considered and set aside
 in favor of the native mechanism.
 
+**The flavor is fine-grained processing (2026-09-21, `BNL_NPPS_GPU`,
+tasks 40121 and 40122).** The harness as a real Event Service job
+(payload 0.20.1, four slots, twenty events of a real input in ranges
+of five) had every range done on the server in 5.5 minutes, and the
+job then failed on the server: the ordinary flavor closes a consumer
+by generating an ES merge job whatever the task says, and that job's
+insert died (`ppEventServiceJob`, a varchar(250) truncation); the
+retry a minute later found no range left to move and failed the job
+with "no ES queues available for new consumers". The merge is not
+optional in that flavor. PanDA's other flavor is: fine-grained
+processing (`fineGrainedProc` on the task, split rule `FP`, job flag
+6, JEDI `GenTaskRefiner`) makes every event a range, counts a job's
+finished ranges at its end (`check_fine_grained_processing`) and
+releases the rest to the file for the next job attempt, with no merge
+and no consumer spawned; the pilot sees an ordinary Event Service job
+and uses the same channel. Probe 40122 closed clean: job 3556341
+finished `fg_done`, twenty events, the input file finished. The
+`jobseed` gate above does not apply to it: deferral is the next job
+over the same file, under the task's `maxAttempt`. The submitter's
+`--es-fine-grained` selects it. Its granularity is one event per
+range, fixed in the job generator, so the loss quantum is the
+harness's: it pools the job's ranges (the server hands them in no
+order: 6 8 10 3 15 4 ...), sorts them, and runs up to K consecutive
+events of one block of K as one chunk of the row, the block's index
+naming the outputs as a chunk's does, K from `ES_EVENTS_PER_UNIT`
+(`--es-events-per-range`); a unit that does not open its block (the
+events left after a partial job) names its outputs by its start as
+well. The cost is a `JEDI_Events` row per event and, at the job's
+start, one server call per sixteen events to pool them. Two things
+learned on the way: the pilot hands a direct-access queue's input as a
+TURL and the ePIC pilot module writes no PoolFileCatalog, so runGen
+must be told to take the input as given (`--givenPFN`, added by the
+submitter for `--es-direct-input`); and concurrent cold slots must not
+share a working directory, since the geometry's file loader builds its
+`calibrations/` cache there on the first npsim and three of four
+slots died on the race (each slot now runs the payload in its own run
+directory with the sandbox's files linked in).
+
 Per-range reporting also closes the events-source gap: each completed
 range carries its exact event count, entering the measurement store as
 a highest-provenance tier (`reported`) in place of today's

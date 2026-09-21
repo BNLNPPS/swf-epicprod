@@ -240,6 +240,15 @@ else
   # assumes zero-based task number, can be zero-padded 
   SKIP_N_EVENTS=$((10#${4}*EVENTS_PER_TASK))
 fi
+# An Event Service unit names its chunk by its block and says where it
+# starts (es/es_slot.py): a unit may be a part of its block, and one
+# that does not open its block names its outputs apart from the block's.
+if [ -n "${EPICPROD_SKIP_EVENTS:-}" ]; then
+  SKIP_N_EVENTS=${EPICPROD_SKIP_EVENTS}
+fi
+if [ -n "${EPICPROD_CHUNK_LABEL:-}" ]; then
+  TASK=".${EPICPROD_CHUNK_LABEL}"
+fi
 
 # Output location
 BASEDIR=${DATADIR:-${PWD}}

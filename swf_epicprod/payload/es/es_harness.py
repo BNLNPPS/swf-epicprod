@@ -14,7 +14,10 @@ es_slot.py, with its own resident EICrecon.
 
 The channel is the pilot's yampl socket (PILOT_EVENTRANGECHANNEL when not
 given); --ranges-file feeds a list of range dicts instead, the loopback
-without a pilot. The input file is the pilot's staged copy of the range's
+without a pilot. A unit is one range, or with --events-per-unit K (a
+fine-grained task, one event per range) up to K consecutive ranges of
+one block of K events, run as one chunk of the row and reported range by
+range after; K is the loss quantum, the block's index names the chunk. The input file is the pilot's staged copy of the range's
 LFN in the job directory (the parent of the working directory), or
 --input. The deadline is seconds of wall since start; at deadline minus
 margin no further range is taken, the ranges in flight finish and are
@@ -98,6 +101,7 @@ class Slot:
         os.makedirs(self.inbox, exist_ok=True)
         os.makedirs(self.outbox, exist_ok=True)
         self.unit = None            # the unit id in flight
+        self.range_ids = []
         self.taken_at = None
         runtime = shutil.which('apptainer') or shutil.which('singularity') or \
             '/cvmfs/atlas.cern.ch/repo/containers/sw/apptainer/x86_64-el8/current/bin/apptainer'
@@ -118,8 +122,9 @@ class Slot:
     def free(self):
         return self.unit is None and self.proc.poll() is None
 
-    def give(self, rng, spec):
+    def give(self, spec):
         uid = spec['unit_id']
+        self.range_ids = [r['eventRangeID'] for r in spec['ranges']]
         tmp = os.path.join(self.inbox, f'.{uid}.tmp')
         with open(tmp, 'w') as f:
             json.dump(spec, f)
@@ -158,6 +163,54 @@ class Slot:
         self.log.close()
 
 
+def drain(feed, pool):
+    """Every range the feed has into the pool, kept in event order: the
+    server hands a job's ranges in no particular order (job 3556341 got
+    6 8 10 3 15 4 ...), and a unit needs consecutive events."""
+    while not feed.exhausted:
+        rng = feed.ask()
+        if rng is None:
+            break
+        pool.append(rng)
+    pool.sort(key=lambda r: (r.get('LFN', ''), int(r['startEvent'])))
+
+
+def take_unit(pool, per_unit):
+    """The ranges of the next unit off the pool: one range, or up to
+    per_unit consecutive ranges within one block of per_unit events
+    (block b is events b*K+1 to (b+1)*K), so that a unit is a chunk of
+    the row and its block index names its outputs. Empty when the pool
+    is."""
+    if not pool:
+        return []
+    members = [pool.pop(0)]
+    if per_unit < 1:
+        return members
+    first = members[0]
+    block = (int(first['startEvent']) - 1) // per_unit
+    while pool and len(members) < per_unit:
+        rng, prev = pool[0], members[-1]
+        start = int(rng['startEvent'])
+        if (rng.get('LFN') != first.get('LFN') or start != int(prev['lastEvent']) + 1
+                or (start - 1) // per_unit != block):
+            break
+        members.append(pool.pop(0))
+    return members
+
+
+def unit_spec(members, per_unit, file_path, ext, stamp):
+    """The unit the slot runs: its span as 'range' (the first range's id
+    as the unit id), its member ranges, and the block that names it."""
+    first, last = members[0], members[-1]
+    start, end = int(first['startEvent']), int(last['lastEvent'])
+    span = dict(first, startEvent=start, lastEvent=end)
+    spec = {'contract_version': 1, 'unit_id': first['eventRangeID'], 'range': span,
+            'ranges': members, 'file_path': file_path, 'ext': ext, 'stamp': stamp}
+    if per_unit > 0:
+        spec['block'], spec['unit_events'] = (start - 1) // per_unit, per_unit
+    return spec
+
+
 def find_input(job_dir, lfn):
     for base in (job_dir, os.getcwd()):
         p = os.path.join(base, lfn)
@@ -182,6 +235,8 @@ def main():
     ap.add_argument('--margin-s', type=float, default=float(os.environ.get('ES_MARGIN_S', '1800')))
     ap.add_argument('--env', action='append')
     ap.add_argument('--summary', default='es_summary.json')
+    ap.add_argument('--events-per-unit', type=int, default=int(os.environ.get('ES_EVENTS_PER_UNIT', '0')),
+                    help='consecutive events per unit for a fine-grained task (one event per range); 0 = one range per unit')
     args = ap.parse_args()
     args.sandbox = os.path.abspath(args.sandbox)
     args.work = os.path.abspath(args.work)
@@ -199,7 +254,9 @@ def main():
     slots, summary = [], {'stamp': args.stamp, 'slots': args.slots, 'image': args.image,
                           'done': [], 'failed': [], 'untaken_at_deadline': False}
     input_path = args.input
+    pool = []
     log(f"harness up: {args.slots} slots, image {args.image}, row {row[:2]}, "
+        f"unit {args.events_per_unit or 'one range'} events, "
         f"deadline {args.deadline_s or 'none'} s, margin {args.margin_s} s")
     while True:
         # Results first: a finished unit frees its slot and is reported.
@@ -209,27 +266,32 @@ def main():
                 continue
             uid, record, ok = r
             wall = record.get('wall_s') or round(time.time() - (s.taken_at or time.time()), 1)
-            if ok:
-                receipt = os.path.join(s.outbox, uid, 'unit.json')
-                feed.report(f"{receipt},ID:{uid},CPU:{wall},WALL:{wall}")
-                summary['done'].append(record)
-            else:
-                feed.report(f"ERR_ATHENAMP_PROCESS {uid}: {record.get('message', 'failed')}")
-                summary['failed'].append(record)
-            log(f"range {uid}: {'done' if ok else 'failed'} in {wall} s, dids {record.get('dids')}")
+            # Every range of the unit is reported, with the unit's receipt.
+            for rid in s.range_ids:
+                if ok:
+                    receipt = os.path.join(s.outbox, uid, 'unit.json')
+                    feed.report(f"{receipt},ID:{rid},CPU:{wall},WALL:{wall}")
+                else:
+                    feed.report(f"ERR_ATHENAMP_PROCESS {rid}: {record.get('message', 'failed')}")
+            (summary['done'] if ok else summary['failed']).append(record)
+            log(f"unit {uid} ({len(s.range_ids)} ranges): {'done' if ok else 'failed'} in {wall} s, dids {record.get('dids')}")
         past_deadline = args.deadline_s and time.time() - started > args.deadline_s - args.margin_s
-        if past_deadline and not feed.exhausted:
-            log("deadline margin reached: taking no further range")
+        if past_deadline and (pool or not feed.exhausted):
+            # The ranges never taken, on the pilot's side or pooled here,
+            # go back to the server unreported when the job ends.
+            log(f"deadline margin reached: taking no further range ({len(pool)} pooled)")
             feed.exhausted = True
+            pool = []
             summary['untaken_at_deadline'] = True
-        if not feed.exhausted:
+        drain(feed, pool)
+        if pool:
             # Feed a free slot, starting slots lazily so the first range's
             # input names the file before any container starts.
             free = [s for s in slots if s.free()]
             if free or len(slots) < args.slots:
-                rng = feed.ask()
-                if rng is not None:
-                    uid = rng['eventRangeID']
+                members = take_unit(pool, args.events_per_unit)
+                if members:
+                    rng = members[0]
                     if input_path is None:
                         # The pilot's staged copy of the range's LFN; without
                         # one (direct-access queues, npps0 outside the SCDF
@@ -240,11 +302,10 @@ def main():
                     if not free:
                         slots.append(Slot(len(slots), args, input_path))
                         free = [slots[-1]]
-                    free[0].give(rng, {'contract_version': 1, 'unit_id': uid, 'range': rng,
-                                       'file_path': file_path, 'ext': ext, 'stamp': args.stamp})
+                    free[0].give(unit_spec(members, args.events_per_unit, file_path, ext, args.stamp))
                     continue
         in_flight = [s for s in slots if s.unit is not None]
-        if feed.exhausted and not in_flight:
+        if feed.exhausted and not pool and not in_flight:
             break
         time.sleep(2)
     log(f"no more ranges: {len(summary['done'])} done, {len(summary['failed'])} failed; stopping slots")

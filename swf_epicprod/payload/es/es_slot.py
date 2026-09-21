@@ -70,10 +70,26 @@ def run_unit(spec_path, args):
     os.makedirs(out, exist_ok=True)
     record = {'contract_version': 1, 'unit_id': uid, 'range': rng,
               'events': count, 'started_at': time.time()}
-    if count < 1 or (start - 1) % count:
+    if count < 1:
+        record.update(status='error', message=f'range {start}-{last} is empty')
+        return uid, record, None
+    label = None
+    if spec.get('block') is not None:
+        # A unit of a fine-grained task: the block of the front end's K
+        # events names the chunk; the unit may be a part of the block
+        # (the file's last events, or events left after a partial job),
+        # so the payload is told where to start explicitly, and a unit
+        # that does not open its block names its outputs by its start
+        # too, apart from the block's own.
+        block, per_unit = int(spec['block']), int(spec['unit_events'])
+        chunk = f"{block:04d}"
+        if start - 1 != block * per_unit:
+            label = f"{chunk}s{start}"
+    elif (start - 1) % count:
         record.update(status='error', message=f'range {start}-{last} is not a whole chunk of its own length')
         return uid, record, None
-    chunk = f"{(start - 1) // count:04d}"
+    else:
+        chunk = f"{(start - 1) // count:04d}"
     # run.sh runs in the slot's own run directory (a link to each of the
     # sandbox's files: it sources environment-*.sh and the proxy from
     # the working directory, and takes its output root from it too), not
@@ -88,6 +104,8 @@ def run_unit(spec_path, args):
         k, _, v = kv.partition('=')
         env[k] = v
     env.update({
+        'EPICPROD_SKIP_EVENTS': str(start - 1),
+        'EPICPROD_CHUNK_LABEL': label or '',
         'EPICPROD_RECO_SOCKET': sock_path(args),
         'REGISTRATION_STAGGER_MAX_S': '0',
         'PAYLOAD_STAGES_LOG': os.path.join(out, 'stages.log'),
@@ -98,7 +116,7 @@ def run_unit(spec_path, args):
         env['EPICPROD_INPUT_LOCAL'] = args.input
     cmd = [os.path.join(args.payload, 'run.sh'), f"EVGEN/{spec['file_path']}",
            spec['ext'], str(count), chunk]
-    log(f"unit {uid}: events {start}-{last}, chunk {chunk}")
+    log(f"unit {uid}: events {start}-{last} ({len(spec.get('ranges') or [rng])} ranges), chunk {label or chunk}")
     with open(os.path.join(out, 'payload.log'), 'w') as logf:
         rc = subprocess.run(cmd, cwd=run_dir(args), env=env,
                             stdout=logf, stderr=subprocess.STDOUT).returncode
