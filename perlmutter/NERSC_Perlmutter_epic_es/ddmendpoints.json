@@ -1,0 +1,13 @@
+{
+  "BNL_PROD_DISK_1": {
+    "id": 20001,
+    "name": "BNL_PROD_DISK_1",
+    "type": "DATADISK",
+    "state": "ACTIVE",
+    "site": "BNL",
+    "is_deterministic": true,
+    "rprotocols": {},
+    "arprotocols": {},
+    "resource": {}
+  }
+}

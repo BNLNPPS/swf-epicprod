@@ -244,8 +244,15 @@ export EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
 export APPTAINERENV_EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
 # OURS: the Event Service executor and its channel library (the pilot
 # runs an event-service payload in this environment, not in the job's
-# container, so the payload sees them too).
+# container, so the payload sees them too), and the storage record the
+# pilot resolves the es_events storage to an id from: the pilot knows
+# storages only from ATLAS CRIC, and its executor looks the id up on
+# the pilot-wide information service, which the job's own record does
+# not reach (job 3494150: every range staged and then reported failed
+# for want of the id). STORAGEDATA_SERVER_URL is that service's first
+# source.
 export PILOT_ES_EXECUTOR_TYPE=generic
+export STORAGEDATA_SERVER_URL=$QUEUE_URL/ddmendpoints.json
 EOF
 [[ -n "$ES_PYTHONPATH" ]] && echo "export PYTHONPATH=$ES_PYTHONPATH\${PYTHONPATH:+:\$PYTHONPATH}" >> myEnv.sh
 
