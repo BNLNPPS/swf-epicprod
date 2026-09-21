@@ -472,6 +472,18 @@ deadline's margin must cover the last close. The closes are in the job
 report under `es.closes`. Without `ES_CLOSE_S` each unit registers its
 own file, as before.
 
+**The unit from the record (2026-09-21).** The unit is the loss
+quantum over the configuration's measured seconds per event on the
+queue: the monitor reads it from the record
+(`/api/panda/seconds-per-event/`: the median of wall over the payload's
+own event count across the configuration's finished production jobs on
+the queue over 14 days) and the submitter's `--es-quantum-s` divides.
+Upsilon3S on NERSC_Perlmutter_epic reads 7.36 s per event over 9,249
+jobs (median 736 s for 100 events), so a 20-minute quantum is 163
+events; a test queue with no production of its own measures on the
+queue whose nodes it runs (`--es-measure-queue`). No measurement, no
+submission.
+
 ## Open questions
 
 - The close's cadence and the merge's cost at production rates: a
