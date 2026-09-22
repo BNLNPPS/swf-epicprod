@@ -494,6 +494,13 @@ therefore gathers the ranges in the background and cuts a unit as soon
 as its block is whole (payload 0.21.1), rather than after every range
 has arrived; the first unit of a one-core job still waits for its
 block, which is one more reason for the one-job-per-node worker shape.
+The pilot also takes one report per pass of its loop, ten milliseconds
+each, and drops what it has not taken when the payload exits: the first
+20-minute run (task 40133, two units of 163 events, one close of 326)
+had 116 of its 326 reports land and the rest went back to the server
+as unprocessed. The harness therefore waits, before it ends, five
+seconds plus fifty milliseconds a report for the pilot to take the last
+burst (0.21.3).
 
 ## Open questions
 

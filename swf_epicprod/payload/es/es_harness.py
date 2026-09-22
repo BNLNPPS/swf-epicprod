@@ -370,6 +370,8 @@ def main():
         f"close every {args.close_s or 'unit'} s, "
         f"deadline {args.deadline_s or 'none'} s, margin {args.margin_s} s")
 
+    reported = [0]                                          # reports sent since the harness last waited on the pilot
+
     def report(slot, uid, record, ok, range_ids, extra=''):
         wall = record.get('wall_s') or 0
         for rid in range_ids:
@@ -377,6 +379,7 @@ def main():
                 feed.report(f"{os.path.join(slot.outbox, uid, 'unit.json')},ID:{rid},CPU:{wall},WALL:{wall}")
             else:
                 feed.report(f"ERR_ATHENAMP_PROCESS {rid}: {extra or record.get('message', 'failed')}")
+            reported[0] += 1
 
     while True:
         # Results first: a finished unit frees its slot; it is reported now,
@@ -455,7 +458,14 @@ def main():
         if drained and not in_flight and not pending and not closes:
             break
         time.sleep(2)
-    log(f"no more ranges: {len(summary['done'])} done, {len(summary['failed'])} failed; stopping slots")
+    # The pilot takes one report per pass of its loop, ten milliseconds
+    # each, and drops what it has not taken when the payload exits (job
+    # 3556537: 116 of a close's 326 reports landed); a burst of reports
+    # is given its time before the harness ends.
+    grace = min(300.0, 5.0 + 0.05 * reported[0])
+    log(f"no more ranges: {len(summary['done'])} done, {len(summary['failed'])} failed; "
+        f"{grace:.0f} s for the pilot to take the last {reported[0]} reports, then stopping slots")
+    time.sleep(grace)
     for s in slots:
         s.stop()
     for s in slots:
