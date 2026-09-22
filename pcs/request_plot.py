@@ -15,7 +15,7 @@ from django.utils.safestring import mark_safe
 WIDTH = 980
 LEFT = 64
 RIGHT = 24
-TOP = 26           # the core-hours axis
+TOP = 46           # the core-hours caption and its ticks
 BARS_H = 210
 GAP = 46           # the shared axis between the panels
 CUM_H = 110
@@ -84,8 +84,9 @@ def distribution_svg(summary):
         out.append(f'<text x="{LEFT - 8}" y="{y + 3:.1f}" text-anchor="end" '
                    f'fill="currentColor" fill-opacity="0.75">{value}</text>')
         value += step
-    out.append(f'<text x="{LEFT - 8}" y="{TOP + 10}" text-anchor="end" '
-               f'fill="currentColor" fill-opacity="0.75">requests</text>')
+    out.append(f'<text transform="translate(16,{TOP + BARS_H / 2:.0f}) rotate(-90)" '
+               f'text-anchor="middle" fill="currentColor" fill-opacity="0.75">'
+               f'requests</text>')
 
     # The bars, one per half-decade, with a 2px surface gap.
     for b in bins:
@@ -116,8 +117,9 @@ def distribution_svg(summary):
                    f'stroke="currentColor" stroke-opacity="0.12"/>')
         out.append(f'<text x="{LEFT - 8}" y="{y + 3:.1f}" text-anchor="end" '
                    f'fill="currentColor" fill-opacity="0.75">{share}%</text>')
-    out.append(f'<text x="{LEFT - 8}" y="{cum_top - 6:.1f}" text-anchor="end" '
-               f'fill="currentColor" fill-opacity="0.75">at or below</text>')
+    out.append(f'<text transform="translate(16,{cum_top + CUM_H / 2:.0f}) rotate(-90)" '
+               f'text-anchor="middle" fill="currentColor" fill-opacity="0.75">'
+               f'at or below</text>')
 
     # The shared axis of requested events, decade by decade.
     for value in _decades(low, high):
@@ -130,26 +132,31 @@ def distribution_svg(summary):
                    f'fill="currentColor" fill-opacity="0.85">{escape(_label(value))}</text>')
         if per_event:
             hours = value * per_event / 3600.0
-            out.append(f'<text x="{x:.1f}" y="{TOP - 12:.1f}" text-anchor="middle" '
+            out.append(f'<text x="{x:.1f}" y="{TOP - 8:.1f}" text-anchor="middle" '
                        f'fill="currentColor" fill-opacity="0.6">'
                        f'{escape(_label(hours))}</text>')
     out.append(f'<text x="{WIDTH - RIGHT}" y="{cum_bottom + 24:.1f}" text-anchor="end" '
                f'fill="currentColor" fill-opacity="0.75">requested events</text>')
     if per_event:
-        out.append(f'<text x="{LEFT}" y="{TOP - 12:.1f}" text-anchor="start" '
+        out.append(f'<text x="{LEFT}" y="12" text-anchor="start" '
                    f'fill="currentColor" fill-opacity="0.6">core-hours at '
-                   f'{per_event} CPU s/event</text>')
+                   f'{per_event} CPU s/event, the median measured</text>')
 
     # The percentiles, through both panels.
-    for name, value in sorted((summary.get('percentiles') or {}).items(),
-                              key=lambda kv: int(kv[0])):
+    for row, (name, value) in enumerate(sorted(
+            (summary.get('percentiles') or {}).items(), key=lambda kv: int(kv[0]))):
         if not value or value < low or value > high:
             continue
         x = _x(value, low, high)
+        label_y = TOP + 12 + 14 * (row % 2)
         out.append(f'<line x1="{x:.1f}" y1="{TOP}" x2="{x:.1f}" y2="{cum_bottom}" '
                    f'stroke="{MARK}" stroke-width="1" stroke-dasharray="4 3" '
                    f'stroke-opacity="0.8"/>')
-        out.append(f'<text x="{x + 4:.1f}" y="{TOP + 12:.1f}" fill="{MARK}">'
+        # A halo in the page's own background, so the label reads over a
+        # bar as well as over the surface, in either theme.
+        out.append(f'<text x="{x + 4:.1f}" y="{label_y:.1f}" fill="{MARK}" '
+                   f'style="paint-order:stroke;stroke:var(--bs-body-bg,#ffffff);'
+                   f'stroke-width:3px;stroke-linejoin:round">'
                    f'p{escape(name)} {escape(_label(value))}</text>')
 
     out.append('</svg>')
