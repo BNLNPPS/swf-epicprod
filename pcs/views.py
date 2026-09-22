@@ -6232,19 +6232,42 @@ def request_size_plot(request):
               'value': (summary.get('percentiles') or {}).get(str(p)),
               'label': human((summary.get('percentiles') or {}).get(str(p)))}
              for p in (50, 75, 90, 95)]
-    rows = [{**r, 'events_label': human(r.get('events'))} for r in rows]
+    from swf_epicprod.request_events import SIZE_BANDS, band_of
+    rows = [{**r, 'events_label': human(r.get('events')), 'band': band_of(r.get('events'))}
+            for r in rows]
+    # The size filter: one band at a time, in the URL, so a filtered list
+    # is a link a person can send. A bar of the plot links to its own band.
+    chosen = (request.GET.get('size') or '').strip()
+    known = {key for key, _lo, _hi, _label in SIZE_BANDS}
+    if chosen not in known:
+        chosen = ''
+    bands = [{'key': key, 'label': label,
+              'count': sum(1 for r in rows if r['band'] == key),
+              'selected': chosen == key}
+             for key, _lo, _hi, label in SIZE_BANDS]
+    listed = [r for r in rows if not chosen or r['band'] == chosen]
     apart = [{**a, 'events_label': human(a.get('events'))}
              for a in (summary.get('apart') or [])]
+    # The largest requests by name, right under the plot: the question a
+    # reader asks of the tail is "what is that one", and scrolling a
+    # hundred rows is not an answer.
+    largest = sorted((r for r in rows if r.get('events')),
+                     key=lambda r: r['events'], reverse=True)[:8]
     return render(request, 'pcs/request_size_plot.html', {
         'built_at': state.get('built_at'),
         'never_built': not state,
+        'largest': largest,
         'summary': summary,
         'marks': marks,
         'thresholds': thresholds,
         'apart': apart,
         'median_label': human((summary.get('percentiles') or {}).get('50')),
         'cost': summary.get('cost') or {},
-        'rows': rows,
+        'rows': listed,
+        'bands': bands,
+        'chosen_band': chosen,
+        'listed_count': len(listed),
+        'all_count': len(rows),
         'stated_rows': [r for r in rows if r.get('events')],
         'svg': distribution_svg(summary),
     })

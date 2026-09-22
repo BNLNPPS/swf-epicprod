@@ -10,6 +10,11 @@
   .rsp-plot { margin: 0.5rem 0 1.2rem 0; }
   .rsp-note { max-width: 62rem; }
   .rsp-answer { font-family: var(--bs-font-monospace, monospace); font-size: 0.85em; }
+  /* The house filter bar, as on the request list. */
+  .pcs-tlf-bar .filter-link { margin-right: 0.6em; color: #007bff; text-decoration: none; }
+  .pcs-tlf-bar .filter-link:hover { text-decoration: underline; }
+  .pcs-tlf-bar .filter-link.filter-active { font-weight: bold; text-decoration: underline; color: #0056b3; }
+  .pcs-tlf-label { font-weight: 600; margin-right: 0.5em; }
 </style>
 <div class="container-fluid">
     <h1>Request size plot</h1>
@@ -43,6 +48,21 @@
         {% endfor %}
     </p>
 
+    <h2 class="rsp-section">The largest requests</h2>
+    <table class="table table-striped table-bordered table-sm align-middle w-auto mb-4">
+        <thead><tr><th class="text-end">Events</th><th>When</th><th>Record</th><th>What</th></tr></thead>
+        <tbody>
+        {% for r in largest %}
+            <tr>
+                <td class="text-end"><strong>{{ r.events_label }}</strong></td>
+                <td>{{ r.when }}</td>
+                <td>{% if r.url %}<a href="{{ r.url }}">{{ r.key }}</a>{% else %}{{ r.key }}{% endif %}</td>
+                <td>{{ r.what }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
     <h2 class="rsp-section">Where a threshold would fall</h2>
     <table class="table table-striped table-bordered table-sm align-middle w-auto mb-2">
         <thead><tr>
@@ -67,8 +87,19 @@
         {% for m in marks %}p{{ m.percentile }} {{ m.label }}{% if not forloop.last %}, {% endif %}{% endfor %}.
     </p>
 
-    <h2 class="rsp-section">Every request, and how its answer was read</h2>
-    <p class="rsp-note text-muted">A requester answers in their own words, so the
+    <h2 class="rsp-section" id="requests">Every request, and how its answer was read</h2>
+    <div class="pcs-tlf-bar mb-2">
+        <span class="pcs-tlf-label">Size:</span>
+        <a class="filter-link{% if not chosen_band %} filter-active{% endif %}"
+           href="?#requests">all ({{ all_count }})</a>
+        {% for b in bands %}
+        <a class="filter-link{% if b.selected %} filter-active{% endif %}"
+           href="?size={{ b.key }}#requests">{{ b.label }} ({{ b.count }})</a>
+        {% endfor %}
+        {% if chosen_band %}<span class="text-muted">showing {{ listed_count }} of {{ all_count }}</span>{% endif %}
+    </div>
+    <p class="rsp-note text-muted">Answer is what the requester wrote; Events is
+       the number taken from it. A requester answers in their own words, so the
        reading is shown beside the answer rather than replacing it: a stated
        total wins over its parts, a multiplication is a product, a beam-energy
        pair is not a count, and a count stated per energy range without a total
@@ -76,7 +107,7 @@
     <table class="table table-striped table-bordered table-sm align-middle mb-4 swf-sortable">
         <thead><tr>
             <th>When</th><th>Record</th><th>Answer</th>
-            <th class="text-end">Events read</th><th>How it was read</th><th>What</th>
+            <th class="text-end">Events</th><th>How the answer was read</th><th>What</th>
         </tr></thead>
         <tbody>
         {% for r in rows %}

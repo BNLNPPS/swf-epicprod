@@ -39,6 +39,27 @@ COST_MAX_S = 16.4
 # named apart rather than folded into the sums and the axis.
 OFF_SCALE = 1e8
 THRESHOLDS = (1e6, 2e6, 5e6, 1e7, 2e7)
+# The size bands a reader filters the request list by: decades, named as
+# a person says them.
+SIZE_BANDS = (
+    ('under-100k', 0.0, 1e5, 'under 100k'),
+    ('100k-1M', 1e5, 1e6, '100k to 1M'),
+    ('1M-10M', 1e6, 1e7, '1M to 10M'),
+    ('10M-100M', 1e7, 1e8, '10M to 100M'),
+    ('over-100M', 1e8, float('inf'), 'over 100M'),
+)
+
+
+def band_of(events):
+    """The size band a count falls in, or '' when there is no count. Pure."""
+    if not events:
+        return ''
+    for key, low, high, _label in SIZE_BANDS:
+        if low <= events < high:
+            return key
+    return ''
+
+
 PERCENTILES = (50, 75, 90, 95)
 
 UNITS = {'k': 1e3, 'm': 1e6, 'mil': 1e6, 'mill': 1e6, 'million': 1e6,

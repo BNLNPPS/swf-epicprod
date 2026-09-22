@@ -12,6 +12,8 @@ import math
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 
+from swf_epicprod.request_events import band_of
+
 WIDTH = 980
 LEFT = 64
 RIGHT = 24
@@ -66,7 +68,7 @@ def distribution_svg(summary):
 
     out = [f'<svg viewBox="0 0 {WIDTH} {height}" width="100%" '
            f'style="max-width:{WIDTH}px;height:auto;font-size:11px" '
-           f'role="img" aria-label="Distribution of requested events per request">']
+           f'aria-label="Distribution of requested events per request">']
 
     # The panels' frames and horizontal guides.
     out.append(f'<line x1="{LEFT}" y1="{bars_bottom}" x2="{WIDTH - RIGHT}" '
@@ -95,11 +97,28 @@ def distribution_svg(summary):
         x0 = _x(b['lo'], low, high)
         x1 = _x(b['hi'], low, high)
         h = BARS_H * b['count'] / tallest
+        hours = ''
+        if per_event:
+            hours = (f', {_label(b["lo"] * per_event / 3600.0)} to '
+                     f'{_label(b["hi"] * per_event / 3600.0)} core-hours each')
+        # A bar is a link to its own band of the list below: clicking a
+        # bin answers "which requests are these".
+        band = band_of(b['lo'])
+        if band:
+            out.append(f'<a href="?size={escape(band)}#requests">')
         out.append(
             f'<rect x="{x0 + 1:.1f}" y="{bars_bottom - h:.1f}" '
             f'width="{max(1.0, x1 - x0 - 2):.1f}" height="{h:.1f}" fill="{BAR}">'
-            f'<title>{b["count"]} request{"s" if b["count"] != 1 else ""} '
-            f'from {escape(_label(b["lo"]))} to {escape(_label(b["hi"]))}</title></rect>')
+            f'<title>{escape(_label(b["lo"]))} to {escape(_label(b["hi"]))} events: '
+            f'{b["count"]} request{"s" if b["count"] != 1 else ""}'
+            f'{escape(hours)}</title></rect>')
+        # The count above its bar: the bin is read, not hovered for.
+        out.append(
+            f'<text x="{(x0 + x1) / 2:.1f}" y="{bars_bottom - h - 5:.1f}" '
+            f'text-anchor="middle" fill="currentColor" fill-opacity="0.85">'
+            f'{b["count"]}</text>')
+        if band:
+            out.append('</a>')
 
     # The share at or below, as a step line.
     points = []
@@ -137,6 +156,9 @@ def distribution_svg(summary):
                        f'{escape(_label(hours))}</text>')
     out.append(f'<text x="{WIDTH - RIGHT}" y="{cum_bottom + 24:.1f}" text-anchor="end" '
                f'fill="currentColor" fill-opacity="0.75">requested events</text>')
+    out.append(f'<text x="{LEFT}" y="{cum_bottom + 24:.1f}" text-anchor="start" '
+               f'fill="currentColor" fill-opacity="0.6">each bar is a half decade; '
+               f'hover a bar for its range</text>')
     if per_event:
         out.append(f'<text x="{LEFT}" y="12" text-anchor="start" '
                    f'fill="currentColor" fill-opacity="0.6">core-hours at '
