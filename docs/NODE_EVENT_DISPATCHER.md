@@ -502,6 +502,22 @@ as unprocessed. The harness therefore waits, before it ends, five
 seconds plus fifty milliseconds a report for the pilot to take the last
 burst (0.21.3).
 
+**The 20-minute quantum and the scale run (2026-09-21 to 22).** On
+`NERSC_Perlmutter_epic_es` (task 40136, payload 0.21.3, one slot): two
+units of 163 events, each 577 s on the node (3.6 s an event, against
+the record's 7.4 s a whole job), each closed and registered on its own
+(16 s and 12 s), the job `fg_done` with all 326, the task done. On
+`BNL_NPPS_GPU` (task 40137, six slots, 250-event units, 3,000 events):
+twelve units of 523 to 624 s (median 569 s: 2.28 s an event with the
+resident EICrecon, so a 20-minute unit there is about 525 events), two
+closes of 1,500 events each in 38 s and 34 s (the merge runs at about
+fifty events a second once past its start; the small trial's five a
+second was its start), 505 MB and 482 MB registered with their counts,
+the dataset's derived total 3,000, the job 31.7 minutes for 3,000
+events, every range reported and done. The pilot's fetch pace on a
+six-core job put the first six units on their slots within four
+seconds of the start.
+
 ## Open questions
 
 - The close's cadence and the merge's cost at production rates: a
