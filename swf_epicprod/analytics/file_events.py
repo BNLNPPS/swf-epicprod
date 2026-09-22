@@ -23,6 +23,16 @@ builder (analytics/delivery_daily.py) joins the store at build time.
 Reruns re-attempt unanchored classes and newly arrived files only, so
 the nightly pass costs a few file opens at most.
 
+Above them all, ``reported``: the count the job itself wrote on the
+file DID at registration, Rucio's ``events`` attribute, which the
+epicprod payload sets from its own output since 2026-09-06
+(RUCIO_REGISTRATION_CONTRACT.md § 1; a node harness close's merged file
+carries it too, NODE_EVENT_DISPATCHER.md). It arrives with the
+inventory (the bulk metadata read), costs no file open, and is the
+file's own account, so it is taken first, is never replaced by an
+inference or a sandbox row, and its files are neither anchors nor
+members of a size class.
+
 Runs nightly as a ``catalog_sync`` chain step (the prod-ops agent's
 ``measure-file-events.py`` doer); runnable by hand through
 ``scripts/measure_file_events.py``.
@@ -138,8 +148,9 @@ def rucio_get(path, **params):
 
 
 def collect_inventory(campaigns):
-    """{location: [(name, campaign, bytes, created)]} for delivered
-    files of the target campaigns."""
+    """{location: [(name, campaign, bytes, created, reported)]} for
+    delivered files of the target campaigns; ``reported`` is the
+    file's own event count on its DID (Rucio ``events``), or None."""
     from pcs.services import _ndjson, campaign_family
 
     names = []
@@ -170,9 +181,14 @@ def collect_inventory(campaigns):
             if name not in wanted:
                 continue
             location = '/'.join(name.split('/')[:-1])
+            reported = row.get('events')
+            try:
+                reported = int(reported) if reported is not None else None
+            except (TypeError, ValueError):
+                reported = None
             by_location.setdefault(location, []).append(
                 (name, wanted[name], int(row.get('bytes') or 0),
-                 row.get('created_at') or ''))
+                 row.get('created_at') or '', reported))
     return by_location
 
 
@@ -318,24 +334,38 @@ def measure_file_events(campaigns=None, *, db_path=DEFAULT_DB, workers=6,
     # still-growing source sheds its provisional rate.
     have = {name for (name,) in db.execute(
         "SELECT name FROM file_events WHERE events IS NOT NULL"
-        " AND provenance IN ('measured', 'sampled-rate', 'sandbox')")}
-    log(f'store: {len(have)} files with measured/sampled events')
+        " AND provenance IN ('reported', 'measured', 'sampled-rate', 'sandbox')")}
+    # A file's own reported count supersedes an inferred or sandbox row
+    # it may already hold; only a reported or measured row is final.
+    final = {name for (name,) in db.execute(
+        "SELECT name FROM file_events WHERE events IS NOT NULL"
+        " AND provenance IN ('reported', 'measured')")}
+    log(f'store: {len(have)} files with reported/measured/sampled events, {len(final)} final')
 
     by_location = collect_inventory(campaigns)
+
+    def created_at(entry):
+        # Rucio's created_at is RFC 1123 text ('Mon, 21 Sep 2026 21:43:26
+        # UTC'); as text it orders by weekday name, so it is parsed.
+        try:
+            return dt.datetime.strptime(entry[3], '%a, %d %b %Y %H:%M:%S %Z')
+        except (TypeError, ValueError):
+            return dt.datetime.min
+
     # Newest activity first: current production gains coverage first.
     locations = sorted(
         by_location,
-        key=lambda loc: max(e[3] for e in by_location[loc]),
+        key=lambda loc: max(created_at(e) for e in by_location[loc]),
         reverse=True)
     if max_locations:
         locations = locations[:max_locations]
 
     db_lock = threading.Lock()
-    stats = {'anchored': 0, 'filled': 0, 'failed_classes': 0,
+    stats = {'reported': 0, 'anchored': 0, 'filled': 0, 'failed_classes': 0,
              'checked': 0, 'check_off': 0}
 
     def record(entry, events, provenance, pfn, rse, error):
-        name, campaign, size, _created = entry
+        name, campaign, size = entry[0], entry[1], entry[2]
         with db_lock:
             db.execute(
                 'INSERT OR REPLACE INTO file_events'
@@ -348,7 +378,15 @@ def measure_file_events(campaigns=None, *, db_path=DEFAULT_DB, workers=6,
             db.commit()
 
     def process_location(location):
-        entries = [e for e in by_location[location] if e[0] not in have]
+        # The file's own count first: what the job wrote on the DID.
+        # Whatever the store held for it (an inference, a sandbox row)
+        # gives way, and the file takes no part in the size classes.
+        for entry in by_location[location]:
+            if len(entry) > 4 and entry[4] is not None and entry[0] not in final:
+                record(entry, entry[4], 'reported', None, None, None)
+                stats['reported'] += 1
+        entries = [e for e in by_location[location]
+                   if e[0] not in have and not (len(e) > 4 and e[4] is not None)]
         if not entries:
             return
         for cls in size_classes(entries):
@@ -480,7 +518,8 @@ def measure_file_events(campaigns=None, *, db_path=DEFAULT_DB, workers=6,
     with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         list(pool.map(process_location, locations))
 
-    log(f'done: {stats["anchored"]} classes anchored by measurement, '
+    log(f'done: {stats["reported"]} files with their own reported count, '
+        f'{stats["anchored"]} classes anchored by measurement, '
         f'{stats["filled"]} files filled at the anchored rate, '
         f'{stats["failed_classes"]} classes failed, '
         f'{stats["checked"]} catalog checks '
@@ -806,14 +845,14 @@ def apply_sandbox_counts(campaign, *, db_path=DEFAULT_DB, apply=False,
         if old_events is not None:
             stats['events_before'] += old_events
         stats['events_after'] += events
-        if provenance == 'measured':
+        if provenance in ('measured', 'reported'):
             if old_events == events:
                 stats['measured_agree'] += 1
             else:
                 stats['measured_differ'] += 1
                 if len(samples['measured_differ']) < 20:
                     samples['measured_differ'].append((did, old_events, events))
-            continue        # a measured row is truth; never replaced
+            continue        # a measured or reported row is truth; never replaced
         if old_events is None:
             stats['unmeasured_filled'] += 1
         elif old_events == events:

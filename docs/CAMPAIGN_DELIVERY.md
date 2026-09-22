@@ -136,8 +136,19 @@ count, via uproot on a disk replica) anchors the class rate, and
 members inherit it. Classes with no readable replica (tape-only) are
 derived from the catalog where the source's chunks are fully delivered
 and the location is dormant; derived rows recompute on every run.
-Provenance per file: `measured`, `sampled-rate`, `catalog-derived`, or
-`sandbox`.
+Provenance per file: `reported`, `measured`, `sampled-rate`,
+`catalog-derived`, or `sandbox`.
+
+`reported` is the highest: the count the job itself wrote on the file
+DID at registration, Rucio's `events` attribute, which the epicprod
+payload has set from its own output since 2026-09-06
+(RUCIO_REGISTRATION_CONTRACT.md § 1) and which a node harness close's
+merged file carries too (NODE_EVENT_DISPATCHER.md, The Package as
+built). It comes with the inventory's bulk metadata read at no file
+open, is taken before any inference, is never replaced by an inferred
+or a sandbox row, and its files take no part in the size classes. The
+statements above about the field being unpopulated describe the data
+produced before that date, which the other tiers exist for.
 
 The `sandbox` provenance is the planned count from the submission
 itself, available for the production team's PanDA path: the task's
