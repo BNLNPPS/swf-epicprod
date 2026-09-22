@@ -8,12 +8,12 @@
                  border-radius: 0.25rem; margin-top: 1.6rem;
                  margin-bottom: 0.8rem; }
   .rsp-plot { margin: 0.5rem 0 1.2rem 0; }
-  /* The floor: nothing on this page is set below 1.2rem, the smallest
-     that was here plus two points (Torre, 2026-09-22). Sizes are named
-     once, here, so nothing drifts under it. */
-  .rsp-page { font-size: 1.2rem; }
-  .rsp-page table, .rsp-page .pcs-tlf-bar, .rsp-page p, .rsp-page td,
-  .rsp-page th, .rsp-page a { font-size: 1.2rem; }
+  /* A floor, not an inflation (Torre, 2026-09-22): the prose and the
+     filter bar are set comfortably, the tables keep the house size so
+     their columns stay on one line. */
+  .rsp-page p, .rsp-page .pcs-tlf-bar { font-size: 1.15rem; }
+  .rsp-page td, .rsp-page th { font-size: 1rem; }
+  .rsp-page .rsp-when { white-space: nowrap; }
   .rsp-note { max-width: 74rem; line-height: 1.55; }
   .rsp-page h1 { font-size: 2.3rem; }
   .rsp-page h2 { font-size: 1.7rem; }
@@ -63,7 +63,7 @@
         {% for r in largest %}
             <tr>
                 <td class="text-end"><strong>{{ r.events_label }}</strong></td>
-                <td>{{ r.when }}</td>
+                <td class="rsp-when">{{ r.when }}</td>
                 <td>{% if r.url %}<a href="{{ r.url }}">{{ r.key }}</a>{% else %}{{ r.key }}{% endif %}</td>
                 <td>{{ r.what }}</td>
             </tr>
@@ -120,7 +120,7 @@
         <tbody>
         {% for r in rows %}
             <tr>
-                <td>{{ r.when }}</td>
+                <td class="rsp-when">{{ r.when }}</td>
                 <td>{% if r.url %}<a href="{{ r.url }}">{{ r.key }}</a>{% else %}{{ r.key }}{% endif %}</td>
                 <td class="rsp-answer">{{ r.answer }}</td>
                 <td class="text-end">{% if r.events %}{{ r.events_label }}{% else %}<span class="text-muted">-</span>{% endif %}</td>

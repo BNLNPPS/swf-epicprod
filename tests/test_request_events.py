@@ -98,6 +98,12 @@ class Human(unittest.TestCase):
         self.assertEqual(req.human(10 * B), '10B')
         self.assertEqual(req.human(None), '-')
 
+    def test_rounds_up_into_the_next_unit(self):
+        """999,955 is 1M, never 1000k."""
+        self.assertEqual(req.human(999955), '1M')
+        self.assertEqual(req.human(999999999), '1B')
+        self.assertEqual(req.human(999), '999')
+
 
 if __name__ == '__main__':
     unittest.main()

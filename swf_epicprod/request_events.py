@@ -179,9 +179,14 @@ def human(value):
     """A count as a person writes it: 10M, 1.8M, 650k. Pure."""
     if value is None:
         return '-'
-    for scale, suffix in ((1e9, 'B'), (1e6, 'M'), (1e3, 'k')):
+    units = ((1e9, 'B'), (1e6, 'M'), (1e3, 'k'))
+    for i, (scale, suffix) in enumerate(units):
         if value >= scale:
             text = f'{value / scale:.1f}'.rstrip('0').rstrip('.')
+            # 999,955 rounds to 1000k, which nobody writes: it is 1M.
+            if text.startswith('1000') and i:
+                scale, suffix = units[i - 1]
+                text = f'{value / scale:.1f}'.rstrip('0').rstrip('.')
             return f'{text}{suffix}'
     return f'{value:.0f}'
 
