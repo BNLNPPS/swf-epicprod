@@ -6203,3 +6203,48 @@ def front_page(request):
         'ready_segments': ready_segments, 'capacity_segments': capacity_segments,
         'unsized_tasks': ready.get('unsized_tasks') or 0,
     })
+
+
+def request_size_plot(request):
+    """How large the production requests are: the distribution of the
+    event counts they state, and what those counts cost
+    (docs/REQUEST_SIZES.md).
+
+    Reads the stored record and never builds: the nightly
+    ``request-sizes-build.py`` is the builder, so a page render costs a
+    row read whatever the request record holds.
+    """
+    from monitor_app.models import CachedProduct
+
+    from .request_plot import distribution_svg
+    row = CachedProduct.objects.filter(key='request_sizes:v1').first()
+    state = (row.value if row else None) or {}
+    summary = state.get('summary') or {}
+    rows = state.get('rows') or []
+    # Counts read as a person writes them (1M, 12M), the same words the
+    # plot's axis uses.
+    from swf_epicprod.request_events import human
+    thresholds = [{**t, 'threshold_label': human(t['threshold']),
+                   'events_label': human(t['events'])}
+                  for t in (summary.get('thresholds') or [])]
+    # The percentiles in the order a reader wants them, not dict order.
+    marks = [{'percentile': p,
+              'value': (summary.get('percentiles') or {}).get(str(p)),
+              'label': human((summary.get('percentiles') or {}).get(str(p)))}
+             for p in (50, 75, 90, 95)]
+    rows = [{**r, 'events_label': human(r.get('events'))} for r in rows]
+    apart = [{**a, 'events_label': human(a.get('events'))}
+             for a in (summary.get('apart') or [])]
+    return render(request, 'pcs/request_size_plot.html', {
+        'built_at': state.get('built_at'),
+        'never_built': not state,
+        'summary': summary,
+        'marks': marks,
+        'thresholds': thresholds,
+        'apart': apart,
+        'median_label': human((summary.get('percentiles') or {}).get('50')),
+        'cost': summary.get('cost') or {},
+        'rows': rows,
+        'stated_rows': [r for r in rows if r.get('events')],
+        'svg': distribution_svg(summary),
+    })

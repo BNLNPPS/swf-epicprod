@@ -1,16 +1,10 @@
-"""The requested-event reading (scripts/request-events-distribution.py):
+"""The requested-event reading (swf_epicprod/request_events.py):
 every shape of answer the production request form has actually received,
 and what the parser makes of it. The threshold discussion rests on these
 readings, so each one is a test."""
-import importlib.util
-import os
 import unittest
 
-SCRIPT = os.path.join(os.path.dirname(__file__), '..', 'scripts',
-                      'request-events-distribution.py')
-spec = importlib.util.spec_from_file_location('request_events', SCRIPT)
-req = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(req)
+from swf_epicprod import request_events as req
 
 M, K, B = 1e6, 1e3, 1e9
 

@@ -34,6 +34,7 @@ urlpatterns = [
     path('catalog/set-last/', views.pcs_catalog_set_last, name='pcs_catalog_set_last'),
 
     # Questionnaire intake
+    path('request-size-plot/', views.request_size_plot, name='request_size_plot'),
     path('questionnaires/', views.questionnaires_list, name='questionnaires_list'),
     path('questionnaires/import/', views.questionnaire_import, name='questionnaire_import'),
     path('questionnaires/<int:pk>/', views.questionnaire_detail, name='questionnaire_detail'),
