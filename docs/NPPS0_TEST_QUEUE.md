@@ -129,7 +129,17 @@ Each step runs here before it is asked of any other queue. In order:
 5. **Physics per range.** npsim and eicrecon on EVGEN ranges, up to 8
    workers, outputs registered and counted per range: the exact-events
    accounting tier of [CAMPAIGN_DELIVERY.md](CAMPAIGN_DELIVERY.md),
-   end to end.
+   end to end. Done by the scale run of 2026-09-21, task 40137 (payload
+   0.21.3, NODE_EVENT_DISPATCHER.md, The scale run): six slots, twelve
+   units of 250 events each, npsim and eicrecon per unit, the units of
+   a close merged into one podio file and registered with the merged
+   file's own event count — 505 and 482 MB, the counts standing on the
+   files and on the dataset, 3,000 events for the task, 31.7 minutes,
+   nothing lost. Six workers and not eight because the host's free
+   memory fits six; the worker count is the host's, not the design's.
+   The counts reach the campaign record through the `reported`
+   provenance tier (swf-epicprod 7b15791), which takes the events the
+   payload itself wrote.
 6. **Job-level prmon from the runner.** The payload measures every
    stage with the image's prmon (`/opt/local/bin/prmon`, prmon 3.2.0
    in `eic_xl` 26.07.1) and reports per stage
