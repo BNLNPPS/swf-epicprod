@@ -68,6 +68,14 @@ class PoolTests(unittest.TestCase):
         self.assertEqual(pool.take_unit(5), [])
         self.assertEqual(cut_all(pool, 5, wait=5), [(1, 5, 0), (6, 10, 1)])
 
+    def test_a_block_missing_its_first_event_waits(self):
+        # 2..5 in, 1 still coming: no unit until 1 arrives
+        feed = SlowFeed(ranges([2, 3, 4, 5, 1, 6, 7, 8, 9, 10]), pause=0.15)
+        pool = h.Pool(feed)
+        time.sleep(0.7)                         # 2..5 in
+        self.assertEqual(pool.take_unit(5), [])
+        self.assertEqual(cut_all(pool, 5, wait=5), [(1, 5, 0), (6, 10, 1)])
+
     def test_partial_last_block_and_holes_cut_at_the_end(self):
         pool = h.Pool(SlowFeed(ranges([1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18])))
         self.assertEqual(cut_all(pool, 5), [(1, 2, 0), (5, 5, 0), (6, 10, 1), (11, 15, 2), (16, 18, 3)])

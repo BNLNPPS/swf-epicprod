@@ -276,9 +276,10 @@ class Pool:
                         or (start - 1) // per_unit != block or len(members) >= per_unit):
                     break
                 members.append(rng)
-            whole = (len(members) == per_unit
-                     or int(members[-1]['lastEvent']) == (block + 1) * per_unit)
-            if not whole and not self.exhausted:
+            # Whole is every event of the block: a block whose first events
+            # are still coming is not whole for reaching its last (job
+            # 3556539 cut events 2-5 and then 1 alone).
+            if len(members) < per_unit and not self.exhausted:
                 return []                       # its block is still arriving
             del self.ranges[:len(members)]
             return members
