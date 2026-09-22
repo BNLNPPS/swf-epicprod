@@ -14,6 +14,20 @@ a short timeout and one retry:
   the Rucio server, from ``auth_host`` in RUCIO_CONFIG, over TLS
   the input door, from XRDRURL (root://host:port), TCP only
 
+And the write door the job's outputs must pass, when the job has one
+(LANDING_WRITE_DOOR; run.sh sets it when the output RSE is the one
+behind that door, so the door is the only way home rather than a
+failover). A door whose host certificate has expired takes nothing:
+the job runs its physics and dies at registration with the output
+lost, which is what epicxrd1's certificate did from 2026-09-20 — tens
+of thousands of Perlmutter jobs, twelve minutes of simulation and
+reconstruction each, delivering nothing. The check is one ``xrdfs
+stat`` at the door, and, when the door does not answer it, the date on
+the certificate the door serves, read through openssl. Only a date
+already past declines the landing; a door that answers, a certificate
+in force, and a certificate that cannot be read all proceed, since
+doubt proceeds and declining spends one of the job's attempts.
+
 And the node guard's exclusion (site-canary docs/NODE_GUARD.md,
 Actuation): the document the guard publishes on the devcloud bucket's
 public pilot prefix (NODE_EXCLUSION_URL), fetched once with a short
@@ -27,13 +41,17 @@ Usage: landing_check.py
 
 Prints one line per check. Exit 0 when every check passes, 4 when any
 definite negative stands after the retry (the reasons are on stdout),
-and 0 with a note when a check cannot be formed, since doubt proceeds.
+5 when the job's write door refused with an expired certificate (a
+condition no other worker escapes, so it is its own code), and 0 with
+a note when a check cannot be formed, since doubt proceeds.
 """
 import configparser
 import json
 import os
+import re
 import socket
 import ssl
+import subprocess
 import sys
 import time
 import urllib.request
@@ -42,6 +60,16 @@ from urllib.parse import urlparse
 
 TIMEOUT_S = 15
 RETRY_AFTER_S = 10
+# The write door probe: an xrdfs stat costs a round trip, and the
+# certificate read a handshake.
+DOOR_STAT_PATH = "/"
+DOOR_TIMEOUT_S = 30
+DOOR_CERT_TIMEOUT_S = 20
+# What an xrootd answer of the TLS class looks like. The door with the
+# expired certificate answered "[FATAL] TLS error: resource temporarily
+# unavailable: Unable to connect to epicxrd1.sdcc.bnl.gov; error_ssl
+# (destination)" — "temporarily" notwithstanding, the class is TLS.
+TLS_ANSWER = re.compile(r"error_ssl|tls error|ssl error|handshake", re.I)
 EXCLUSION_URL = os.environ.get(
     "NODE_EXCLUSION_URL",
     "https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/node-exclusion.json")
@@ -161,6 +189,107 @@ def check(label, host, port, tls):
     return True
 
 
+def door_answer_class(rc, text):
+    """One xrdfs answer as a class: 'ok', 'tls' or 'other'. Pure."""
+    if rc == 0:
+        return "ok"
+    return "tls" if TLS_ANSWER.search(text or "") else "other"
+
+
+def certificate_expiry(enddate_text):
+    """The notAfter openssl printed ("notAfter=Sep 20 23:59:59 2026 GMT")
+    as an aware datetime, or None when the text does not carry one. Pure."""
+    match = re.search(r"notAfter=(.+)", enddate_text or "")
+    if not match:
+        return None
+    stamp = match.group(1).strip()
+    if stamp.upper().endswith(" GMT"):
+        stamp = stamp[:-4].strip()
+    try:
+        return datetime.strptime(stamp, "%b %d %H:%M:%S %Y").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def write_door_verdict(stat_ok, expiry, now):
+    """'refused' when the door did not answer and the certificate it
+    serves had already expired, else 'proceed'. Pure: the stat's outcome,
+    the certificate's notAfter and the clock come in.
+
+    The certificate decides, not the way the client complained. An
+    xrdfs refusal reads differently from one client, credential and
+    version to the next — the pilot's copy reported "[FATAL] TLS error
+    ... error_ssl", a client without a proxy times out at the same door
+    — while the date the door serves is the same fact for everyone, and
+    an expired one refuses every TLS session the production client will
+    open. Declining spends one of the job's attempts, so nothing short
+    of that date, read and past, refuses a landing."""
+    if stat_ok:
+        return "proceed"
+    if expiry is None or expiry > now:
+        return "proceed"
+    return "refused"
+
+
+def _run(command, timeout, stdin_text=None):
+    """(rc, text) from a command: rc 124 when it times out, 127 when it
+    is not on the path, so neither is mistaken for an answer."""
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True,
+                              timeout=timeout, input=stdin_text)
+    except subprocess.TimeoutExpired:
+        return 124, f"no answer in {timeout}s"
+    except OSError as exc:
+        return 127, f"{exc.__class__.__name__}: {exc}"
+    return proc.returncode, f"{proc.stdout}{proc.stderr}"
+
+
+def _door_expiry(host, port):
+    """The door's leaf certificate notAfter, read with openssl, or None
+    when openssl is absent, the door serves nothing, or the date is
+    unreadable."""
+    _, served = _run(["openssl", "s_client", "-connect", f"{host}:{port}",
+                      "-servername", host], DOOR_CERT_TIMEOUT_S, stdin_text="")
+    leaf = re.search(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
+                     served, re.S)
+    if not leaf:
+        return None
+    rc, ends = _run(["openssl", "x509", "-noout", "-enddate"],
+                    DOOR_CERT_TIMEOUT_S, stdin_text=leaf.group(0))
+    return certificate_expiry(ends) if rc == 0 else None
+
+
+def check_write_door():
+    """Stat the write door, twice on a TLS answer, and read its
+    certificate when both answers are of that class; print the outcome.
+    True when the landing may proceed."""
+    door = os.environ.get("LANDING_WRITE_DOOR", "").strip()
+    if not door:
+        print("landing write-door: this job has none; not checked")
+        return True
+    target = _target(door)
+    if not target:
+        print(f"landing write-door: {door} names no host; not checked")
+        return True
+    host, port = target
+    rc, text = _run(["xrdfs", door, "stat", DOOR_STAT_PATH], DOOR_TIMEOUT_S)
+    answer = door_answer_class(rc, text)
+    said = " ".join((text or "").split())[:200]
+    if answer == "ok":
+        print(f"landing write-door {host}:{port} ok")
+        return True
+    expiry = _door_expiry(host, port)
+    verdict = write_door_verdict(False, expiry, datetime.now(timezone.utc))
+    if verdict == "refused":
+        print(f"landing write-door {host}:{port} FAILED: its certificate expired "
+              f"{expiry.date().isoformat()} and the door answered {answer}: {said}; "
+              f"declining the landing")
+        return False
+    print(f"landing write-door {host}:{port} answered {answer}, certificate "
+          f"{expiry.date().isoformat() if expiry else 'not read'}; proceeding: {said}")
+    return True
+
+
 def main():
     ok = True
     formed = 0
@@ -194,10 +323,18 @@ def main():
     # an excluded node is a definite negative of its own.
     excluded_ok = check_exclusion()
 
-    if not formed and excluded_ok:
+    # The write door last, and reported last: a worker-local negative is
+    # answered by sending the job elsewhere (4), while an expired door
+    # certificate is the same for every worker (5).
+    door_ok = check_write_door()
+
+    if not formed:
         print("landing: no reachability check could be formed; proceeding")
-        return 0
-    return 0 if (ok and excluded_ok) else 4
+    if not (ok and excluded_ok):
+        return 4
+    if not door_ok:
+        return 5
+    return 0
 
 
 if __name__ == "__main__":

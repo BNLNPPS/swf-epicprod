@@ -326,6 +326,21 @@ mkdir -p ${LOG_TEMP}
 # log and the report, and PanDA sends the job elsewhere. Doubt proceeds
 # (site-canary DESIGN.md, the carrier that declines its landing;
 # swf-epicprod docs/EPICPROD_PAYLOAD.md, exit code 80).
+#
+# The write door joins the check when this job's outputs have no other
+# way home: the output RSE is the one behind the stash door, so that
+# door carries the preserve-first copy and the upload client's bytes
+# alike (the stash block below). A door whose host certificate has
+# expired takes neither, and the job spends its simulation and
+# reconstruction before finding out — epicxrd1's certificate expired
+# 2026-09-20 and, until it was renewed, every Perlmutter job of tasks
+# 40052-40054 that reached registration died there after about twelve
+# minutes of completed physics, delivering nothing. On another output
+# RSE this door is only the failover, so its state does not decide the
+# landing (docs/EPICPROD_PAYLOAD.md, exit code 86).
+if [ "${OUT_RSE:-EIC-XRD}" == "${STASH_RSE:-BNL-XRD}" ]; then
+  export LANDING_WRITE_DOOR="${STASH_DOOR:-root://epicxrd1.sdcc.bnl.gov:1094}"
+fi
 stage landing start
 if LANDING_OUT=$(python $SCRIPT_DIR/landing_check.py 2>&1); then
   LANDING_RC=0
@@ -339,6 +354,12 @@ if [ "${LANDING_RC}" -eq 4 ]; then
   REPORT_NOTE="landing declined: ${LANDING_REASON}"
   echo "ERROR: landing declined; no work started. ${LANDING_REASON}"
   exit 80
+elif [ "${LANDING_RC}" -eq 5 ]; then
+  LANDING_REASON=$(echo "${LANDING_OUT}" | grep FAILED | head -1)
+  stage landing decline "${LANDING_REASON}"
+  REPORT_NOTE="write door refused with an expired certificate: ${LANDING_REASON}"
+  echo "ERROR: the write door's certificate has expired; no work started. ${LANDING_REASON}"
+  exit 86
 elif [ "${LANDING_RC}" -ne 0 ]; then
   stage landing ok "check did not run (exit ${LANDING_RC}); proceeding"
 else
