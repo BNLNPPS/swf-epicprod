@@ -140,7 +140,8 @@ class Close:
         if self.proc.poll() is None:
             return None
         rec = {'index': self.index, 'name': self.name, 'units': [u[1] for u in self.units],
-               'rc': self.proc.returncode, 'wall_s': round(time.time() - self.started, 1)}
+               'rc': self.proc.returncode, 'wall_s': round(time.time() - self.started, 1),
+               'started_at': self.started, 'ended_at': time.time()}
         try:
             with open(os.path.join(self.dir, 'close.json')) as f:
                 rec.update(json.load(f))
@@ -360,7 +361,8 @@ def main():
     started = time.time()
     os.makedirs(args.work, exist_ok=True)
     slots, summary = [], {'stamp': args.stamp, 'slots': args.slots, 'image': args.image,
-                          'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False}
+                          'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False,
+                          'started_at': started}
     input_path = args.input
     pool = Pool(feed)
     pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
@@ -390,6 +392,8 @@ def main():
                 continue
             uid, record, ok = r
             record.setdefault('wall_s', round(time.time() - (s.taken_at or time.time()), 1))
+            record['slot'] = s.index                    # which slot ran it: the slot occupancy plot
+            record.setdefault('started_at', s.taken_at)
             range_ids = list(s.range_ids)
             if ok and record.get('handoff'):
                 pending.append((s, uid, record, range_ids))
@@ -471,6 +475,7 @@ def main():
     for s in slots:
         s.wait(120)
     summary['wall_s'] = round(time.time() - started, 1)
+    summary['ended_at'] = time.time()
     with open(args.summary, 'w') as f:
         json.dump(summary, f)
     return 0
