@@ -8,15 +8,23 @@
                  border-radius: 0.25rem; margin-top: 1.6rem;
                  margin-bottom: 0.8rem; }
   .rsp-plot { margin: 0.5rem 0 1.2rem 0; }
-  .rsp-note { max-width: 62rem; }
-  .rsp-answer { font-family: var(--bs-font-monospace, monospace); font-size: 0.85em; }
+  /* The floor: nothing on this page is set below 1.2rem, the smallest
+     that was here plus two points (Torre, 2026-09-22). Sizes are named
+     once, here, so nothing drifts under it. */
+  .rsp-page { font-size: 1.2rem; }
+  .rsp-page table, .rsp-page .pcs-tlf-bar, .rsp-page p, .rsp-page td,
+  .rsp-page th, .rsp-page a { font-size: 1.2rem; }
+  .rsp-note { max-width: 74rem; line-height: 1.55; }
+  .rsp-page h1 { font-size: 2.3rem; }
+  .rsp-page h2 { font-size: 1.7rem; }
+  .rsp-answer { font-family: var(--bs-font-monospace, monospace); }
   /* The house filter bar, as on the request list. */
   .pcs-tlf-bar .filter-link { margin-right: 0.6em; color: #007bff; text-decoration: none; }
   .pcs-tlf-bar .filter-link:hover { text-decoration: underline; }
   .pcs-tlf-bar .filter-link.filter-active { font-weight: bold; text-decoration: underline; color: #0056b3; }
   .pcs-tlf-label { font-weight: 600; margin-right: 0.5em; }
 </style>
-<div class="container-fluid">
+<div class="container-fluid rsp-page">
     <h1>Request size plot</h1>
 
     {% if never_built %}

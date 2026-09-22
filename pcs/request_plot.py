@@ -14,14 +14,14 @@ from django.utils.safestring import mark_safe
 
 from swf_epicprod.request_events import band_of
 
-WIDTH = 980
-LEFT = 64
-RIGHT = 24
-TOP = 46           # the core-hours caption and its ticks
-BARS_H = 210
-GAP = 46           # the shared axis between the panels
-CUM_H = 110
-BOTTOM = 34
+WIDTH = 1400
+LEFT = 108
+RIGHT = 30
+TOP = 80           # the core-hours caption and its ticks
+BARS_H = 320
+GAP = 74           # the shared axis between the panels
+CUM_H = 170
+BOTTOM = 60
 
 BAR = '#2a78d6'
 MARK = '#b2560d'   # the percentile guides, distinct from the bars
@@ -67,7 +67,7 @@ def distribution_svg(summary):
     per_event = float(cost.get('median_s') or 0) or None
 
     out = [f'<svg viewBox="0 0 {WIDTH} {height}" width="100%" '
-           f'style="max-width:{WIDTH}px;height:auto;font-size:11px" '
+           f'style="width:100%;max-width:{WIDTH}px;height:auto;font-size:20px" '
            f'aria-label="Distribution of requested events per request">']
 
     # The panels' frames and horizontal guides.
@@ -114,7 +114,7 @@ def distribution_svg(summary):
             f'{escape(hours)}</title></rect>')
         # The count above its bar: the bin is read, not hovered for.
         out.append(
-            f'<text x="{(x0 + x1) / 2:.1f}" y="{bars_bottom - h - 5:.1f}" '
+            f'<text x="{(x0 + x1) / 2:.1f}" y="{bars_bottom - h - 8:.1f}" '
             f'text-anchor="middle" fill="currentColor" fill-opacity="0.85">'
             f'{b["count"]}</text>')
         if band:
@@ -147,20 +147,20 @@ def distribution_svg(summary):
                    f'stroke="currentColor" stroke-opacity="0.10"/>')
         out.append(f'<line x1="{x:.1f}" y1="{cum_top}" x2="{x:.1f}" y2="{cum_bottom}" '
                    f'stroke="currentColor" stroke-opacity="0.10"/>')
-        out.append(f'<text x="{x:.1f}" y="{bars_bottom + 16:.1f}" text-anchor="middle" '
+        out.append(f'<text x="{x:.1f}" y="{bars_bottom + 24:.1f}" text-anchor="middle" '
                    f'fill="currentColor" fill-opacity="0.85">{escape(_label(value))}</text>')
         if per_event:
             hours = value * per_event / 3600.0
-            out.append(f'<text x="{x:.1f}" y="{TOP - 8:.1f}" text-anchor="middle" '
+            out.append(f'<text x="{x:.1f}" y="{TOP - 14:.1f}" text-anchor="middle" '
                        f'fill="currentColor" fill-opacity="0.6">'
                        f'{escape(_label(hours))}</text>')
-    out.append(f'<text x="{WIDTH - RIGHT}" y="{cum_bottom + 24:.1f}" text-anchor="end" '
+    out.append(f'<text x="{WIDTH - RIGHT}" y="{cum_bottom + 36:.1f}" text-anchor="end" '
                f'fill="currentColor" fill-opacity="0.75">requested events</text>')
-    out.append(f'<text x="{LEFT}" y="{cum_bottom + 24:.1f}" text-anchor="start" '
-               f'fill="currentColor" fill-opacity="0.6">each bar is a half decade; '
+    out.append(f'<text x="{LEFT}" y="{cum_bottom + 36:.1f}" text-anchor="start" '
+               f'fill="currentColor" fill-opacity="0.7">each bar is a half decade; '
                f'hover a bar for its range</text>')
     if per_event:
-        out.append(f'<text x="{LEFT}" y="12" text-anchor="start" '
+        out.append(f'<text x="{LEFT}" y="20" text-anchor="start" '
                    f'fill="currentColor" fill-opacity="0.6">core-hours at '
                    f'{per_event} CPU s/event, the median measured</text>')
 
@@ -170,7 +170,7 @@ def distribution_svg(summary):
         if not value or value < low or value > high:
             continue
         x = _x(value, low, high)
-        label_y = TOP + 12 + 14 * (row % 2)
+        label_y = TOP + 22 + 26 * (row % 2)
         out.append(f'<line x1="{x:.1f}" y1="{TOP}" x2="{x:.1f}" y2="{cum_bottom}" '
                    f'stroke="{MARK}" stroke-width="1" stroke-dasharray="4 3" '
                    f'stroke-opacity="0.8"/>')
