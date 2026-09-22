@@ -145,12 +145,24 @@ Each step runs here before it is asked of any other queue. In order:
    `memory_monitor_summary.json` from the job directory by name
    (`get_memory_monitor_info`) and lifts the Max and Avg fields into
    the job record, and the over-memory path reads the same output. The
-   fix is in the runner: `epicrun` wraps the payload in the image's
-   prmon, writing those two files into the job directory, one level
-   above the container's work directory, where the runner already
-   places declared outputs. The pilot then picks them up as if it had
-   started the monitor, and its own failed launch remains a warning in
-   the log. The verification on this queue: `maxpss` and its
+   fix is in the runner, and is built (2026-09-22,
+   `tools/worker/epicrun.py`): the run script it writes starts the
+   payload in a subshell of its own and the image's prmon on that
+   subshell, with the two files named as the pilot reads them, one
+   level above the container's work directory — the job directory,
+   where the runner already places declared outputs. The pilot then
+   picks them up as if it had started the monitor, and its own failed
+   launch remains a warning in the log. prmon watches the payload
+   rather than the run script because it writes its summary when the
+   process it watches exits and on nothing else: measured in the
+   campaign image (prmon 3.2.0), a prmon stopped with SIGTERM leaves
+   only the periodic `memory_monitor_summary.json_snapshot` and exits
+   143. With the payload watched, the run script waits for the payload,
+   takes its status, and then waits for prmon to finish its summary.
+   Proven in the image over a short payload: both files in the job
+   directory, `Max` carrying `pss`, `rss`, `vmem` and `swap` — the
+   fields `get_memory_monitor_info` lifts — and the payload's own exit
+   code out. The verification left, on this queue: `maxpss` and its
    companions on the job page from measurement rather than the cgroup
    fallback, and an over-memory job ending with the prmon error rather
    than the cgroup kill. A correction of the user module's own hook is
