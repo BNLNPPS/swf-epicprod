@@ -627,7 +627,11 @@ is editable.
 `credential_ping_propose` covers the three credentials above.
 `certificate_ping_propose` covers the certificate each production
 service host serves, read from the served chain: the PanDA server, its
-monitor, this host's web face, and the OSG submit host, overridable with
+monitor, this host's web face, the OSG submit host, and since 2026-09-22
+the storage doors production writes through, the BNL-XRD write door
+`epicxrd1:1094` and the JLab EIC-XRD door `dtn-rucio:1094` (the
+epicxrd1 certificate expired on 2026-09-20 unwatched and every upload
+and stash of the following day failed on it); overridable with
 `CERTIFICATE_HOSTS`. It carries a second obligation, a certificate
 served without its issuing intermediate, which a client outside the grid
 trust configuration cannot verify. Standalone runs:

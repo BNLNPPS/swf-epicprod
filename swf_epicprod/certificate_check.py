@@ -15,8 +15,13 @@ threshold or serves no intermediate, 4 when any is expired or
 unreachable.
 
 The hosts are the production service faces: the PanDA server and its
-monitor, this host's own web face, and the OSG submit host. Override
-with ``CERTIFICATE_HOSTS``, a comma-separated list of ``host:port``.
+monitor, this host's own web face, the OSG submit host, and the storage
+doors production writes through, the BNL-XRD write door (epicxrd1:1094,
+whose certificate expired on 2026-09-20 and cost a day of Perlmutter
+production before anyone read it) and the JLab EIC-XRD door
+(dtn-rucio:1094); both answer the same TLS handshake with their host
+certificate. Override with ``CERTIFICATE_HOSTS``, a comma-separated
+list of ``host:port``.
 """
 
 import json
@@ -32,6 +37,8 @@ DEFAULT_HOSTS = (
     'pandamon01.sdcc.bnl.gov:443',
     'pandaserver02.sdcc.bnl.gov:443',
     'osgsub01.sdcc.bnl.gov:443',
+    'epicxrd1.sdcc.bnl.gov:1094',
+    'dtn-rucio.jlab.org:1094',
 )
 CONNECT_TIMEOUT = 20
 PEM_RE = re.compile(
