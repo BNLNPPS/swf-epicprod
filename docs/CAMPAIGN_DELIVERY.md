@@ -98,8 +98,17 @@ by the next run with no cursor state. The rebuild covers every
 campaign already in the record, the current and last lifecycle slots,
 and any campaign currently producing — recorded history is never
 dropped, and the metadata pass scales with active campaigns, not the
-full catalog. Unmapped locations and files not resolving to a target
-campaign are counted in the build summary, never dropped silently.
+full catalog. A file is in the record when it is attached to its
+dataset, the catalog of record's own content: a file DID exists before
+its bytes move (the Rucio upload client registers the DID and a COPYING
+replica, transfers, and attaches only then; every other writer attaches
+in the registering call), so the DIDs failed uploads leave behind are
+named under a location but attached to nothing, and the name search
+that inventories the roots returns them (6,707 in one Upsilon location,
+261 GB, after the BNL-XRD door died on 2026-09-20). Each location's
+attached set is read once per build and the rest is left out. Unmapped
+locations, files not resolving to a target campaign, and unattached
+DIDs are counted in the build summary, never dropped silently.
 
 The preceding `file_events_measure` step keeps the measurement store
 current (The events source, below). Both steps record their outcome

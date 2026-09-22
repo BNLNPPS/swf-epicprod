@@ -147,6 +147,70 @@ def rucio_get(path, **params):
     return ''
 
 
+def attached_names(get, locations, log=print):
+    """{location: the names attached to the location's dataset}, the
+    catalog of record's own content, for the locations given.
+
+    A file DID exists before its bytes move: the Rucio upload client
+    registers the DID and a COPYING replica, transfers, and only then
+    attaches the file to its dataset, and every other writer (the
+    payload's registration in place, the registrar, the stash drain)
+    attaches in the registering call. A DID a failed upload left behind
+    is therefore named under the location but attached to nothing
+    (6,707 of them, 261 GB, in one Upsilon location after the BNL-XRD
+    door died on 2026-09-20), so attachment, not the name search, is
+    what makes a file delivered. ``get(path, **query)`` returns the
+    catalog's text. A location that is no dataset in the catalog (404)
+    attaches nothing and is reported."""
+    import urllib.error
+
+    out = {}
+    for location in sorted(locations):
+        dataset = '/' + location.lstrip('/')
+        try:
+            text = get(f'/dids/epic/{dataset}/files', timeout=300)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+            log(f'WARNING: {location} is no dataset in the catalog; '
+                f'its files count as unattached')
+            text = ''
+        names = set()
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                raise ValueError(f'the file listing of {location} is not '
+                                 f'JSON lines: {line[:120]!r}')
+            if isinstance(row, dict) and row.get('name'):
+                names.add(row['name'])
+        out[location] = names
+    return out
+
+
+def delivered_names(get, wanted, log=print):
+    """The subset of ``wanted`` (a {name: ...} mapping of file names)
+    attached to their datasets, and {location: unattached count} for
+    what the name search returned that the catalog holds no delivery
+    of."""
+    by_location = {}
+    for name in wanted:
+        by_location.setdefault('/'.join(name.split('/')[:-1]), []).append(name)
+    attached = attached_names(get, by_location, log=log)
+    kept, unattached = {}, {}
+    for location, names in by_location.items():
+        present = attached.get(location) or set()
+        for name in names:
+            if name in present:
+                kept[name] = wanted[name]
+            else:
+                unattached[location] = unattached.get(location, 0) + 1
+    return kept, unattached
+
+
 def collect_inventory(campaigns):
     """{location: [(name, campaign, bytes, created, reported)]} for
     delivered files of the target campaigns; ``reported`` is the
@@ -167,8 +231,11 @@ def collect_inventory(campaigns):
         family = campaign_family(segs[2])
         if family in campaigns:
             wanted[name] = family
+    wanted, unattached = delivered_names(rucio_get, wanted, log=log)
     log(f'inventory: {len(names)} files under roots, '
-        f'{len(wanted)} in target campaigns')
+        f'{len(wanted)} delivered in target campaigns, '
+        f'{sum(unattached.values())} named but attached to no dataset '
+        f'(failed uploads) left out')
 
     by_location = {}
     ordered = sorted(wanted)

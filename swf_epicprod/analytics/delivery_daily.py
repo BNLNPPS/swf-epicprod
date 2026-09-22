@@ -128,8 +128,16 @@ def collect_files(campaigns, limit_files=0):
             wanted[name] = family
         else:
             unknown[family] = unknown.get(family, 0) + 1
+    # Delivered means attached to its dataset (file_events.attached_names):
+    # the name search also returns the DIDs failed uploads leave behind.
+    from .file_events import delivered_names
+
+    wanted, unattached = delivered_names(
+        lambda path, **q: _jlab_rucio_get(path, token, **q), wanted)
     print(f'inventory: {len(names)} files under roots, '
-          f'{len(wanted)} in catalog campaigns')
+          f'{len(wanted)} delivered in catalog campaigns, '
+          f'{sum(unattached.values())} named but attached to no dataset '
+          f'(failed uploads) left out')
 
     file_events = load_file_events()
     daily = {name: {} for name in campaigns}
@@ -166,7 +174,7 @@ def collect_files(campaigns, limit_files=0):
         done = min(start + BULK_CHUNK, len(ordered))
         if done % 10000 < BULK_CHUNK:
             print(f'  bulkmeta {done}/{len(ordered)}')
-    return daily, unknown
+    return daily, unknown, unattached
 
 
 def location_map(campaigns):
@@ -255,7 +263,7 @@ def expected_map(campaigns):
 def build_snaps(campaigns, limit_files=0):
     from django.utils import timezone
 
-    daily, unknown = collect_files(campaigns, limit_files)
+    daily, unknown, unattached = collect_files(campaigns, limit_files)
     mapping = location_map(campaigns)
     expected = expected_map(campaigns)
 
@@ -345,7 +353,7 @@ def build_snaps(campaigns, limit_files=0):
             projection['campaigns'][campaign] = {
                 'totals': totals, 'leaves': leaves}
         snaps.append((day, projection))
-    return snaps, unmapped, unknown
+    return snaps, unmapped, unknown, unattached
 
 
 def rebuild_delivery_daily(campaigns=None, *, apply=False, created_by='',
@@ -367,7 +375,7 @@ def rebuild_delivery_daily(campaigns=None, *, apply=False, created_by='',
         raise ValueError('limit_files is validation-only: refusing to '
                          'apply a partial rebuild')
     campaigns = tuple(campaigns) if campaigns else target_campaigns()
-    snaps, unmapped, unknown = build_snaps(campaigns, limit_files)
+    snaps, unmapped, unknown, unattached = build_snaps(campaigns, limit_files)
 
     today_et = timezone.now().astimezone(ET).date()
     writable = [(day, projection) for day, projection in snaps
@@ -386,6 +394,9 @@ def rebuild_delivery_daily(campaigns=None, *, apply=False, created_by='',
         print(f'  {family} {location}: {count}')
     if unknown:
         print(f'files in campaigns with no catalog row: {unknown}')
+    if unattached:
+        print(f'DIDs attached to no dataset (failed uploads), left out: '
+              f'{sum(unattached.values())} in {len(unattached)} locations')
 
     summary = {
         'campaigns': sorted(campaigns),
@@ -393,6 +404,8 @@ def rebuild_delivery_daily(campaigns=None, *, apply=False, created_by='',
         'unmapped_locations': len(unmapped),
         'unmapped_files': sum(unmapped.values()),
         'unknown_families': unknown, 'applied': bool(apply),
+        'unattached_files': sum(unattached.values()),
+        'unattached_locations': len(unattached),
         'removed': 0, 'written': 0,
     }
     if writable:
