@@ -1853,11 +1853,13 @@ def _csvimport_slug(dataset_path, gen_version):
 EPIC_VOLATILE_PREFIX = '/volatile/eic/EPIC/'
 
 # The collaboration xrootd door in front of the volatile area — the same
-# endpoint the production payload streams EVGEN from
-# (simulation_campaign_hepmc3 run.sh: XRDRURL root://dtn-eic.jlab.org/).
-XROOTD_EPIC_BASE = 'root://dtn-eic.jlab.org//volatile/eic/EPIC'
-XROOTD_EPIC_DOOR = 'root://dtn-eic.jlab.org'
-XROOTD_EPIC_PATH = '/volatile/eic/EPIC'
+# endpoint the production payload streams EVGEN from (payload run.sh,
+# XRDRURL and XRDRBASE). JLab's read-only OSDF origin on dtn2304, which
+# replaced dtn2201 (dtn-eic) when that host was decommissioned on
+# 2026-10-01; the volatile area sits under /jlab-osdf-ro/eic/EPIC/volatile.
+XROOTD_EPIC_BASE = 'root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/volatile'
+XROOTD_EPIC_DOOR = 'root://dtn2304.jlab.org:8443'
+XROOTD_EPIC_PATH = '/jlab-osdf-ro/eic/EPIC/volatile'
 
 
 def evgen_door_directory_exists(path, timeout_s=15):

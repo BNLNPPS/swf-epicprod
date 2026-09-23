@@ -560,6 +560,17 @@ In order, each a committed step on the clone:
     the stash refuses too, and which the Event Service close records
     failed instead of deleting its units. Pending is exited only after a
     preserve that verified at the door.
+19. **The JLab read door moves to dtn2304** (2026-09-23, payload
+    0.21.7). JLab decommissions dtn2201 on 2026-10-01; `dtn-eic.jlab.org`,
+    the door every job streamed its EVGEN input from, is an alias of it.
+    The volatile area is exported read-only, without a credential, by
+    JLab's OSDF origin: `XRDRURL` defaults to
+    `root://dtn2304.jlab.org:8443/` and `XRDRBASE` to
+    `/jlab-osdf-ro/eic/EPIC/volatile` (the old `/volatile/eic/EPIC`).
+    The same file answers with the same identity at both doors. PCS's
+    own reads of the area (`pcs/services.py`, `XROOTD_EPIC_*`) and the
+    crash reproduction's input moved with it. Output registration is
+    untouched: EIC-XRD's door is `dtn-rucio.jlab.org`.
 
 ## Container contract
 

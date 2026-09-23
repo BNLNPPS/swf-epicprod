@@ -15,7 +15,7 @@ HepMC3; the tree file reads through its ROOT and HepMC3 rootIO)::
 
     apptainer exec -e -B /data /cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.1-stable \\
       bash -lc 'python3 tools/evgen/compare-pythia8.py --events 3000 --ebeam 10 --pbeam 100 \\
-                --q2 q2_10to100 --registered root://dtn-eic.jlab.org//volatile/eic/EPIC/EVGEN/DIS/pythia8.316-1.0/NC/noRad/ep/10x100/q2_10to100/pythia8.316-1.0_NC_noRad_ep_10x100_q2_10to100_run000.hepmc3.tree.root \\
+                --q2 q2_10to100 --registered root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/volatile/EVGEN/DIS/pythia8.316-1.0/NC/noRad/ep/10x100/q2_10to100/pythia8.316-1.0_NC_noRad_ep_10x100_q2_10to100_run000.hepmc3.tree.root \\
                 --workdir /data/swf-tmp/evgen-compare'
 """
 import argparse

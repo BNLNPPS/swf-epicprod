@@ -262,9 +262,11 @@ BASEDIR=${DATADIR:-${PWD}}
 XRDWURL=${XRDWURL-"xroots://dtn2201.jlab.org/"}
 XRDWBASE=${XRDWBASE:-"/eic/eic2/EPIC"}
 
-# XRD Read locations (allow for empty URL override)
-XRDRURL=${XRDRURL-"root://dtn-eic.jlab.org/"}
-XRDRBASE=${XRDRBASE:-"/volatile/eic/EPIC"}
+# XRD Read locations (allow for empty URL override). JLab's read-only
+# OSDF origin on dtn2304, replacing dtn2201 (dtn-eic), decommissioned
+# 2026-10-01 (payload 0.21.7); the volatile area's path there differs.
+XRDRURL=${XRDRURL-"root://dtn2304.jlab.org:8443/"}
+XRDRBASE=${XRDRBASE:-"/jlab-osdf-ro/eic/EPIC/volatile"}
 
 # Local temp dir
 echo "SLURM_TMPDIR=${SLURM_TMPDIR:-}"
