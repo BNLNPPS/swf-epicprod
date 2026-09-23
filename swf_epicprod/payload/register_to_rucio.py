@@ -17,7 +17,13 @@ from jsonschema import validate as json_validate, ValidationError
 # finished physics and exits success, and the registrar completes the
 # registration later (docs/RUCIO_RESILIENCE.md, Measure 2). It is a code
 # between this script and run.sh and never becomes a job's exit code.
+# Pending is true only of a file that is home: exit it only after a
+# preserve that verified at the door. A catalog that cannot answer while
+# the file is not home is NOT_HOME_EXIT, which run.sh stashes and fails
+# like any other registration failure (payload 0.21.6: 5,576 Perlmutter
+# jobs of 2026-09-21 exited pending with no file anywhere).
 PENDING_EXIT = 81
+NOT_HOME_EXIT = 1
 # The output dataset does not exist: it is created at submission
 # (docs/RUCIO_REGISTRATION_CONTRACT.md § 2), so a job that finds none was
 # not submitted through that path. A code between this script and run.sh,
@@ -663,8 +669,9 @@ if __name__ == "__main__":
                 present = _dataset_exists(parent_directory)
             except Exception as exc:  # noqa: BLE001
                 print(f"Catalog unreachable while asking for dataset {scope}:{parent_directory}: {exc}; "
-                      f"exiting pending, the registrar completes the registration.", file=sys.stderr)
-                sys.exit(PENDING_EXIT)
+                      f"no byte has moved, so the output is not home and is handed to the stash.",
+                      file=sys.stderr)
+                sys.exit(NOT_HOME_EXIT)
             if not present:
                 print(f"ERROR: output dataset {scope}:{parent_directory} does not exist; it is created "
                       f"at submission (RUCIO_REGISTRATION_CONTRACT.md § 2), so this job's output "
@@ -754,10 +761,10 @@ if __name__ == "__main__":
         # success rather than fail the job on the conflict (epicprod payload,
         # swf-epicprod docs/EPICPROD_PAYLOAD.md).
         # Asking the catalog is itself a call on the thing that just failed.
-        # When it cannot answer, the job knows neither that its output is
-        # delivered nor that it is not, and failing on that ignorance is what
-        # costs the finished physics: exit pending instead and let the
-        # registrar settle it later (docs/RUCIO_RESILIENCE.md, Measure 2).
+        # When it cannot answer, the job does not know whether an earlier
+        # attempt delivered, and this attempt's upload failed, so its file is
+        # not home: never pending here (a pending exit with no file anywhere
+        # loses the physics silently). Hand the output to the stash.
         try:
             delivered = [
                 rep['name'] for rep in client.list_replicas(dids, all_states=True)
@@ -765,9 +772,9 @@ if __name__ == "__main__":
         except Exception as probe:                            # noqa: BLE001
             logger.error(
                 "Catalog unreachable while asking whether the output is "
-                "delivered: %s. Exiting pending; the output stands and the "
-                "registrar completes it.", probe)
-            sys.exit(PENDING_EXIT)
+                "delivered: %s. The upload failed, so the output is not home; "
+                "handing it to the stash.", probe)
+            sys.exit(NOT_HOME_EXIT)
         if delivered and len(delivered) == len(dids):
             # Adopt, but only what is the same work. An available replica
             # under this name carrying a different event count is other
@@ -823,9 +830,9 @@ if __name__ == "__main__":
         except Exception as probe:                            # noqa: BLE001
             logger.error(
                 "Catalog unreachable while listing replicas at %s: %s. "
-                "Exiting pending rather than failing finished work.",
-                rse, probe)
-            sys.exit(PENDING_EXIT)
+                "The upload failed, so the output is not home; handing it "
+                "to the stash.", rse, probe)
+            sys.exit(NOT_HOME_EXIT)
 
         # Collect files that need to be cleaned up
         files_to_update = []

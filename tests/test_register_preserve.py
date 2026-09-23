@@ -141,5 +141,21 @@ class RegisterInPlaceTest(unittest.TestCase):
             self.assertEqual(c.meta, [])
 
 
+class PendingOnlyWhenHomeTest(unittest.TestCase):
+    """Pending is exited only from the preserve branch, after the copy
+    verified at the door; nowhere a file may not be home (payload 0.21.6)."""
+
+    def test_no_pending_exit_outside_the_verified_preserve(self):
+        with open(reg.__file__) as fh:
+            src = fh.read()
+        homed = src.index('if len(homed) == len(upload_items):')
+        fallback = src.index('upload_client = UploadClient(logger=logger)')
+        before, inside, after = src[:homed], src[homed:fallback], src[fallback:]
+        self.assertNotIn('sys.exit(PENDING_EXIT)', before)
+        self.assertIn('sys.exit(PENDING_EXIT)', inside)
+        self.assertNotIn('sys.exit(PENDING_EXIT)', after)
+        self.assertNotEqual(reg.NOT_HOME_EXIT, reg.PENDING_EXIT)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -546,6 +546,20 @@ In order, each a committed step on the clone:
     the same dead door — while the date is the same fact for every
     worker. A certificate in force, or one that cannot be read, always
     proceeds: a decline spends one of the job's attempts.
+18. **Pending only when home** (2026-09-23, payload 0.21.6). Item 12
+    left three exits of `register_to_rucio.py` recording a pending
+    registration where the file was not home: the dataset check before
+    any byte moved (the path without a preserve door), and the two
+    catalog probes after the upload client's fallback had failed. On
+    2026-09-21, with the BNL-XRD write door's certificate expired, the
+    preserve and the fallback both failed at that door, a probe then
+    failed, and 5,576 jobs of tasks 40052-40054 exited success with
+    "registration pending" and no file at the door or in the stash
+    drain's record (job 3393038). Those exits are now a registration
+    failure, which `run.sh` hands to the stash and fails with 78 when
+    the stash refuses too, and which the Event Service close records
+    failed instead of deleting its units. Pending is exited only after a
+    preserve that verified at the door.
 
 ## Container contract
 
