@@ -284,6 +284,11 @@ class Pool:
         with self.lock:
             return len(self.ranges)
 
+    def first(self):
+        """The first pooled range, or None; the pool is left as it is."""
+        with self.lock:
+            return dict(self.ranges[0]) if self.ranges else None
+
     def clear(self):
         with self.lock:
             self.ranges = []
@@ -498,29 +503,35 @@ def main():
             feed.exhausted = True
             pool.clear()
             summary['untaken_at_deadline'] = True
-        if taking and len(pool):
-            # Feed a free slot, starting slots lazily so the first range's
-            # input names the file before any container starts.
-            free = [s for s in slots if s.free()]
-            if free or len(slots) < args.slots:
+        if taking and not slots and pool.first():
+            # Every slot starts at once, as soon as the first range names the
+            # input file: their start (container, geometry, resident
+            # EICrecon) overlaps the gathering of their first units, which
+            # wait in their inboxes. Started one by one as each unit became
+            # ready, the starts ran in series behind the ranges (Perlmutter
+            # job 3618884: slot 63 began 9 minutes after slot 0).
+            # The pilot's staged copy of the range's LFN; without one
+            # (direct-access queues, npps0 outside the SCDF perimeter) the
+            # payload streams from the door per range, as production does.
+            if input_path is None:
+                input_path = find_input(os.path.dirname(args.sandbox), pool.first().get('LFN', '')) or ''
+            log(f"input: {input_path or 'not staged; the payload reads the door per range'}")
+            slots = [Slot(i, args, input_path) for i in range(args.slots)]
+            log(f"{len(slots)} slots started")
+        if taking and slots:
+            # Feed every free slot what the pool has now.
+            fed = False
+            for slot in [s for s in slots if s.free()]:
                 members = pool.take_unit(args.events_per_unit, min_events=args.min_unit_events)
-                if members:
-                    rng = members[0]
-                    if input_path is None:
-                        # The pilot's staged copy of the range's LFN; without
-                        # one (direct-access queues, npps0 outside the SCDF
-                        # perimeter) the payload streams from the door per
-                        # range, as production does.
-                        input_path = find_input(os.path.dirname(args.sandbox), rng.get('LFN', '')) or ''
-                        log(f"input: {input_path or 'not staged; the payload reads the door per range'}")
-                    if not free:
-                        slots.append(Slot(len(slots), args, input_path))
-                        free = [slots[-1]]
-                    free[0].give(unit_spec(members, args.events_per_unit, file_path, ext, args.stamp))
-                    continue
-                pool.want()                     # a slot waits and no block is whole
-        elif taking and (any(s.free() for s in slots) or len(slots) < args.slots):
-            pool.want()                         # a slot waits on an empty pool
+                if not members:
+                    pool.want()                 # a slot waits on the pool
+                    break
+                slot.give(unit_spec(members, args.events_per_unit, file_path, ext, args.stamp))
+                fed = True
+            if fed:
+                continue
+        elif taking:
+            pool.want()                         # nothing pooled yet
         in_flight = [s for s in slots if s.unit is not None]
         # A close: on the cadence, or the last one when nothing else is
         # coming; one at a time.
