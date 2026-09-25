@@ -22,6 +22,30 @@ def ranges(events, lfn='f'):
     return [{'eventRangeID': f'r-{e}', 'startEvent': e, 'lastEvent': e, 'LFN': lfn} for e in events]
 
 
+class TestLookahead(unittest.TestCase):
+    def test_pool_stops_at_the_lookahead_until_wanted(self):
+        """The pool holds at most the lookahead, so "No more events" is not
+        drawn from the pilot at the start (job 3618786)."""
+        feed = h.FileFeed.__new__(h.FileFeed)
+        feed.ranges, feed.exhausted, feed.reports = ranges(range(1, 41)), False, []
+        pool = h.Pool(feed, lookahead=10)
+        time.sleep(0.3)
+        self.assertEqual(len(pool), 10)
+        self.assertFalse(feed.exhausted)
+        self.assertEqual(len(pool.take_unit(5)), 5)
+        time.sleep(0.3)
+        self.assertEqual(len(pool), 10)          # refilled to the lookahead, no further
+        pool.want()
+        time.sleep(0.3)
+        self.assertEqual(len(pool), 11)          # one more on demand
+        taken = 16                               # 5 cut above, 11 pooled
+        deadline = time.time() + 10
+        while not pool.exhausted and time.time() < deadline:
+            taken += len(pool.take_unit(5) or pool.want() or [])
+            time.sleep(0.05)
+        self.assertTrue(pool.exhausted)          # "No more events" only once all 40 were asked for
+
+
 class SlowFeed(h.FileFeed):
     """A feed that hands one range per ask with a pause, as the pilot does."""
 

@@ -243,16 +243,33 @@ class Pool:
     is cut as soon as its block is whole rather than after every range
     has arrived."""
 
-    def __init__(self, feed):
+    def __init__(self, feed, lookahead=0):
+        """lookahead: the most ranges held before the harness asks for them
+        (0 = no limit). The pilot kills the payload 30 minutes after it
+        answers "No more events" (pilot esprocess.py waiting_time), so a pool
+        that drains the pilot at the start is killed before its last close
+        reports (job 3618786: 6,000 ranges pooled, SIGTERM 30 min later,
+        nothing credited). With a lookahead the last ranges are asked for
+        only as slots free up, and "No more events" comes near the end."""
         self.feed = feed
+        self.lookahead = lookahead
         self.ranges = []
         self.lock = threading.Lock()
+        self.wanted = threading.Event()     # a free slot found no whole block
         self.thread = threading.Thread(target=self._gather, name='pool', daemon=True)
         self.thread.start()
 
+    def want(self):
+        """Ask past the lookahead: a slot is free and no block is whole."""
+        self.wanted.set()
+
     def _gather(self):
         while not self.feed.exhausted:
+            if self.lookahead and len(self) >= self.lookahead and not self.wanted.is_set():
+                self.wanted.wait(0.5)
+                continue
             rng = self.feed.ask()
+            self.wanted.clear()
             if rng is None:
                 break
             with self.lock:
@@ -379,7 +396,10 @@ def main():
                           'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False,
                           'started_at': started}
     input_path = args.input
-    pool = Pool(feed)
+    # Two units per slot ahead: enough to keep every slot fed, few enough
+    # that the last ranges are asked for only as the work nears its end.
+    lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD') or 2 * args.slots * max(1, args.events_per_unit))
+    pool = Pool(feed, lookahead=lookahead)
     pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
     taking = True                                          # False past the deadline's margin
     log(f"harness up: {args.slots} slots, image {args.image}, row {row[:2]}, "
@@ -489,6 +509,9 @@ def main():
                         free = [slots[-1]]
                     free[0].give(unit_spec(members, args.events_per_unit, file_path, ext, args.stamp))
                     continue
+                pool.want()                     # a slot waits and no block is whole
+        elif taking and (any(s.free() for s in slots) or len(slots) < args.slots):
+            pool.want()                         # a slot waits on an empty pool
         in_flight = [s for s in slots if s.unit is not None]
         # A close: on the cadence, or the last one when nothing else is
         # coming; one at a time.
