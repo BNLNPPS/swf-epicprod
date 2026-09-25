@@ -327,6 +327,8 @@ def job_metrics(report):
                "payloadVersion": (report.get("payload_version") or "none").split()[-1]}
     if isinstance(events, int):
         metrics["payloadEvents"] = events
+    if isinstance(report.get("threads"), int):
+        metrics["payloadThreads"] = report["threads"]
     if report.get("exit_code") is not None:
         metrics["payloadExit"] = report["exit_code"]
     fatal = report.get("fatal") or {}
@@ -408,6 +410,10 @@ def build_report(args):
     }
     if args.note:
         report["note"] = args.note
+    # npsim's and eicrecon's thread count, as run.sh decided it
+    threads = _int_or_none(os.environ.get("EPICPROD_THREADS_USED"))
+    if threads is not None:
+        report["threads"] = threads
     pool = pool_sample(args.pool_sample)
     if pool is not None:
         report["pool"] = pool

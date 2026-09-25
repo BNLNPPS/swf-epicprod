@@ -572,6 +572,29 @@ In order, each a committed step on the clone:
     crash reproduction's input moved with it. Output registration is
     untouched: EIC-XRD's door is `dtn-rucio.jlab.org`.
 
+## Multithreading
+
+From 26.10, npsim (`--numberOfThreads N`) and eicrecon (`-Pnthreads=N`)
+run multithreaded. The thread count is the task's core count: the
+production configuration's `corecount` becomes the task's `coreCount`,
+and the submission writes it into the job environment as
+`EPICPROD_NTHREADS` (swf-monitor `scripts/submit-evgen-task.py`).
+`run.sh` caps it at the CPUs the job may run on (`nproc`, which follows
+the job's CPU affinity) and passes both options only when the result is
+above one and the image's npsim offers `--numberOfThreads`, the marker
+of a release whose simulation and reconstruction are both thread-safe.
+Otherwise both run single-threaded, with the reason in the payload log.
+The report carries the count used (`threads`, and `payloadThreads` in
+the job metrics). An Event Service unit stays single-threaded: the
+job's slots are its parallelism.
+
+Memory stays per core (`MBPerCoreFixed`), so an N-core job asks for N
+times the configured memory. Multithreaded memory grows less than
+linearly with threads; the canaries measure the curve, and a memory
+term that is not per core follows from it. Canaries at a chosen thread
+count: `--canary-threads N`, with `--canary-container` naming an image
+that carries the options (the nightly does; 26.07 does not).
+
 ## Container contract
 
 The image supplies the software stack; the payload takes nothing else

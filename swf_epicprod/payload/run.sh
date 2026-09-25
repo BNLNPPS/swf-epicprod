@@ -728,6 +728,30 @@ else
   echo "No background mixing is performed for singles"
 fi
 
+# Threads for npsim and eicrecon (docs/EPICPROD_PAYLOAD.md, Multithreading):
+# the task's core count, which the submission writes as EPICPROD_NTHREADS,
+# capped at the CPUs this process may run on. The options are passed only
+# above one thread and only when the image's npsim offers --numberOfThreads,
+# the marker of the releases (26.10 on) whose simulation and reconstruction
+# are both thread-safe; otherwise both run single-threaded, as before.
+NTHREADS=1
+if [ "${EPICPROD_NTHREADS:-1}" -gt 1 ] 2>/dev/null; then
+  cpus=$(nproc 2>/dev/null || echo 1)
+  NTHREADS=$(( EPICPROD_NTHREADS < cpus ? EPICPROD_NTHREADS : cpus ))
+  if [ "${NTHREADS}" -gt 1 ] && ! npsim --help 2>/dev/null | grep -q -- '--numberOfThreads'; then
+    echo "threads: ${EPICPROD_NTHREADS} requested, but this image's npsim has no --numberOfThreads; running single-threaded"
+    NTHREADS=1
+  fi
+fi
+export EPICPROD_THREADS_USED=${NTHREADS}
+echo "threads: ${NTHREADS} (requested ${EPICPROD_NTHREADS:-1}, cpus $(nproc 2>/dev/null || echo ?))"
+thread_flags_npsim=()
+thread_flags_eicrecon=()
+if [ "${NTHREADS}" -gt 1 ]; then
+  thread_flags_npsim=(--numberOfThreads "${NTHREADS}")
+  thread_flags_eicrecon=(-Pnthreads="${NTHREADS}")
+fi
+
 # Run simulation
 stage simulation start "${EVENTS_PER_TASK:-?} events"
 {
@@ -766,7 +790,7 @@ stage simulation start "${EVENTS_PER_TASK:-?} events"
     --json-summary ${LOG_TEMP}/${TASKNAME}.npsim.prmon.json \
     --log-filename ${LOG_TEMP}/${TASKNAME}.npsim.prmon.log \
     -- \
-  npsim "${common_flags[@]}" "${uncommon_flags[@]}"
+  npsim "${common_flags[@]}" "${uncommon_flags[@]}" ${thread_flags_npsim[@]+"${thread_flags_npsim[@]}"}
   ls -al ${FULL_TEMP}/${TASKNAME}.edm4hep.root
 } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.npsim.log | tail -n1000
 stage simulation ok
@@ -824,6 +848,7 @@ else
     -Ppodio:output_file="${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" \
     -Pjana:warmup_timeout=0 -Pjana:timeout=0 \
     -Pplugins=janadot \
+    ${thread_flags_eicrecon[@]+"${thread_flags_eicrecon[@]}"} \
     "${FULL_TEMP}/${TASKNAME}.edm4hep.root"
   if [ -f jana.dot ] ; then mv jana.dot ${LOG_TEMP}/${TASKNAME}.eicrecon.dot ; fi
   ls -al ${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root

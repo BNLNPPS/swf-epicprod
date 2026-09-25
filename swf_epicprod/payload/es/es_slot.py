@@ -120,6 +120,7 @@ def run_unit(spec_path, args):
         'EPICPROD_RECO_SOCKET': sock_path(args),
         'REGISTRATION_STAGGER_MAX_S': '0',
         'EPICPROD_CALL_HOME': '0',          # the harness calls home for the job
+        'EPICPROD_NTHREADS': '1',           # the slots are the job's parallelism
         # Scratch in the job's own work tree (run.sh makes TMPDIR/<pid> and
         # removes it at exit), never the host's /tmp: the container binds
         # the host /tmp, and on npps0 that is the small root volume, which
