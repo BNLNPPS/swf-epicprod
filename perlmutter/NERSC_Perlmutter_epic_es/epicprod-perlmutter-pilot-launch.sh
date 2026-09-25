@@ -32,7 +32,8 @@ PILOT_PY=$HARVESTER_DIR/pilot/pilot3-$NERSC_PILOT_VERSION/pilot3/pilot.py
 
 # OURS, the Event Service step (docs/NODE_EVENT_DISPATCHER.md): the
 # pilot from the devcloud bucket, the site's release with the two
-# event-service fixes (pilot3 PRs 220 and 221), pinned by checksum; the
+# event-service fixes (pilot3 PRs 220 and 221) and the debug-mode file
+# (PR 224), pinned by checksum; the
 # queue's pilot-side configuration with the es_events activities; and
 # yampl, the library the generic executor hands ranges through, built
 # for the container's Python. Each is fetched into this directory,
