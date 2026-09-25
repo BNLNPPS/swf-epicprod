@@ -396,9 +396,10 @@ def main():
                           'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False,
                           'started_at': started}
     input_path = args.input
-    # Two units per slot ahead: enough to keep every slot fed, few enough
-    # that the last ranges are asked for only as the work nears its end.
-    lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD') or 2 * args.slots * max(1, args.events_per_unit))
+    # One unit per slot ahead: every slot has its next unit ready, and after
+    # "No more events" at most the running unit and one more remain, plus
+    # the close, inside the pilot's 30 minutes with ~10-minute units.
+    lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD') or args.slots * max(1, args.events_per_unit))
     pool = Pool(feed, lookahead=lookahead)
     pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
     taking = True                                          # False past the deadline's margin
