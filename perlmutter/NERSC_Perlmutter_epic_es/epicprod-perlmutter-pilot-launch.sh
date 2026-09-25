@@ -253,6 +253,15 @@ export APPTAINERENV_EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
 # source.
 export PILOT_ES_EXECUTOR_TYPE=generic
 export STORAGEDATA_SERVER_URL=$QUEUE_URL/ddmendpoints.json
+# OURS: the job's core count, from the node. The queue record declares 1,
+# and the pilot asks the server for twice the job's core count of event
+# ranges per request (esprocess.py, baseexecutor.py queue_factor 2): at 1,
+# a fine-grained job got 2 single-event ranges per round trip and kept 2
+# to 3 of its 64 slots busy (job 3618765). The pilot takes
+# ATHENA_PROC_NUMBER over the job definition's core count
+# (info/jobdata.py clean__corecount), which also reports the whole node
+# to the server.
+export ATHENA_PROC_NUMBER=${SLURM_CPUS_ON_NODE:-$(nproc)}
 EOF
 [[ -n "$ES_PYTHONPATH" ]] && echo "export PYTHONPATH=$ES_PYTHONPATH\${PYTHONPATH:+:\$PYTHONPATH}" >> myEnv.sh
 
