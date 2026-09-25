@@ -48,8 +48,40 @@ def log(msg):
 
 
 def default_flag(workdir):
-    """The pilot's debug-mode file in the given job work directory."""
-    return os.environ.get('EPICPROD_DEBUG_FLAG') or os.path.join(workdir, DEBUG_MODE_FILE)
+    """The pilot's debug-mode file for a payload running in workdir.
+
+    The pilot writes it into the job directory (PanDA_Pilot-<id>/), and the
+    payload runs in that directory or in the workDir/ the sandbox unpacks
+    into beneath it, so both are checked: the file is the first of the two
+    that exists, else the job directory's path.
+    """
+    if os.environ.get('EPICPROD_DEBUG_FLAG'):
+        return os.environ['EPICPROD_DEBUG_FLAG']
+    here = os.path.abspath(workdir)
+    for d in (here, os.path.dirname(here)):
+        if os.path.exists(os.path.join(d, DEBUG_MODE_FILE)):
+            return os.path.join(d, DEBUG_MODE_FILE)
+    parent = os.path.dirname(here)
+    job_dir = parent if os.path.basename(here) == 'workDir' else here
+    return os.path.join(job_dir, DEBUG_MODE_FILE)
+
+
+def load_job_env(sandbox):
+    """REPORT_OUT_* and PANDAID from the sandbox's environment-*.sh (the file
+    run.sh sources), for a caller that does not run under it, such as the
+    Event Service harness. Values already in the environment win."""
+    import glob
+    for path in sorted(glob.glob(os.path.join(sandbox, 'environment-*.sh'))):
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip().removeprefix('export ').strip()
+                    key, sep, value = line.partition('=')
+                    key = key.strip()
+                    if sep and (key.startswith('REPORT_OUT_') or key == 'PANDAID') and not os.environ.get(key):
+                        os.environ[key] = value.strip().strip('"').strip("'")
+        except OSError as e:
+            log(f"cannot read {path}: {e}")
 
 
 def status_key():

@@ -237,7 +237,7 @@ export SCRIPT_DIR=$(realpath $(dirname $0))
 # ERR trap, which the background subshell inherits under set -E and which
 # would record a stage failure the payload never had.
 if [ "${EPICPROD_CALL_HOME:-1}" != 0 ]; then
-  python "${SCRIPT_DIR}/call_home.py" --flag "${EPICPROD_DEBUG_FLAG:-${PWD}/pilot_debug_mode.json}" \
+  python "${SCRIPT_DIR}/call_home.py" \
     --file "$(realpath -m "${PAYLOAD_REPORT:-payload-report.json}")" --watch-pid $$ || true &
 fi
 export RUCIO_CONFIG=$SCRIPT_DIR/rucio.cfg

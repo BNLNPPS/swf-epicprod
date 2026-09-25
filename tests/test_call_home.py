@@ -101,5 +101,30 @@ class TestCallHome(unittest.TestCase):
             self.assertFalse(home.thread.is_alive())
 
 
+class TestJobDirectory(unittest.TestCase):
+    def setUp(self):
+        self.job = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.job, ignore_errors=True)
+        self.work = os.path.join(self.job, 'workDir')
+        os.makedirs(self.work)
+
+    def test_flag_in_the_job_directory_above_workdir(self):
+        """The pilot writes the file in PanDA_Pilot-<id>/; the payload runs in workDir/."""
+        with mock.patch.dict(os.environ, {'EPICPROD_DEBUG_FLAG': ''}):
+            self.assertEqual(ch.default_flag(self.work), os.path.join(self.job, ch.DEBUG_MODE_FILE))
+            self.assertEqual(ch.default_flag(self.job), os.path.join(self.job, ch.DEBUG_MODE_FILE))
+
+    def test_job_env_from_the_sandbox_file(self):
+        with open(os.path.join(self.work, 'environment-x.sh'), 'w') as f:
+            f.write('export REPORT_OUT_BUCKET=bkt\nexport REPORT_OUT_ACCESS_KEY_ID=k\n'
+                    'export REPORT_OUT_SECRET_ACCESS_KEY="s"\nexport OTHER=1\n')
+        with mock.patch.dict(os.environ, {'REPORT_OUT_BUCKET': '', 'REPORT_OUT_ACCESS_KEY_ID': '',
+                                          'REPORT_OUT_SECRET_ACCESS_KEY': ''}):
+            ch.load_job_env(self.work)
+            self.assertTrue(ch.configured())
+            self.assertEqual(os.environ['REPORT_OUT_SECRET_ACCESS_KEY'], 's')
+            self.assertNotIn('OTHER', {k for k in os.environ if k == 'OTHER' and os.environ[k] == '1'})
+
+
 if __name__ == '__main__':
     unittest.main()

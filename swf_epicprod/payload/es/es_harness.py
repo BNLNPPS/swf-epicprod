@@ -46,7 +46,7 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from call_home import CallHome, default_flag, status_key  # noqa: E402
+from call_home import CallHome, default_flag, load_job_env, status_key  # noqa: E402
 
 
 def meminfo_kb(field):
@@ -409,6 +409,7 @@ def main():
             'ranges_pooled': len(pool), 'reports_to_pilot': reported[0],
         }
 
+    load_job_env(args.sandbox)            # the report key rides in the sandbox's environment file
     CallHome(default_flag(args.sandbox), status_key(), status).start()
 
     def report(slot, uid, record, ok, range_ids, extra=''):
