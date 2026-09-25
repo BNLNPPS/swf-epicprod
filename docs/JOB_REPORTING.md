@@ -43,6 +43,69 @@ sweep reads out, the sweep reports out — and nothing reaches in.
 - The production system watches its own usage and can stop the traffic
   on jobs already running, by disabling the write credential.
 
+## Call home and the switch (plan, 2026-09-24)
+
+Status: plan, for approval. Once built it replaces the per-stage report
+stream described in the rest of this document.
+
+The per-stage stream wrote 1.47M objects in the 24 hours to 08:20 UTC
+on 2026-09-18. The growth guard then set the write key inactive, and the
+channel has carried nothing since. Reports exist to be read, and a
+million objects are not read. Since 2026-09-24 the submission ships a
+second key into Event Service tasks only (swf-monitor
+`scripts/submit-evgen-task.py`); the first key stays inactive, since
+every job submitted between 2026-09-06 and then carries it.
+
+The plan keeps object storage as the transport: reaching it is measured
+from every site class ePIC runs on (Reach, measured), and no host of
+ours is.
+
+- **One object per job.** A job keeps one object,
+  `status/<PanDA job id>.json`, and overwrites it at each call home.
+  The bucket holds one object per reporting job rather than an
+  accumulating series. The weekly lifecycle expiry covers the prefix.
+- **Call home.** At each stage end and every interval while the job
+  runs, it writes its current state: job, task, queue, node, stage,
+  elapsed time and memory, and for an Event Service job the cores
+  granted, slots started, units done and in flight, and the deadline
+  it holds. This runs on the job's own clock, independent of the
+  pilot heartbeat (1,800 s). An Event Service unit writes under
+  `status/<PanDA job id>/<unit id>.json`.
+- **The switch.** A control object, `control/reporting.json`, readable
+  without credential, carries the enabled queues, the enabled tasks,
+  the interval and a per-job write cap. The job reads it before each
+  call home. When its queue and task are not enabled it writes nothing
+  and reads again at the next interval, so a change reaches every
+  running job within one interval, in both directions. An unreadable
+  control object means off. The default is off.
+- **Who sets it.** The setting lives in SysConfig (`job_reporting`),
+  edited on the System page. The production operations agent writes
+  the control object when the setting changes, with its own key scoped
+  to that one object.
+- **The key.** The write key returns to every job's sandbox, since the
+  control object decides who writes, and its scope becomes
+  `status/*`. The growth guard stays the hard stop: disabling the key
+  reaches running jobs whatever the control object says.
+- **Reading.** A monitor page per queue or task lists the enabled jobs'
+  current status from a cache the operations agent refreshes on a
+  schedule, never in a page render. A failed job's last status is its
+  last word, and the sweep files it as it files the reports today.
+- **Reach of the switch.** Only jobs whose payload carries the control
+  reader obey it. Jobs running an earlier payload keep their behaviour
+  until they end.
+
+Cost at 122,000 jobs a day: a job reads the control object at most at
+its stage ends (an Event Service job every interval), about 1.5M reads
+a day, roughly 60 cents. Writes come only from enabled jobs: a 4-hour
+Event Service job at the default 300 s interval writes 48 times.
+
+Components: the payload (control reader and status writer in `run.sh`
+and the Event Service harness), swf-monitor (the SysConfig setting, the
+operations-agent handler that writes the control object, the status
+page and its cache), and the devcloud account (public read on
+`control/`, the agent's control key, the `status/*` scope of the write
+key, expiry on `status/`).
+
 ## Why
 
 PanDA keeps job metadata for finished jobs only: in the thirty days to
