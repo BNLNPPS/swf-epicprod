@@ -22,6 +22,31 @@ def ranges(events, lfn='f'):
     return [{'eventRangeID': f'r-{e}', 'startEvent': e, 'lastEvent': e, 'LFN': lfn} for e in events]
 
 
+class TestLoopMode(unittest.TestCase):
+    """TEST AND DEMO ONLY: replay filler after the file's ranges are all in."""
+
+    def test_pool_stops_asking_at_expected_so_no_more_events_is_never_drawn(self):
+        feed = h.FileFeed.__new__(h.FileFeed)
+        feed.ranges, feed.exhausted, feed.reports = ranges(range(1, 11)), False, []
+        pool = h.Pool(feed, expected=10)
+        time.sleep(0.3)
+        self.assertEqual(len(pool), 10)
+        self.assertTrue(pool.complete)
+        self.assertFalse(feed.exhausted)           # the eleventh ask never happened
+
+    def test_replay_cycles_the_events_and_is_marked(self):
+        state = {'pass': 1, 'next': 1}
+        tmpl = ranges([1])[0]
+        u1 = h.replay_unit(tmpl, state, 4, 6)
+        u2 = h.replay_unit(tmpl, state, 4, 6)
+        u3 = h.replay_unit(tmpl, state, 4, 6)
+        self.assertEqual([r['startEvent'] for r in u1], [1, 2, 3, 4])
+        self.assertEqual([r['startEvent'] for r in u2], [5, 6])
+        self.assertEqual([r['startEvent'] for r in u3], [1, 2, 3, 4])
+        self.assertTrue(all(r['replay'] for r in u1 + u2 + u3))
+        self.assertEqual(u3[0]['eventRangeID'], 'replay2-1')
+
+
 class TestStreamingStart(unittest.TestCase):
     def test_free_slot_takes_a_partial_block_of_min_events(self):
         """A free slot starts on the contiguous run it has (at least min_events)."""

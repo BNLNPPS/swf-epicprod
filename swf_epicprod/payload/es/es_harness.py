@@ -195,7 +195,7 @@ class Slot:
 
     def give(self, spec):
         uid = spec['unit_id']
-        self.range_ids = [r['eventRangeID'] for r in spec['ranges']]
+        self.range_ids = [r['eventRangeID'] for r in spec['ranges'] if not r.get('replay')]
         tmp = os.path.join(self.inbox, f'.{uid}.tmp')
         with open(tmp, 'w') as f:
             json.dump(spec, f)
@@ -243,7 +243,7 @@ class Pool:
     is cut as soon as its block is whole rather than after every range
     has arrived."""
 
-    def __init__(self, feed, lookahead=0):
+    def __init__(self, feed, lookahead=0, expected=0):
         """lookahead: the most ranges held before the harness asks for them
         (0 = no limit). The pilot kills the payload 30 minutes after it
         answers "No more events" (pilot esprocess.py waiting_time), so a pool
@@ -253,6 +253,9 @@ class Pool:
         only as slots free up, and "No more events" comes near the end."""
         self.feed = feed
         self.lookahead = lookahead
+        self.expected = expected            # loop mode: stop asking after this many ranges
+        self.received = 0
+        self.complete = False               # every expected range arrived, "No more events" never asked
         self.ranges = []
         self.lock = threading.Lock()
         self.wanted = threading.Event()     # a free slot found no whole block
@@ -265,6 +268,11 @@ class Pool:
 
     def _gather(self):
         while not self.feed.exhausted:
+            if self.expected and self.received >= self.expected:
+                # The last range of the file is here; asking again would draw
+                # "No more events" and start the pilot's 30-minute kill clock.
+                self.complete = True
+                break
             if self.lookahead and len(self) >= self.lookahead and not self.wanted.is_set():
                 self.wanted.wait(0.5)
                 continue
@@ -273,12 +281,13 @@ class Pool:
             if rng is None:
                 break
             with self.lock:
+                self.received += 1
                 self.ranges.append(rng)
                 self.ranges.sort(key=lambda r: (r.get('LFN', ''), int(r['startEvent'])))
 
     @property
     def exhausted(self):
-        return self.feed.exhausted and not self.thread.is_alive()
+        return (self.feed.exhausted or self.complete) and not self.thread.is_alive()
 
     def __len__(self):
         with self.lock:
@@ -345,6 +354,19 @@ def take_unit(pool, per_unit):
     return members
 
 
+def replay_unit(template, state, per_unit, expected):
+    """TEST AND DEMO ONLY: the next block of events again, as ranges marked
+    replay (never reported to the pilot). Cycles over the file's events."""
+    start = state['next']
+    last = min(start + per_unit - 1, expected)
+    members = [dict(template, eventRangeID=f"replay{state['pass']}-{e}", startEvent=e, lastEvent=e, replay=True)
+               for e in range(start, last + 1)]
+    state['next'] = last + 1
+    if state['next'] > expected:
+        state['next'], state['pass'] = 1, state['pass'] + 1
+    return members
+
+
 def unit_spec(members, per_unit, file_path, ext, stamp):
     """The unit the slot runs: its span as 'range' (the first range's id
     as the unit id), its member ranges, and the block that names it."""
@@ -388,6 +410,12 @@ def main():
                     help='seconds between closes: the units since the last close merged into one file and registered; 0 = each unit registers its own')
     ap.add_argument('--min-unit-events', type=int, default=int(os.environ.get('ES_MIN_UNIT_EVENTS', '16')),
                     help='a free slot starts on this many contiguous events rather than wait for its whole block')
+    ap.add_argument('--loop', action='store_true', default=os.environ.get('ES_LOOP') == '1',
+                    help='TEST AND DEMO ONLY: once every range of the file has arrived, replay '
+                         'the same events until the deadline margin, so the slots work to the wall; '
+                         'replays are saved in closes and never reported to the pilot')
+    ap.add_argument('--expected-events', type=int, default=int(os.environ.get('ES_EXPECTED_EVENTS', '0')),
+                    help='with --loop: the events the file holds, after which no more ranges are asked for')
     args = ap.parse_args()
     args.sandbox = os.path.abspath(args.sandbox)
     args.work = os.path.abspath(args.work)
@@ -413,7 +441,12 @@ def main():
     # remain, well inside the pilot's 30 minutes after "No more events".
     lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD')
                     or max(1, args.slots // 4) * max(1, args.events_per_unit))
-    pool = Pool(feed, lookahead=lookahead)
+    if args.loop and not (args.deadline_s and args.expected_events):
+        log("loop mode needs --deadline-s and --expected-events; running without it")
+        args.loop = False
+    pool = Pool(feed, lookahead=lookahead, expected=args.expected_events if args.loop else 0)
+    template = {}                                          # a real range, the replays' model
+    replay = {'pass': 1, 'next': 1}
     pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
     taking = True                                          # False past the deadline's margin
     log(f"harness up: {args.slots} slots, image {args.image}, row {row[:2]}, "
@@ -523,6 +556,10 @@ def main():
             fed = False
             for slot in [s for s in slots if s.free()]:
                 members = pool.take_unit(args.events_per_unit, min_events=args.min_unit_events)
+                if members and not template:
+                    template.update(members[0])
+                if not members and args.loop and pool.complete and not len(pool) and template:
+                    members = replay_unit(template, replay, args.events_per_unit or 1, args.expected_events)
                 if not members:
                     pool.want()                 # a slot waits on the pool
                     break
@@ -535,7 +572,7 @@ def main():
         in_flight = [s for s in slots if s.unit is not None]
         # A close: on the cadence, or the last one when nothing else is
         # coming; one at a time.
-        drained = not taking or (pool.exhausted and not len(pool))
+        drained = not taking or (pool.exhausted and not len(pool) and not args.loop)
         if pending and not closes and (time.time() - last_close >= args.close_s
                                        or (drained and not in_flight)):
             closes.append(Close(len(summary['closes']) + len(closes) + 1, args, pending))
