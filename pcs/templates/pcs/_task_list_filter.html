@@ -127,6 +127,11 @@ Context expected:
     <button type="button" id="pcs-tlf-clear" class="btn btn-sm btn-secondary"
             title="Clear all filters">Clear</button>
   </div>
+  <div class="pcs-tlf-bar-row" title="The software release a task runs: a campaign (26.07) spans several (26.07.0, 26.07.1, ...)">
+    <span class="pcs-tlf-label">Release:</span>
+    <a href="#" data-filter="edition" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-edition-opts"></span>
+  </div>
   <div class="pcs-tlf-bar-row">
     <span class="pcs-tlf-label">Status:</span>
     <a href="#" data-filter="status" data-value="" class="filter-link filter-active">All</a>
@@ -161,11 +166,6 @@ Context expected:
     <span class="pcs-tlf-label">N events (M):</span>
     <a href="#" data-filter="nevents" data-value="" class="filter-link filter-active">All</a>
     <span id="pcs-tlf-nevents-opts"></span>
-  </div>
-  <div class="pcs-tlf-bar-row">
-    <span class="pcs-tlf-label">Edition:</span>
-    <a href="#" data-filter="edition" data-value="" class="filter-link filter-active">All</a>
-    <span id="pcs-tlf-edition-opts"></span>
   </div>
   <div class="pcs-tlf-bar-row">
     <span class="pcs-tlf-label">Geometry:</span>
