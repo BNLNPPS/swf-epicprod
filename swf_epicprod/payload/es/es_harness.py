@@ -81,7 +81,7 @@ class ChannelFeed:
             size, buf = self.sock.try_recv_raw()
             if size != -1:
                 break
-            time.sleep(0.05)
+            time.sleep(0.001)               # the pilot answers in ms; a slot is waiting
         message = buf.decode('utf8') if isinstance(buf, bytes) else str(buf)
         if "No more events" in message:
             self.exhausted = True
@@ -288,7 +288,7 @@ class Pool:
         with self.lock:
             self.ranges = []
 
-    def take_unit(self, per_unit):
+    def take_unit(self, per_unit, min_events=0):
         """The ranges of the next unit: one range, or up to per_unit
         consecutive ranges within one block of per_unit events (block b
         is events b*K+1 to (b+1)*K), so that a unit is a chunk of the row
@@ -312,8 +312,11 @@ class Pool:
             # Whole is every event of the block: a block whose first events
             # are still coming is not whole for reaching its last (job
             # 3556539 cut events 2-5 and then 1 alone).
-            if len(members) < per_unit and not self.exhausted:
-                return []                       # its block is still arriving
+            # Streaming: a slot that is free takes the run it can have now
+            # (at least min_events) rather than wait for the whole block; the
+            # rest of the block follows as its own unit (named <chunk>s<start>).
+            if len(members) < per_unit and not self.exhausted and (min_events <= 0 or len(members) < min_events):
+                return []                       # too little of the block yet
             del self.ranges[:len(members)]
             return members
 
@@ -378,6 +381,8 @@ def main():
                     help='consecutive events per unit for a fine-grained task (one event per range); 0 = one range per unit')
     ap.add_argument('--close-s', type=float, default=float(os.environ.get('ES_CLOSE_S', '0')),
                     help='seconds between closes: the units since the last close merged into one file and registered; 0 = each unit registers its own')
+    ap.add_argument('--min-unit-events', type=int, default=int(os.environ.get('ES_MIN_UNIT_EVENTS', '16')),
+                    help='a free slot starts on this many contiguous events rather than wait for its whole block')
     args = ap.parse_args()
     args.sandbox = os.path.abspath(args.sandbox)
     args.work = os.path.abspath(args.work)
@@ -498,7 +503,7 @@ def main():
             # input names the file before any container starts.
             free = [s for s in slots if s.free()]
             if free or len(slots) < args.slots:
-                members = pool.take_unit(args.events_per_unit)
+                members = pool.take_unit(args.events_per_unit, min_events=args.min_unit_events)
                 if members:
                     rng = members[0]
                     if input_path is None:

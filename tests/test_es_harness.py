@@ -22,6 +22,20 @@ def ranges(events, lfn='f'):
     return [{'eventRangeID': f'r-{e}', 'startEvent': e, 'lastEvent': e, 'LFN': lfn} for e in events]
 
 
+class TestStreamingStart(unittest.TestCase):
+    def test_free_slot_takes_a_partial_block_of_min_events(self):
+        """A free slot starts on the contiguous run it has (at least min_events)."""
+        feed = h.FileFeed.__new__(h.FileFeed)
+        feed.ranges, feed.exhausted, feed.reports = ranges(range(1, 21)), False, []
+        pool = h.Pool(feed, lookahead=20)
+        time.sleep(0.3)
+        feed.exhausted = False                   # more of the block is still "coming"
+        unit = pool.take_unit(163, min_events=16)
+        self.assertEqual([r['startEvent'] for r in unit][:2], [1, 2])
+        self.assertGreaterEqual(len(unit), 16)
+        self.assertEqual(pool.take_unit(163, min_events=0), [])   # without a minimum it waits for the block
+
+
 class TestLookahead(unittest.TestCase):
     def test_pool_stops_at_the_lookahead_until_wanted(self):
         """The pool holds at most the lookahead, so "No more events" is not
