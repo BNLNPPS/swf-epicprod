@@ -396,10 +396,13 @@ def main():
                           'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False,
                           'started_at': started}
     input_path = args.input
-    # One unit per slot ahead: every slot has its next unit ready, and after
-    # "No more events" at most the running unit and one more remain, plus
-    # the close, inside the pilot's 30 minutes with ~10-minute units.
-    lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD') or args.slots * max(1, args.events_per_unit))
+    # Just in time: a unit ready for a quarter of the slots, the rest pulled
+    # as slots free (a pilot fetch is 2 x cores ranges, one round trip). The
+    # job streams: ranges pulled, processed and reported continuously, so
+    # when the server runs dry only the units in flight and the last close
+    # remain, well inside the pilot's 30 minutes after "No more events".
+    lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD')
+                    or max(1, args.slots // 4) * max(1, args.events_per_unit))
     pool = Pool(feed, lookahead=lookahead)
     pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
     taking = True                                          # False past the deadline's margin
