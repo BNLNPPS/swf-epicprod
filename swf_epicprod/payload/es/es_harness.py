@@ -81,7 +81,7 @@ class ChannelFeed:
             size, buf = self.sock.try_recv_raw()
             if size != -1:
                 break
-            time.sleep(0.001)               # the pilot answers in ms; a slot is waiting
+            time.sleep(0.01)                # the pilot's own message cadence (esmessage.py)
         message = buf.decode('utf8') if isinstance(buf, bytes) else str(buf)
         if "No more events" in message:
             self.exhausted = True
