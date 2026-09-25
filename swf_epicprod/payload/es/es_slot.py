@@ -42,6 +42,14 @@ def sock_path(args):
     return f'/tmp/esreco-{os.getpid()}.sock'
 
 
+def unit_tmpdir(args):
+    """Scratch for the slot's units: EPICPROD_TMPDIR when set, else tmp/ in
+    the slot's work tree, which the container binds."""
+    d = os.environ.get('EPICPROD_TMPDIR') or os.path.join(args.work, 'tmp')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def run_dir(args):
     """The slot's working directory for run.sh: the sandbox's top-level
     files linked in, the slot's own caches and outputs beside them."""
@@ -112,6 +120,11 @@ def run_unit(spec_path, args):
         'EPICPROD_RECO_SOCKET': sock_path(args),
         'REGISTRATION_STAGGER_MAX_S': '0',
         'EPICPROD_CALL_HOME': '0',          # the harness calls home for the job
+        # Scratch in the job's own work tree (run.sh makes TMPDIR/<pid> and
+        # removes it at exit), never the host's /tmp: the container binds
+        # the host /tmp, and on npps0 that is the small root volume, which
+        # six units filled on 2026-09-24 (job 3618756).
+        'TMPDIR': unit_tmpdir(args),
 
         'PAYLOAD_STAGES_LOG': os.path.join(out, 'stages.log'),
         'PAYLOAD_REPORT': os.path.join(out, 'payload-report.json'),

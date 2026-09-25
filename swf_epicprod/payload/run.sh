@@ -162,7 +162,15 @@ payload_report() {
     || echo "payload report not written (payload_report.py exit $?)"
   report_send || true
 }
-trap 'payload_report $?' EXIT
+# The report reads the stage logs and measures in TMPDIR, so the scratch
+# is removed after it.
+TMPDIR_OURS=0
+tmpdir_cleanup() {
+  if [ "${TMPDIR_OURS}" = 1 ] && [ "${EPICPROD_KEEP_TMPDIR:-0}" != 1 ] && [ -n "${TMPDIR:-}" ] && [ -d "${TMPDIR}" ]; then
+    rm -rf "${TMPDIR}" || echo "scratch ${TMPDIR} not removed"
+  fi
+}
+trap 's=$?; payload_report $s; tmpdir_cleanup' EXIT
 IFS=$'\n\t'
 
 # Load bearer token or fall back to x509 proxy for xrootd authentication
@@ -296,6 +304,9 @@ else
     TMPDIR="/scratch/slurm/${SLURM_JOB_ID:-}"
   else
     TMPDIR=${TMPDIR:-/tmp}/${$}
+    # This scratch is ours, not a batch system's that it cleans itself, so
+    # the EXIT trap removes it (EPICPROD_KEEP_TMPDIR=1 keeps it).
+    TMPDIR_OURS=1
   fi
 fi
 echo "TMPDIR=${TMPDIR}"
