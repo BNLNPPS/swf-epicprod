@@ -71,20 +71,26 @@ ours is.
   it holds. This runs on the job's own clock, independent of the
   pilot heartbeat (1,800 s). An Event Service unit writes under
   `status/<PanDA job id>/<unit id>.json`.
+- **Who can report.** Only jobs of tasks marked for reporting at
+  submission carry the key and the control reader: canaries, trials,
+  reproductions, Event Service tasks, and any task an operator marks
+  for debugging. No other job reads or writes anything, so the
+  channel's reach is bounded at submission by what is being looked at.
 - **The switch.** A control object, `control/reporting.json`, readable
-  without credential, carries the enabled queues, the enabled tasks,
-  the interval and a per-job write cap. The job reads it before each
-  call home. When its queue and task are not enabled it writes nothing
-  and reads again at the next interval, so a change reaches every
-  running job within one interval, in both directions. An unreadable
-  control object means off. The default is off.
-- **Who sets it.** The setting lives in SysConfig (`job_reporting`),
-  edited on the System page. The production operations agent writes
+  without credential, carries the enabled tasks (by JEDI task id), an
+  expiry time and the interval (default 600 s). A marked job reads it
+  before each call home. When its task is not enabled, or the expiry
+  has passed, it writes nothing and reads again at the next interval,
+  so a change reaches every marked running job within one interval, in
+  both directions. The expiry turns reporting off on its own when
+  nobody renews it. An unreadable control object means off. The
+  default is off.
+- **Who sets it.** The setting lives in SysConfig (`job_reporting`: enabled
+  task ids, expiry, interval), edited on the System page. The production operations agent writes
   the control object when the setting changes, with its own key scoped
   to that one object.
-- **The key.** The write key returns to every job's sandbox, since the
-  control object decides who writes, and its scope becomes
-  `status/*`. The growth guard stays the hard stop: disabling the key
+- **The key.** The write key rides only in marked tasks' sandboxes, and
+  its scope becomes `status/*`. The growth guard stays the hard stop: disabling the key
   reaches running jobs whatever the control object says.
 - **Reading.** A monitor page per queue or task lists the enabled jobs'
   current status from a cache the operations agent refreshes on a
@@ -94,10 +100,9 @@ ours is.
   reader obey it. Jobs running an earlier payload keep their behaviour
   until they end.
 
-Cost at 122,000 jobs a day: a job reads the control object at most at
-its stage ends (an Event Service job every interval), about 1.5M reads
-a day, roughly 60 cents. Writes come only from enabled jobs: a 4-hour
-Event Service job at the default 300 s interval writes 48 times.
+Cost: reads and writes come only from marked jobs, tens at a time,
+and round to nothing. A 4-hour job at the 600 s interval writes 24
+times.
 
 Components: the payload (control reader and status writer in `run.sh`
 and the Event Service harness), swf-monitor (the SysConfig setting, the
