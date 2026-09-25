@@ -43,73 +43,44 @@ sweep reads out, the sweep reports out — and nothing reaches in.
 - The production system watches its own usage and can stop the traffic
   on jobs already running, by disabling the write credential.
 
-## Call home and the switch (plan, 2026-09-24)
+## Call home while in debug mode
 
-Status: plan, for approval. Once built it replaces the per-stage report
-stream described in the rest of this document.
+Built in payload 0.22.0 (`payload/call_home.py`), with pilot3 PR 224.
 
 The per-stage stream wrote 1.47M objects in the 24 hours to 08:20 UTC
 on 2026-09-18. The growth guard then set the write key inactive, and the
-channel has carried nothing since. Reports exist to be read, and a
+stream has carried nothing since. Reports exist to be read, and a
 million objects are not read. Since 2026-09-24 the submission ships a
 second key into Event Service tasks only (swf-monitor
 `scripts/submit-evgen-task.py`); the first key stays inactive, since
 every job submitted between 2026-09-06 and then carries it.
 
-The plan keeps object storage as the transport: reaching it is measured
-from every site class ePIC runs on (Reach, measured), and no host of
-ours is.
+The switch is PanDA's own per-job debug mode (`set_debug_mode`, a
+production-role call). While it is on, the server puts `debug` in every
+update response, and the pilot keeps the file `pilot_debug_mode.json` in
+the job work directory; when it is turned off, the pilot removes the
+file at the next response (pilot3 PR 224). Production jobs are not in
+debug mode, so nothing is written unless someone turns a job on.
 
-- **One object per job.** A job keeps one object,
-  `status/<PanDA job id>.json`, and overwrites it at each call home.
-  The bucket holds one object per reporting job rather than an
-  accumulating series. The weekly lifecycle expiry covers the prefix.
-- **Call home.** At each stage end and every interval while the job
-  runs, it writes its current state: job, task, queue, node, stage,
-  elapsed time and memory, and for an Event Service job the cores
-  granted, slots started, units done and in flight, and the deadline
-  it holds. This runs on the job's own clock, independent of the
-  pilot heartbeat (1,800 s). An Event Service unit writes under
-  `status/<PanDA job id>/<unit id>.json`.
-- **Who can report.** Only jobs of tasks marked for reporting at
-  submission carry the key and the control reader: canaries, trials,
-  reproductions, Event Service tasks, and any task an operator marks
-  for debugging. No other job reads or writes anything, so the
-  channel's reach is bounded at submission by what is being looked at.
-- **The switch.** A control object, `control/reporting.json`, readable
-  without credential, carries the enabled tasks (by JEDI task id), an
-  expiry time and the interval (default 600 s). A marked job reads it
-  before each call home. When its task is not enabled, or the expiry
-  has passed, it writes nothing and reads again at the next interval,
-  so a change reaches every marked running job within one interval, in
-  both directions. The expiry turns reporting off on its own when
-  nobody renews it. An unreadable control object means off. The
-  default is off.
-- **Who sets it.** The setting lives in SysConfig (`job_reporting`: enabled
-  task ids, expiry, interval), edited on the System page. The production operations agent writes
-  the control object when the setting changes, with its own key scoped
-  to that one object.
-- **The key.** The write key rides only in marked tasks' sandboxes, and
-  its scope becomes `status/*`. The growth guard stays the hard stop: disabling the key
-  reaches running jobs whatever the control object says.
-- **Reading.** A monitor page per queue or task lists the enabled jobs'
-  current status from a cache the operations agent refreshes on a
-  schedule, never in a page render. A failed job's last status is its
-  last word, and the sweep files it as it files the reports today.
-- **Reach of the switch.** Only jobs whose payload carries the control
-  reader obey it. Jobs running an earlier payload keep their behaviour
-  until they end.
-
-Cost: reads and writes come only from marked jobs, tens at a time,
-and round to nothing. A 4-hour job at the 600 s interval writes 24
-times.
-
-Components: the payload (control reader and status writer in `run.sh`
-and the Event Service harness), swf-monitor (the SysConfig setting, the
-operations-agent handler that writes the control object, the status
-page and its cache), and the devcloud account (public read on
-`control/`, the agent's control key, the `status/*` scope of the write
-key, expiry on `status/`).
+- **The job checks for the file every 60 s.** While it exists, the job
+  writes one object, `status/<PanDA job id>.json`, at once when the file
+  appears and every 600 s after (`EPICPROD_CALL_HOME_S`), overwriting
+  the last. With the file absent it writes nothing, so turning debug
+  mode on or off reaches a running job within about two minutes.
+- **What it carries.** An ordinary job sends its payload report as it
+  stands (stage, measures, outputs so far). An Event Service job sends
+  the harness state: node, cores in the job's affinity, load, free
+  memory, elapsed time, the deadline and margin, whether it still takes
+  ranges, slots requested and started, units in flight, done, failed and
+  awaiting a close, closes, events closed, ranges pooled, and reports
+  handed to the pilot. The units themselves do not call home.
+- **Bounds.** At most 150 writes per job, a constant in the code; a
+  failed write is a line on stderr and the next interval tries again.
+  The write key rides only in the sandboxes the submission gives it to,
+  and the growth guard stays the hard stop.
+- **Reach.** Only jobs running payload 0.22.0 or later under a pilot
+  carrying PR 224 respond. Elsewhere, PanDA's own debug commands (`tail`,
+  `ls`, `ps`, `du`, returned in the next heartbeat) remain.
 
 ## Why
 

@@ -45,6 +45,21 @@ import sys
 import threading
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from call_home import CallHome, default_flag, status_key  # noqa: E402
+
+
+def meminfo_kb(field):
+    """One field of /proc/meminfo in kB, or None."""
+    try:
+        with open('/proc/meminfo') as f:
+            for line in f:
+                if line.startswith(field + ':'):
+                    return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
 
 def log(msg):
     print(f"[es_harness {time.strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -373,6 +388,28 @@ def main():
         f"deadline {args.deadline_s or 'none'} s, margin {args.margin_s} s")
 
     reported = [0]                                          # reports sent since the harness last waited on the pilot
+
+    def status():
+        # The job's state for call home: read from this loop's variables,
+        # which a closure sees as they stand when it is called.
+        in_flight_now = [s for s in list(slots) if s.unit is not None]
+        closed = list(summary['closes'])
+        return {
+            'kind': 'es_harness', 'host': os.uname().nodename, 'stamp': args.stamp,
+            'cores': len(os.sched_getaffinity(0)), 'loadavg': os.getloadavg(),
+            'mem_available_kb': meminfo_kb('MemAvailable'),
+            'elapsed_s': round(time.time() - started), 'deadline_s': args.deadline_s,
+            'margin_s': args.margin_s, 'taking': taking,
+            'slots_requested': args.slots, 'slots_started': len(slots),
+            'units_in_flight': len(in_flight_now),
+            'unit_oldest_s': round(max((time.time() - (s.taken_at or time.time()) for s in in_flight_now), default=0)),
+            'units_done': len(summary['done']), 'units_failed': len(summary['failed']),
+            'units_awaiting_close': len(pending), 'closes': len(closed),
+            'events_closed': sum(c.get('events') or 0 for c in closed if c.get('ok')),
+            'ranges_pooled': len(pool), 'reports_to_pilot': reported[0],
+        }
+
+    CallHome(default_flag(args.sandbox), status_key(), status).start()
 
     def report(slot, uid, record, ok, range_ids, extra=''):
         wall = record.get('wall_s') or 0

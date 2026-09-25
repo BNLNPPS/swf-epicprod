@@ -111,6 +111,8 @@ def run_unit(spec_path, args):
         'EPICPROD_CHUNK_LABEL': label or '',
         'EPICPROD_RECO_SOCKET': sock_path(args),
         'REGISTRATION_STAGGER_MAX_S': '0',
+        'EPICPROD_CALL_HOME': '0',          # the harness calls home for the job
+
         'PAYLOAD_STAGES_LOG': os.path.join(out, 'stages.log'),
         'PAYLOAD_REPORT': os.path.join(out, 'payload-report.json'),
         'PAYLOAD_JOB_REPORT': os.path.join(out, 'jobReport.json'),

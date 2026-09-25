@@ -220,6 +220,18 @@ source /opt/detector/epic-${DETECTOR_VERSION_REQUESTED}/bin/thisepic.sh
 export DETECTOR_VERSION=${DETECTOR_VERSION_REQUESTED}
 export DETECTOR_CONFIG=${DETECTOR_CONFIG_REQUESTED:-${DETECTOR_CONFIG:-$DETECTOR}}
 export SCRIPT_DIR=$(realpath $(dirname $0))
+# Call home while the job is in PanDA debug mode (call_home.py,
+# docs/JOB_REPORTING.md): a background watcher sends the payload report as
+# status/<job id>.json every EPICPROD_CALL_HOME_S seconds while the
+# pilot's debug-mode file exists in the job directory, and exits with this
+# script. An Event Service unit (EPICPROD_CALL_HOME=0) leaves it to its
+# harness. The "|| true" keeps a failure of the watcher from reaching the
+# ERR trap, which the background subshell inherits under set -E and which
+# would record a stage failure the payload never had.
+if [ "${EPICPROD_CALL_HOME:-1}" != 0 ]; then
+  python "${SCRIPT_DIR}/call_home.py" --flag "${EPICPROD_DEBUG_FLAG:-${PWD}/pilot_debug_mode.json}" \
+    --file "$(realpath -m "${PAYLOAD_REPORT:-payload-report.json}")" --watch-pid $$ || true &
+fi
 export RUCIO_CONFIG=$SCRIPT_DIR/rucio.cfg
 export RUCIO_ACCOUNT=eicprod
 
