@@ -39,8 +39,8 @@ PILOT_PY=$HARVESTER_DIR/pilot/pilot3-$NERSC_PILOT_VERSION/pilot3/pilot.py
 # which is /srv inside the container. A fetch that fails leaves the
 # site's own pilot and configuration in place, so ordinary jobs run.
 QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/$PQ
-PILOT_TARBALL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-3.14.3.3-epic3.tar.gz
-PILOT_TARBALL_SHA256=b7b0e27141a9d6f6b7e4fb9a2c3dea91bc5669f90aa39c3b360c9ad6b6e02721
+PILOT_TARBALL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-3.14.3.3-epic4.tar.gz
+PILOT_TARBALL_SHA256=2b7151e9555d2dc9fc4f4f3cf628555bc7e4b6c4ba7546f94cf2edf35da17d63
 ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py311-el9.tar.gz
 ES_CHANNEL_SHA256=f6c11690f046ae8ceb90886d034e4fbba0f494203f839a16e8a85f687efcc938
 
@@ -197,7 +197,7 @@ if curl -sfL -m 60 "$PILOT_TARBALL_URL" -o pilot3.tar.gz \
     && echo "$PILOT_TARBALL_SHA256  pilot3.tar.gz" | sha256sum -c --quiet \
     && tar -xzf pilot3.tar.gz && [[ -f pilot3/pilot.py ]]; then
     PILOT_PY=/srv/pilot3/pilot.py
-    log "pilot $(cat pilot3/PILOTVERSION 2>/dev/null || echo unknown)-epic3 from $PILOT_TARBALL_URL"
+    log "pilot $(cat pilot3/PILOTVERSION 2>/dev/null || echo unknown)-epic4 from $PILOT_TARBALL_URL"
 else
     rm -rf pilot3 pilot3.tar.gz
     log "our pilot not usable (fetch, checksum or unpack failed): $PILOT_TARBALL_URL; the site's pilot runs"
