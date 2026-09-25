@@ -91,6 +91,98 @@ unchanged. The payload is the dispatcher chain:
   directory finalize — minutes. The taskbuffer-300 failure class
   disappears for these jobs except for genuine node failures.
 
+### The aim: fill the slot, save as you go
+
+The Event Service means the allocation does productive work from its
+first minute to its last, and its output leaves the node regularly,
+because the end may come suddenly with no time to tidy up (a wall, a
+preemption, a node failure). Three rules follow, and the slot
+occupancy plot on the job page is how they are judged: green edge to
+edge on every lane, blue as short regular bars through the run.
+
+- **One starting gun.** Every slot starts its slow initialization
+  (container, geometry, resident EICrecon) at once, and while they
+  start the harness gathers their first units and writes each into its
+  slot's inbox; a slot that finishes starting finds its work waiting.
+  From then on every free slot is fed from the pool, so the stream
+  keeps every slot busy. Starting a slot only when its unit was ready,
+  and gating a slot on a whole block of ranges, put the starts in
+  series behind the ranges: on Perlmutter (job 3618884) slot 63 began
+  nine minutes after slot 0.
+- **Work to the wall.** A job is given enough work to last its
+  allocation; the only planned drain is the deadline margin, sized to
+  the units in flight and one small last close. A job that runs out of
+  input early leaves the rest of its allocation idle (job 3618884:
+  every slot idle from 30 minutes on a 4-hour allocation).
+- **Save as you go.** A close merges the units since the last one,
+  copies the file off the node to its storage element (checked for size
+  and checksum), then registers it, then deletes the unit files: output
+  is shipped before it is claimed and claimed as it is made. Closes are
+  short and frequent, so each merge is small and output handling is
+  never bunched at the end; a sudden end loses at most the units since
+  the last close. At about 1,000 events a minute on a 64-slot node and
+  a merge rate of 25 to 60 events a second, a close every three minutes
+  keeps each merge to a minute or two.
+
+**What is not yet saved as it goes.** PanDA credits a fine-grained
+job's finished ranges at the job's final update: through Perlmutter job
+3618884 the server showed 72 ranges finished while 12,225 were merged,
+registered and reported to the pilot, and all 20,000 turned done at the
+end. The data are safe in JLab Rucio as each close lands, and the
+delivery record counts from the registered files' event counts; PanDA's
+own credit still depends on a tidy end, which a preemptible resource
+does not give.
+
+### Running the node: what the pilot and the queue require
+
+- **The pilot's 30-minute clock.** The pilot answers "No more events"
+  when the server has no ranges left for the job, and 30 minutes later
+  kills the payload if it is still running (`esprocess.py`,
+  `waiting_time`, not configurable). A harness that pulls every range
+  at the start hears it early and is killed before its closes report
+  (npps0 job 3618786: 6,000 ranges pooled, killed at 30 minutes, none
+  credited). The harness therefore pulls just in time, a unit ahead for
+  a quarter of its slots (`ES_POOL_LOOKAHEAD`), so "No more events"
+  comes only when the work is nearly done (npps0 job 3618821: all 6,000
+  credited).
+- **Ranges one per request.** The pilot hands the payload one range per
+  request from a cache it fills from the server with twice the job's
+  core count per fetch, and handles one channel message per 10 ms pass.
+  A slot starts on the first 16 contiguous events it can have
+  (`ES_MIN_UNIT_EVENTS`) rather than wait for its whole block, so the
+  one-at-a-time supply delays no slot by more than seconds.
+- **The core count.** The job's core count sets the pilot's fetch size.
+  A whole-node queue declares the node's cores (256 on
+  `NERSC_Perlmutter_epic_es` since 2026-09-25); the Perlmutter launcher
+  also exports `ATHENA_PROC_NUMBER` from the node, which the pilot takes
+  over the job definition's count. At core count 1 the pilot fetched two
+  ranges per server call.
+- **Memory is per core.** The task's memory is requested per core
+  (`MBPerCoreFixed`), so on a whole-node queue the job asks for that
+  times the node's cores; it must fit the node, or no pilot can take the
+  job while harvester keeps starting workers for it (task 40225: 922 GB
+  requested, 54 workers started and ended empty in four hours). The
+  submitter's `--es-ram-per-core-mb` sets it for Event Service tasks.
+- **Range reporting keeps up.** The pilot took 6,000 finished-range
+  messages in 62 s and tarred a batch of 5,884 in 47 s (npps0 job
+  3618821); reporting is not the bottleneck at these scales.
+
+**Measured on one Perlmutter node (2026-09-25, job 3618884, payload
+0.22.6).** 64 slots of 163-event units, closes every 10 minutes: the
+20,000-event file simulated, reconstructed and registered in 46 minutes
+(against 4 hours for the same file before), 20,000 credited, the job
+finished inside its deadline. The plot showed the staircase start, the
+file exhausted at 30 minutes, the last close alone at the end, and a
+12-minute pilot tail, which the three rules above address.
+
+**Test and demonstration only: loop mode.** To show a slot filled to
+the wall with a single input file, `--es-loop` at submission sets
+`ES_LOOP`: once every range of the file has arrived the harness stops
+asking (so "No more events" and the 30-minute clock never start) and
+replays the same events as filler units, saved in closes and never
+reported to the pilot, until the deadline margin. It is not a
+production mode and is to be removed after the demonstration.
+
 ### Completeness and accounting
 
 Range completeness is owned by the **PanDA Event Service** — the
@@ -520,9 +612,10 @@ seconds of the start.
 
 ## Open questions
 
-- The close's cadence and the merge's cost at production rates: a
-  merge is a Python pass at about five events a second, so a close of
-  a 20-minute cadence over eight slots is minutes of one core.
+- PanDA credit while the job runs: finished ranges are credited at the
+  job's final update (The aim), so a preempted job's registered output
+  is not credited in PanDA. Where the pilot or the server holds the
+  credit until the end, and how to credit as each close lands.
 - The worker-shape configuration for one-job-per-allocation
   submission (the harvester and Globus Compute endpoint on the
   site's login node). The 4-hour allocation itself stays: short
