@@ -82,10 +82,11 @@ def job_state(pandaid):
 
 
 def count_true(rets):
-    """update_event_ranges returns its per-range results as the text of a
-    Python list ("[True, True, ...]"), not a JSON list."""
+    """update_event_ranges returns its per-range results as text (six
+    characters a range, "true, "), not a JSON list."""
     if isinstance(rets, str):
-        return rets.count('True'), rets.count('True') + rets.count('False')
+        low = rets.lower()
+        return low.count('true'), low.count('true') + low.count('false')
     return sum(1 for x in rets if x is True), len(rets)
 
 
@@ -124,8 +125,11 @@ def main():
         n_true, n_all = count_true(rets)
         print(f'update_event_ranges {i}-{i + len(batch)}: http {status}, success {ok}, {n_true} true of {n_all}'
               + ('' if ok else f', message {(out or {}).get("message") if isinstance(out, dict) else out}'))
+    # nEvents is the pilot's last heartbeat count until told otherwise; the
+    # fine-grained archive does not recompute it (job 3618959: 2,750 shown,
+    # 6,750 ranges finished)
     data = {'job_id': args.pandaid, 'job_status': args.status, 'attempt_nr': attempt,
-            'pilot_error_code': PREEMPTED_CODE,
+            'n_events': len(set(ids)), 'pilot_error_code': PREEMPTED_CODE,
             'pilot_error_diag': 'Event Service node lost (preempted); force-finished from the record '
                                 'the harness shipped: every close that stood credited'}
     status, out = api('pilot/update_job', data)
