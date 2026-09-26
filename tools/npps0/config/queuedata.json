@@ -192,5 +192,5 @@
  "vo_name": "eic",
  "wnconnectivity": "full",
  "workflow": "pull",
- "zip_time_gap": 7200
+ "zip_time_gap": 300
 }
