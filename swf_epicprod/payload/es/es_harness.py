@@ -257,6 +257,7 @@ class Pool:
         self.received = 0
         self.complete = False               # every expected range arrived, "No more events" never asked
         self.ranges = []
+        self.cut_end = {}                   # (LFN, block) -> last event cut from that block
         self.lock = threading.Lock()
         self.wanted = threading.Event()     # a free slot found no whole block
         self.thread = threading.Thread(target=self._gather, name='pool', daemon=True)
@@ -329,9 +330,18 @@ class Pool:
             # Streaming: a slot that is free takes the run it can have now
             # (at least min_events) rather than wait for the whole block; the
             # rest of the block follows as its own unit (named <chunk>s<start>).
-            if len(members) < per_unit and not self.exhausted and (min_events <= 0 or len(members) < min_events):
+            # The rest of a block whose start was cut is whole when it reaches
+            # the block's end, however short: nothing more of it can come, and
+            # left at the head of the pool it blocks every unit behind it (job
+            # 3618888: events 497-500 held all six slots idle for 16 minutes).
+            key = (first.get('LFN'), block)
+            remainder = (int(first['startEvent']) == self.cut_end.get(key, -1) + 1
+                         and int(members[-1]['lastEvent']) >= (block + 1) * per_unit)
+            if (len(members) < per_unit and not self.exhausted and not remainder
+                    and (min_events <= 0 or len(members) < min_events)):
                 return []                       # too little of the block yet
             del self.ranges[:len(members)]
+            self.cut_end[key] = int(members[-1]['lastEvent'])
             return members
 
 

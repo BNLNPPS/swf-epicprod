@@ -60,6 +60,22 @@ class TestStreamingStart(unittest.TestCase):
         self.assertGreaterEqual(len(unit), 16)
         self.assertEqual(pool.take_unit(163, min_events=0), [])   # without a minimum it waits for the block
 
+    def test_the_short_rest_of_a_cut_block_does_not_block_the_pool(self):
+        """Job 3618888: a streaming start took events 251-496 of block 251-500,
+        and the 4-event rest held every slot idle until the file ran out."""
+        feed = h.FileFeed.__new__(h.FileFeed)
+        feed.ranges, feed.exhausted, feed.reports = ranges(range(1, 21)), False, []
+        pool = h.Pool(feed, lookahead=20)
+        time.sleep(0.3)
+        feed.exhausted = False                   # more of the file is still "coming"
+        with pool.lock:
+            del pool.ranges[6:]                  # events 1-6 in, 7-10 not yet
+        self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=4)], list(range(1, 7)))
+        with pool.lock:
+            pool.ranges = ranges(range(7, 21))
+        self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=16)], [7, 8, 9, 10])
+        self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=16)], list(range(11, 21)))
+
 
 class TestLookahead(unittest.TestCase):
     def test_pool_stops_at_the_lookahead_until_wanted(self):
