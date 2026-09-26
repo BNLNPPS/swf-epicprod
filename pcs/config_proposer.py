@@ -77,9 +77,6 @@ def propose_campaign_configs(*, created_by='', batch_id='', apply=True):
     from monitor_app import alarms_data
 
     missing = editions_without_standard_config()
-    today = alarms_data._today_eastern()
-    from datetime import timedelta
-    due = (today + timedelta(days=DUE_DAYS)).isoformat()
     findings, ping_items, remedy_items = [], [], []
     for edition, info in sorted(missing.items()):
         title = ping_title(edition)
@@ -91,7 +88,7 @@ def propose_campaign_configs(*, created_by='', batch_id='', apply=True):
         findings.append({'edition': edition, 'title': title,
                          'image_present': image_present, **info})
         ping_items.append({
-            'title': title, 'due': due, 'lead_days': LEAD_DAYS,
+            'title': title, 'due_days': DUE_DAYS, 'lead_days': LEAD_DAYS,
             'owner': OWNER, 'url': '/pcs/', 'comment': comment,
             'note': (f'Approve to create '
                      f'{standard_prodconfig_name(edition)} from the '

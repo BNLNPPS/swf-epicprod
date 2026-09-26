@@ -18,7 +18,6 @@ Run by the ``propose-certificate-pings.py`` doer, nightly as a
 ``catalog_sync`` chain step on the production ops agent, or by hand.
 """
 import re
-from datetime import timedelta
 
 from .certificate_check import check_certificates
 
@@ -102,9 +101,7 @@ def propose_certificate_pings(*, created_by='', batch_id='', apply=True):
         return result
 
     open_pings, _done = alarms_data.list_pings()
-    chain_due = (alarms_data._today_eastern()
-                 + timedelta(days=CHAIN_DUE_DAYS)).isoformat()
-    ping_items, live = [], set()
+    ping_items, live, live_titles = [], set(), set()
     for finding in found:
         pattern = _title_re(finding['title'])
         covering = [p for p in open_pings if pattern.match(p['title'] or '')]
@@ -132,12 +129,13 @@ def propose_certificate_pings(*, created_by='', batch_id='', apply=True):
         if finding['intermediate_served']:
             continue
         chain_pattern = _title_re(finding['chain_title'])
+        # Due a set time after first found (propose_pings due_days): the
+        # open proposal keeps its date, so it is kept by title.
+        live_titles.add(finding['chain_title'])
         if any(chain_pattern.match(p['title'] or '') for p in open_pings):
-            live.add((finding['chain_title'], chain_due))
             continue
-        live.add((finding['chain_title'], chain_due))
         ping_items.append({
-            'title': finding['chain_title'], 'due': chain_due,
+            'title': finding['chain_title'], 'due_days': CHAIN_DUE_DAYS,
             'lead_days': CHAIN_LEAD_DAYS, 'owner': OWNER,
             'comment': _chain_comment(finding),
             'note': (f'Configure the web server on {finding["host"]} to send '
@@ -154,7 +152,7 @@ def propose_certificate_pings(*, created_by='', batch_id='', apply=True):
     for row in Proposal.objects.filter(proposer=PROPOSER, status='proposed',
                                        action='ping'):
         payload = row.payload or {}
-        if (payload.get('title'), payload.get('due')) in live:
+        if (payload.get('title'), payload.get('due')) in live or payload.get('title') in live_titles:
             continue
         row.status = 'withdrawn'
         row.decided_at = now
