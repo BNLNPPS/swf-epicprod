@@ -77,6 +77,30 @@ class TestStreamingStart(unittest.TestCase):
         self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=16)], list(range(11, 21)))
 
 
+class TestNoHeadOfLine(unittest.TestCase):
+    def _pool(self, events):
+        feed = h.FileFeed.__new__(h.FileFeed)
+        feed.ranges, feed.exhausted, feed.reports = ranges(events), False, []
+        pool = h.Pool(feed, lookahead=len(events))
+        time.sleep(0.3)
+        feed.exhausted = False                   # more is still "coming"
+        return pool
+
+    def test_a_late_event_is_cut_when_the_rest_of_its_block_is_gone(self):
+        """Job 3618931: event 5984 arrived after 5751-5983 and 5985-6000 were cut."""
+        pool = self._pool([1, 2, 3, 4, 6, 7, 8, 9, 10])
+        self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=3)], [1, 2, 3, 4])
+        self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=3)], [6, 7, 8, 9, 10])
+        with pool.lock:
+            pool.ranges = ranges([5])
+        self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=3)], [5])
+
+    def test_a_run_that_must_wait_does_not_hold_up_the_runs_behind_it(self):
+        pool = self._pool([1, 2] + list(range(11, 21)))
+        self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=16)], list(range(11, 21)))
+        self.assertEqual(pool.take_unit(10, min_events=16), [])      # 1-2 still wait for 3-10
+
+
 class TestDrain(unittest.TestCase):
     def test_a_capped_unit_is_cut_at_once_and_its_rest_follows(self):
         feed = h.FileFeed.__new__(h.FileFeed)
@@ -152,7 +176,7 @@ class PoolTests(unittest.TestCase):
         random.seed(1)
         random.shuffle(ev)
         pool = h.Pool(SlowFeed(ranges(ev)))
-        self.assertEqual(cut_all(pool, 5), [(1, 5, 0), (6, 10, 1), (11, 15, 2), (16, 20, 3)])
+        self.assertEqual(sorted(cut_all(pool, 5)), [(1, 5, 0), (6, 10, 1), (11, 15, 2), (16, 20, 3)])
 
     def test_a_block_waits_until_it_is_whole(self):
         # events 1..4 present, 5 still coming: block 0 is not cut yet
@@ -172,7 +196,7 @@ class PoolTests(unittest.TestCase):
 
     def test_partial_last_block_and_holes_cut_at_the_end(self):
         pool = h.Pool(SlowFeed(ranges([1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18])))
-        self.assertEqual(cut_all(pool, 5), [(1, 2, 0), (5, 5, 0), (6, 10, 1), (11, 15, 2), (16, 18, 3)])
+        self.assertEqual(sorted(cut_all(pool, 5)), [(1, 2, 0), (5, 5, 0), (6, 10, 1), (11, 15, 2), (16, 18, 3)])
 
     def test_one_range_per_unit_without_k(self):
         pool = h.Pool(SlowFeed([{'eventRangeID': 'b', 'startEvent': 6, 'lastEvent': 10, 'LFN': 'f'},

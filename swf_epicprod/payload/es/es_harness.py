@@ -274,7 +274,7 @@ class Pool:
         self.received = 0
         self.complete = False               # every expected range arrived, "No more events" never asked
         self.ranges = []
-        self.cut_end = {}                   # (LFN, block) -> last event cut from that block
+        self.cut_count = {}                 # (LFN, block) -> events of that block already cut
         self.lock = threading.Lock()
         self.wanted = threading.Event()     # a free slot found no whole block
         self.thread = threading.Thread(target=self._gather, name='pool', daemon=True)
@@ -333,38 +333,45 @@ class Pool:
                 return []
             if per_unit < 1:
                 return [self.ranges.pop(0)]
-            first = self.ranges[0]
-            block = (int(first['startEvent']) - 1) // per_unit
-            members = [first]
-            for rng in self.ranges[1:]:
-                prev = members[-1]
-                start = int(rng['startEvent'])
-                if (rng.get('LFN') != first.get('LFN') or start != int(prev['lastEvent']) + 1
-                        or (start - 1) // per_unit != block or len(members) >= per_unit):
-                    break
-                members.append(rng)
-            # Whole is every event of the block: a block whose first events
-            # are still coming is not whole for reaching its last (job
-            # 3556539 cut events 2-5 and then 1 alone).
-            # Streaming: a slot that is free takes the run it can have now
-            # (at least min_events) rather than wait for the whole block; the
-            # rest of the block follows as its own unit (named <chunk>s<start>).
-            # The rest of a block whose start was cut is whole when it reaches
-            # the block's end, however short: nothing more of it can come, and
-            # left at the head of the pool it blocks every unit behind it (job
-            # 3618888: events 497-500 held all six slots idle for 16 minutes).
-            key = (first.get('LFN'), block)
-            remainder = (int(first['startEvent']) == self.cut_end.get(key, -1) + 1
-                         and int(members[-1]['lastEvent']) >= (block + 1) * per_unit)
-            capped = 0 < max_events <= len(members)
-            if capped:
-                members = members[:max_events]
-            if (len(members) < per_unit and not self.exhausted and not remainder and not capped
-                    and (min_events <= 0 or len(members) < min_events)):
-                return []                       # too little of the block yet
-            del self.ranges[:len(members)]
-            self.cut_end[key] = int(members[-1]['lastEvent'])
-            return members
+            # The pool is read as runs: consecutive ranges of one block, in
+            # event order. The first run that can be cut is cut; a run that
+            # cannot yet is passed over, never left to hold up the runs behind
+            # it (jobs 3618888 and 3618931: one short run at the head, its
+            # block's other events already taken, idled every slot for the
+            # rest of the job or until the file ran out).
+            i = 0
+            while i < len(self.ranges):
+                first = self.ranges[i]
+                block = (int(first['startEvent']) - 1) // per_unit
+                members = [first]
+                for rng in self.ranges[i + 1:]:
+                    start = int(rng['startEvent'])
+                    if (rng.get('LFN') != first.get('LFN') or start != int(members[-1]['lastEvent']) + 1
+                            or (start - 1) // per_unit != block or len(members) >= per_unit):
+                        break
+                    members.append(rng)
+                run = len(members)
+                key = (first.get('LFN'), block)
+                # A run is cut when its block is whole; when it is all that is
+                # left of its block (every other event of it already cut, so
+                # nothing more of it can come, however short or late it is:
+                # job 3618931's event 5984 arrived after 5751-5983 and
+                # 5985-6000 were cut); when no more ranges are coming; when it
+                # reaches the cap (what fits before the deadline); or, streaming,
+                # when a free slot can start on at least min_events of it. A
+                # block whose first events are still coming is not whole for
+                # reaching its last (job 3556539 cut events 2-5 and then 1 alone).
+                rest = run + self.cut_count.get(key, 0) >= per_unit
+                capped = 0 < max_events <= run
+                if capped:
+                    members = members[:max_events]
+                if (run >= per_unit or rest or capped or self.exhausted
+                        or (min_events > 0 and run >= min_events)):
+                    del self.ranges[i:i + len(members)]
+                    self.cut_count[key] = self.cut_count.get(key, 0) + len(members)
+                    return members
+                i += run
+            return []
 
 
 def take_unit(pool, per_unit):
