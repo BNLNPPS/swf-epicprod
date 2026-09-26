@@ -317,6 +317,26 @@ objects. The sweep's per-job prefix still lists them all. The job's
 own report, the pilot's, carries the harness's summary under `es` with
 every unit's record (NODE_EVENT_DISPATCHER.md, The record).
 
+### The Event Service record
+
+A preempted job ends with its node, and the pilot's final report, which
+carries the harness's record in the job metadata, never reaches PanDA.
+The harness therefore ships its record off the node as it goes (payload
+0.23.0, `payload/es/es_record.py`): one object, `reports/<PanDA job
+id>/es.json`, overwritten at each unit that finishes, each close, and at
+least every minute. It carries the units done, failed, in flight with
+their start, and awaiting a close, and the closes finished and running.
+The last write is the record at the cut, and bounds the cut to within a
+minute. At most 1500 writes per job, a constant; for Event Service jobs
+this channel is always on, not gated on debug mode.
+
+The sweep files the record of every Event Service job that ended in its
+window, whatever its status, under `EpicProdJob.data['es_record']`,
+before the failed-job pass deletes objects: a preempted fine-grained job
+with credited ranges is archived finished, so the failed-job candidates
+would miss it. The job page draws a job with no harness report in its
+metadata from the filed record (NODE_EVENT_DISPATCHER.md, Preemption).
+
 ## Open items
 
 - PanDA's fine-grained processing (`fineGrainedProc`) is the Event

@@ -186,6 +186,42 @@ replays the same events as filler units, saved in closes and never
 reported to the pilot, until the deadline margin. It is not a
 production mode and is to be removed after the demonstration.
 
+### Preemption
+
+On a preemptible resource (GCP spot nodes, with 30 seconds' notice) the
+job ends with its node, at no time it knows. A crash is then the normal
+end of a job, and what a preempted job has shipped is kept, not rerun:
+
+- **What is lost** is the processing in flight on each core (up to one
+  unit) and the units finished since the last close that stood, whose
+  output never left the node. Everything in a close that stood is in
+  Rucio and credited.
+- **Credit as the closes land.** The pilot passes finished ranges to the
+  server every `es_stageout_gap`, which it takes from the queue's
+  `zip_time_gap` (pilot3 `genericexecutor.py`, `stageout_es`); at the
+  customary 7200 s a job lost inside two hours had credited nothing.
+  Set to the close cadence (300 s on `BNL_NPPS_GPU` since 2026-09-26),
+  the server's credit rises with each close (npps0 task 40256: 2,820 to
+  7,754 events over 22 minutes).
+- **The server's side exists.** A job whose heartbeat stops is failed
+  after the workflow's `HEARTBEAT_TIMEOUT` (panda-server
+  `copyArchive.py`, 2 hours by default), and archiving a fine-grained
+  job credits its finished ranges, releases the rest to the file for the
+  next job and marks the job finished (`fg_partial`) when any were done
+  (`job_complex_module.py`, `check_fine_grained_processing`). A
+  preemptible queue wants a short timeout, a PanDA operations setting per
+  queue workflow.
+- **The record leaves the node as it is made** (JOB_REPORTING.md, The
+  Event Service record), so the job page draws a preempted job from its
+  last shipped record: the lanes end at the cut, marked in red; light
+  yellow is processing cut off, dark yellow output lost on the node.
+- **The test** (`tools/npps0/preempt_job.sh`, test only) takes a running
+  job's node away on npps0: after a chosen close it waits a set time and
+  SIGKILLs the job's whole pilot pass at once, so nothing is told and
+  nothing reports. The earlier harness-level cut (`ES_PREEMPT_AT_S`, test
+  only) kills the cores alone and leaves the pilot to report, which a
+  real preemption does not.
+
 ### Completeness and accounting
 
 Range completeness is owned by the **PanDA Event Service** — the
