@@ -306,7 +306,8 @@ def summary(pc):
     elif q2:
         parts.append('Q² ' + re.sub(r'(?<=\d)(to|_)(?=\d)', '–', q2.removeprefix('q2_')))
     line = ' '.join(parts)
-    extra = [x for x in (pc.evgen_display, pc.sample_name,
+    evgen = '' if set(pc.evgen_display.split()) <= {'unrecorded'} else pc.evgen_display
+    extra = [x for x in (evgen, pc.sample_name,
                          pc.background_tag.tag_label if pc.background_tag_id else '') if x]
     if extra:
         line += ' · ' + ', '.join(extra)
