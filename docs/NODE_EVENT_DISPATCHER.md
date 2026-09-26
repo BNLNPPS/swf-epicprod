@@ -91,36 +91,39 @@ unchanged. The payload is the dispatcher chain:
   directory finalize — minutes. The taskbuffer-300 failure class
   disappears for these jobs except for genuine node failures.
 
-### The aim: fill the slot, save as you go
+### The aim: fill every core, save as you go
 
 The Event Service means the allocation does productive work from its
 first minute to its last, and its output leaves the node regularly,
 because the end may come suddenly with no time to tidy up (a wall, a
-preemption, a node failure). Three rules follow, and the slot
+preemption, a node failure). Three rules follow, and the core
 occupancy plot on the job page is how they are judged: green edge to
-edge on every lane, blue as short regular bars through the run.
+edge on every lane, blue as short regular bars through the run. A core
+here is one single-threaded payload instance the harness keeps on one of
+the job's cores, a lane of the plot (`ES_SLOTS` at submission); the
+batch slot is the whole allocation.
 
-- **One starting gun.** Every slot starts its slow initialization
+- **One starting gun.** Every core starts its slow initialization
   (container, geometry, resident EICrecon) at once, and while they
   start the harness gathers their first units and writes each into its
-  slot's inbox; a slot that finishes starting finds its work waiting.
-  From then on every free slot is fed from the pool, so the stream
-  keeps every slot busy. Starting a slot only when its unit was ready,
-  and gating a slot on a whole block of ranges, put the starts in
-  series behind the ranges: on Perlmutter (job 3618884) slot 63 began
-  nine minutes after slot 0.
+  core's inbox; a core that finishes starting finds its work waiting.
+  From then on every free core is fed from the pool, so the stream
+  keeps every core busy. Starting a core only when its unit was ready,
+  and gating a core on a whole block of ranges, put the starts in
+  series behind the ranges: on Perlmutter (job 3618884) core 63 began
+  nine minutes after core 0.
 - **Work to the wall.** A job is given enough work to last its
   allocation; the only planned drain is the deadline margin, sized to
   the units in flight and one small last close. A job that runs out of
   input early leaves the rest of its allocation idle (job 3618884:
-  every slot idle from 30 minutes on a 4-hour allocation).
+  every core idle from 30 minutes on a 4-hour allocation).
 - **Save as you go.** A close merges the units since the last one,
   copies the file off the node to its storage element (checked for size
   and checksum), then registers it, then deletes the unit files: output
   is shipped before it is claimed and claimed as it is made. Closes are
   short and frequent, so each merge is small and output handling is
   never bunched at the end; a sudden end loses at most the units since
-  the last close. At about 1,000 events a minute on a 64-slot node and
+  the last close. At about 1,000 events a minute on a 64-core node and
   a merge rate of 25 to 60 events a second, a close every three minutes
   keeps each merge to a minute or two.
 
@@ -142,15 +145,15 @@ does not give.
   at the start hears it early and is killed before its closes report
   (npps0 job 3618786: 6,000 ranges pooled, killed at 30 minutes, none
   credited). The harness therefore pulls just in time, a unit ahead for
-  a quarter of its slots (`ES_POOL_LOOKAHEAD`), so "No more events"
+  a quarter of its cores (`ES_POOL_LOOKAHEAD`), so "No more events"
   comes only when the work is nearly done (npps0 job 3618821: all 6,000
   credited).
 - **Ranges one per request.** The pilot hands the payload one range per
   request from a cache it fills from the server with twice the job's
   core count per fetch, and handles one channel message per 10 ms pass.
-  A slot starts on the first 16 contiguous events it can have
+  A core starts on the first 16 contiguous events it can have
   (`ES_MIN_UNIT_EVENTS`) rather than wait for its whole block, so the
-  one-at-a-time supply delays no slot by more than seconds.
+  one-at-a-time supply delays no core by more than seconds.
 - **The core count.** The job's core count sets the pilot's fetch size.
   A whole-node queue declares the node's cores (256 on
   `NERSC_Perlmutter_epic_es` since 2026-09-25); the Perlmutter launcher
@@ -168,14 +171,14 @@ does not give.
   3618821); reporting is not the bottleneck at these scales.
 
 **Measured on one Perlmutter node (2026-09-25, job 3618884, payload
-0.22.6).** 64 slots of 163-event units, closes every 10 minutes: the
+0.22.6).** 64 cores of 163-event units, closes every 10 minutes: the
 20,000-event file simulated, reconstructed and registered in 46 minutes
 (against 4 hours for the same file before), 20,000 credited, the job
 finished inside its deadline. The plot showed the staircase start, the
 file exhausted at 30 minutes, the last close alone at the end, and a
 12-minute pilot tail, which the three rules above address.
 
-**Test and demonstration only: loop mode.** To show a slot filled to
+**Test and demonstration only: loop mode.** To show a core filled to
 the wall with a single input file, `--es-loop` at submission sets
 `ES_LOOP`: once every range of the file has arrived the harness stops
 asking (so "No more events" and the 30-minute clock never start) and
@@ -198,7 +201,7 @@ attempts, and retry policy), enabled per task by standard parameters
 range's disposition to the server, which retries unfinished ranges:
 deferral-not-loss is this mode's native semantics. Range bookkeeping
 rides the server machinery. The harness keeps the node-local fan-out
-(a range per free slot to N workers, per-range completions back) and
+(a range per free core to N workers, per-range completions back) and
 packaging and output registration on the payload data path (Design §
 Package; the pilot executor's own zip stage-out machinery goes unused
 for science data). How ranges cross between the pilot and the harness
@@ -387,7 +390,7 @@ in favor of the native mechanism.
 
 **The flavor is fine-grained processing (2026-09-21, `BNL_NPPS_GPU`,
 tasks 40121 and 40122).** The harness as a real Event Service job
-(payload 0.20.1, four slots, twenty events of a real input in ranges
+(payload 0.20.1, four cores, twenty events of a real input in ranges
 of five) had every range done on the server in 5.5 minutes, and the
 job then failed on the server: the ordinary flavor closes a consumer
 by generating an ES merge job whatever the task says, and that job's
@@ -417,13 +420,13 @@ start, one server call per sixteen events to pool them. Two things
 learned on the way: the pilot hands a direct-access queue's input as a
 TURL and the ePIC pilot module writes no PoolFileCatalog, so runGen
 must be told to take the input as given (`--givenPFN`, added by the
-submitter for `--es-direct-input`); and concurrent cold slots must not
+submitter for `--es-direct-input`); and concurrent cold cores must not
 share a working directory, since the geometry's file loader builds its
 `calibrations/` cache there on the first npsim and three of four
-slots died on the race (each slot now runs the payload in its own run
+cores died on the race (each core now runs the payload in its own run
 directory with the sandbox's files linked in).
 
-**The drain, proven (2026-09-21, task 40124).** Two slots, units of
+**The drain, proven (2026-09-21, task 40124).** Two cores, units of
 five, a deadline of 120 s with a 60 s margin over twenty events: the
 first job took two units at its start, passed the margin, took no
 more, and ended `fg_partial` with ten events; the server set its ten
@@ -436,10 +439,10 @@ the job ended `fg_stumble`; attempt 3 ran the ten and ended
 over a file, so it is the drain's retry budget.
 
 **Both queues, and the record (2026-09-21).** The same submission
-closed on `NERSC_Perlmutter_epic_es` (task 40125: one slot, the
+closed on `NERSC_Perlmutter_epic_es` (task 40125: one core, the
 queue's 128-pilots-per-node shape, a node in 4.5 minutes, twenty
 events in four sequential units in 11.7 minutes) and on
-`BNL_NPPS_GPU` (task 40126: four slots, four units of about 100 s
+`BNL_NPPS_GPU` (task 40126: four cores, four units of about 100 s
 each, the job 5.5 minutes). An Event Service task carries none of the
 container pre- and post-process steps of an ordinary submission: the
 harness runs outside the pilot's container in one step, the
@@ -492,7 +495,7 @@ a pilot range, an EJFAT push. Component disposition:
   the volunteer pool, where it remains in service unchanged); the
   in-node lease/retry of a died worker's range is preserved.
 - `worker_agent.py` staging and the inbox/outbox/done contract:
-  reused as-is, one work directory per core slot.
+  reused as-is, one work directory per core.
 - A new contract executable wraps the simulation payload: consume a
   unit spec of the contract's input form extended with an event range,
   run the payload for that range, write outputs and counts per the
@@ -540,7 +543,7 @@ unit, 40 percent smaller than the units it merges: over half of a
 five-event file is podio's per-file overhead, which falls to a few
 percent at the 200-event units of a 20-minute quantum. The merge is
 a Python pass at about five events a second, a background trickle
-beside slots that produce one or two events a second between them.
+beside cores that produce one or two events a second between them.
 `hadd` is eight times faster but leaves one metadata entry per
 input, readable today and a liability with a stricter podio.
 
@@ -595,11 +598,11 @@ seconds plus fifty milliseconds a report for the pilot to take the last
 burst (0.21.3).
 
 **The 20-minute quantum and the scale run (2026-09-21 to 22).** On
-`NERSC_Perlmutter_epic_es` (task 40136, payload 0.21.3, one slot): two
+`NERSC_Perlmutter_epic_es` (task 40136, payload 0.21.3, one core): two
 units of 163 events, each 577 s on the node (3.6 s an event, against
 the record's 7.4 s a whole job), each closed and registered on its own
 (16 s and 12 s), the job `fg_done` with all 326, the task done. On
-`BNL_NPPS_GPU` (task 40137, six slots, 250-event units, 3,000 events):
+`BNL_NPPS_GPU` (task 40137, six cores, 250-event units, 3,000 events):
 twelve units of 523 to 624 s (median 569 s: 2.28 s an event with the
 resident EICrecon, so a 20-minute unit there is about 525 events), two
 closes of 1,500 events each in 38 s and 34 s (the merge runs at about
@@ -607,7 +610,7 @@ fifty events a second once past its start; the small trial's five a
 second was its start), 505 MB and 482 MB registered with their counts,
 the dataset's derived total 3,000, the job 31.7 minutes for 3,000
 events, every range reported and done. The pilot's fetch pace on a
-six-core job put the first six units on their slots within four
+six-core job put the first six units on their cores within four
 seconds of the start.
 
 ## Open questions
