@@ -40,6 +40,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -129,6 +130,14 @@ def container_command(args, inner, extra_binds=()):
     return cmd
 
 
+def kill_group(proc):
+    """SIGKILL a process started in its own session, with everything under it."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 class Close:
     """One close: the pending units' RECO merged and registered by
     es_close.sh in the image, in the background; the units' ranges are
@@ -147,7 +156,7 @@ class Close:
         self.started = time.time()
         self.proc = subprocess.Popen(container_command(args, inner),
                                      stdout=open(os.path.join(self.dir, 'container.log'), 'w'),
-                                     stderr=subprocess.STDOUT)
+                                     stderr=subprocess.STDOUT, start_new_session=args.preempt_at_s > 0)
         log(f"close {index}: {len(units)} unit(s), {sum(int(u[2]['handoff'].get('events') or 0) for u in units)} events -> {self.name} (pid {self.proc.pid})")
 
     def result(self):
@@ -187,7 +196,8 @@ class Slot:
                  + "".join(f" --env {kv}" for kv in (args.env or [])))
         cmd = container_command(args, inner, extra_binds=[os.path.dirname(input_path)] if input_path else [])
         self.log = open(os.path.join(self.work, 'slot.log'), 'w')
-        self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT)
+        self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT,
+                                     start_new_session=args.preempt_at_s > 0)
         log(f"slot {index} started (pid {self.proc.pid})")
 
     def free(self):
@@ -201,6 +211,8 @@ class Slot:
             json.dump(spec, f)
         os.rename(tmp, os.path.join(self.inbox, f'{uid}.unit.json'))
         self.unit, self.taken_at = uid, time.time()
+        self.unit_events = len(spec['ranges'])
+        self.unit_range = spec['range']
 
     def result(self):
         """(unit id, record, ok) when the unit in flight has finished."""
@@ -225,6 +237,11 @@ class Slot:
     def stop(self):
         with open(os.path.join(self.inbox, 'STOP'), 'w'):
             pass
+
+    def kill(self):
+        """TEST AND DEMO ONLY (preemption): the slot's container and all it
+        runs, gone at once, as on a node that is taken away."""
+        kill_group(self.proc)
 
     def wait(self, timeout):
         try:
@@ -437,6 +454,11 @@ def main():
                     help='TEST AND DEMO ONLY: once every range of the file has arrived, replay '
                          'the same events until the deadline margin, so the slots work to the wall; '
                          'replays are saved in closes and never reported to the pilot')
+    ap.add_argument('--preempt-at-s', type=float, default=float(os.environ.get('ES_PREEMPT_AT_S', '0')),
+                    help='TEST AND DEMO ONLY: a sudden end at this many seconds, as on a preempted '
+                         'node: every slot and a running close killed at once, nothing more closed '
+                         'or reported; the units cut off and the units whose output never left the '
+                         'node are recorded as what was lost')
     ap.add_argument('--expected-events', type=int, default=int(os.environ.get('ES_EXPECTED_EVENTS', '0')),
                     help='with --loop: the events the file holds, after which no more ranges are asked for')
     args = ap.parse_args()
@@ -455,6 +477,7 @@ def main():
     os.makedirs(args.work, exist_ok=True)
     slots, summary = [], {'stamp': args.stamp, 'slots': args.slots, 'image': args.image,
                           'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False,
+                          'interrupted': [], 'unshipped': [],
                           'started_at': started}
     input_path = args.input
     # Just in time: a unit ready for a quarter of the slots, the rest pulled
@@ -553,6 +576,35 @@ def main():
             log(f"close {rec['index']}: {rec.get('outcome')} {rec.get('did')} "
                 f"({rec.get('events')} events, {len(c.units)} units) in {rec['wall_s']} s"
                 + ('' if rec['ok'] else f"; {rec.get('message')}"))
+        if args.preempt_at_s and time.time() - started >= args.preempt_at_s:
+            # TEST AND DEMO ONLY: the node is taken away. What is lost is the
+            # processing cut off in the slots, and the units finished since
+            # the last close that stood, whose output never left the node
+            # (with a running close's, which dies with it).
+            cut = time.time()
+            feed.exhausted = True                       # nothing more is asked of the pilot
+            for s in slots:
+                if s.unit is not None:
+                    summary['interrupted'].append({
+                        'unit_id': s.unit, 'slot': s.index, 'status': 'interrupted',
+                        'started_at': s.taken_at, 'ended_at': cut,
+                        'wall_s': round(cut - s.taken_at, 1), 'events': s.unit_events,
+                        'range': s.unit_range})
+                s.kill()
+            for c in closes:
+                kill_group(c.proc)
+                pending = c.units + pending
+            for _, _, record, _ in pending:
+                record['status'] = 'unshipped'
+                summary['unshipped'].append(record)
+            summary['preempted'] = {
+                'at': cut, 'after_s': round(cut - started, 1),
+                'interrupted_units': len(summary['interrupted']),
+                'interrupted_events': sum(u['events'] for u in summary['interrupted']),
+                'unshipped_units': len(summary['unshipped']),
+                'unshipped_events': sum(int(r.get('events') or 0) for r in summary['unshipped'])}
+            log(f"PREEMPTED at {cut - started:.0f} s: {summary['preempted']}")
+            break
         past_deadline = args.deadline_s and time.time() - started > args.deadline_s - args.margin_s
         if past_deadline and taking:
             # The ranges never taken, on the pilot's side or pooled here,
