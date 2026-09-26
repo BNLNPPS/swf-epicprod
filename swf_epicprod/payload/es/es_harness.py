@@ -534,12 +534,17 @@ def main():
     load_job_env(args.sandbox)            # the report key rides in the sandbox's environment file
     CallHome(default_flag(args.sandbox), status_key(), status).start()
 
+    # Set at the harness's own end, before its last write: a record that
+    # carries it has ended normally, and its silence while the pilot stages
+    # out and reports is no node loss (swf_epicprod/es_closeout.py).
+    ended = {}
+
     def record():
         # The record shipped off the node as it is made (es_record.py): what
         # a preempted job leaves behind is the last of these.
         running = [c for c in list(closes)]
         return {
-            'kind': 'es_record', 'version': 1, 'stamp': args.stamp,
+            'kind': 'es_record', 'version': 2, 'stamp': args.stamp, 'ended_at': ended.get('at'),
             'payload_version': payload_version,
             'pandaid': os.environ.get('PANDAID', ''), 'slots': args.slots,
             'started_at': started, 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
@@ -729,6 +734,7 @@ def main():
     for s in slots:
         s.wait(120)
     summary['wall_s'] = round(time.time() - started, 1)
+    ended['at'] = time.time()
     shipped.stop()
     summary['ended_at'] = time.time()
     with open(args.summary, 'w') as f:

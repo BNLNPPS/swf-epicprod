@@ -328,7 +328,11 @@ least every minute. It carries the units done, failed, in flight with
 their start, and awaiting a close, and the closes finished and running.
 The last write is the record at the cut, and bounds the cut to within a
 minute. At most 1500 writes per job, a constant; for Event Service jobs
-this channel is always on, not gated on debug mode.
+this channel is always on, not gated on debug mode. From payload 0.23.1
+the record is version 2 and carries `ended_at`, set at the harness's own
+end before its last write: a record without it that has gone quiet on a
+running job is a lost node, and the preemption close-out acts on it
+(NODE_EVENT_DISPATCHER.md, Preemption).
 
 The sweep files the record of every Event Service job that ended in its
 window, whatever its status, under `EpicProdJob.data['es_record']`,

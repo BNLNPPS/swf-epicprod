@@ -211,11 +211,20 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   (`job_complex_module.py`, `check_fine_grained_processing`). A
   preemptible queue wants a short timeout, a PanDA operations setting per
   queue workflow.
-- **We close the job ourselves, in minutes** (`tools/es_force_finish.py`).
-  When the shipped record goes quiet, the tool credits the ranges of every
-  close that stood (`update_event_ranges`) and sends the job's final update
-  as `finished` (`update_job`), both production-role calls; the server
-  archives it through the fine-grained accounting above. The update must
+- **We close the job ourselves, in minutes** (`swf_epicprod/es_closeout.py`).
+  Every five minutes the production-operations agent's
+  `es_closeout_cycle` reads the running Event Service jobs of the queues
+  listed in SysConfig `es_closeout.queues`, unattended (Torre,
+  2026-09-26). A job whose shipped record is quiet for `es_closeout.quiet_s`
+  (180 s), has not marked its own end (`ended_at`, JOB_REPORTING.md) and
+  has not reached its write cap is closed out: the ranges of every close
+  that stood credited (`update_event_ranges`) and the job's final update
+  sent as `finished` (`update_job`) with the credited count, both
+  production-role calls; the server archives it through the fine-grained
+  accounting above. Each close-out is an `es_closeout` action.
+  `tools/es_force_finish.py` does the same for one job by hand. A node
+  lost after the harness ended, during the pilot's stage-out, is left to
+  the server's heartbeat timeout. The update must
   carry the job's attempt number: without it the output report is filed
   under attempt 0, the adder drops it and the job stays holding, and a
   second final update is ignored as already done. Never a kill:

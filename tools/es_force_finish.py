@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""Force-finish a preempted Event Service job (docs/NODE_EVENT_DISPATCHER.md,
-Preemption): the job's node is gone, its pilot will never report, and PanDA
-would wait out its heartbeat timeout (2 hours by default). From the record
-the harness shipped off the node (reports/<PanDA job id>/es.json), this
+"""Force-finish a preempted Event Service job by hand (docs/NODE_EVENT_DISPATCHER.md,
+Preemption). The production-operations agent does this unattended on the
+queues listed in ``es_closeout.queues`` (swf_epicprod/es_closeout.py, which
+holds the logic); this is the same close-out for one job, on an operator's
+word: credit the ranges of every close that stood in the record the harness
+shipped, then send the final update with the job's attempt number.
 
-1. credits the ranges of every close that stood (update_event_ranges,
-   finished), which covers any the pilot had not yet passed to the server;
-2. ends the job (update_job) with the status given, so the server archives
-   it through its fine-grained accounting: finished ranges counted, the
-   rest released to the file for the next job, the job finished
-   (fg_partial) when any were done.
-
-Both are production-role calls, the role Harvester uses for lost workers.
 Run under the PanDA client environment (pclient setup.sh, PANDA_AUTH_VO
-with the production role). Dry run unless --apply.
+with the production role). The record is read from the store with the
+sweeper credential (needs boto3), or given with --record. Dry run unless
+--apply.
 
     es_force_finish.py <PanDA job id> [--status finished|failed] [--record es.json] [--apply]
 """
@@ -22,8 +18,8 @@ import json
 import os
 import sys
 
-PREEMPTED_CODE = 1256          # the pilot's "job killed: worker preempted / lost" family
-CHUNK = 1000
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from swf_epicprod.es_closeout import closed_range_ids, finish_job  # noqa: E402
 
 
 def read_record(pandaid, path=None):
@@ -45,51 +41,6 @@ def read_record(pandaid, path=None):
     return json.loads(body)
 
 
-def closed_range_ids(record):
-    """The range ids of the units in closes that stood. A unit's first range
-    id is <task>-<job>-<file>-<event>-<attempt>; its ranges are one event
-    each over [startEvent, lastEvent]."""
-    ids = []
-    for u in record.get('done') or []:
-        rng, uid = u.get('range') or {}, u.get('unit_id') or ''
-        parts = uid.split('-')
-        if len(parts) < 5 or rng.get('startEvent') is None:
-            continue
-        prefix, attempt = '-'.join(parts[:3]), parts[4]
-        ids += [f'{prefix}-{e}-{attempt}' for e in range(int(rng['startEvent']), int(rng['lastEvent']) + 1)]
-    return ids
-
-
-def api(endpoint, data):
-    import pandaclient.Client as C
-    curl = C._Curl()
-    curl.sslCert = C._x509()
-    curl.sslKey = C._x509()
-    return curl.post(f'{C.server_base_path_ssl}/{endpoint}', data, json_out=True)
-
-
-def job_state(pandaid):
-    """The job's status and attempt number from the server. The final update
-    must carry the attempt: without it the output report is filed under
-    attempt 0, the adder drops it as the wrong attempt (adder_gen.py,
-    process_job_report) and the job stays holding, and a second final update
-    is ignored as already done (job_complex_module.py, updateJobStatus)."""
-    import pandaclient.Client as C
-    status, jobs = C.getJobStatus([pandaid])
-    if status != 0 or not jobs or jobs[0] is None:
-        raise SystemExit(f'job {pandaid}: getJobStatus failed (status {status})')
-    return jobs[0].jobStatus, int(jobs[0].attemptNr)
-
-
-def count_true(rets):
-    """update_event_ranges returns its per-range results as text (six
-    characters a range, "true, "), not a JSON list."""
-    if isinstance(rets, str):
-        low = rets.lower()
-        return low.count('true'), low.count('true') + low.count('false')
-    return sum(1 for x in rets if x is True), len(rets)
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('pandaid', type=int)
@@ -105,36 +56,16 @@ def main():
           f'{len(record.get("done") or [])} units in closes that stood ({len(ids)} ranges), '
           f'{len(record.get("in_flight") or [])} in flight, '
           f'{len(record.get("awaiting_close") or [])} awaiting a close')
+    result = finish_job(args.pandaid, ids, status=args.status, expect_attempt=args.attempt,
+                        apply=args.apply)
+    if result.get('refused'):
+        print(f'job {args.pandaid}: {result["refused"]}; nothing sent')
+        return 1
     if not args.apply:
-        print('dry run: nothing sent')
+        print(f'job {args.pandaid} is {result["job_status"]} at {result["queue"]}, attempt '
+              f'{result["attempt"]}; dry run: nothing sent')
         return 0
-
-    job_status, attempt = job_state(args.pandaid)
-    if job_status not in ('running', 'starting', 'stagein', 'stageout'):
-        print(f'job {args.pandaid} is {job_status}: a final update would be ignored; nothing sent')
-        return 1
-    if args.attempt is not None and args.attempt != attempt:
-        print(f'job {args.pandaid} is at attempt {attempt}, not {args.attempt}; nothing sent')
-        return 1
-
-    for i in range(0, len(ids), CHUNK):
-        batch = [{'eventRangeID': r, 'eventStatus': 'finished'} for r in ids[i:i + CHUNK]]
-        status, out = api('event/update_event_ranges', {'event_ranges': json.dumps(batch), 'version': 0})
-        ok = isinstance(out, dict) and out.get('success')
-        rets = (((out or {}).get('data') or {}).get('Returns') or []) if isinstance(out, dict) else []
-        n_true, n_all = count_true(rets)
-        print(f'update_event_ranges {i}-{i + len(batch)}: http {status}, success {ok}, {n_true} true of {n_all}'
-              + ('' if ok else f', message {(out or {}).get("message") if isinstance(out, dict) else out}'))
-    # nEvents is the pilot's last heartbeat count until told otherwise; the
-    # fine-grained archive does not recompute it (job 3618959: 2,750 shown,
-    # 6,750 ranges finished)
-    data = {'job_id': args.pandaid, 'job_status': args.status, 'attempt_nr': attempt,
-            'n_events': len(set(ids)), 'pilot_error_code': PREEMPTED_CODE,
-            'pilot_error_diag': 'Event Service node lost (preempted); force-finished from the record '
-                                'the harness shipped: every close that stood credited'}
-    status, out = api('pilot/update_job', data)
-    print(f'update_job {args.status}: http {status}, response {json.dumps(out)[:400]}')
-    return 0 if isinstance(out, dict) and out.get('success') else 1
+    return 0 if result['ok'] else 1
 
 
 if __name__ == '__main__':
