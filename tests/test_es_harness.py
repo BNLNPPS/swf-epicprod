@@ -77,6 +77,21 @@ class TestStreamingStart(unittest.TestCase):
         self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=16)], list(range(11, 21)))
 
 
+class TestDrain(unittest.TestCase):
+    def test_a_capped_unit_is_cut_at_once_and_its_rest_follows(self):
+        feed = h.FileFeed.__new__(h.FileFeed)
+        feed.ranges, feed.exhausted, feed.reports = ranges(range(1, 21)), False, []
+        pool = h.Pool(feed, lookahead=20)
+        time.sleep(0.3)
+        feed.exhausted = False
+        self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=16, max_events=3)], [1, 2, 3])
+        self.assertEqual([r['startEvent'] for r in pool.take_unit(10, min_events=16)], list(range(4, 11)))
+
+    def test_seconds_per_event_over_the_finished_units(self):
+        self.assertIsNone(h.seconds_per_event([]))
+        self.assertAlmostEqual(h.seconds_per_event([(16, 118.0), (250, 540.0)]), 658.0 / 266)
+
+
 class TestLookahead(unittest.TestCase):
     def test_pool_stops_at_the_lookahead_until_wanted(self):
         """The pool holds at most the lookahead, so "No more events" is not

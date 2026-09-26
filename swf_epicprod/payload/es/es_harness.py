@@ -303,12 +303,14 @@ class Pool:
         with self.lock:
             self.ranges = []
 
-    def take_unit(self, per_unit, min_events=0):
+    def take_unit(self, per_unit, min_events=0, max_events=0):
         """The ranges of the next unit: one range, or up to per_unit
         consecutive ranges within one block of per_unit events (block b
         is events b*K+1 to (b+1)*K), so that a unit is a chunk of the row
         and its block index names its outputs. A block is cut when it is
-        whole, or when no more ranges are coming; empty otherwise."""
+        whole, or when no more ranges are coming; empty otherwise.
+        max_events caps the unit (what fits before the deadline), and a
+        run that reaches the cap is cut at once."""
         with self.lock:
             if not self.ranges:
                 return []
@@ -337,7 +339,10 @@ class Pool:
             key = (first.get('LFN'), block)
             remainder = (int(first['startEvent']) == self.cut_end.get(key, -1) + 1
                          and int(members[-1]['lastEvent']) >= (block + 1) * per_unit)
-            if (len(members) < per_unit and not self.exhausted and not remainder
+            capped = 0 < max_events <= len(members)
+            if capped:
+                members = members[:max_events]
+            if (len(members) < per_unit and not self.exhausted and not remainder and not capped
                     and (min_events <= 0 or len(members) < min_events)):
                 return []                       # too little of the block yet
             del self.ranges[:len(members)]
@@ -362,6 +367,14 @@ def take_unit(pool, per_unit):
             break
         members.append(pool.pop(0))
     return members
+
+
+def seconds_per_event(samples):
+    """A unit's seconds per event on this node over the finished units'
+    (events, wall s), or None before any has finished. Rough on purpose:
+    the drain it sizes needs minutes, not seconds."""
+    events = sum(n for n, w in samples if n > 0 and w > 0)
+    return sum(w for n, w in samples if n > 0 and w > 0) / events if events else None
 
 
 def replay_unit(template, state, per_unit, expected):
@@ -465,6 +478,7 @@ def main():
         f"deadline {args.deadline_s or 'none'} s, margin {args.margin_s} s")
 
     reported = [0]                                          # reports sent since the harness last waited on the pilot
+    unit_walls = []                                         # (events, wall s) of the finished units
 
     def status():
         # The job's state for call home: read from this loop's variables,
@@ -510,6 +524,8 @@ def main():
             record['slot'] = s.index                    # which slot ran it: the slot occupancy plot
             record.setdefault('started_at', s.taken_at)
             range_ids = list(s.range_ids)
+            if ok:
+                unit_walls.append((int(record.get('events') or 0), float(record['wall_s'])))
             if ok and record.get('handoff'):
                 pending.append((s, uid, record, range_ids))
                 log(f"unit {uid} ({len(range_ids)} ranges): done in {record['wall_s']} s, "
@@ -563,13 +579,27 @@ def main():
             log(f"{len(slots)} slots started")
         if taking and slots:
             # Feed every free slot what the pool has now.
+            # Near the deadline a slot's last unit is cut to what fits before
+            # the margin, so every slot ends together there rather than
+            # running a whole unit into it (job 3618896: slots ended over ten
+            # minutes of the margin); a slot with too little time left for a
+            # unit takes none.
+            cap = 0
+            rate = seconds_per_event(unit_walls) if args.deadline_s else None
+            if rate:
+                fit = int((started + args.deadline_s - args.margin_s - time.time()) / rate)
+                if fit < max(1, args.min_unit_events):
+                    cap = -1
+                elif args.events_per_unit and fit < args.events_per_unit:
+                    cap = fit
             fed = False
-            for slot in [s for s in slots if s.free()]:
-                members = pool.take_unit(args.events_per_unit, min_events=args.min_unit_events)
+            for slot in [s for s in slots if s.free()] if cap >= 0 else []:
+                members = pool.take_unit(args.events_per_unit, min_events=args.min_unit_events,
+                                         max_events=cap)
                 if members and not template:
                     template.update(members[0])
                 if not members and args.loop and pool.complete and not len(pool) and template:
-                    members = replay_unit(template, replay, args.events_per_unit or 1, args.expected_events)
+                    members = replay_unit(template, replay, cap or args.events_per_unit or 1, args.expected_events)
                 if not members:
                     pool.want()                 # a slot waits on the pool
                     break
