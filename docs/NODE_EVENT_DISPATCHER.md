@@ -211,6 +211,18 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   (`job_complex_module.py`, `check_fine_grained_processing`). A
   preemptible queue wants a short timeout, a PanDA operations setting per
   queue workflow.
+- **We close the job ourselves, in minutes** (`tools/es_force_finish.py`).
+  When the shipped record goes quiet, the tool credits the ranges of every
+  close that stood (`update_event_ranges`) and sends the job's final update
+  as `finished` (`update_job`), both production-role calls; the server
+  archives it through the fine-grained accounting above. The update must
+  carry the job's attempt number: without it the output report is filed
+  under attempt 0, the adder drops it and the job stays holding, and a
+  second final update is ignored as already done. Never a kill:
+  `killJob` bypasses the fine-grained accounting. On npps0 (task 40259,
+  job 3618959, cut 57 minutes in) the job was `finished`/`fg_partial` six
+  seconds after the update and 110 seconds after the cut, 6,750 ranges
+  finished and the other 13,250 released to the file.
 - **The record leaves the node as it is made** (JOB_REPORTING.md, The
   Event Service record), so the job page draws a preempted job from its
   last shipped record: the lanes end at the cut, marked in red; light
