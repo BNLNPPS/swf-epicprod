@@ -48,6 +48,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from call_home import CallHome, default_flag, load_job_env, status_key  # noqa: E402
+from es_record import RecordOut, trim_unit  # noqa: E402
 
 
 def meminfo_kb(field):
@@ -533,6 +534,39 @@ def main():
     load_job_env(args.sandbox)            # the report key rides in the sandbox's environment file
     CallHome(default_flag(args.sandbox), status_key(), status).start()
 
+    def record():
+        # The record shipped off the node as it is made (es_record.py): what
+        # a preempted job leaves behind is the last of these.
+        running = [c for c in list(closes)]
+        return {
+            'kind': 'es_record', 'version': 1, 'stamp': args.stamp,
+            'payload_version': payload_version,
+            'pandaid': os.environ.get('PANDAID', ''), 'slots': args.slots,
+            'started_at': started, 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
+            'taking': taking,
+            'done': [trim_unit(r) for r in list(summary['done'])],
+            'failed': [trim_unit(r) for r in list(summary['failed'])],
+            'closes': [{k: c.get(k) for k in ('index', 'ok', 'outcome', 'events', 'started_at',
+                                               'ended_at', 'wall_s', 'did')}
+                       for c in list(summary['closes'])],
+            'closing': [{'index': c.index, 'started_at': c.started,
+                         'units': [u[1] for u in c.units]} for c in running],
+            'awaiting_close': [trim_unit(dict(u[2], slot=u[0].index))
+                               for u in list(pending) + [u for c in running for u in c.units]],
+            'in_flight': [{'unit_id': s.unit, 'slot': s.index, 'started_at': s.taken_at,
+                           'events': s.unit_events,
+                           'range': {'startEvent': s.unit_range.get('startEvent'),
+                                     'lastEvent': s.unit_range.get('lastEvent')}}
+                          for s in list(slots) if s.unit is not None],
+        }
+
+    try:
+        with open(os.path.join(args.payload, 'VERSION')) as f:
+            payload_version = f.readline().strip()
+    except OSError:
+        payload_version = ''
+    shipped = RecordOut(record).start()
+
     def report(slot, uid, record, ok, range_ids, extra=''):
         wall = record.get('wall_s') or 0
         for rid in range_ids:
@@ -556,6 +590,7 @@ def main():
             range_ids = list(s.range_ids)
             if ok:
                 unit_walls.append((int(record.get('events') or 0), float(record['wall_s'])))
+                shipped.nudge()
             if ok and record.get('handoff'):
                 pending.append((s, uid, record, range_ids))
                 log(f"unit {uid} ({len(range_ids)} ranges): done in {record['wall_s']} s, "
@@ -580,6 +615,7 @@ def main():
                 else:
                     report(slot, uid, record, False, range_ids, extra=f"close {rec['index']} failed: {rec.get('message')}")
                     summary['failed'].append(record)
+            shipped.nudge()
             log(f"close {rec['index']}: {rec.get('outcome')} {rec.get('did')} "
                 f"({rec.get('events')} events, {len(c.units)} units) in {rec['wall_s']} s"
                 + ('' if rec['ok'] else f"; {rec.get('message')}"))
@@ -590,6 +626,7 @@ def main():
             # (with a running close's, which dies with it).
             cut = time.time()
             feed.exhausted = True                       # nothing more is asked of the pilot
+            shipped.halt()                              # the node is gone: nothing more leaves it
             for s in slots:
                 if s.unit is not None:
                     summary['interrupted'].append({
@@ -692,6 +729,7 @@ def main():
     for s in slots:
         s.wait(120)
     summary['wall_s'] = round(time.time() - started, 1)
+    shipped.stop()
     summary['ended_at'] = time.time()
     with open(args.summary, 'w') as f:
         json.dump(summary, f)

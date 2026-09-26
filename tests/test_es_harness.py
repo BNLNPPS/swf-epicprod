@@ -222,3 +222,40 @@ class PoolTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestRecordOut(unittest.TestCase):
+    """The record shipped off the node as it is made (es_record.py)."""
+
+    def test_writes_the_snapshot_under_the_job_key_and_halts_for_good(self):
+        import es_record as r
+        sent = []
+        orig = r.put_object
+        r.put_object = lambda body, bucket, key, *a, **k: (sent.append((key, json.loads(body))), (True, ''))[1]
+        env = {'PANDAID': '42', 'REPORT_OUT_BUCKET': 'b', 'REPORT_OUT_ACCESS_KEY_ID': 'k',
+               'REPORT_OUT_SECRET_ACCESS_KEY': 's'}
+        old = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            rec = r.RecordOut(lambda: {'done': [r.trim_unit({'unit_id': 'u', 'events': 3, 'handoff': {'x': 1},
+                                                             'range': {'startEvent': 1, 'lastEvent': 3, 'LFN': 'f'}})]},
+                              interval=0.05).start()
+            time.sleep(0.2)
+            rec.halt()
+            time.sleep(0.1)
+            n = len(sent)
+            self.assertGreaterEqual(n, 1)
+            key, body = sent[-1]
+            self.assertEqual(key, 'reports/42/es.json')
+            self.assertEqual(body['done'][0], {'unit_id': 'u', 'events': 3, 'range': {'startEvent': 1, 'lastEvent': 3}})
+            self.assertIn('written_at', body)
+            rec.nudge()
+            time.sleep(0.1)
+            self.assertEqual(len(sent), n)            # halted: nothing more leaves the node
+        finally:
+            r.put_object = orig
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
