@@ -68,12 +68,33 @@ def api(endpoint, data):
     return curl.post(f'{C.server_base_path_ssl}/{endpoint}', data, json_out=True)
 
 
+def job_state(pandaid):
+    """The job's status and attempt number from the server. The final update
+    must carry the attempt: without it the output report is filed under
+    attempt 0, the adder drops it as the wrong attempt (adder_gen.py,
+    process_job_report) and the job stays holding, and a second final update
+    is ignored as already done (job_complex_module.py, updateJobStatus)."""
+    import pandaclient.Client as C
+    status, jobs = C.getJobStatus([pandaid])
+    if status != 0 or not jobs or jobs[0] is None:
+        raise SystemExit(f'job {pandaid}: getJobStatus failed (status {status})')
+    return jobs[0].jobStatus, int(jobs[0].attemptNr)
+
+
+def count_true(rets):
+    """update_event_ranges returns its per-range results as the text of a
+    Python list ("[True, True, ...]"), not a JSON list."""
+    if isinstance(rets, str):
+        return rets.count('True'), rets.count('True') + rets.count('False')
+    return sum(1 for x in rets if x is True), len(rets)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('pandaid', type=int)
     ap.add_argument('--status', default='finished', choices=('finished', 'failed'))
     ap.add_argument('--record')
-    ap.add_argument('--attempt', type=int, help="the job's attempt number, when the server asks for it")
+    ap.add_argument('--attempt', type=int, help="the attempt expected; read from the server, refused on mismatch")
     ap.add_argument('--apply', action='store_true')
     args = ap.parse_args()
 
@@ -87,20 +108,26 @@ def main():
         print('dry run: nothing sent')
         return 0
 
+    job_status, attempt = job_state(args.pandaid)
+    if job_status not in ('running', 'starting', 'stagein', 'stageout'):
+        print(f'job {args.pandaid} is {job_status}: a final update would be ignored; nothing sent')
+        return 1
+    if args.attempt is not None and args.attempt != attempt:
+        print(f'job {args.pandaid} is at attempt {attempt}, not {args.attempt}; nothing sent')
+        return 1
+
     for i in range(0, len(ids), CHUNK):
         batch = [{'eventRangeID': r, 'eventStatus': 'finished'} for r in ids[i:i + CHUNK]]
         status, out = api('event/update_event_ranges', {'event_ranges': json.dumps(batch), 'version': 0})
         ok = isinstance(out, dict) and out.get('success')
         rets = (((out or {}).get('data') or {}).get('Returns') or []) if isinstance(out, dict) else []
-        print(f'update_event_ranges {i}-{i + len(batch)}: http {status}, success {ok}, '
-              f'{sum(1 for x in rets if x is True)} true of {len(rets)}'
+        n_true, n_all = count_true(rets)
+        print(f'update_event_ranges {i}-{i + len(batch)}: http {status}, success {ok}, {n_true} true of {n_all}'
               + ('' if ok else f', message {(out or {}).get("message") if isinstance(out, dict) else out}'))
-    data = {'job_id': args.pandaid, 'job_status': args.status,
+    data = {'job_id': args.pandaid, 'job_status': args.status, 'attempt_nr': attempt,
             'pilot_error_code': PREEMPTED_CODE,
             'pilot_error_diag': 'Event Service node lost (preempted); force-finished from the record '
                                 'the harness shipped: every close that stood credited'}
-    if args.attempt is not None:
-        data['attempt_nr'] = args.attempt
     status, out = api('pilot/update_job', data)
     print(f'update_job {args.status}: http {status}, response {json.dumps(out)[:400]}')
     return 0 if isinstance(out, dict) and out.get('success') else 1
