@@ -227,6 +227,12 @@ class PhysicsConfig(PermanentIdentity):
     def __str__(self):
         return self.config_key
 
+    @property
+    def summary(self):
+        """What this configuration is, in one line (pcs.physics_config.summary)."""
+        from .physics_config import summary
+        return summary(self)
+
 
 class IdentityHistory(models.Model):
     """Database-written, append-only snapshots, including edition rebindings."""

@@ -276,3 +276,40 @@ def backfill_physics_configs():
     return {'editions_bound': bound,
             'configs_total': PhysicsConfig.objects.count(),
             'configs_created': PhysicsConfig.objects.count() - before}
+
+
+# The physics parameters that say what a configuration simulates, in the
+# order a reader wants them after the process; beams, Q2 and the gun
+# energy are rendered by summary() itself.
+_SUMMARY_PARAMS = ('particle', 'final_state', 'state', 'channel', 'decay_mode',
+                   'mechanism', 'coherence', 'nucleus', 'nucleon', 'beam_species',
+                   'mass', 'beam_config', 'polarization', 'beam_polarization')
+
+
+def summary(pc):
+    """One line saying what a physics configuration is, for display beside
+    its label: the physics tag's process and defining parameters, beams,
+    Q2 range, the generator, sample, background and requesting groups.
+    ``pc`` is a PhysicsConfig with physics_tag and background_tag loaded."""
+    import re
+    p = (pc.physics_tag.parameters if pc.physics_tag_id else {}) or {}
+    parts = [str(p.get('process') or pc.physics_tag.tag_label)]
+    parts += [str(p[k]) for k in _SUMMARY_PARAMS if p.get(k) not in (None, '', 'N/A')]
+    e, h = p.get('beam_energy_electron'), p.get('beam_energy_hadron')
+    if e and h and 'N/A' not in (e, h):
+        parts.append(f'{e}x{h} GeV')
+    elif p.get('gun_energy'):
+        parts.append(str(p['gun_energy']))
+    q2 = str(p.get('q2_range') or '')
+    if q2.lower().startswith('minq2='):
+        parts.append('Q² > ' + q2.split('=', 1)[1])
+    elif q2:
+        parts.append('Q² ' + re.sub(r'(?<=\d)(to|_)(?=\d)', '–', q2.removeprefix('q2_')))
+    line = ' '.join(parts)
+    extra = [x for x in (pc.evgen_display, pc.sample_name,
+                         pc.background_tag.tag_label if pc.background_tag_id else '') if x]
+    if extra:
+        line += ' · ' + ', '.join(extra)
+    if pc.requestors:
+        line += ' · ' + ', '.join(pc.requestors)
+    return line

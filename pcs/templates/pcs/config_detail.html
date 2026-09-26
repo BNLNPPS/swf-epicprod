@@ -5,6 +5,7 @@
 {% block content %}
 <div class="container-fluid mt-4">
     <h2>{{ config.label }} <span class="text-muted">· physics configuration</span></h2>
+    <p class="lead mb-2">{{ config.summary }}</p>
 
     <p><span class="badge bg-secondary">{{ config.lifecycle }}</span>
         {% if config.lifecycle_reason %}{{ config.lifecycle_reason }}{% endif %}

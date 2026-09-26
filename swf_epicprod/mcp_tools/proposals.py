@@ -25,10 +25,34 @@ ACTION_LABELS = {'propagation': 'campaign propagation',
 MCP_APPROVERS_KEY = 'ai_proposal_mcp_approvers'
 
 
-def _proposal_line(row):
+def _physics_by_label(rows):
+    """What each campaign plan row's physics configuration is
+    (pcs.physics_config.summary), by label, in one query."""
+    labels = {r.subject_key for r in rows if r.action == 'campaign_plan'}
+    if not labels:
+        return {}
+    from pcs.models import PhysicsConfig
+    from pcs.physics_config import summary
+    return {pc.label: summary(pc) for pc in PhysicsConfig.objects
+            .select_related('physics_tag', 'background_tag').filter(label__in=labels)}
+
+
+def _proposal_line(row, physics=None):
     payload = row.payload or {}
     pre = row.precondition or {}
-    if row.action == 'ping':
+    if row.action == 'campaign_plan':
+        change = (f"{str(payload.get('disposition') or '?').replace('_', ' ')} "
+                  f"in {payload.get('campaign', '?')}"
+                  + (f", {payload['target_events']:,} events"
+                     if isinstance(payload.get('target_events'), int) else '')
+                  + (f", priority {payload['priority']}"
+                     if payload.get('priority') is not None else ''))
+        what = (physics or {}).get(row.subject_key)
+        subject = f"{row.subject_key} ({what})" if what else row.subject_key
+    elif row.action == 'standard_config':
+        change = f"create {payload.get('name', '?')}"
+        subject = row.subject_key
+    elif row.action == 'ping':
         change = (f"enter ping due {payload.get('due', '?')}"
                   + (f" (owner {payload['owner']})" if payload.get('owner') else ''))
         subject = payload.get('title') or row.subject_key
@@ -71,12 +95,13 @@ def _list_proposals_sync(status, limit):
     total = qs.count()
     safe_limit = max(1, min(int(limit or 50), 200))
     rows = list(qs.order_by('-created_at')[:safe_limit])
+    physics = _physics_by_label(rows)
 
     items = [{
         'ref': r.ref,
         'status': r.status,
         'subject': r.subject_key,
-        'change': _proposal_line(r).split(': ', 1)[-1],
+        'change': _proposal_line(r, physics).split(': ', 1)[-1],
         'comment': r.comment,
         'proposer': r.proposer,
         'batch_id': r.batch_id,
@@ -88,7 +113,7 @@ def _list_proposals_sync(status, limit):
                   if total else 'No AI proposals awaiting decision.')
     else:
         header = f'{total} AI proposal(s) with status {status}:'
-    display = '\n'.join([header] + [_proposal_line(r) for r in rows])
+    display = '\n'.join([header] + [_proposal_line(r, physics) for r in rows])
 
     return {
         'success': True,
