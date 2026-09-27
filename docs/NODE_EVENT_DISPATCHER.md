@@ -58,7 +58,7 @@ representative of each:
 | three quarters or more finished | 14% | 17% | 55% | [20281](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/20281/) |
 | a quarter or more ended by the wall (taskbuffer 300) | 9% | 16% | 22% | [19126](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/19126/) |
 | most jobs failed | 14% | 14% | 16% | [21512](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/21512/) |
-| under half the pilots got a job | 10% | 2% | 3% | [20863](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/20863/) |
+| under half the pilots got a job | 10% | 2% | 3% | [15958](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/15958/): 41 of 128 pilots got a job, the other cores idle for 2 h 24 min; most of this kind are near-empty and end within half an hour |
 
 A clean allocation loses only the wave's ragged end, 13% at the
 median, and returns its unused wall ([16081](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/16081/):
