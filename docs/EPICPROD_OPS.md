@@ -544,6 +544,28 @@ reason; the dig reads the copy as the job's log when no log tarball
 exists (`cached_payload_log_texts`). One `harvester_stdout_capture`
 action per pass carries the counts.
 
+## Harvester worker records
+
+PanDA keeps a harvester worker row (one batch allocation: its batch
+job, cores, submission, start and end) three months after the row's
+last update, dropping the table's partitions by date; the job-worker
+links and the jobs are kept. The allocation page
+(`/panda/allocations/<harvester>/<worker>/`, NODE_EVENT_DISPATCHER.md,
+The problem, measured) needs the row for the allocation's clock, so
+the NERSC queues' rows are copied into swfdb
+(`swf_harvester_worker_record`, `monitor_app/worker_records.py`, doer
+`scripts/worker-record-capture.py`, handler `worker_record_capture` on
+the prod-ops agent, nightly by cron enqueue at 03:23). A row is copied
+whole but its JDL, and again whenever PanDA's `lastupdate` is newer, so
+a worker copied while running keeps its final state. The allocation
+timeline reads the copy when PanDA no longer has the row. About a
+hundred rows a day, under a kilobyte each. One `worker_record_capture`
+action per pass carries the counts (read, created, updated, unchanged).
+
+```
+23 3 * * * bash -lc 'source ~/.env && /opt/swf-monitor/current/.venv/bin/python /opt/swf-monitor/current/scripts/enqueue-ops-message.py worker_record_capture --created-by nightly_cron' >> /opt/swf-monitor/shared/logs/worker-record-cron.log 2>&1
+```
+
 ## Nightly catalog sync
 
 A `wenauseic` cron enqueues `catalog_sync` for the ops agent nightly at 02:47:
