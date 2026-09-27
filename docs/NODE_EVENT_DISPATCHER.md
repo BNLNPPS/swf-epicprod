@@ -271,13 +271,23 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   cut 150 s into its second close; the agent closed it `fg_partial` with
   854 events, and JEDI's second attempt over the file started a minute
   later, re-ran the cut units and credited 1,710 events, none of them
-  already credited; the third attempt credited 1,697 more. Each
-  preemption, like each deadline, spends one of the file's attempts: the
-  task ended failed at its third attempt with 15,739 ranges unprocessed,
-  as a file that no attempt finishes does (the earlier preemption tests,
-  at `maxAttempt` 1, ended the same way after their first job). On a
-  preemptible queue `maxAttempt` must cover the preemptions a file can
-  expect before it is finished.
+  already credited; the third attempt credited 1,697 more.
+- **Passes, not failures.** Each job over the file is a pass toward its
+  completion, and the server counts passes and failures apart
+  (`job_complex_module.py`): a pass that credits ranges ends `finished`
+  (`fg_partial`), returns the file to `ready` and adds to its `attemptNr`
+  only; a pass that credits nothing ends `fg_stumble`, and adds to
+  `failedAttempt` as well only when the job's final status is `failed`
+  (npps0 job 3618786, reported finished by the pilot with nothing
+  credited, counted as a pass). The file gets another pass while `attemptNr`
+  is below `maxAttempt` and `failedAttempt` below `maxFailure`. Task
+  40271, at `maxAttempt` 3 and no `maxFailure`, ended failed after three
+  passes that all made progress, with 15,739 ranges unprocessed (the
+  earlier preemption tests, at `maxAttempt` 1, after one). A preemptible
+  queue's Event Service tasks therefore set `maxAttempt` high, since
+  passes that make progress should continue until the file is done, and
+  bound the passes without progress with `maxFailure` (submitter
+  `--es-max-attempt`, `--es-max-failure`).
 - **The test** (`tools/npps0/preempt_job.sh`, test only) takes a running
   job's node away on npps0: after a chosen close it waits a set time and
   SIGKILLs the job's whole pilot pass at once, so nothing is told and
