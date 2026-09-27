@@ -266,6 +266,18 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   Event Service record), so the job page draws a preempted job from its
   last shipped record: the lanes end at the cut, marked in red; light
   yellow is processing cut off, dark yellow output lost on the node.
+- **The next job takes up what the cut left** (npps0 task 40271,
+  2026-09-27, 25-minute jobs, `maxAttempt` 3). The first job's node was
+  cut 150 s into its second close; the agent closed it `fg_partial` with
+  854 events, and JEDI's second attempt over the file started a minute
+  later, re-ran the cut units and credited 1,710 events, none of them
+  already credited; the third attempt credited 1,697 more. Each
+  preemption, like each deadline, spends one of the file's attempts: the
+  task ended failed at its third attempt with 15,739 ranges unprocessed,
+  as a file that no attempt finishes does (the earlier preemption tests,
+  at `maxAttempt` 1, ended the same way after their first job). On a
+  preemptible queue `maxAttempt` must cover the preemptions a file can
+  expect before it is finished.
 - **The test** (`tools/npps0/preempt_job.sh`, test only) takes a running
   job's node away on npps0: after a chosen close it waits a set time and
   SIGKILLs the job's whole pilot pass at once, so nothing is told and
