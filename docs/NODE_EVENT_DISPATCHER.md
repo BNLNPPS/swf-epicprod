@@ -40,6 +40,36 @@ simulation/reconstruction over EVGEN inputs:
   core for ePIC simulation payloads; the dispatcher inherits that
   worker-count budget rather than changing it.
 
+**Allocations by kind (2026-07-02 to 2026-09-27).** The allocation
+page draws what every pilot of one batch allocation did
+(`/panda/allocations/<harvester>/<worker>/`, linked from each job's
+Harvester Worker card). Over the 5,829 production allocations at
+`NERSC_Perlmutter_epic` whose worker records PanDA still keeps, every
+one ran a single wave: each pilot takes one job and exits, so a core
+is idle from its job's end to the allocation's end. 34% of the
+allocated core-hours went to jobs that finished; the median allocation
+put 26% there. Classified by what dominated each allocation, with a
+representative of each:
+
+| kind | allocations | core-hours | in finished jobs | representative |
+|---|---|---|---|---|
+| output registration failed (exit 78 in a quarter of the jobs or more) | 31% | 33% | 10% | [20209](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/20209/): 53 of 75 jobs processed for 1.5 h, then exit 78 |
+| every job finished | 21% | 18% | 86% | [15319](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/15319/) |
+| three quarters or more finished | 14% | 17% | 55% | [20281](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/20281/) |
+| a quarter or more ended by the wall (taskbuffer 300) | 9% | 16% | 22% | [19126](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/19126/) |
+| most jobs failed | 14% | 14% | 16% | [21512](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/21512/) |
+| under half the pilots got a job | 10% | 2% | 3% | [20863](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/20863/) |
+
+A clean allocation loses only the wave's ragged end, 13% at the
+median, and returns its unused wall ([16081](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/16081/):
+128 jobs finished between 1 h 45 min and 2 h 01 min, the batch job
+ended at 2 h 04 min). The losses are in the other four fifths: output
+lost at registration after the full processing, jobs ended by the wall,
+and pilots that leave after an early failure with the allocation
+running on for its slowest job
+([19343](https://epic-devcloud.org/prod/panda/allocations/Perlmutter_test_1/19343/):
+62 of 128 jobs failed within 20 minutes, 44% of the core-hours in jobs).
+
 The structural cause is a mismatch of quanta: the unit of dispatched
 work (a multi-hour job) is comparable to the unit of computing (a
 4-hour allocation).
