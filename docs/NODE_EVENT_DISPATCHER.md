@@ -249,9 +249,11 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   (180 s), has not marked its own end (`ended_at`, JOB_REPORTING.md) and
   has not reached its write cap is closed out: the ranges of every close
   that stood credited (`update_event_ranges`) and the job's final update
-  sent as `finished` (`update_job`) with the credited count, both
-  production-role calls; the server archives it through the fine-grained
-  accounting above. Each close-out is an `es_closeout` action.
+  sent as `finished` (`update_job`) with the credited count, or as
+  `failed` when no close stood, so that a pass without progress counts
+  against `maxFailure` (Passes, not failures, below); both are
+  production-role calls, and the server archives the job through the
+  fine-grained accounting above. Each close-out is an `es_closeout` action.
   `tools/es_force_finish.py` does the same for one job by hand. A node
   lost after the harness ended, during the pilot's stage-out, is left to
   the server's heartbeat timeout. The update must

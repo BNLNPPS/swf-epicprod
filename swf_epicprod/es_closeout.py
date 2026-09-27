@@ -14,7 +14,10 @@ close-out then
    job's attempt number and the credited count), so the server archives
    it through its fine-grained accounting: finished ranges counted, the
    rest released to the file for the next job, the job
-   ``finished``/``fg_partial``.
+   ``finished``/``fg_partial``. A job with no close that stood is sent
+   ``failed``: its pass made no progress, and only a failed job counts
+   against the file's ``maxFailure``, the bound on passes without
+   progress (``maxAttempt`` counts every pass).
 
 Both are production-role calls, the role Harvester uses for lost
 workers. Never a kill: ``killJob`` bypasses the fine-grained accounting.
@@ -146,6 +149,12 @@ def finish_job(pandaid, ids, status='finished', expect_queue=None, expect_attemp
         out['refused'] = f'job is at {queue}, not {expect_queue}'
     if out.get('refused') or not apply:
         return out
+    # Nothing to credit: the pass made no progress, and only a failed job
+    # counts against the file's maxFailure (a finished one ends fg_stumble
+    # and counts as a pass, npps0 job 3618786).
+    if not ids and status == 'finished':
+        status = 'failed'
+    out['status'] = status
     credited = 0
     for i in range(0, len(ids), CHUNK):
         batch = [{'eventRangeID': r, 'eventStatus': 'finished'} for r in ids[i:i + CHUNK]]
