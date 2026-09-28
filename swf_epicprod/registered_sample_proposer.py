@@ -57,8 +57,16 @@ def _registered_records():
 def _comment(path, record, identity):
     physics = identity['physics'] or {}
     evgen = identity['evgen'] or {}
-    parts = [f"Registered {record['registered_at'] or 'at an unrecorded date'}: "
-             f"{record['files'] or '?'} file(s), "
+    # Rucio lists a fresh dataset's files and replicas a little after
+    # registration, so a scan run just after it sees neither; say so
+    # rather than print an unknown count and date.
+    if record['files'] or record['registered_at']:
+        registered = (f"Registered {record['registered_at'] or 'at an unrecorded date'}: "
+                      f"{record['files'] or '?'} file(s), ")
+    else:
+        registered = ("Registered just before this scan, before Rucio listed its "
+                      "files and date (the next inventory refresh fills them in): ")
+    parts = [registered +
              f"{record['events'] if record['events'] is not None else 'an uncounted number of'} events; "
              f"no request names it and no task runs it."]
     reading = ' '.join(str(physics.get(k) or '') for k in (

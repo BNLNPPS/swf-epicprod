@@ -180,7 +180,7 @@
               <span class="rs-status text-muted"></span>
             </div>
             {% else %}
-            <div class="text-muted">Approve on the direct face (login required): the requestor, target and priority are entered there.</div>
+            <div class="text-muted"><a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}">Sign in</a> to approve: the requestor, target events and priority are entered here.</div>
             {% endif %}
           </div>
           {% endif %}
@@ -343,7 +343,10 @@
         const dids = (d.datasets || []).map(x => x.did).join(', ');
         line(d.path, 'registered ' + d.files + ' files (' + gb(d.bytes || 0) + ') as '
              + dids + '. Refreshing the inventory'
-             + (d.events_pending ? ', then counting events.' : '.'), '#2e7d32');
+             + (d.events_pending ? ', then counting events.' : '.')
+             + ' If no request names this sample, it enters the campaign plan once'
+             + ' its intake proposal, shown on its row after the refresh, is approved.',
+             '#2e7d32');
       } else {
         failures += 1;
         line(d.path, 'failed: ' + (d.error || 'unknown error'), '#c62828');

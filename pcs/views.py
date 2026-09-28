@@ -3751,8 +3751,20 @@ def pcs_campaign_plan(request):
     # union of the selections (monitor_app.inclusive_filter).
     inclusive_filter = flt.context(rows_all, facets, request)
 
+    # Registered EVGEN samples no request names reach the plan only when
+    # their intake proposal is approved on the EVGEN inputs page
+    # (EPICPROD_EVGEN_INPUTS.md, From a registered sample to a task), so
+    # the plan says how many wait for this campaign.
+    registered_pending = 0
+    if campaign is not None:
+        from ai.models import Proposal
+        registered_pending = Proposal.objects.filter(
+            proposer='registered-sample', status='proposed',
+            payload__campaign=campaign.name).count()
+
     return render(request, 'pcs/campaign_plan.html', {
         'campaign': campaign,
+        'registered_pending': registered_pending,
         'assembly': assembly,
         'withdrawn_editions': withdrawn_editions,
         'campaign_editions': campaign_editions,

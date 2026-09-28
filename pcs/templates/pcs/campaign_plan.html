@@ -25,6 +25,13 @@
         {% endif %}
     </div>
 
+    {% if registered_pending %}
+    <p style="max-width: 112ch;"><strong>{{ registered_pending }} registered EVGEN sample{{ registered_pending|pluralize }}</strong>
+    that no request names {% if registered_pending == 1 %}is{% else %}are{% endif %} waiting to be taken into {{ campaign.name }}. A registered
+    sample enters this plan when its intake proposal is approved on the
+    <a href="{% url 'pcs:evgen_inputs' %}">EVGEN inputs</a> page, with a requestor, target events and priority.</p>
+    {% endif %}
+
     {% if not campaign %}
     <p class="text-muted">No current or future campaign exists.</p>
     {% elif assembly %}
