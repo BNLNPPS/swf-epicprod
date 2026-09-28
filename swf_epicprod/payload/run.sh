@@ -561,9 +561,14 @@ if [[ -n "${TRIAL_OUTPUT_ROOT:-}" ]]; then
   if [[ -n "${TRIAL_LIFETIME_S:-}" ]]; then
     LIFETIME_ARGS=(--lifetime "${TRIAL_LIFETIME_S}")
   fi
-  # A trial proves the production path, log upload included, whatever
-  # the configuration's copy_log says.
+  # A trial is the run we read, so everything is on whatever the
+  # configuration says: FULL, RECO and a generated EVGEN registered,
+  # logs uploaded, through Rucio.
+  COPYFULL=true
+  COPYRECO=true
   COPYLOG=true
+  COPYEVGEN=true
+  USERUCIO=true
   echo "trial payload run: outputs under epic:/${TRIAL_OUTPUT_ROOT} in the production layout, lifetime ${TRIAL_LIFETIME_S:-unset} s"
 fi
 
