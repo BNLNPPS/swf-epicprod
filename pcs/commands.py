@@ -1196,6 +1196,14 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
     # by the submission doer before the task goes to PanDA
     # (docs/RUCIO_REGISTRATION_CONTRACT.md § 2).
     from swf_epicprod.output_datasets import output_datasets
+    if spec.get('trial'):
+        # A trial is the run we read, so everything is on whatever the
+        # configuration says: FULL, RECO and a generated EVGEN registered
+        # through Rucio and the logs uploaded. Set before the output
+        # datasets are derived from this environment, so the datasets
+        # created at submission and the job agree (docs/PCS.md, Trials).
+        spec['env'] = dict(spec['env'], COPYFULL='true', COPYRECO='true',
+                           COPYLOG='true', COPYEVGEN='true', USERUCIO='true')
     spec['outputs'] = output_datasets(spec, cfg)
     return spec
 
