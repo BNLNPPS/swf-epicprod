@@ -561,6 +561,9 @@ if [[ -n "${TRIAL_OUTPUT_ROOT:-}" ]]; then
   if [[ -n "${TRIAL_LIFETIME_S:-}" ]]; then
     LIFETIME_ARGS=(--lifetime "${TRIAL_LIFETIME_S}")
   fi
+  # A trial proves the production path, log upload included, whatever
+  # the configuration's copy_log says.
+  COPYLOG=true
   echo "trial payload run: outputs under epic:/${TRIAL_OUTPUT_ROOT} in the production layout, lifetime ${TRIAL_LIFETIME_S:-unset} s"
 fi
 
