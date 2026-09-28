@@ -737,6 +737,12 @@ def render_bundle_page(bundle):
         '#### Acquisition manifest', _manifest_table(bundle.get('manifest') or []),
         '#### Analytics member index', _member_table(rollup),
     ]
+    if 'live_findings' in bundle:
+        sections.extend([
+            '<a id="production-findings"></a>',
+            '### Production findings and resolutions — epicprod-live',
+            _structured_markdown(bundle['live_findings']),
+        ])
     notes = facts.get('evidence_notes') or []
     if notes:
         sections.extend([

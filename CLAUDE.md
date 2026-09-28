@@ -22,6 +22,12 @@ implicit fetch at deploy time.
 
 ## Docs
 
+Material production findings and resolutions must be reported in
+`epicprod-live`, with affected scope, current status and supporting evidence.
+Private dialog, TJAI coordination and commits are not substitutes. The
+publication discipline is in swf-monitor `docs/NOTICE_ROUTING.md`
+(Findings and resolutions); it applies prospectively, without backfill.
+
 `docs/ARCHITECTURE_MAP.md` is the plan of record for what lives where
 (common-lib / swf-monitor-as-platform / swf-epicprod) and each
 component's consumption interface. The epicprod documentation set

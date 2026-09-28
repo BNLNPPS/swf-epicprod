@@ -7,6 +7,8 @@ for comparisons. Generated assessments are consumers, never evidence stores.
 """
 
 import json
+import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -18,12 +20,14 @@ from swf_epicprod.assessment import reporting
 TIMEOUT = 60
 BUNDLE_SCHEMA = 'epicprod-evidence-bundle/4'
 NARRATIVE_SECTION = 'epicprod.narrative'
+LIVE_CHANNEL = 'epicprod-live'
+LIVE_MAX_PAGES = 20
 
 
-def _get(url, token=''):
+def _get(url, token='', *, auth_scheme='Token'):
     headers = {'Accept': 'application/json'}
     if token:
-        headers['Authorization'] = f'Token {token}'
+        headers['Authorization'] = f'{auth_scheme} {token}'
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
         return json.loads(resp.read().decode() or '{}')
@@ -33,10 +37,10 @@ class _Manifest:
     def __init__(self):
         self.entries = []
 
-    def fetch(self, source, url, token=''):
+    def fetch(self, source, url, token='', *, auth_scheme='Token'):
         t0 = time.monotonic()
         try:
-            data = _get(url, token=token)
+            data = _get(url, token=token, auth_scheme=auth_scheme)
             self.entries.append({'source': source, 'url': url, 'ok': True,
                                  'ms': int((time.monotonic() - t0) * 1000)})
             return data
@@ -63,6 +67,81 @@ def _page_items(listing):
     if isinstance(listing, list):
         return listing
     return listing.get('items') or listing.get('results') or []
+
+
+def _live_findings(generated_at, window_days, manifest):
+    """Read the reporting channel, not generated assessments, as evidence.
+
+    Uses the trigger's existing Mattermost credential, only for GETs. A
+    failed or bounded-incomplete read is a visible evidence limitation.
+    Nothing is joined, posted, rewritten, or backfilled.
+    """
+    start = generated_at - timedelta(days=window_days)
+    result = {
+        'channel': LIVE_CHANNEL, 'available': False, 'complete': False,
+        'window_start': start.isoformat(), 'window_end': generated_at.isoformat(),
+        'posts': [], 'excluded_generated_assessments': 0,
+        'assessment_requirement': (
+            'Read these channel posts in full before assessing material '
+            'failures. Reconcile findings and resolution notices with the '
+            'same incident, endpoint, tasks and time interval; verify their '
+            'linked evidence when material. Distinguish resolved historical '
+            'losses from current unresolved problems. Cite the posts and '
+            'supporting evidence. If this read is unavailable or incomplete, '
+            'report that limitation, never infer that no resolution exists.'),
+    }
+    token = os.environ.get('EPICPROD_LIVE_TOKEN') or os.environ.get('MATTERMOST_TOKEN')
+    if not token:
+        manifest.note('epicprod_live_findings', False, 'Mattermost read credential unavailable')
+        return result
+    host = os.environ.get('MATTERMOST_URL', 'chat.epic-eic.org').removeprefix('https://').rstrip('/')
+    team_name = os.environ.get('MATTERMOST_TEAM', 'main')
+    base = f'https://{host}'
+
+    def fetch(source, path):
+        return manifest.fetch(source, base + '/api/v4' + path,
+                              token=token, auth_scheme='Bearer')
+
+    team = fetch('epicprod_live_team', '/teams/name/' + urllib.parse.quote(team_name, safe=''))
+    if not team:
+        return result
+    channel = fetch('epicprod_live_channel', f'/teams/{team["id"]}/channels/name/{LIVE_CHANNEL}')
+    if not channel:
+        return result
+    since_ms = int(start.timestamp() * 1000)
+    until_ms = int(generated_at.timestamp() * 1000)
+    posts = {}
+    for page in range(LIVE_MAX_PAGES):
+        data = fetch('epicprod_live_posts',
+                     f'/channels/{channel["id"]}/posts?page={page}&per_page=100')
+        if data is None:
+            break
+        batch = [data['posts'][key] for key in data.get('order', [])]
+        for post in batch:
+            if (since_ms <= post['create_at'] <= until_ms
+                    and not post.get('delete_at') and not post.get('type')):
+                posts[post['id']] = post
+        if not batch or min(p['create_at'] for p in batch) < since_ms:
+            result.update(available=True, complete=True)
+            break
+    if not result['complete']:
+        manifest.note('epicprod_live_findings', False, 'channel window could not be read completely')
+    for post in sorted(posts.values(), key=lambda p: (p['create_at'], p['id'])):
+        text = post.get('message') or ''
+        # These are generated reports, not independent findings. Exclude both
+        # linked publication cards and legacy action-title notices.
+        if ((text.startswith('### [') and re.search(
+                r'\*\*(?:[A-Za-z_ ]+ )?AI assessment published\*\*', text))
+                or re.match(r'^`[^`]+` · \*\*assessment register\*\*', text)):
+            result['excluded_generated_assessments'] += 1
+            continue
+        result['posts'].append({
+            'id': post['id'], 'author_id': post.get('user_id') or '',
+            'timestamp': datetime.fromtimestamp(post['create_at'] / 1000, timezone.utc).isoformat(),
+            'thread_id': post.get('root_id') or '', 'content': text,
+            'url': f'{base}/{team_name}/pl/{post["id"]}',
+        })
+    return result
 
 
 def _parse_timestamp(value):
@@ -243,6 +322,7 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
     baseline = _baseline_status(
         monitor_url, campaign, generated_at, window_days, manifest)
     deltas = _deltas(baseline, rollup, generated_at, window_days)
+    live_findings = _live_findings(generated_at, window_days, manifest)
     evidence = {
         'schema': BUNDLE_SCHEMA,
         'generated_at': generated_at.isoformat(),
@@ -256,6 +336,7 @@ def assemble(campaign, kind, window_days, *, monitor_url, corun_url,
         'rollup': rollup,
         'deltas': deltas,
         'narratives': narratives,
+        'live_findings': live_findings,
         'prior_ai_reports_supplied': 0,
     }
     evidence['facts'] = reporting.build_fact_set(rollup, deltas)

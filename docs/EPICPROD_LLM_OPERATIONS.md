@@ -196,6 +196,15 @@ metadata identifying the work item, model, and prompt/configuration provenance.
 
 ## Implementation Rules
 
+Material production findings and resolutions from interactive or durable LLM
+work must be reported in `epicprod-live`; reporting only in a private dialog,
+TJAI coordination thread or commit is insufficient. Reports identify the
+incident, affected scope, evidence, current status and action or owner;
+resolution notices link the original incident and distinguish a known cause,
+implemented fix, deployed fix and verified recovery. The
+[channel discipline](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/NOTICE_ROUTING.md#findings-and-resolutions)
+is forward-only and does not require backfilling historical reports.
+
 - Production object records store pointers to corun-ai artifacts, not copied LLM
   content.
 - corun-ai service-owned artifacts use `data.ui_visible=false` when they should be

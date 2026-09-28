@@ -55,6 +55,12 @@ the concrete contract.)
   Cadence defaults: the daily at 03:45 ET, after the 02:47 catalog-sync
   chain has refreshed the production state being assessed, and the
   weekly on Monday at 06:00 ET. The trigger records an action-stream event.
+  The bundle also includes a read-only, paginated read of `epicprod-live`
+  posts over the reporting interval, retaining the full finding and
+  resolution text and links while excluding generated assessment posts.
+  The trigger uses its existing Mattermost credential; it never posts,
+  joins a channel or changes historical messages. Failed or bounded-incomplete
+  reads appear in the acquisition manifest and degrade the evidence visibly.
 - **Registration.** The production-side completion handler — fed by
   corun's job-completion callback — validates the artifact and registers
   it through `epic_register_ai_assessment` — the write path whose
@@ -126,6 +132,17 @@ The verdict vocabulary is `ok | attention | alarm`.
 The model is treated as an untrusted generator inside a deterministic
 envelope. The template and schema define the contract; the harness
 enforces it.
+
+Production investigators must report material findings and resolutions in
+`epicprod-live`, following the
+[publication discipline](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/NOTICE_ROUTING.md#findings-and-resolutions).
+The assessor must read those posts in full, match their scope and chronology
+to the incident being assessed, and verify linked evidence when material.
+Resolved historical failures still contribute to the reporting interval's
+losses; they are not automatically current unresolved problems. Missing channel
+access is a stated limitation, not evidence of an absent resolution. Private
+dialogs and generated prior assessments are not substitutes for this record.
+The requirement applies prospectively, with no historical backfill.
 
 - **The model interprets; it does not own the facts.** Production code renders
   metrics, deltas, intervals, and evidence labels from the bundle. The harness
