@@ -633,12 +633,20 @@ def _evgen_manifest_from_inputs(task, events_per_job):
         scope, sep, name = did.partition(':')
         if not sep:
             scope, name = 'epic', did
+        files = []
         for f in fetch_jlab_rucio_did_files(scope, name):
             fname = f.get('name') or ''
             rel = fname[len('/EVGEN/'):] if fname.startswith('/EVGEN/') else fname.lstrip('/')
             head, _, base = rel.rpartition('/')
             stem, ext = _split_evgen_ext(base)
-            file_col = f'{head}/{stem}' if head else stem
+            files.append((f'{head}/{stem}' if head else stem, ext, f))
+        # A sample registered in two formats (the tree and the ASCII it was
+        # converted from) is one sample: the tree is the input, since the
+        # payload mixes background only into a hepmc3.tree.root signal.
+        trees = {col for col, ext, _ in files if ext == 'hepmc3.tree.root'}
+        for file_col, ext, f in files:
+            if ext != 'hepmc3.tree.root' and file_col in trees:
+                continue
             try:
                 file_events = int(f.get('events') or 0)
             except (TypeError, ValueError):
