@@ -60,7 +60,7 @@ crash_capture() {
   case "${CURRENT_STAGE}" in
     simulation) program=npsim ;;
     reconstruction) program=eicrecon ;;
-    background) program=hepmcmerger ;;
+    background) program=${BG_MERGER:-hepmcmerger} ;;
     evgen) program=evgen ;;
     *) program="" ;;
   esac
@@ -665,6 +665,9 @@ esac
 
 # Integration window (ns) used with bg freq (kHz) to compute per-event skip
 INTEGRATION_WINDOW=${INTEGRATION_WINDOW:-2000}
+# Background merger: hepmcmerger (SignalBackgroundMerger) by default, or
+# timeframebuilder (docs/EPICPROD_PAYLOAD.md, Background merging).
+BG_MERGER=${BG_MERGER:-hepmcmerger}
 
 # Mix background events if the input file is a hepmc file
 if [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
@@ -692,30 +695,57 @@ if [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
       # random term decorrelates parallel tasks. Merger wraps bg file, so large offsets are safe.
       skip=$(awk "BEGIN {srand(${MIXED_SEED}); print int((${SKIP_N_EVENTS}*${skip})+1) + int(rand()*2147483647)}")
       status=$(echo "$bg_file" | jq -r '.status')
-      BG_ARGS+=(--bgFile "$file" "$freq" "$skip" "$status")
+      BG_ARGS+=(--background "$file" "$freq" "$skip" "$status")
       STABLE_STATUSES="${STABLE_STATUSES} $((status+1))"
       DECAY_STATUSES="${DECAY_STATUSES} $((status+2))"
     done < <(jq -c '.[]' ${BG_FILES})
-    # Run the background merger with proper logging
+    # Run the background merger with proper logging. The merger is chosen
+    # by BG_MERGER (default hepmcmerger); its adapter under mergers/ only
+    # translates the normalized arguments to its program's command line
+    # (docs/EPICPROD_PAYLOAD.md, Background merging).
+    stage background start "${BG_MERGER}, ${EVENTS_PER_TASK} frames"
+    MERGER_ADAPTER=${SCRIPT_DIR}/mergers/${BG_MERGER}.sh
+    if [ ! -f "${MERGER_ADAPTER}" ]; then
+      stage background fail "unknown BG_MERGER ${BG_MERGER}"
+      REPORT_NOTE="unknown background merger BG_MERGER=${BG_MERGER}"
+      echo "ERROR: unknown BG_MERGER '${BG_MERGER}'; no merge run."
+      exit 86
+    fi
+    MERGER_BIN=$(bash "${MERGER_ADAPTER}" --binary)
+    if ! command -v "${MERGER_BIN}" >/dev/null 2>&1; then
+      stage background fail "merger ${MERGER_BIN} not in the image (BG_MERGER=${BG_MERGER})"
+      REPORT_NOTE="background merger ${MERGER_BIN} (BG_MERGER=${BG_MERGER}) is not in the image"
+      echo "ERROR: ${MERGER_BIN} (BG_MERGER=${BG_MERGER}) is not on the PATH; no merge run."
+      exit 86
+    fi
+    MERGED_FILE=${FULL_TEMP}/${TASKNAME}.hepmc3.tree.root
     {
       date
       eic-info
-      prmon \
-        --filename ${LOG_TEMP}/${TASKNAME}.hepmcmerger.prmon.txt \
-        --json-summary ${LOG_TEMP}/${TASKNAME}.hepmcmerger.prmon.json \
+      guard_stage ${BG_MERGER} prmon \
+        --filename ${LOG_TEMP}/${TASKNAME}.${BG_MERGER}.prmon.txt \
+        --json-summary ${LOG_TEMP}/${TASKNAME}.${BG_MERGER}.prmon.json \
         -- \
-      SignalBackgroundMerger \
-        --rngSeed ${SEED:-1} \
-        --nSlices ${EVENTS_PER_TASK} \
-        --signalSkip ${SKIP_N_EVENTS} \
-        --signalFile ${INPUT_FILE} \
-        --signalFreq ${SIGNAL_FREQ:-0} \
-        --signalStatus ${SIGNAL_STATUS:-0} \
-        --intWindow ${INTEGRATION_WINDOW} \
-        "${BG_ARGS[@]}" \
-        --outputFile ${FULL_TEMP}/${TASKNAME}.hepmc3.tree.root
+      bash "${MERGER_ADAPTER}" \
+        --seed ${SEED:-1} \
+        --frames ${EVENTS_PER_TASK} \
+        --window ${INTEGRATION_WINDOW} \
+        --output ${MERGED_FILE} \
+        --signal ${INPUT_FILE} ${SIGNAL_FREQ:-0} ${SKIP_N_EVENTS} ${SIGNAL_STATUS:-0} \
+        ${BG_ARGS[@]+"${BG_ARGS[@]}"}
 
-    } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.hepmcmerger.log | tail -n1000
+    } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.${BG_MERGER}.log | tail -n1000
+    # A merger can stop short of the frames asked for and still exit 0
+    # (TimeFrameBuilder at the end of a source without repeat), so the
+    # merged file is read before simulation is handed it.
+    MERGED_FRAMES=$(python $SCRIPT_DIR/count_events.py --tree hepmc3_tree "${MERGED_FILE}") || MERGED_FRAMES=""
+    if [ "${MERGED_FRAMES}" != "${EVENTS_PER_TASK}" ]; then
+      stage background fail "merged file holds ${MERGED_FRAMES:-no readable} frames of ${EVENTS_PER_TASK}"
+      REPORT_NOTE="background merge (${BG_MERGER}) wrote ${MERGED_FRAMES:-no readable} frames of ${EVENTS_PER_TASK}"
+      echo "ERROR: the merged file holds ${MERGED_FRAMES:-no readable} frames of ${EVENTS_PER_TASK}; simulation not started."
+      exit 87
+    fi
+    stage background ok "${BG_MERGER}, ${MERGED_FRAMES} frames"
 
     # Use background merged file as input for next stage
     INPUT_FILE=${FULL_TEMP}/${TASKNAME}.hepmc3.tree.root
@@ -934,7 +964,7 @@ upload_logs() {
       "${LOG_TEMP}/${TASKNAME}.eicrecon.prmon.txt" \
       "${LOG_TEMP}/${TASKNAME}.eicrecon.log" \
       "${LOG_TEMP}/${TASKNAME}.eicrecon.dot" \
-      "${LOG_TEMP}/${TASKNAME}.hepmcmerger.log"
+      "${LOG_TEMP}/${TASKNAME}.${BG_MERGER:-hepmcmerger}.log"
     do
       if [ -f "$FILE" ]; then
         FILES_TO_TAR+=("$FILE")

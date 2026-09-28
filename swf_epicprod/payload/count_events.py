@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Print the event count of a podio ROOT file: the entry count of its
 ``events`` tree, the count the epicprod payload reports and registers
-(swf-epicprod docs/RUCIO_REGISTRATION_CONTRACT.md). Exits 1 with the
-reason on stderr when the file or the tree cannot be read, so a caller
-never mistakes silence for zero.
+(swf-epicprod docs/RUCIO_REGISTRATION_CONTRACT.md). ``--tree`` names
+another tree, ``hepmc3_tree`` for the frames of a merged HepMC3 file.
+Exits 1 with the reason on stderr when the file or the tree cannot be
+read, so a caller never mistakes silence for zero.
 
 Usage:
-  count_events.py <podio.root>
+  count_events.py [--tree NAME] <file.root>
 """
 
 import sys
@@ -15,10 +16,14 @@ EVENTS_TREE = "events"
 
 
 def main():
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} <podio.root>", file=sys.stderr)
+    args = sys.argv[1:]
+    tree_name = EVENTS_TREE
+    if len(args) == 3 and args[0] == "--tree":
+        tree_name, args = args[1], args[2:]
+    if len(args) != 1:
+        print(f"Usage: {sys.argv[0]} [--tree NAME] <file.root>", file=sys.stderr)
         return 2
-    path = sys.argv[1]
+    path = args[0]
     try:
         import ROOT
     except ImportError:
@@ -29,9 +34,9 @@ def main():
     if not tfile or tfile.IsZombie():
         print(f"count_events: cannot open {path}", file=sys.stderr)
         return 1
-    tree = tfile.Get(EVENTS_TREE)
+    tree = tfile.Get(tree_name)
     if not tree:
-        print(f"count_events: no {EVENTS_TREE} tree in {path}", file=sys.stderr)
+        print(f"count_events: no {tree_name} tree in {path}", file=sys.stderr)
         tfile.Close()
         return 1
     print(int(tree.GetEntries()))

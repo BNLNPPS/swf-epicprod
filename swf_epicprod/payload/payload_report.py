@@ -31,11 +31,12 @@ SCHEMA = "epicprod-payload-report/1"
 MAX_METRIC_VALUE = 64
 
 # Every stage runs under its own prmon, and its output is named for the
-# stage. Three labels predate that convention and are named for the tool
-# they monitored; any other label is reported under its own name, so a
-# newly wrapped stage in run.sh needs no change here.
+# stage. Four labels are named for the tool they monitor (the two
+# background mergers, npsim, eicrecon); any other label is reported under
+# its own name, so a newly wrapped stage in run.sh needs no change here.
 PRMON_LABEL_STAGES = {
     "hepmcmerger": "background",
+    "timeframebuilder": "background",
     "npsim": "simulation",
     "eicrecon": "reconstruction",
 }

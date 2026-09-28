@@ -38,7 +38,7 @@ The stages of run.sh, as cloned:
 | Landing | `landing_check.py`: a TLS handshake with the Rucio server named in `rucio.cfg` and a TCP connect to the input door, each with a short timeout and one retry, the node guard's published exclusion fetched once (this node listed by a live document in force), and the write door when the job's outputs have no other way home (`xrdfs stat`, then the date on the certificate the door serves); a definite negative exits 80 in seconds with the reason in the stage log and the report, an expired write-door certificate exits 86, doubt proceeds | `RUCIO_CONFIG`, `XRDRURL`, `NODE_EXCLUSION_URL`, `LANDING_WRITE_DOOR` |
 | Geometry | resolves the detector compact file for the beams, `<config>_<e>x<p>.xml`, or for the stand-in beams `DETECTOR_BEAMS` names when the image has no geometry for the physics beams; a missing file exits 83 in seconds, before any generation or simulation | the container, `EBEAM`, `PBEAM`, `DETECTOR_BEAMS` |
 | Input | stats a `hepmc3.tree.root` input at the JLab door (`xrdfs stat`, twice; the door's "no such file" exits 85 in seconds, any other answer proceeds) and streams it; copies other inputs with `xrdcp` | `XRDRURL`, `XRDRBASE` |
-| Background | merges signal and background with `SignalBackgroundMerger` from `BG_FILES`, rate-scaled skips and a seed mixed from the input name | the container, staged `BG_FILES` |
+| Background | merges signal and background with the merger `BG_MERGER` selects (`SignalBackgroundMerger` by default, TimeFrameBuilder on request) from `BG_FILES`, rate-scaled skips and a seed mixed from the input name, then checks the merged file holds the frames asked for (see Background merging) | the container, staged `BG_FILES` |
 | Simulation | `npsim` under `prmon`, seeded per chunk | the container |
 | Reconstruction | `eicrecon` under `prmon` | the container |
 | Metadata | `parse_podio_metadata.py` reads geometry, beams and gun parameters from the FULL file; the software release from `eic-info` | PyROOT |
@@ -72,7 +72,7 @@ The payload lives in this repository inside the package, as
 `swf_epicprod/payload/`: `run.sh`, `register_to_rucio.py`,
 `validate_rootfile.py`, `parse_podio_metadata.py`, `shared_utils.py`,
 `rucio.cfg`, `check_output.py`, `count_events.py`,
-`payload_report.py`, with a `VERSION` file naming the payload version
+`payload_report.py`, the merger adapters under `mergers/`, with a `VERSION` file naming the payload version
 and the upstream commit it was cloned from. Package
 data, so the deploy's non-editable freeze of swf-epicprod carries it
 and the submit doer finds it in the interpreter it runs under; the doer
@@ -247,7 +247,8 @@ path adds one rather than exiting 1.
 | 82 | Event generation failed (internal EVGEN, EPICPROD_INTERNAL_EVGEN.md): the steering could not be composed, the driver did not build or run, the afterburner did not build from the shipped source, or the afterburner refused the beams. Nothing downstream ran; the step that refused is the last ERROR line of the evgen stage log. |
 | 128+N | The stage's program died on signal N (134 SIGABRT, 135 SIGBUS, 136 SIGFPE, 139 SIGSEGV); the stage log names the stage. The payload does not map these to its own codes, so the signal number survives; the crash trap puts the last 200 lines of the failing stage's log into the report's note and runs the log upload before exiting (SEGFAULT_DIAGNOSIS.md). |
 | 83 | No detector geometry for the beams: the image has no compact file for the physics tag's beam energies (or for the stand-in `DETECTOR_BEAMS` names), so no work was started. The image's ep geometries are 5x41, 5x100, 9x100, 9x130, 9x250, 9x275, 10x100, 10x130, 10x250, 10x275 and 18x275 (26.07.1); a trial at another pair declares a stand-in through the configuration's `detector_beams`. |
-| 86 | The write door this job's outputs must pass serves a certificate that has already expired, so the door will refuse every session the production client opens and the job has nowhere to deliver. Read in the payload's first seconds, so no work was started. Unlike 80, no other worker escapes this: PanDA's retry runs the job again, in seconds, until the door's certificate is replaced. |
+| 86 | The write door this job's outputs must pass serves a certificate that has already expired, so the door will refuse every session the production client opens and the job has nowhere to deliver. Read in the payload's first seconds, so no work was started. Unlike 80, no other worker escapes this: PanDA's retry runs the job again, in seconds, until the door's certificate is replaced. Also: the background merger `BG_MERGER` names is unknown or its program is not in the image, so no merge ran; the background stage's reason and the report's note name which. |
+| 87 | The background merge exited without error but the merged file does not hold the frames the job asked for, or cannot be read, so simulation was not started. The stage reason gives the count found. |
 | 85 | The input is not at the door: `xrdfs stat` of the streamed `hepmc3.tree.root` input was answered "no such file or directory" twice, ten seconds apart, so no work was started. The door's answer is in the stage log and the report; PanDA's retry runs the job again. A stat that gets no answer (a timeout, an unreachable door) proceeds. |
 
 Codes 65, 78 and 79 also appear in the run script's stage log and in
@@ -296,6 +297,56 @@ declared metadata with the metadata the job read from its own file and
 writes the comparison for the payload report
 (`registration.metadata`: per dataset the keys that agree, differ and
 are absent); a difference is reported, never a failure.
+
+## Background merging
+
+The background stage runs one of two mergers, chosen by `BG_MERGER` in
+the job environment: `hepmcmerger`, SignalBackgroundMerger
+(`eic/HEPMC_Merger`), the default, or `timeframebuilder`,
+`timeframe_builder` (`eic/TimeframeBuilder`). `run.sh` keeps everything
+the two share: reading `BG_FILES`, the rate-scaled and seed-driven
+background skips, the signal skip, the status offsets and the stable
+and decay status lists handed to npsim, the output path, the stage
+records and the prmon and fatal-signal watch. It passes the chosen
+adapter, `mergers/<BG_MERGER>.sh`, one normalized argument set: seed,
+frame count, integration window, output, and for the signal and each
+background its file, frequency in kHz, skip and status offset. The
+adapter translates that set to its program's command line and replaces
+itself with the program, so the program's exit status, a signal exit
+included, is the stage's. Both write the merged HepMC3 file npsim reads
+with its skip reset to zero, and the prmon label is the merger's name,
+reported under the `background` stage either way.
+
+The `hepmcmerger` adapter gives SignalBackgroundMerger the command
+`run.sh` built inline through payload 0.23.1, argument for argument.
+The `timeframebuilder` adapter maps frequencies from kHz to events per
+ns (factor 1e-6); a signal frequency of 0 to a static signal source of
+one event per frame, a positive one to a frequency-driven signal
+source; the signal's skip and status offset, with its weight kept; and
+each background to a source `bgN` with its file, frequency, skip and
+status offset, repeating at end of file, which the seed-driven skips
+rely on. SignalBackgroundMerger reads a background frequency of 0 or
+less as a weighted source sampled by event weight; TimeFrameBuilder has
+no such mode, and the adapter refuses the background rather than place
+no events from it.
+
+Before simulation, the merged file's `hepmc3_tree` entry count must
+equal the frames asked for (`count_events.py --tree hepmc3_tree`);
+otherwise the stage fails with exit 87. A merger can stop short and
+still exit 0, as TimeFrameBuilder does when a source without repeat
+runs out.
+
+TimeFrameBuilder is opt-in for validation only. A payload canary
+selects it with `submit-evgen-task.py --canary-bg-merger
+timeframebuilder` (swf-monitor), which rides into the job environment;
+no production configuration sets `BG_MERGER`. It is not used for a
+campaign until an image carries a build with HepMC3 support and the
+fixes the source reading at `53da5be` calls for (the event index
+advanced twice per event, end of file reopening the same file, skips
+larger than a file handled by recursive reopening, and exit 0 on a
+short output), and its output has been compared with
+SignalBackgroundMerger's under criteria agreed with production
+coordination.
 
 ## Evolution
 
@@ -571,6 +622,14 @@ In order, each a committed step on the clone:
     own reads of the area (`pcs/services.py`, `XROOTD_EPIC_*`) and the
     crash reproduction's input moved with it. Output registration is
     untouched: EIC-XRD's door is `dtn-rucio.jlab.org`.
+20. **Interchangeable background mergers** (2026-09-28, payload
+    0.24.0; Background merging above). The merge runs through an
+    adapter chosen by `BG_MERGER`, SignalBackgroundMerger by default
+    and TimeFrameBuilder on request, inside a `background` stage with
+    start, success and failure records and the fatal-signal watch; a
+    missing merger exits 86 and a merged file short of its frames
+    exits 87. The default adapter gives SignalBackgroundMerger the
+    same command as before.
 
 ## Multithreading
 
