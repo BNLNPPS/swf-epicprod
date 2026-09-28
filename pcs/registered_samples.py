@@ -11,11 +11,15 @@ its source location, the production edition on the campaign's release
 pair, the request with the requestor, target and priority, and the draft
 task, in one transaction with one origin-stamped event.
 """
+import logging
+
 from django.db import transaction
 
 from .physics_match import (derive_background, derive_evgen, derive_physics,
                             single_particle_angle)
 from .physics_config import config_name
+
+_log = logging.getLogger(__name__)
 
 
 def did_tail(did):
@@ -139,6 +143,40 @@ def _origin_attrs(origin):
     return {'origin': 'manual'}
 
 
+def _match_from_inventory(input_edition, did):
+    """Write the EVGEN-stage record's Rucio match from the recorded
+    inventory, the entry the assimilation would write, so an intake reads
+    matched at once rather than after the next assimilation. The sample
+    was proposed from that inventory, so its record is there; if the
+    inventory cannot be read or no longer holds it, the match is left to
+    the next assimilation and the intake says so. Returns True when the
+    match was written."""
+    import json
+    import os
+    import time
+    from .services import (EVGEN_RUCIO_SNAPSHOT_NAME, RUCIO_SNAPSHOT_DIR,
+                           _rucio_evgen_entry)
+    try:
+        with open(os.path.join(RUCIO_SNAPSHOT_DIR, EVGEN_RUCIO_SNAPSHOT_NAME)) as f:
+            records = json.load(f).get('datasets') or []
+    except (OSError, ValueError) as e:
+        _log.warning('intake of %s: inventory unreadable (%s); match left to the '
+                     'next assimilation', did, e)
+        return False
+    record = next((r for r in records if r.get('did') == did), None)
+    if record is None:
+        _log.warning('intake of %s: not in the recorded inventory; match left to '
+                     'the next assimilation', did)
+        return False
+    checked_at = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+    md = dict(input_edition.metadata or {})
+    md['rucio'] = {'matched': [_rucio_evgen_entry(record, checked_at)],
+                   'checked_at': checked_at}
+    input_edition.metadata = md
+    input_edition.save(update_fields=['metadata'])
+    return True
+
+
 def registered_sample_intake(did, campaign_name, *, requestor, nevents=None,
                              priority=None, changed_by='', origin=None, comment=''):
     """Take a registered EVGEN dataset into the record as a physics
@@ -146,8 +184,9 @@ def registered_sample_intake(did, campaign_name, *, requestor, nevents=None,
     location the dataset's tail, so the next assimilation matches it),
     the production edition on the campaign's release pair, the request
     (requestor, event target, priority) anchored on the production
-    edition, the draft task on it. One transaction, one origin-stamped
-    ``registered_sample_intake`` event. Returns {'input_edition',
+    edition, the draft task on it, and the record's Rucio match written
+    from the recorded inventory, so the task has its input at once. One
+    transaction, one origin-stamped ``registered_sample_intake`` event. Returns {'input_edition',
     'edition', 'request', 'task', 'log_id'}. Refuses, with the reason,
     a path that does not derive, a sample the record already holds, an
     unknown campaign or a missing requestor."""
@@ -233,6 +272,9 @@ def registered_sample_intake(did, campaign_name, *, requestor, nevents=None,
                 input_edition.save()
             except Exception as e:                              # noqa: BLE001
                 raise ServiceError(f'{composed}: {e}')
+        input_matched = bool(((input_edition.metadata or {}).get('rucio') or {})
+                             .get('matched')) or _match_from_inventory(
+                                 input_edition, identity['did'])
         edition = _production_edition(input_edition, created_by=created_by)
         if nevents is not None and edition.expected_events is None:
             edition.expected_events = nevents
@@ -275,11 +317,14 @@ def registered_sample_intake(did, campaign_name, *, requestor, nevents=None,
             sublevel='normal', live_default=True,
             message=(f"registered sample {identity['did']} taken into {campaign.name} "
                      f"as {edition.composed_name}: request {req.pk} ({requestor}), "
-                     f"task {task.name}"),
-            did=identity['did'], input_edition=input_edition.composed_name,
+                     f"task {task.name}"
+                     + ('' if input_matched else
+                        '; the input match waits for the next EVGEN assimilation')),
+            did=identity['did'], input_matched=input_matched, input_edition=input_edition.composed_name,
             edition=edition.composed_name, request=req.pk, task=task.name,
             requestor=requestor, nevents=nevents, priority=priority,
             comment=comment or '', **_origin_attrs(origin))
     return {'input_edition': input_edition.composed_name,
             'edition': edition.composed_name, 'request': req.pk,
-            'task': task.name, 'log_id': log_id}
+            'task': task.name, 'input_matched': input_matched,
+            'log_id': log_id}

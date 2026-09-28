@@ -137,7 +137,8 @@ s0.r0 record is never shown (the 9/14 rule that no default sits on
 s0.r0; a matched sample reported as its s0.r0 record on 9/16 was this
 column). The page reads the recorded snapshot and matched references only —
 no Rucio call in the render path, nothing composed — and carries the same "Update EVGEN from
-Rucio" action as the catalog. Its second view, registration coverage,
+Rucio" action as the catalog, offered to any signed-in user on either
+face. Its second view, registration coverage,
 lists the EVGEN paths that recorded produced datasets imply but the
 inventory lacks — the registration worklist. The worklist and the
 convention-path map it reads are cached products
@@ -290,8 +291,10 @@ EVGEN-stage record with the dataset's tail as its source location, the
 production edition on the campaign's release pair (never s0.r0), the
 request anchored on the production edition with the requestor, target
 and priority, and the draft task on it, in one transaction, with one
-origin-stamped `registered_sample_intake` event. The next assimilation
-matches the record to the dataset it came from. The precondition is
+origin-stamped `registered_sample_intake` event. The intake writes the
+record's Rucio match from the recorded inventory, the entry the
+assimilation would write, so the task has its input as soon as the
+proposal is approved. The precondition is
 that no PCS evgen dataset matches the DID and no request anchors on
 the configuration; a sample that has been taken in by another route is
 stale, never doubled. Reversibility is mitigable: editions are

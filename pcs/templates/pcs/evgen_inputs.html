@@ -26,7 +26,7 @@
       {% if fetched_at %}&middot; inventory updated
         <span data-relative-time="{{ fetched_at }}"></span>{% endif %}
     </span>
-    {% if not is_tunnel and user.is_authenticated %}
+    {% if user.is_authenticated %}
     <form method="post" action="{% url 'pcs:evgen_inputs_update' %}" class="ms-2 d-inline" id="evgen-update-form">
       {% csrf_token %}
       <button type="submit" id="evgen-update-btn" class="btn btn-sm btn-primary"
@@ -37,7 +37,7 @@
     {% else %}
     {# Inactive-button convention: operator actions stay visible to every viewer, disabled outside an operator session. #}
     <button type="button" class="btn btn-sm btn-primary ms-2" disabled
-            title="Assimilate the JLab Rucio EVGEN inventory — operator action; sign in on pandaserver02">Update EVGEN from Rucio</button>
+            title="Assimilate the JLab Rucio EVGEN inventory — sign in to run it">Update EVGEN from Rucio</button>
     {% endif %}
   </div>
 
@@ -648,7 +648,7 @@
           if ((d.stale || []).length) {
             status.textContent = 'Stale: the record already holds this sample; withdrawn.';
           } else if (decision === 'approve') {
-            status.textContent = 'Taken in: the request and draft task exist; reload to see the match after the next update.';
+            status.textContent = 'Taken in: the request and the draft task are created, with this dataset as the task\'s input. Reload to see them.';
           } else {
             status.textContent = 'Denied.';
           }

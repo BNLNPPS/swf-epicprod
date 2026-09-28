@@ -102,6 +102,14 @@
         Update from Rucio
       </button>
     </form>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Re-import eic/epic-prod/docs/_data/datasets.csv into the catalog — operator action; sign in on pandaserver02">Update from CSV</button>
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Refresh the JLab Rucio output snapshot — operator action; sign in on pandaserver02">Update from Rucio</button>
+    {% endif %}
+    {# The EVGEN update is offered to any signed-in user on either face: its API is external-safe (EPICPROD_EVGEN_INPUTS.md). #}
+    {% if user.is_authenticated %}
     <form method="post" action="{% url 'pcs:pcs_catalog_evgen_update' %}" class="ms-2 d-inline" id="evgen-update-form">
       {% csrf_token %}
       <button type="submit" id="evgen-update-btn" class="btn btn-sm btn-primary"
@@ -109,6 +117,11 @@
         Update EVGEN from Rucio
       </button>
     </form>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
+            title="Assimilate the JLab Rucio EVGEN inventory and resolve it onto the catalog — sign in to run it">Update EVGEN from Rucio</button>
+    {% endif %}
+    {% if not is_tunnel and user.is_authenticated %}
     <form method="post" action="{% url 'pcs:pcs_catalog_questionnaire_match_update' %}" class="ms-2 d-inline" id="questionnaire-match-update-form">
       {% csrf_token %}
       <button type="submit" id="questionnaire-match-update-btn" class="btn btn-sm btn-primary"
@@ -118,12 +131,6 @@
     </form>
     {% else %}
     {# Inactive-button convention: operator actions stay visible to every viewer, disabled outside an operator session. #}
-    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
-            title="Re-import eic/epic-prod/docs/_data/datasets.csv into the catalog — operator action; sign in on pandaserver02">Update from CSV</button>
-    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
-            title="Refresh the JLab Rucio output snapshot — operator action; sign in on pandaserver02">Update from Rucio</button>
-    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
-            title="Assimilate the JLab Rucio EVGEN inventory and resolve it onto the catalog — operator action; sign in on pandaserver02">Update EVGEN from Rucio</button>
     <button type="button" class="btn btn-sm btn-primary ms-2" disabled
             title="Rebuild task-local questionnaire request links — operator action; sign in on pandaserver02">Update request links</button>
     {% endif %}
