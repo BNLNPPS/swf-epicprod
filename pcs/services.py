@@ -6246,7 +6246,7 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
 
 
 def prodtask_submit_request(*, task, residual=False, residual_of=None,
-                            changed_by='', source=None):
+                            changed_by='', source=None, site='', placement=None):
     """Publish a submit_task request for a locked (ready) task to the prod-ops
     agent. The web tier holds no PanDA credential — it only asks the agent to
     run the submission, which records the jediTaskID back. Gates mirror
@@ -6256,11 +6256,18 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
     `submit` action (compose view + the task detail page's "Submit in Compose"
     link) and the pressure front's feed (swf_epicprod.front, which passes
     ``source='pcs_front_feed'`` so the attempt records its origin); the
-    legacy page-view submit was retired."""
+    legacy page-view submit was retired.
+
+    ``site`` places the task on that production queue first
+    (``prodtask_place``); ``placement`` is what the Site control showed
+    (the recommended queue and its reason), recorded on the attempt."""
     import json as _json
     if task.panda_task_id is not None:
         raise ServiceError(
             f'Already submitted as jediTaskID {task.panda_task_id}.', status=409)
+    if site:
+        prodtask_place(task, site, changed_by=changed_by, placement=placement)
+        task.refresh_from_db()
     # Commissioning relaxation: a draft task may be submitted directly — the
     # 'ready' freeze is not required. Readiness is surfaced as a non-blocking
     # warning by the caller, not gated here. See docs/COMMISSIONING_RELAXATIONS.md.
@@ -6276,11 +6283,18 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
     panda_tasks = prodtask_allocate_panda_tasks(
         task=task,
         source=source or ('pcs_rerun_residual' if residual else 'pcs_submit_request'))
+    # The attempt records the queue it was sent to and, when a person or
+    # the front chose it, what the recommendation was.
+    from .commands import pinned_site
+    meta = dict(panda_tasks.metadata or {})
     if residual:
-        meta = dict(panda_tasks.metadata or {})
         meta['residual_of'] = residual_of
-        panda_tasks.metadata = meta
-        panda_tasks.save(update_fields=['metadata', 'updated_at'])
+    if placement:
+        meta['placement'] = _placement_record(site or pinned_site(task), placement,
+                                              changed_by)
+    panda_tasks.metadata = meta
+    panda_tasks.site = pinned_site(task)
+    panda_tasks.save(update_fields=['metadata', 'site', 'updated_at'])
     msg = {
         'msg_type': 'submit_evgen_task',
         'namespace': 'prodops',
@@ -6373,8 +6387,10 @@ def prodtask_panda_operation_request(*, task, operation, jedi_task_id=None,
     return {'queued': True, 'operation': operation, 'jedi_task_id': jedi_task_id}
 
 
-def prodtask_rerun_entire_task_request(*, task):
-    """Queue a new full PanDA submission attempt for a previously submitted task."""
+def prodtask_rerun_entire_task_request(*, task, site='', placement=None,
+                                       changed_by=''):
+    """Queue a new full PanDA submission attempt for a previously submitted
+    task, on ``site`` when one is chosen (``prodtask_submit_request``)."""
     if task.panda_task_id is None:
         raise ServiceError(
             'Task has no recorded PanDA submission; use Submit to PanDA.', status=409)
@@ -6384,7 +6400,8 @@ def prodtask_rerun_entire_task_request(*, task):
     task.status = 'draft'
     task.save(update_fields=['panda_task_id', 'status', 'updated_at'])
     try:
-        prodtask_submit_request(task=task)
+        prodtask_submit_request(task=task, site=site, placement=placement,
+                                changed_by=changed_by)
     except Exception:
         task.panda_task_id = old_panda_task_id
         task.status = old_status
@@ -6393,12 +6410,13 @@ def prodtask_rerun_entire_task_request(*, task):
     return task
 
 
-def prodtask_rerun_residual_request(*, task):
+def prodtask_rerun_residual_request(*, task, site='', placement=None,
+                                    changed_by=''):
     """Queue a residual .tryN submission covering the undelivered
-    remainder (docs/JEDI_INTEGRATION.md § Residual rerun). The spec
-    builder computes the residual and refuses when it cannot be
-    established; a refusal surfaces through the submission-failure path
-    with its reason."""
+    remainder (docs/JEDI_INTEGRATION.md § Residual rerun), on ``site``
+    when one is chosen. The spec builder computes the residual and
+    refuses when it cannot be established; a refusal surfaces through
+    the submission-failure path with its reason."""
     if task.panda_task_id is None:
         raise ServiceError(
             'Task has no recorded PanDA submission; use Submit to PanDA.', status=409)
@@ -6409,7 +6427,9 @@ def prodtask_rerun_residual_request(*, task):
     task.save(update_fields=['panda_task_id', 'status', 'updated_at'])
     try:
         prodtask_submit_request(task=task, residual=True,
-                                residual_of=old_panda_task_id)
+                                residual_of=old_panda_task_id,
+                                site=site, placement=placement,
+                                changed_by=changed_by)
     except Exception:
         task.panda_task_id = old_panda_task_id
         task.status = old_status
@@ -6537,6 +6557,188 @@ def prodtask_adopt_legacy(*, task, changed_by):
         url=f'/pcs/tasks/compose/?selected={task.name}')
     return {'task': task, 'log_id': log_id,
             'jedi_task_id': ready['jedi_task_id'], 'config': config.name}
+
+
+# Placement (docs/CONTINUOUS_PRODUCTION.md, Placement): production work
+# goes where we send it, never where PanDA's brokerage would. Every
+# submission names a production queue; the Site control recommends one
+# from the pressure front's stored state and a person (or the front)
+# chooses.
+
+def _front_state():
+    """The front's stored state and when it was stored; ({}, None) when
+    the front has not yet stored one. A read, never a build."""
+    from monitor_app.models import CachedProduct
+    from swf_epicprod.front import STATE_KEY
+    row = CachedProduct.objects.filter(key=STATE_KEY).first()
+    if row is None or row.built_at is None:
+        return {}, None
+    return (row.value or {}), row.built_at
+
+
+def prodtask_site_source(task, cfg=None):
+    """Where the task's queue comes from, in the order ``pinned_site``
+    reads them: ``trial`` (the site a trial was fired at), ``task`` (a
+    placement on the task), ``configuration`` (its configuration's
+    queue) or ``default``."""
+    ds = task.dataset
+    if ((ds.metadata if ds is not None else None) or {}).get('trial_site'):
+        return 'trial'
+    if (task.overrides or {}).get('panda_site'):
+        return 'task'
+    if (cfg or task.get_effective_config()).get('panda_site'):
+        return 'configuration'
+    return 'default'
+
+
+def _declared_rows(task, cfg):
+    """The task's job count: the front's cached count, else the manifest
+    its latest attempt recorded. None when neither is known."""
+    from swf_epicprod.front import task_rows_cached
+    rows = task_rows_cached(task, cfg)
+    if rows:
+        return rows
+    for pt in task.panda_tasks.order_by('-try_number')[:1]:
+        manifest = (pt.metadata or {}).get('manifest') or {}
+        if manifest.get('rows'):
+            return int(manifest['rows'])
+    return None
+
+
+def prodtask_site_options(task):
+    """The Site control's data: the queue the task goes to and where that
+    comes from, and the production queues ranked by the pressure front's
+    recommender with the census, fit and gates each was judged on
+    (swf_epicprod.front.recommend). Reads the front's stored state and
+    the database; nothing live."""
+    from swf_epicprod.front import recommend, regulated_queues, task_need
+    from .commands import pinned_site
+    state, built_at = _front_state()
+    cfg = task.get_effective_config()
+    need = task_need(cfg, rows=_declared_rows(task, cfg))
+    queues = regulated_queues()
+    result = recommend(state, need, queues)
+    site = pinned_site(task, cfg=cfg)
+    attempt = None
+    if task.panda_task_id:
+        from monitor_app.panda.queries import _get_task_record
+        live = _get_task_record(int(task.panda_task_id)) or {}
+        row = task.panda_tasks.filter(jedi_task_id=task.panda_task_id).first()
+        attempt = {'jedi_task_id': task.panda_task_id,
+                   'site': str(live.get('site') or (row.site if row else '') or ''),
+                   'status': str(live.get('status') or (row.status_snapshot if row else '') or ''),
+                   'movable': str(live.get('status') or '') in _movable_statuses(),
+                   'jobs': _active_job_counts(int(task.panda_task_id))}
+    return {
+        'site': site, 'site_source': prodtask_site_source(task, cfg),
+        'site_in_production_set': site in queues,
+        'queues': queues, 'need': need,
+        'recommended': result['recommended'], 'reason': result['reason'],
+        'rows': result['rows'],
+        'state_stored_at': built_at.isoformat() if built_at else None,
+        'attempt': attempt,
+    }
+
+
+def _active_job_counts(jedi_task_id):
+    """The PanDA task's unfinished jobs by status (jobsdefined4 and
+    jobsactive4): what a Move would stop (every status but running,
+    holding, transferring) and what it leaves to finish."""
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    sql = (f'SELECT "jobstatus", COUNT(*) FROM "{PANDA_SCHEMA}"."jobsactive4" '
+           'WHERE "jeditaskid" = %s GROUP BY 1 UNION ALL '
+           f'SELECT "jobstatus", COUNT(*) FROM "{PANDA_SCHEMA}"."jobsdefined4" '
+           'WHERE "jeditaskid" = %s GROUP BY 1')
+    counts = {}
+    try:
+        with connections['panda'].cursor() as cur:
+            cur.execute(sql, [jedi_task_id, jedi_task_id])
+            for status, n in cur.fetchall():
+                counts[status] = counts.get(status, 0) + int(n)
+    except Exception:  # noqa: BLE001
+        _log.exception('job counts for PanDA task %s failed', jedi_task_id)
+        return None
+    return counts
+
+
+def _movable_statuses():
+    from monitor_app.panda.operations import MOVABLE_TASK_STATUSES
+    return MOVABLE_TASK_STATUSES
+
+
+def _placement_record(site, placement, changed_by):
+    placement = placement if isinstance(placement, dict) else {}
+    return {'site': site,
+            'recommended': str(placement.get('recommended') or ''),
+            'reason': str(placement.get('reason') or '')[:500],
+            'followed': bool(placement.get('recommended')) and placement.get('recommended') == site,
+            'by': changed_by or '', 'at': _timezone.now().isoformat()}
+
+
+def prodtask_place(task, site, *, changed_by='', placement=None):
+    """Place the task on a production queue: every later submission of it
+    (Submit, the reruns) goes there. A trial's site is its dataset's
+    ``trial_site`` (``pinned_site`` reads it first); any other task
+    carries the queue as its ``panda_site`` override. Refuses a queue
+    outside the production set. One ``prodtask_place`` event."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from swf_epicprod.front import regulated_queues
+    from .commands import pinned_site
+    site = str(site or '').strip()
+    queues = regulated_queues()
+    if site not in queues:
+        raise ServiceError(
+            f'{site or "(none)"} is not a production queue; the production '
+            'queues are ' + ', '.join(queues) + '.', status=400)
+    before = pinned_site(task)
+    ds = task.dataset
+    if ds is not None and (ds.metadata or {}).get('trial') and (ds.metadata or {}).get('trial_site'):
+        ds.metadata = dict(ds.metadata, trial_site=site)
+        ds.save(update_fields=['metadata'])
+    else:
+        task.overrides = dict(task.overrides or {}, panda_site=site)
+        task.save(update_fields=['overrides', 'updated_at'])
+    record = _placement_record(site, placement, changed_by)
+    log_epicprod_action(
+        'pcs', 'prodtask_place', outcome='ok', username=changed_by or '',
+        subject_type='campaign_task', subject_key=task.name,
+        message=(f'{task.name} placed on {site} (was {before})'
+                 + (f'; recommended {record["recommended"]}' if record['recommended'] else '')),
+        previous_site=before, **record)
+    return record
+
+
+def prodtask_move_request(*, task, site, changed_by='', placement=None):
+    """Move the remaining work of the task's current PanDA task to a
+    production queue: PanDA's task reassign, mode soft (jobs not yet
+    running regenerate there, running jobs finish in place, the attempt
+    each killed job cost is repaid), queued as a durable operation for
+    the prod-ops agent (swf-monitor monitor_app/panda/operations.py,
+    scripts/panda-task-operation.py). The task is placed there too, so
+    its later submissions follow. Returns the operation record."""
+    from monitor_app.panda import operations
+    from monitor_app.panda.queries import _get_task_record
+    if not task.panda_task_id:
+        raise ServiceError('Task has no PanDA task to move; place it and submit.',
+                           status=409)
+    live = _get_task_record(int(task.panda_task_id))
+    if not live:
+        raise ServiceError(f'PanDA task {task.panda_task_id} not found.', status=404)
+    if str(live.get('site') or '') == str(site or '').strip():
+        raise ServiceError(f'PanDA task {task.panda_task_id} is already at {site}.',
+                           status=409)
+    try:
+        record, created = operations.queue_task_operation(
+            task=live, operation='reassign', site=site,
+            requested_by=changed_by or 'operator', source='pcs-move',
+            evidence={'task_status': str(live.get('status') or '').lower(),
+                      'previous_site': str(live.get('site') or ''),
+                      'prod_task': task.name})
+    except operations.PandaTaskOperationError as e:
+        raise ServiceError(e.detail, status=e.status)
+    if created:
+        prodtask_place(task, site, changed_by=changed_by, placement=placement)
+    return operations.serialize_operation(record)
 
 
 def prodtask_compose_trial(*, task, events=None, site='', created_by='',

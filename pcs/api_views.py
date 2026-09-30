@@ -688,7 +688,9 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         task = self.get_object()
         try:
             services.prodtask_submit_request(
-                task=task, changed_by=getattr(request.user, 'username', '') or '')
+                task=task, changed_by=getattr(request.user, 'username', '') or '',
+                site=request.data.get('site') or '',
+                placement=request.data.get('placement'))
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
         data = dict(self.get_serializer(task).data)
@@ -781,7 +783,10 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         remainder (docs/JEDI_INTEGRATION.md § Residual rerun)."""
         task = self.get_object()
         try:
-            services.prodtask_rerun_residual_request(task=task)
+            services.prodtask_rerun_residual_request(
+                task=task, site=request.data.get('site') or '',
+                placement=request.data.get('placement'),
+                changed_by=getattr(request.user, 'username', '') or '')
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
         return Response(self.get_serializer(task).data)
@@ -791,10 +796,50 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         """Queue a new full PanDA task attempt for this campaign task."""
         task = self.get_object()
         try:
-            services.prodtask_rerun_entire_task_request(task=task)
+            services.prodtask_rerun_entire_task_request(
+                task=task, site=request.data.get('site') or '',
+                placement=request.data.get('placement'),
+                changed_by=getattr(request.user, 'username', '') or '')
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
         return Response(self.get_serializer(task).data, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['get'], url_path='site-options')
+    def site_options(self, request, name=None):
+        """The Site control's data: the queue the task goes to and why,
+        and the production queues ranked by the pressure front's
+        recommender with the census, fit and gates behind the ranking
+        (docs/CONTINUOUS_PRODUCTION.md, Placement). Database reads only."""
+        return Response(services.prodtask_site_options(self.get_object()))
+
+    @action(detail=True, methods=['post'], url_path='place')
+    def place(self, request, name=None):
+        """Place the task on a production queue ({site, placement}):
+        its later submissions go there. Nothing is submitted."""
+        task = self.get_object()
+        try:
+            record = services.prodtask_place(
+                task, request.data.get('site') or '',
+                changed_by=getattr(request.user, 'username', '') or 'operator',
+                placement=request.data.get('placement'))
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(record)
+
+    @action(detail=True, methods=['post'], url_path='move')
+    def move(self, request, name=None):
+        """Move the remaining work of the task's PanDA task to a
+        production queue ({site, placement}): PanDA's soft reassign,
+        queued for the prod-ops agent; running jobs finish in place."""
+        task = self.get_object()
+        try:
+            result = services.prodtask_move_request(
+                task=task, site=request.data.get('site') or '',
+                changed_by=getattr(request.user, 'username', '') or 'operator',
+                placement=request.data.get('placement'))
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(result, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=['get'], url_path='adopt-readiness')
     def adopt_readiness(self, request, name=None):

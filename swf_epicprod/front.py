@@ -223,13 +223,10 @@ def task_rows(task, cfg):
     """The jobs a first submission of the task declares, cached a day by
     task, per-job count and matched inputs, since the count comes from a
     read of the input catalog."""
-    from pcs.commands import prodtask_events_per_job, prodtask_manifest_rows
-    n_events = prodtask_events_per_job(task, cfg=cfg)
-    if n_events <= 0:
+    from pcs.commands import prodtask_manifest_rows
+    key = _rows_key(task, cfg)
+    if key is None:
         return None
-    dids = sorted(str((i or {}).get('did') or '') for i in (task.inputs or []))
-    digest = hashlib.sha1('|'.join(dids).encode()).hexdigest()[:12]
-    key = f'front:rows:{task.pk}:{n_events}:{digest}'
     cached = cache.get(key)
     if cached is not None:
         return cached
@@ -237,6 +234,23 @@ def task_rows(task, cfg):
     if rows is not None:
         cache.set(key, rows, ROWS_CACHE_TTL_S)
     return rows
+
+
+def task_rows_cached(task, cfg):
+    """``task_rows`` when the cycle has counted it, else None: a read for
+    a page, which never triggers the catalog read."""
+    key = _rows_key(task, cfg)
+    return cache.get(key) if key else None
+
+
+def _rows_key(task, cfg):
+    from pcs.commands import prodtask_events_per_job
+    n_events = prodtask_events_per_job(task, cfg=cfg)
+    if n_events <= 0:
+        return None
+    dids = sorted(str((i or {}).get('did') or '') for i in (task.inputs or []))
+    digest = hashlib.sha1('|'.join(dids).encode()).hexdigest()[:12]
+    return f'front:rows:{task.pk}:{n_events}:{digest}'
 
 
 def open_attempt_problem(task):
@@ -477,6 +491,169 @@ def hours_summary(backlog, latest):
     return {'ready': ready, 'capacity': capacity, 'drain_h': drain_h}
 
 
+# Placement (CONTINUOUS_PRODUCTION.md, Placement): where a task's work
+# should go, from what the cycle stored. The Site control on the compose
+# page and the front read the same recommendation.
+
+CANARY_RANK = {'healthy': 0, 'insufficient': 1, 'unknown': 1, 'degraded': 2}
+
+
+def queue_limits(queue):
+    """The queue's declared limits from schedconfig (a PanDA table read):
+    walltime in hours, memory per job in MB and cores per job, each None
+    when the queue declares none. None when the queue cannot be read."""
+    from monitor_app.panda.queries import get_queue
+    cfg = (get_queue(queue) or {}).get('queue')
+    if not cfg:
+        return None
+
+    def _int(value):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    maxtime = _int(cfg.get('maxtime'))
+    return {'maxtime_h': round(maxtime / 3600.0, 2) if maxtime else None,
+            'maxrss_mb': _int(cfg.get('maxrss')) or None,
+            'corecount': _int(cfg.get('corecount')) or None,
+            'status': str(cfg.get('status') or '')}
+
+
+def task_need(cfg, rows=None):
+    """What one job of a task asks of a queue, from its effective
+    configuration, as the submission declares it (pcs/commands.py)."""
+    data = cfg.get('data') or {}
+    hours = cfg.get('target_hours_per_job')
+    walltime_h = float(hours) if hours is not None else float(data.get('walltime_hours', 2.0))
+    cores = int(data.get('corecount') or 1)
+    ram = int(data.get('ram_count') or 4096)
+    return {'walltime_h': round(walltime_h, 2), 'cores': cores,
+            'ram_mb_per_core': ram, 'memory_mb': ram * cores, 'rows': rows}
+
+
+def fit_problems(need, limits):
+    """Where one job of the task exceeds the queue's declared limits;
+    brokerage finds no candidate for such a task. Pure."""
+    problems = []
+    if not need or not limits:
+        return problems
+    if limits.get('maxtime_h') and need['walltime_h'] > limits['maxtime_h']:
+        problems.append(f"needs {need['walltime_h']} h per job, the queue allows "
+                        f"{limits['maxtime_h']} h")
+    if limits.get('maxrss_mb') and need['memory_mb'] > limits['maxrss_mb']:
+        problems.append(f"needs {need['memory_mb']} MB per job, the queue allows "
+                        f"{limits['maxrss_mb']} MB")
+    if limits.get('corecount') and need['cores'] > limits['corecount']:
+        problems.append(f"needs {need['cores']} cores, the queue's slots have "
+                        f"{limits['corecount']}")
+    return problems
+
+
+def gate_blockers(gates, settings=None):
+    """The gates standing between the queue and new work, as reasons.
+    Pure; the same gates the decision reads, apart from the front's
+    own switches (``front.enabled``, the queue's feed switch), which
+    govern the front's feeding and not a person's placement."""
+    if gates is None:
+        return ['the front has not yet recorded this queue\'s gates']
+    out = []
+    breaker = str((settings or {}).get('breaker') or gates.get('breaker') or 'closed')
+    if breaker != 'closed':
+        out.append(f'breaker {breaker}')
+    for key in ('declared', 'credential', 'canary', 'fast'):
+        g = gates.get(key) or {}
+        if g.get('red'):
+            out.append(g.get('reason') or f'{key} gate red')
+    return out
+
+
+def _depth_line(r):
+    if r['committed_h'] is not None:
+        return (f"{r['committed_h']} h of queued work against a low mark of "
+                f"{r['h_low']} h")
+    if r['not_started'] == 0:
+        return 'no queued work'
+    return f"{r['not_started']} jobs queued, depth in hours not yet calibrated"
+
+
+def recommend(state, need, queues=None):
+    """Rank the production queues for a task's work. Pure.
+
+    ``state`` is the front's stored state (``front_state``), ``need`` the
+    task's ``task_need``. A queue with a red gate or a limit the task
+    exceeds is not recommendable. The rest rank by canary standing
+    (healthy first), then by committed depth in hours (least first; an
+    uncalibrated queue with nothing queued counts as empty, one with jobs
+    queued ranks after every known depth), then by p90 start latency
+    (shortest first; none known last). Returns ``{'rows', 'recommended',
+    'reason'}``; each row carries the census, the fit and the gates it
+    was judged on.
+    """
+    state = state or {}
+    decisions = state.get('queues') or {}
+    placement = state.get('placement') or {}
+    queues = list(queues or decisions.keys())
+    rows = []
+    for queue in queues:
+        d = decisions.get(queue) or {}
+        p = placement.get(queue) or {}
+        limits = p.get('limits')
+        committed_h = d.get('committed_h')
+        not_started = int(d.get('not_started') or 0)
+        median_h, ceiling = d.get('median_walltime_h'), int(d.get('ceiling') or 0)
+        task_h = (round(need['rows'] * median_h / ceiling, 2)
+                  if need and need.get('rows') and median_h and ceiling > 0 else None)
+        gates = p.get('gates')
+        row = {
+            'queue': queue,
+            'committed_h': committed_h, 'h_low': d.get('h_low'), 'h_high': d.get('h_high'),
+            'not_started': not_started, 'running': int(d.get('running') or 0),
+            'ceiling': ceiling, 'median_walltime_h': median_h,
+            'p90_start_latency_h': d.get('p90_start_latency_h'),
+            'task_h': task_h,
+            'canary': ((gates or {}).get('canary') or {}).get('status') or d.get('canary') or 'unknown',
+            'limits': limits,
+            'fit': fit_problems(need, limits),
+            'blockers': gate_blockers(gates, {'breaker': d.get('breaker')}),
+            'front_state': d.get('state', ''), 'front_reason': d.get('reason', ''),
+        }
+        if limits is None:
+            row['fit_unknown'] = True
+        if committed_h is not None:
+            row['depth_key'] = float(committed_h)
+        elif not_started == 0:
+            row['depth_key'] = 0.0
+        else:
+            row['depth_key'] = None
+        rows.append(row)
+
+    def key(r):
+        p90 = r['p90_start_latency_h']
+        return (CANARY_RANK.get(r['canary'], 1),
+                r['depth_key'] if r['depth_key'] is not None else float('inf'),
+                p90 if p90 is not None else float('inf'))
+    eligible = sorted((r for r in rows if not r['blockers'] and not r['fit']), key=key)
+    for rank, r in enumerate(eligible, 1):
+        r['rank'] = rank
+    best = eligible[0] if eligible else None
+    if best is None:
+        reason = ('no production queue is open to this task: every queue '
+                  'has a red gate or a limit the task exceeds')
+        if not placement:
+            reason = ('no recommendation yet: the front stores its gate readings '
+                      'with each cycle, and none is stored')
+        return {'rows': rows, 'recommended': '', 'reason': reason}
+    bits = [_depth_line(best), f"canary {best['canary']}"]
+    if best['p90_start_latency_h'] is not None:
+        bits.append(f"p90 start latency {best['p90_start_latency_h']} h")
+    if need:
+        bits.append(f"fits {need['walltime_h']} h, {need['memory_mb']} MB, "
+                    f"{need['cores']} core{'s' if need['cores'] != 1 else ''} per job"
+                    + (' (limits unread)' if best.get('fit_unknown') else ''))
+    return {'rows': rows, 'recommended': best['queue'],
+            'reason': f"{best['queue']}: " + ', '.join(bits)}
+
+
 # The feed
 
 def feed_task(candidate_pk, created_by='front'):
@@ -556,6 +733,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
 
     decisions, written = [], 0
     settings_by_queue = {}
+    placement = {}
     for queue in queues:
         settings = _safe(f'{queue} settings', lambda: queue_settings(queue),
                          lambda exc: dict(QUEUE_DEFAULTS))
@@ -572,6 +750,14 @@ def run_cycle(*, dry_run=False, created_by='front'):
         feeds = _safe(f'{queue} feeds', lambda: _recent_feeds(queue, activation_window_s), [])
         last_feed_age_h = _safe(f'{queue} last feed', lambda: _last_feed_age_h(queue), None)
         census_q = (census or {}).get('queues', {}).get(queue) if census else None
+        # What placement reads (recommend): the gates as judged, whatever
+        # the front's own switches decide, and the queue's limits.
+        placement[queue] = {
+            'gates': {'canary': canary, 'credential': credential, 'declared': declared,
+                      'fast': fast_detectors((census_q or {}).get('gate')),
+                      'breaker': settings.get('breaker')},
+            'limits': _safe(f'{queue} limits', lambda: queue_limits(queue), None),
+        }
         if census is None:
             outcomes = [('held', 'census_unavailable',
                          {'queue': queue, 'mode': mode, 'ready_total': len(backlog.get(queue, [])),
@@ -639,7 +825,8 @@ def run_cycle(*, dry_run=False, created_by='front'):
         state_payload = {'observed_at': summary['observed_at'], 'cycle_at': t0.isoformat(),
                          'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
                          'jedi_throttled': jedi_throttled,
-                         'queues': latest, 'backlog': backlog, 'errors': errors,
+                         'queues': latest, 'placement': placement,
+                         'backlog': backlog, 'errors': errors,
                          'hours': hours, 'duration_s': summary['duration_s']}
         from monitor_app.cached_product import get_product
         _safe('state store', lambda: get_product(

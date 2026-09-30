@@ -208,7 +208,7 @@ invokable on their own, so a single step can be rerun without the chain.
 |---|---|---|---|
 | `submit_task` | `submit-prod-task.py` | Submit one PCS ProdTask to PanDA. Deduped per task, so near-simultaneous triggers cannot fire two submissions. | 300 |
 | `submit_evgen_task` | `submit-evgen-task.py` | Submit one PCS ProdTask by the client-API EVGEN path — the live Submit-button route. | 300 |
-| `panda_task_operation` | `panda-task-operation.py` | Run one PanDA-native operation on an existing JEDI task. | 120 |
+| `panda_task_operation` | `panda-task-operation.py` | Run one PanDA-native operation on an existing JEDI task: increase attempts, retry failures, pause, resume, finish, or reassign (Move: a soft reassign to a production queue with the attempt repaid; CONTINUOUS_PRODUCTION.md, Placement). | 120 |
 | `panda_task_operations` | `panda-task-operation.py` | Run one paced batch of scalar PanDA pause/resume commands. | 120 |
 | `panda_sandbox_keepalive` | `panda-sandbox-keepalive.py` | Keep retryable tasks' sandbox tarballs alive in the PanDA server cache. | 600 |
 | `front_cycle` | `front-cycle.py` | One decision cycle of the pressure front (CONTINUOUS_PRODUCTION.md, The dispatcher): per regulated queue, the census, the gates and the ready backlog decide feed or hold, recorded as `front_decision`. Five-minutely by cron enqueue; shadow mode submits nothing. | 240 |

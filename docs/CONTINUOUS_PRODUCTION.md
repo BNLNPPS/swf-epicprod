@@ -106,7 +106,8 @@ in priority order, against a set point expressed in time, under the
 tripwire's gate, with every decision on the action stream. The queue is
 pinned per task at submission, so queue selection is entirely
 production-side, with CRIC and PanDA configuration out of the control
-loop.
+loop (Placement, below). As of 2026-09-30 the front runs live:
+`front.mode` is `active` and `front.enabled` is true.
 
 ### The pressure measure
 
@@ -301,6 +302,96 @@ activated jobs and is the lever for reordering what is already there,
 exposed through the production-operations agent beside pause and
 resume. No aging boost is applied; a starved low-priority task stays
 where the operator put it.
+
+### Placement
+
+Production brokerage is never delegated to PanDA, and so never to CRIC.
+Every submission names a production queue, which JEDI's brokerage takes
+as pre-assigned. The production queues are the set the front
+regulates, `front.queues`: BNL_OSG_EPIC_PROD_1, UM_GREX_PanDA_1,
+NERSC_Perlmutter_epic, BNL_ePIC_GOOGLE and BNL_OSG_PanDA_1 (added
+2026-09-30). The front places work automatically; a person places and
+moves it by hand through the Site control. Both use the same
+recommendation and the same calls.
+
+**Where a task goes.** `pcs.commands.pinned_site` reads, in order:
+- the trial's `trial_site`;
+- the task's own `panda_site` override, which placement sets;
+- the configuration's `panda_site`;
+- the default, BNL_OSG_PanDA_1.
+
+**The recommendation.** `swf_epicprod.front.recommend` is a pure
+function over the front's stored state. Each cycle stores, per queue:
+- the gates as judged (canary, credential, declared downtime, the fast
+  detectors, the breaker), whatever the front's own switches decide;
+- the queue's limits from schedconfig (`maxtime`, `maxrss`,
+  `corecount`).
+
+A queue is not recommendable when a gate is red, or when one job of
+the task exceeds a limit (walltime, memory per job as memory per core
+times cores, cores). The rest rank in three steps:
+1. By canary standing, healthy first.
+2. By committed depth in hours, least first. An uncalibrated queue with
+   nothing queued counts as empty; one with jobs queued ranks after
+   every known depth.
+3. By p90 start latency, shortest first.
+
+The front's switches (`front.enabled`, a queue's feed switch) govern
+only the front's own feeding, not a person's placement.
+
+**The Site control.** It sits on the compose page, in a task's detail,
+and shows:
+- the queue the task goes to and where that comes from;
+- for a submitted task, where its PanDA task is and its state;
+- the recommendation and its reason;
+- the production queues, each with its queued work against its set
+  points, jobs queued and running, p90 start latency, this task's hours
+  on the queue at full capacity, its limits and the task's fit against
+  them, and its gates.
+
+The selected queue goes with Submit, Trial, Rerun Residual and Rerun
+Entire Task. Place records it on the task without submitting. Move
+remaining work here sends a running task's work there.
+
+**Move.** Move is PanDA's task reassign in mode `soft`. It runs as the
+`reassign` operation of swf-monitor `scripts/panda-task-operation.py`,
+queued as a durable task operation for the production-operations agent.
+What JEDI does:
+- It kills the task's jobs that are not running, holding or
+  transferring with code 51 (closed, `toreassign`). Harvester-fetched
+  `starting` jobs are included.
+- It sets the task's site and regenerates that work at the target.
+- Running jobs finish in place.
+
+Each killed job returns its file to ready with its `attemptNr` bumped.
+A file on its last attempt would therefore be left exhausted, so the
+operation follows a verified reassign with a one-attempt increase, which
+raises `maxAttempt` on the task's ready files.
+
+This was verified live on 2026-09-30 on trial task 40354, moved from
+Perlmutter to UM_GREX_PanDA_1 with one queued job and a maximum of one
+attempt. The job closed `toreassign` and left its file at attempt 1 of
+1. After the increase, its work regenerated at GREX within seconds.
+
+Move is offered while the PanDA task has work to generate or run
+(defined, ready, running, scouting, scouted, pending, assigning,
+throttled, paused). A finished, failed or exhausted task moves instead
+by a retry with a target queue or a rerun with a site. A Move places
+the task on the target too, so later submissions follow.
+
+**The record.**
+- Each placement is a `prodtask_place` action.
+- An attempt records the queue it went to (`PandaTasks.site`) and, in
+  `metadata.placement`, the recommended queue, its reason and whether
+  it was followed.
+- A Move's operation record carries the target, the previous site and
+  the mode.
+
+**REST.**
+- GET `prod-tasks/<name>/site-options/`.
+- POST `place/` and `move/`, each with `{site, placement}`.
+- `submit/`, `rerun-residual/` and `rerun-entire-task/` take `site` and
+  `placement`; `trial/` takes `site`.
 
 ### The intake
 
