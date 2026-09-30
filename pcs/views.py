@@ -5798,6 +5798,9 @@ def _jsonable(value):
     return str(value)
 
 
+SPEC_PREVIEW_ROWS = 5
+
+
 def prod_task_compose_task_detail(request, name):
     """On-demand hydration for the compose view: a task's live EVGEN submission
     spec and cached condor/panda commands, which the light initial payload omits.
@@ -5813,7 +5816,19 @@ def prod_task_compose_task_detail(request, name):
     except ProdTask.DoesNotExist:
         raise Http404(f"No task {name!r}")
     try:
-        task_params_json = json.dumps(build_evgen_task_params(task), indent=2, default=str)
+        spec = build_evgen_task_params(task)
+        if request.GET.get('full'):
+            # The whole spec, for download.
+            return JsonResponse(spec, json_dumps_params={'indent': 2, 'default': str})
+        # The job manifest carries one row per job (50,000 for a large
+        # task, 8.5 MB), which buried the page; the panel shows the first
+        # rows and the count, and links the full spec.
+        rows = spec.get('csvRows')
+        if isinstance(rows, list) and len(rows) > SPEC_PREVIEW_ROWS:
+            spec = dict(spec, csvRows=rows[:SPEC_PREVIEW_ROWS] + [
+                f'... {len(rows) - SPEC_PREVIEW_ROWS} more of {len(rows)} rows '
+                '(Full spec link above)'])
+        task_params_json = json.dumps(spec, indent=2, default=str)
         task_params_error = ''
     except Exception as e:                                       # noqa: BLE001
         task_params_json = ''
