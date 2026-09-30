@@ -147,6 +147,9 @@ Submission and execution:
   the PanDA ancillary systems.
 - [NODE_EVENT_DISPATCHER.md](docs/NODE_EVENT_DISPATCHER.md) —
   event-range processing in fixed-lifetime allocations.
+- [GKE_PILOT_FLOW.md](docs/GKE_PILOT_FLOW.md) — the production
+  operations agent runs the pilot pods of the Google Cloud Event
+  Service queue, in step with its backlog.
 - [WORK_UNIT_CONTRACT.md](docs/WORK_UNIT_CONTRACT.md) — the work-unit
   contract.
 - [VOLUNTEER_GPU_PLAN.md](docs/VOLUNTEER_GPU_PLAN.md) — volunteer-class

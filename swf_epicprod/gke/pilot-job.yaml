@@ -1,0 +1,49 @@
+# The pilot pod of BNL_ePIC_GOOGLE_es (docs/GKE_PILOT_FLOW.md): one
+# Kubernetes Job, one pod, one pilot pulling work from the queue. The
+# cycle (swf_epicprod/gke_pilots.py) sets the name, labels, resources,
+# proxy and command. The values marked __SET_FROM_CLUSTER__ come from
+# the cluster and the PanDA team's Harvester template for the queue;
+# the cycle refuses to start a pod while any remains.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: epicprod-pilot
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        cloud.google.com/gke-nodepool: __SET_FROM_CLUSTER__
+      tolerations:
+        - key: cloud.google.com/gke-spot
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: pilot
+          image: __SET_FROM_CLUSTER__
+          env:
+            - name: X509_USER_PROXY
+              value: /proxy/x509up
+            - name: PILOT_NOKILL
+              value: "True"
+            - name: TMPDIR
+              value: /tmp
+          volumeMounts:
+            - name: cvmfs-eic
+              mountPath: /cvmfs/eic.opensciencegrid.org
+              readOnly: true
+            - name: proxy
+              mountPath: /proxy
+              readOnly: true
+      volumes:
+        - name: cvmfs-eic
+          persistentVolumeClaim:
+            claimName: __SET_FROM_CLUSTER__
+            readOnly: true
+        - name: proxy
+          secret:
+            secretName: epicprod-pilot-proxy
+            defaultMode: 0400
