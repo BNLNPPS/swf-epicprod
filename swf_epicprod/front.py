@@ -568,6 +568,9 @@ def gate_blockers(gates, settings=None):
 
 
 STALL_DEFAULT_H = 6.0
+# A queue calibrated on a handful of fast starts reads a p90 of minutes;
+# the bar never drops below this.
+STALL_MIN_H = 1.0
 
 
 def stall_signal(activity, p90_start_h):
@@ -584,9 +587,13 @@ def stall_signal(activity, p90_start_h):
     a = activity or {}
     queued, running = int(a.get('queued') or 0), int(a.get('running') or 0)
     wait, last = a.get('oldest_wait_h'), a.get('last_start_h')
-    bar = float(p90_start_h) if p90_start_h else STALL_DEFAULT_H
-    basis = (f"the queue's p90 start latency, {bar} h" if p90_start_h
-             else f'{bar} h (the queue has no start-latency calibration)')
+    if p90_start_h:
+        bar = max(float(p90_start_h), STALL_MIN_H)
+        basis = (f"the queue's p90 start latency, {bar} h" if bar == float(p90_start_h)
+                 else f"{bar} h (the queue's p90 start latency, {p90_start_h} h, is below the floor)")
+    else:
+        bar = STALL_DEFAULT_H
+        basis = f'{bar} h (the queue has no start-latency calibration)'
     out = {'state': '', 'reason': '', 'bar_h': bar}
     if queued <= 0 or wait is None or wait <= bar:
         return out
