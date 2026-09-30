@@ -6629,6 +6629,14 @@ def prodtask_site_options(task):
                    'status': str(live.get('status') or (row.status_snapshot if row else '') or ''),
                    'movable': str(live.get('status') or '') in _movable_statuses(),
                    'jobs': _active_job_counts(int(task.panda_task_id))}
+        # Whether its waiting work is stuck where it is, against the start
+        # latency of the queue it waits at (swf_epicprod.front.stall_signal).
+        from swf_epicprod.front import stall_signal
+        activity = _task_activity(int(task.panda_task_id), attempt['jobs'])
+        queue_state = (state.get('queues') or {}).get(attempt['site']) or {}
+        attempt['activity'] = activity
+        attempt['stall'] = (stall_signal(activity, queue_state.get('p90_start_latency_h'))
+                            if activity else None)
     return {
         'site': site, 'site_source': prodtask_site_source(task, cfg),
         'site_in_production_set': site in queues,
@@ -6659,6 +6667,47 @@ def _active_job_counts(jedi_task_id):
         _log.exception('job counts for PanDA task %s failed', jedi_task_id)
         return None
     return counts
+
+
+RUNNING_JOB_STATUSES = ('running', 'holding', 'transferring')
+
+
+def _task_activity(jedi_task_id, counts):
+    """What the stall signal reads of a PanDA task: jobs waiting (every
+    unfinished status a soft reassign stops) and running, the hours the
+    longest-waiting one has waited since it was created, and the hours
+    since any of its jobs started (unfinished or archived). PanDA stores
+    UTC. None when unreadable."""
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    if counts is None:
+        return None
+    running = sum(counts.get(s, 0) for s in RUNNING_JOB_STATUSES)
+    queued = sum(n for s, n in counts.items() if s not in RUNNING_JOB_STATUSES)
+    hours = "EXTRACT(EPOCH FROM ((now() AT TIME ZONE 'UTC') - {})) / 3600.0"
+    wait_sql = ('SELECT ' + hours.format('MIN("creationtime")') + ' FROM ('
+                f'SELECT "creationtime" FROM "{PANDA_SCHEMA}"."jobsactive4" '
+                'WHERE "jeditaskid" = %s AND "jobstatus" <> ALL(%s) UNION ALL '
+                f'SELECT "creationtime" FROM "{PANDA_SCHEMA}"."jobsdefined4" '
+                'WHERE "jeditaskid" = %s AND "jobstatus" <> ALL(%s)) w')
+    start_sql = ('SELECT ' + hours.format('MAX("starttime")') + ' FROM ('
+                 f'SELECT "starttime" FROM "{PANDA_SCHEMA}"."jobsactive4" '
+                 'WHERE "jeditaskid" = %s UNION ALL '
+                 f'SELECT "starttime" FROM "{PANDA_SCHEMA}"."jobsarchived4" '
+                 'WHERE "jeditaskid" = %s) s')
+    try:
+        with connections['panda'].cursor() as cur:
+            running_list = list(RUNNING_JOB_STATUSES)
+            cur.execute(wait_sql, [jedi_task_id, running_list,
+                                   jedi_task_id, running_list])
+            wait = cur.fetchone()[0]
+            cur.execute(start_sql, [jedi_task_id, jedi_task_id])
+            last = cur.fetchone()[0]
+    except Exception:  # noqa: BLE001
+        _log.exception('activity of PanDA task %s failed', jedi_task_id)
+        return None
+    return {'queued': queued, 'running': running,
+            'oldest_wait_h': round(float(wait), 1) if wait is not None else None,
+            'last_start_h': round(float(last), 1) if last is not None else None}
 
 
 def _movable_statuses():

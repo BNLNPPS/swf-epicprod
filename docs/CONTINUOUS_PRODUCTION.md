@@ -379,6 +379,25 @@ throttled, paused). A finished, failed or exhausted task moves instead
 by a retry with a target queue or a rerun with a site. A Move places
 the task on the target too, so later submissions follow.
 
+**The stall signal.** The Site control marks a submitted task whose
+waiting work is stuck where it is (`swf_epicprod.front.stall_signal`,
+read from the PanDA task's unfinished and archived jobs). The bar is
+the start latency of the queue the task waits at: its p90, or 6 h
+when the queue has no calibration.
+- **Stalled:** jobs are waiting, none is running, nothing has started
+  for longer than the bar, and the oldest waiting job has waited past
+  it.
+- **Slow:** jobs are running, but the oldest waiting job has waited
+  past the bar.
+
+The signal states its numbers and points to Move.
+
+**Bulk Move.** The PanDA task list's bulk actions include Move remaining
+work, which sends every selected task to one production queue. It
+carries the same mechanics and repayment as a single Move, paced and
+verified on one clock. Like the other bulk actions, it is available on
+the internal monitor.
+
 **The record.**
 - Each placement is a `prodtask_place` action.
 - An attempt records the queue it went to (`PandaTasks.site`) and, in

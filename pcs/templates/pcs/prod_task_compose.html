@@ -557,6 +557,14 @@
         if (!d.site_in_production_set) head += ', <span class="text-danger">not a production queue</span>';
         head += '.';
         if (att) head += ` PanDA task ${htmlEscape(att.jedi_task_id)} is at <strong>${htmlEscape(att.site || 'unknown')}</strong>, ${htmlEscape(att.status || 'status unknown')}.`;
+        const stall = att && att.stall && att.stall.state;
+        if (stall) {
+            head += `<div class="alert ${stall === 'stalled' ? 'alert-danger' : 'alert-warning'} py-1 px-2 mt-1 mb-0">`
+                + `<strong>${stall === 'stalled' ? 'Stalled' : 'Slow'} at ${htmlEscape(att.site)}</strong>: `
+                + `${htmlEscape(att.stall.reason)}.`
+                + (att.movable ? ' Move remaining work below sends the waiting jobs to the selected queue.' : '')
+                + `</div>`;
+        }
         const rec = d.recommended
             ? `<div class="alert alert-success py-1 px-2 mb-2 small"><strong>Recommended</strong> ${htmlEscape(d.reason)}</div>`
             : `<div class="alert alert-warning py-1 px-2 mb-2 small">${htmlEscape(d.reason)}</div>`;

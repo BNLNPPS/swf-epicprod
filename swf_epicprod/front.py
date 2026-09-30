@@ -567,6 +567,42 @@ def gate_blockers(gates, settings=None):
     return out
 
 
+STALL_DEFAULT_H = 6.0
+
+
+def stall_signal(activity, p90_start_h):
+    """Whether a PanDA task's waiting work is stuck where it is. Pure.
+
+    ``activity``: ``queued`` and ``running`` job counts, ``oldest_wait_h``
+    (hours the longest-waiting unstarted job has waited) and
+    ``last_start_h`` (hours since any of its jobs started; None when none
+    has). The bar is the queue's p90 start latency, else STALL_DEFAULT_H.
+    ``stalled``: work waiting, none running, and nothing started for
+    longer than the bar. ``slow``: jobs running, but the oldest waiting
+    job has waited past the bar. Else ``''``.
+    """
+    a = activity or {}
+    queued, running = int(a.get('queued') or 0), int(a.get('running') or 0)
+    wait, last = a.get('oldest_wait_h'), a.get('last_start_h')
+    bar = float(p90_start_h) if p90_start_h else STALL_DEFAULT_H
+    basis = (f"the queue's p90 start latency, {bar} h" if p90_start_h
+             else f'{bar} h (the queue has no start-latency calibration)')
+    out = {'state': '', 'reason': '', 'bar_h': bar}
+    if queued <= 0 or wait is None or wait <= bar:
+        return out
+    if running == 0 and (last is None or last > bar):
+        started = ('no job has started' if last is None
+                   else f'the last job started {last} h ago')
+        out.update(state='stalled', reason=(
+            f'{queued} jobs waiting, none running; {started}, and the oldest '
+            f'has waited {wait} h, past {basis}'))
+    else:
+        out.update(state='slow', reason=(
+            f'{running} jobs running, but {queued} waiting and the oldest has '
+            f'waited {wait} h, past {basis}'))
+    return out
+
+
 def _depth_line(r):
     if r['committed_h'] is not None:
         return (f"{r['committed_h']} h of queued work against a low mark of "

@@ -2,7 +2,7 @@
 pure over the front's stored state (CONTINUOUS_PRODUCTION.md, Placement)."""
 import unittest
 
-from swf_epicprod.front import fit_problems, gate_blockers, recommend
+from swf_epicprod.front import fit_problems, gate_blockers, recommend, stall_signal
 
 GREEN = {'canary': {'status': 'healthy', 'red': False},
          'credential': {'red': False}, 'declared': {'red': False},
@@ -89,6 +89,37 @@ class RecommendTest(unittest.TestCase):
         r = recommend({}, NEED, ['A'])
         self.assertEqual(r['recommended'], '')
         self.assertIn('none is stored', r['reason'])
+
+
+class StallTest(unittest.TestCase):
+    def test_stalled_nothing_running_nothing_started(self):
+        s = stall_signal({'queued': 120, 'running': 0, 'oldest_wait_h': 31.0,
+                          'last_start_h': None}, 15.0)
+        self.assertEqual(s['state'], 'stalled')
+        self.assertIn('no job has started', s['reason'])
+
+    def test_slow_when_some_run(self):
+        s = stall_signal({'queued': 50, 'running': 3, 'oldest_wait_h': 20.0,
+                          'last_start_h': 0.5}, 15.0)
+        self.assertEqual(s['state'], 'slow')
+
+    def test_recent_start_is_not_stalled(self):
+        s = stall_signal({'queued': 50, 'running': 0, 'oldest_wait_h': 20.0,
+                          'last_start_h': 2.0}, 15.0)
+        self.assertEqual(s['state'], 'slow')
+
+    def test_within_bar_is_quiet(self):
+        s = stall_signal({'queued': 50, 'running': 0, 'oldest_wait_h': 10.0,
+                          'last_start_h': None}, 15.0)
+        self.assertEqual(s['state'], '')
+
+    def test_uncalibrated_default_bar(self):
+        s = stall_signal({'queued': 5, 'running': 0, 'oldest_wait_h': 7.0,
+                          'last_start_h': None}, None)
+        self.assertEqual((s['state'], s['bar_h']), ('stalled', 6.0))
+
+    def test_nothing_waiting(self):
+        self.assertEqual(stall_signal({'queued': 0, 'running': 4}, 15.0)['state'], '')
 
 
 if __name__ == '__main__':
