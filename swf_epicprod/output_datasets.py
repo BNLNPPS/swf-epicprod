@@ -5,8 +5,10 @@ the EVGEN spec before the task is submitted
 The names follow the payload's naming contract (``run.sh``): the tag is
 ``DETECTOR_VERSION/DETECTOR_CONFIG[/TAG_PREFIX]/<EVGEN-relative dir>``
 and the datasets are ``/FULL/<tag>``, ``/RECO/<tag>`` and, for an
-internal-EVGEN task that keeps its sample, ``/EVGEN/<dir>``; a trial's
-sit under its output root. The metadata is what the job reads back from
+internal-EVGEN task that keeps its sample, ``/EVGEN/<dir>``. A trial's
+are ``<output root>/<level>``: the trial's name carries its tags, so the
+physics tree is not repeated under it (Rucio names end at 250
+characters, which the repeated tree overran). The metadata is what the job reads back from
 its own output file (``parse_podio_metadata.py``, ``eic-info``),
 composed here from the same inputs with the payload's own detectors, so
 the job's comparison is like against like.
@@ -27,6 +29,13 @@ from swf_epicprod.payload.shared_utils import (
 
 HEPMC_EXT = "hepmc3.tree.root"
 LEVEL_DATA = {"FULL": "simulation", "RECO": "reconstruction"}
+# Rucio's limit on a data identifier name.
+DID_NAME_MAX = 250
+# The file each level's job registers, after the payload's TASKNAME
+# (run.sh: [TAG_SUFFIX_]<input basename><.chunk>).
+LEVEL_FILE_SUFFIX = {"FULL": ".edm4hep.root", "RECO": ".eicrecon.edm4eic.root",
+                     "EVGEN": "." + HEPMC_EXT}
+CHUNK_SUFFIX_LEN = len(".0000")
 
 
 def manifest_row(row: str) -> tuple[str, str, str, str]:
@@ -127,7 +136,7 @@ def output_datasets(spec: dict[str, Any], cfg: dict[str, Any]) -> list[dict[str,
     metadata: one per output level and EVGEN directory of the manifest.
     Levels follow the environment: FULL when ``COPYFULL``, RECO when
     ``COPYRECO``, EVGEN when an internal-EVGEN task keeps its sample
-    (``COPYEVGEN``). A trial's datasets sit under its output root."""
+    (``COPYEVGEN``). A trial's are one per level under its output root."""
     env = spec.get("env") or {}
     on = lambda key: str(env.get(key, "")).lower() == "true"  # noqa: E731
     levels = [lvl for lvl, key in (("FULL", "COPYFULL"), ("RECO", "COPYRECO")) if on(key)]
@@ -138,10 +147,13 @@ def output_datasets(spec: dict[str, Any], cfg: dict[str, Any]) -> list[dict[str,
     for row in spec.get("csvRows") or []:
         file_col, ext, _events, _chunk = manifest_row(row)
         for level in levels:
-            key = (level, evgen_dir(file_col))
+            key = (level, "" if root else evgen_dir(file_col))
             if key in seen:
                 continue
-            tail = evgen_dir(file_col) if level == "EVGEN" else output_tag(env, file_col)
+            if root:
+                tail = ""
+            else:
+                tail = evgen_dir(file_col) if level == "EVGEN" else output_tag(env, file_col)
             name = "/".join(p for p in (root, level, tail) if p)
             # A generated EVGEN sample registers without dataset metadata,
             # as the job registers it (run.sh, the evgen registration); the
@@ -152,3 +164,20 @@ def output_datasets(spec: dict[str, Any], cfg: dict[str, Any]) -> list[dict[str,
                 "metadata": dataset_metadata(spec, cfg, level, file_col, ext) if level in LEVEL_DATA else None,
             }
     return list(seen.values())
+
+
+def longest_output_did(spec: dict[str, Any], datasets: list[dict[str, Any]]) -> tuple[int, str]:
+    """The longest file name the submission's jobs would register, with
+    its length: each output dataset joined with the file its level
+    writes for the manifest's longest input basename."""
+    env = spec.get("env") or {}
+    prefix = f"{env['TAG_SUFFIX']}_" if env.get("TAG_SUFFIX") else ""
+    stems = [PurePosixPath(manifest_row(row)[0]).name for row in spec.get("csvRows") or []]
+    stem = max(stems, key=len) if stems else ""
+    longest = (0, "")
+    for d in datasets:
+        name = (f"{d['dataset']}/{prefix}{stem}{'.' + '0' * (CHUNK_SUFFIX_LEN - 1)}"
+                f"{LEVEL_FILE_SUFFIX.get(d['level'], '')}")
+        if len(name) > longest[0]:
+            longest = (len(name), name)
+    return longest

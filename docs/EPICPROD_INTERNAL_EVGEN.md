@@ -312,8 +312,8 @@ The first trial regenerates a configuration the catalog already holds,
 10×100 NC `q2_10to100`, so the stage is proved against a registered
 sample rather than trusted:
 `group.EIC.26.07.1.epic_craterlake.p2343.e<n>.s1.r1.trial`, one job,
-100 events, outputs under `epic:/TEST/trial/<name>/` in the production
-layout (EVGEN, FULL, RECO, LOG), two-week lifetime. Acceptance is the
+100 events, outputs under `epic:/TEST/trial/<name>/`, one directory per
+level (EVGEN, FULL, RECO, LOG; PCS.md, Trials), two-week lifetime. Acceptance is the
 ordinary one — the payload report's stages all ok, the reconstructed
 event count equal to the request, the registrations confirmed in the
 catalog — plus the comparison above on the generated sample.

@@ -5,6 +5,7 @@ import unittest
 from swf_epicprod.output_datasets import (
     dataset_metadata,
     geometry_config,
+    longest_output_did,
     output_datasets,
     output_tag,
     software_release,
@@ -46,10 +47,19 @@ class NamesTest(unittest.TestCase):
     def test_trial_root_and_internal_evgen(self):
         env = dict(ENV, EVGEN_INTERNAL='true', COPYEVGEN='true')
         out = output_datasets(spec(env, trial={'outputRoot': 'TEST/trial/t7'}), CFG)
+        # A trial's name carries its tags: one dataset per level under its
+        # root, the physics tree not repeated.
         self.assertEqual([o['dataset'] for o in out],
-                         ['/TEST/trial/t7/RECO/26.07.1/epic_craterlake/DIS/pythia8.316-1.0/NC/noRad/ep/10x100/q2_1to10',
-                          '/TEST/trial/t7/EVGEN/DIS/pythia8.316-1.0/NC/noRad/ep/10x100/q2_1to10'])
+                         ['/TEST/trial/t7/RECO', '/TEST/trial/t7/EVGEN'])
         self.assertIsNone(out[1]['metadata'])  # a generated sample registers without metadata
+
+    def test_longest_output_did(self):
+        s = spec(dict(ENV, COPYFULL='true'))
+        length, name = longest_output_did(s, output_datasets(s, CFG))
+        self.assertEqual(name, '/RECO/26.07.1/epic_craterlake/DIS/pythia8.316-1.0/NC/noRad/ep/10x100/'
+                               'q2_1to10/pythia8NCDIS_10x100_minQ2=1_beamEffects_xAngle=-0.025_hiDiv_1'
+                               '.0000.eicrecon.edm4eic.root')
+        self.assertEqual(length, len(name))
 
 
 class MetadataTest(unittest.TestCase):

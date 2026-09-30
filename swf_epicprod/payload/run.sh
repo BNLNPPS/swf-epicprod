@@ -536,22 +536,23 @@ if [[ -n "${CANARY_OUTPUT_DATASET:-}" ]]; then
 fi
 
 # Trial run (docs/PCS.md, Trials): a small, real run of a composed
-# configuration, offered to the requesting physics group. Unlike the
-# canary it keeps the production layout — the same FULL, RECO and LOG
-# substructure — rooted under epic:/TEST/trial, so the group reads the
-# output in the shape real data has while nothing can mistake it for
+# configuration, offered to the requesting physics group. Its outputs
+# sit under epic:/TEST/trial/<trial name>, one directory per level
+# (FULL, RECO, LOG, EVGEN): the trial's name carries its tags, so the
+# production physics tree is not repeated under it, which overran
+# Rucio's 250-character name limit. Nothing can mistake it for
 # production. Logs are uploaded as production uploads them, under the
 # same root. Everything registered carries a lifetime: what survives a
 # trial is the acceptance and the record, not the data.
 if [[ -n "${TRIAL_OUTPUT_ROOT:-}" ]]; then
-  FULL_DIR=${TRIAL_OUTPUT_ROOT}/FULL/${TAG}
+  FULL_DIR=${TRIAL_OUTPUT_ROOT}/FULL
   FULL_TEMP=${TMPDIR}/${FULL_DIR}
-  RECO_DIR=${TRIAL_OUTPUT_ROOT}/RECO/${TAG}
+  RECO_DIR=${TRIAL_OUTPUT_ROOT}/RECO
   RECO_TEMP=${TMPDIR}/${RECO_DIR}
-  LOG_DIR=${TRIAL_OUTPUT_ROOT}/LOG/${TAG}
+  LOG_DIR=${TRIAL_OUTPUT_ROOT}/LOG
   EARLY_LOG_TEMP=${LOG_TEMP}
   LOG_TEMP=${TMPDIR}/${LOG_DIR}
-  EVGEN_DIR=${TRIAL_OUTPUT_ROOT}/EVGEN/${SAMPLE_TAG}
+  EVGEN_DIR=${TRIAL_OUTPUT_ROOT}/EVGEN
   mkdir -p ${FULL_TEMP} ${RECO_TEMP} ${LOG_TEMP}
   # The stages that ran before this point (generation) logged under the
   # production log directory; their logs belong with the trial's.
@@ -561,7 +562,7 @@ if [[ -n "${TRIAL_OUTPUT_ROOT:-}" ]]; then
   if [[ -n "${TRIAL_LIFETIME_S:-}" ]]; then
     LIFETIME_ARGS=(--lifetime "${TRIAL_LIFETIME_S}")
   fi
-  echo "trial payload run: outputs under epic:/${TRIAL_OUTPUT_ROOT} in the production layout, lifetime ${TRIAL_LIFETIME_S:-unset} s"
+  echo "trial payload run: outputs under epic:/${TRIAL_OUTPUT_ROOT}/<level>, lifetime ${TRIAL_LIFETIME_S:-unset} s"
 fi
 
 # Before any work, ask the catalog of record about this job's output. A

@@ -1191,7 +1191,8 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
     # The datasets the jobs register into, with their metadata, created
     # by the submission doer before the task goes to PanDA
     # (docs/RUCIO_REGISTRATION_CONTRACT.md § 2).
-    from swf_epicprod.output_datasets import output_datasets
+    from swf_epicprod.output_datasets import (
+        DID_NAME_MAX, longest_output_did, output_datasets)
     if spec.get('trial'):
         # A trial is the run we read, so everything is on whatever the
         # configuration says: FULL, RECO and a generated EVGEN registered
@@ -1201,6 +1202,13 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         spec['env'] = dict(spec['env'], COPYFULL='true', COPYRECO='true',
                            COPYLOG='true', COPYEVGEN='true', USERUCIO='true')
     spec['outputs'] = output_datasets(spec, cfg)
+    # Rucio refuses a name past its limit, and a job whose outputs cannot
+    # be registered runs for nothing: refuse the spec instead.
+    length, name = longest_output_did(spec, spec['outputs'])
+    if length > DID_NAME_MAX:
+        raise ValueError(
+            f'an output file name would be {length} characters, past '
+            f"Rucio's {DID_NAME_MAX}: {name}")
     return spec
 
 
