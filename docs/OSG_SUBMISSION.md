@@ -339,6 +339,26 @@ same lines: the canary symlink moved back, the host file replaced, or
 the launcher's two lines reverted. The tarballs themselves are never
 removed from any of the three places.
 
+**Our pilot wrapper.** The canary directory also carries
+`epicprod-pilot-wrapper.sh` (source `pilot/epicprod-pilot-wrapper.sh`),
+for a queue whose workers should run our pilot with the core count of
+the worker they land on. It is written for `BNL_ePIC_GOOGLE_es`,
+whose Harvester worker pods are sized by the queue's CRIC settings. It
+does two things:
+- It exports `ATHENA_PROC_NUMBER`, unless the environment sets it,
+  from the worker's CPU quota (a Kubernetes pod's CPU limit, which
+  `nproc` does not see), else from the cores the process may run on.
+  The pilot sizes its Event Service range fetches by it, and the
+  payload's harness takes its slots from it (NODE_EVENT_DISPATCHER.md,
+  The core count, from the node).
+- It runs the standard `bnlpanda.runpilot2-wrapper.sh` with the
+  queue's arguments unchanged and our `pilot3.tar.gz` appended as
+  `--piloturl`, which overrides any earlier one.
+
+The queue points its workers at it in place of the standard wrapper;
+that setting is PanDA operations'. It is published by the same steps as
+a tarball.
+
 ### Excluding what delivers nothing
 
 Two levers, at two granularities, both in the submit description that
