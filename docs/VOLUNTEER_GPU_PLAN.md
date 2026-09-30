@@ -1,16 +1,20 @@
 # Volunteer-class GPU computing under PanDA
 
 Plan of record for running the GPU optical-photon simulation
-(Simphony, OptiX-based) on NVIDIA RTX hosts outside the lab
-perimeter, under PanDA. The target scale is community-internal:
-O(10) GPU machines contributed by collaborators would constitute a
+(Simphony, built on NVIDIA OptiX and ported to AMD GPUs) on GPU hosts
+outside the lab perimeter, under PanDA, and on the same terms on lab
+GPU servers and HPC allocations. The target scale is
+community-internal: O(10) GPU machines contributed by collaborators would constitute a
 meaningful resource. No public volunteer phase is planned.
 
 Simphony's applications and measured performance — Cherenkov
 detectors (pfRICH, dRICH, hpDIRC) and synchrotron-radiation X-ray
 transport — are presented in [Optical photon and X-ray simulation
 on GPU for EIC (Galgoczi, BNL EIC group meeting, August
-2026)](https://docs.google.com/presentation/d/1C__dMS2L-lwcW_p3WcNr3CaZf5mK8XwIK8z6_nzoqkc/).
+2026)](https://docs.google.com/presentation/d/1C__dMS2L-lwcW_p3WcNr3CaZf5mK8XwIK8z6_nzoqkc/)
+and [Simphony: optical photon and synchrotron radiation MC simulation
+on GPU (Galgoczi et al., Geant4 Forum, September
+2026)](https://docs.google.com/presentation/d/1R12TJjZYGGZ8cu4hxOBdz1MHBtyxBISRkwAI7uLPnk4/).
 Synchrotron-radiation background transport is the priority workload
 for this track: X-ray propagation on one RTX 4090 runs 113 times
 faster than a Geant4 thread on analytic geometry and about 1900
@@ -93,13 +97,13 @@ and a collaborator's machine are configured identically.
    port, no held connections. Its single verb is the tick. Running,
    the tick carries telemetry and unit progress out; idle, the same
    tick is the request for work; in both states the reply carries
-   unit leases and commands (fire pilots, pause), with cadence the
+   issued units and commands (fire pilots, pause), with cadence the
    only knob. On lab hosts the fire-pilots command drives pilot
    passes through the existing per-GPU lock machinery, retiring the
    polling launcher loop.
 3. **Worker bundle.** Launcher, pass script, git configuration, and
-   the enrollment step packaged as an installable kit for any NVIDIA
-   RTX Linux host. The bundle is the volunteer landing.
+   the enrollment step packaged as an installable kit for any GPU
+   Linux host. The bundle is the volunteer landing.
 4. **Windows port.** Complete: the four core packages build native
    with MSVC/CUDA/OptiX, and the Windows service executable
    reproduces the Linux reference set exactly
@@ -138,6 +142,11 @@ abandoned unit is simply reprocessed
 work-unit design, contract, and much of the same code serve the
 node event dispatcher for fixed-lifetime HPC allocations
 ([NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md)).
+
+On HPC, that dispatcher runs under the PanDA Event Service in
+fixed-lifetime and preemptible allocations: the workflow runs on
+Perlmutter for ePIC simulation today, with Simphony units on its GPU
+nodes next. An AMD trial at OLCF is planned once access is in place.
 
 ## The Windows coprocessor model
 
@@ -298,12 +307,15 @@ The gateway has four functions. It holds the device registry: a machine
 enrolls once and receives a per-device token, and revoking that token
 is the entire security lifecycle for the machine. It serves work units
 under the contract of [WORK_UNIT_CONTRACT.md](WORK_UNIT_CONTRACT.md):
-the driver of a PanDA job enqueues units, workers lease them and return
-hits and unit records, lease expiry re-queues abandoned units, and unit
-idempotency makes both reprocessing and duplicate-dispatch verification
-exact. It issues presigned S3 uploads — time-limited, single-object —
-so bulk results travel directly to lab-side storage while AWS
-credentials never reach a worker. And it answers the pool agent's tick.
+the driver of a PanDA job enqueues units, the gateway issues them to
+workers, workers return hits and unit records, a unit not returned in
+time is issued again, and unit idempotency makes both reprocessing and
+duplicate-dispatch verification exact. It issues presigned S3 uploads —
+time-limited, single-object — so a volunteer worker's results travel
+directly to the S3 object store while AWS credentials never reach it;
+lab-hosted workers (the lab GPU servers and HPC allocations) deliver to
+lab storage through the PanDA job's stage-out. And it answers the pool
+agent's tick.
 
 The pool agent is the worker-side counterpart, and there is exactly one
 of it: the same agent on lab and volunteer machines, a single static
@@ -315,7 +327,7 @@ and a volunteer's machine converge on identical configuration. The
 agent's single verb is the tick. While units run, the tick carries
 telemetry, unit progress, and completion manifests out; while idle, the
 same tick is the request for work; in both states the reply carries
-unit leases and any queued commands — fire pilots, pause — so command
+issued units and any queued commands — fire pilots, pause — so command
 delivery needs no channel of its own and its latency is the tick
 cadence, the protocol's only knob. On lab hosts the fire-pilots command
 starts pilot passes through the existing per-GPU lock machinery,
@@ -330,7 +342,7 @@ a public address, serving owned machines with trust supplied by
 ownership — then device identity, then the presigner, then the tick.
 Nothing built for an earlier stage is discarded by a later one.
 
-Gateway state — the roster, leases, heartbeats, and per-unit records —
+Gateway state — the roster, issued units, heartbeats, and per-unit records —
 is the source the pool monitoring pages and history views render.
 Workers never talk to the monitor; the gateway relays their state to
 the platform.
@@ -362,9 +374,9 @@ machine, not when they return.
 A local cache of fetched packets keeps the GPU fed independently
 of network latency and variability, and draws on the network in a
 smooth, modest stream rather than bursts. Cached packets lost to
-a preemption re-queue when their leases lapse, exactly as the
-in-flight one does. Packet size is therefore bounded three ways:
-large enough to amortize transfer and dispatch overheads, small
+a preemption are issued again when they are not returned in time,
+exactly as the in-flight one is. Packet size is therefore bounded three
+ways: large enough to amortize transfer and dispatch overheads, small
 enough to bound the loss from an interruption, and small enough
 that abandoning one is trivial. All three point to the same
 seconds-scale packet.
