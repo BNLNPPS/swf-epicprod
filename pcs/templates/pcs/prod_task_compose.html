@@ -561,7 +561,9 @@
             ? `<div class="alert alert-success py-1 px-2 mb-2 small"><strong>Recommended</strong> ${htmlEscape(d.reason)}</div>`
             : `<div class="alert alert-warning py-1 px-2 mb-2 small">${htmlEscape(d.reason)}</div>`;
         const preselect = d.site_in_production_set ? d.site : d.recommended;
-        const rows = (d.rows || []).map(r => {
+        // Recommendable queues in rank order, then the rest.
+        const ordered = (d.rows || []).slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
+        const rows = ordered.map(r => {
             const blocked = r.blockers.length > 0 || r.fit.length > 0;
             const why = r.blockers.concat(r.fit).join('; ');
             const depth = r.committed_h !== null && r.committed_h !== undefined
@@ -583,14 +585,16 @@
                 <td>${r.not_started} / ${r.running}</td>
                 <td>${siteHours(r.p90_start_latency_h)}</td>
                 <td>${siteHours(r.task_h)}</td>
-                <td>${limits}<br>${fit}</td>
+                <td>${fit}<br><span class="item-meta" style="white-space:nowrap;">${limits}</span></td>
                 <td>${gates}</td></tr>`;
         }).join('');
         const need = d.need || {};
         const needLine = `One job of this task asks for ${need.walltime_h} h, ${need.memory_mb} MB and ${need.cores} core${need.cores === 1 ? '' : 's'}`
             + (need.rows ? `; the task declares ${need.rows} jobs.` : '.');
+        const storedAge = d.state_stored_at && window.swfFormatElapsed
+            ? window.swfFormatElapsed(Math.max(0, Math.floor((Date.now() - Date.parse(d.state_stored_at)) / 1000))) : '';
         const stored = d.state_stored_at
-            ? ` Queue state from the pressure front, stored <span data-relative-time="${htmlEscape(d.state_stored_at)}"></span>.` : '';
+            ? ` Queue state from the pressure front, stored <span data-relative-time="${htmlEscape(d.state_stored_at)}">${htmlEscape(storedAge)}</span>.` : '';
         let actions = '';
         if (currentUser) {
             actions = `<div class="d-flex gap-2 align-items-center flex-wrap">
