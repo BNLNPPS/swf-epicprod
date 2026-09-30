@@ -184,12 +184,26 @@ does not give.
   A core starts on the first 16 contiguous events it can have
   (`ES_MIN_UNIT_EVENTS`) rather than wait for its whole block, so the
   one-at-a-time supply delays no core by more than seconds.
-- **The core count.** The job's core count sets the pilot's fetch size.
-  A whole-node queue declares the node's cores (256 on
-  `NERSC_Perlmutter_epic_es` since 2026-09-25); the Perlmutter launcher
-  also exports `ATHENA_PROC_NUMBER` from the node, which the pilot takes
-  over the job definition's count. At core count 1 the pilot fetched two
-  ranges per server call.
+- **The core count, from the node.** No queue declaration is needed
+  for it (CRIC stays out of it). `ATHENA_PROC_NUMBER`, set where the
+  job lands, gives the pilot its fetch size; the pilot takes it over the
+  job definition's count.
+  - The Perlmutter launcher exports it from the node.
+  - A Kubernetes pod sets it from its own CPU limit
+    (`valueFrom: resourceFieldRef: limits.cpu`).
+
+  The harness's slots follow from the same node. `ES_SLOTS=auto`, the
+  submitter's default since 2026-09-30, makes the job dispatcher
+  (`evgen_job_dispatcher.es_slot_count`) take them at runtime, in this
+  order:
+  1. `ATHENA_PROC_NUMBER`;
+  2. the container's CPU quota (a pod's CPU limit is a quota, so
+     `nproc` reads the whole node);
+  3. the cores the job may run on.
+
+  An automatic job declares one core. A number in `ES_SLOTS` still fixes
+  the count. At core count 1 the pilot fetched two ranges per server
+  call, so a node without `ATHENA_PROC_NUMBER` starves its slots.
 - **Memory is per core.** The task's memory is requested per core
   (`MBPerCoreFixed`), so on a whole-node queue the job asks for that
   times the node's cores; it must fit the node, or no pilot can take the
