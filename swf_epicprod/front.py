@@ -813,6 +813,12 @@ def run_cycle(*, dry_run=False, created_by='front'):
     max_per_cycle = max(1, int(setting('front.max_per_cycle', 2) or 1))
     activation_window_s = int(setting('front.activation_window_s', 600))
 
+    # The monitor's queue inventory follows PanDA's queue table, so a queue
+    # added in PanDA is on every queue list within one cycle.
+    if not dry_run:
+        from monitor_app.panda.queue_inventory import sync_queue_inventory
+        _safe('queue inventory', sync_queue_inventory, failed('queue inventory'))
+
     census = _safe('census', queue_census, failed('census'))
     backlog = _safe('backlog', ready_backlog, failed('backlog'))
     if backlog is None:
