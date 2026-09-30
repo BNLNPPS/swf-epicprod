@@ -590,7 +590,7 @@
         }).join('');
         const need = d.need || {};
         const needLine = `One job of this task asks for ${need.walltime_h} h, ${need.memory_mb} MB and ${need.cores} core${need.cores === 1 ? '' : 's'}`
-            + (need.rows ? `; the task declares ${need.rows} jobs.` : '.');
+            + (need.rows ? `; the task declares ${need.rows} job${need.rows === 1 ? '' : 's'}.` : '.');
         const storedAge = d.state_stored_at && window.swfFormatElapsed
             ? window.swfFormatElapsed(Math.max(0, Math.floor((Date.now() - Date.parse(d.state_stored_at)) / 1000))) : '';
         const stored = d.state_stored_at
