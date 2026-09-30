@@ -132,6 +132,12 @@ of not-yet-running work at a queue in hours at the queue's capacity:
   generated, a submission request not yet answered), counted at its
   declared rows.
 
+A queue's calibration (median and p90 walltime, p90 start latency) is
+taken from its finished production jobs over 14 days, and counts only
+from 20 of them (`CALIBRATION_MIN_JOBS` in `monitor_app/panda/census.py`).
+Below that the queue reads uncalibrated: one fast trial job gave
+UM_GREX_PanDA_1 a p90 start latency of 0.04 h.
+
 The two are read together. Low runnable and low committed depth is a
 queue that needs work; low runnable and high committed depth is work
 held upstream of the queue (generation, brokerage, worker supply) that
