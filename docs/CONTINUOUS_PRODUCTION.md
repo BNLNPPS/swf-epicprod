@@ -323,8 +323,24 @@ recommendation and the same calls.
 **Where a task goes.** `pcs.commands.pinned_site` reads, in order:
 - the trial's `trial_site`;
 - the task's own `panda_site` override, which placement sets;
-- the configuration's `panda_site`;
-- the default, BNL_OSG_PanDA_1.
+- the configuration's `panda_site`.
+
+A task with none of these is unplaced; the BNL_OSG_PanDA_1 default was
+retired on 2026-09-30. Submitting an unplaced task places it first:
+- from the page, on the queue selected in the Site control (the
+  recommended one unless another is chosen);
+- from REST or a rerun with no site given, on the recommendation;
+- if no production queue is open to it, the submission is refused with
+  the reason.
+
+The submission kernel refuses a spec without a site.
+
+**The front's placement.** Each cycle, the front sends unplaced
+`ready` tasks to the queue the recommendation names, among the queues
+it feeds (feed switch on, and calibrated, since an uncalibrated queue
+holds with `no_calibration`). The feed places the task on that queue and
+records the recommendation. A task no such queue is open to stays in
+the ready pool marked unplaced, with the reason.
 
 **The recommendation.** `swf_epicprod.front.recommend` is a pure
 function over the front's stored state. Each cycle stores, per queue:

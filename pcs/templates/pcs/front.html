@@ -176,7 +176,7 @@
         {% for queue, entries in backlog.items %}
             {% for e in entries %}
             <tr>
-                <td>{{ queue }}</td>
+                <td>{{ queue }}{% if e.placement %} <span class="text-muted">(recommended: {{ e.placement.reason }})</span>{% endif %}{% if e.unplaced_reason %} <span class="text-muted">({{ e.unplaced_reason }})</span>{% endif %}</td>
                 <td>{{ forloop.counter }}</td>
                 <td><a href="{% url 'pcs:prod_task_detail' name=e.task %}">{{ e.task }}</a></td>
                 <td>{% if e.level %}{{ e.level }} ({{ e.level_source }}){% else %}<span class="text-muted">unset</span>{% endif %}</td>

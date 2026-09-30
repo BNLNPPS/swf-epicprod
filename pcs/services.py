@@ -1598,7 +1598,9 @@ def prodtask_readiness_problems(task, plan=None):
     except ValueError as exc:
         problems.append(str(exc))
     site = pinned_site(task, cfg=cfg, ds=ds)
-    maxtime, maxrss = _queue_limits(site)
+    # An unplaced task is fitted to a queue when it is placed (the
+    # recommendation excludes queues whose limits it exceeds).
+    maxtime, maxrss = _queue_limits(site) if site else (0, 0)
     hours = cfg.get('target_hours_per_job')
     walltime_hours = (float(hours) if hours is not None
                       else float(data.get('walltime_hours', 2.0)))
@@ -6265,6 +6267,10 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
     if task.panda_task_id is not None:
         raise ServiceError(
             f'Already submitted as jediTaskID {task.panda_task_id}.', status=409)
+    from .commands import pinned_site
+    if not site and not pinned_site(task):
+        # Nobody placed it: it goes to the recommended production queue.
+        site, placement = prodtask_recommended_placement(task)
     if site:
         prodtask_place(task, site, changed_by=changed_by, placement=placement)
         task.refresh_from_db()
@@ -6285,7 +6291,6 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
         source=source or ('pcs_rerun_residual' if residual else 'pcs_submit_request'))
     # The attempt records the queue it was sent to and, when a person or
     # the front chose it, what the recommendation was.
-    from .commands import pinned_site
     meta = dict(panda_tasks.metadata or {})
     if residual:
         meta['residual_of'] = residual_of
@@ -6580,7 +6585,8 @@ def prodtask_site_source(task, cfg=None):
     """Where the task's queue comes from, in the order ``pinned_site``
     reads them: ``trial`` (the site a trial was fired at), ``task`` (a
     placement on the task), ``configuration`` (its configuration's
-    queue) or ``default``."""
+    queue) or ``unplaced`` (submission places it on the recommended
+    queue)."""
     ds = task.dataset
     if ((ds.metadata if ds is not None else None) or {}).get('trial_site'):
         return 'trial'
@@ -6588,7 +6594,7 @@ def prodtask_site_source(task, cfg=None):
         return 'task'
     if (cfg or task.get_effective_config()).get('panda_site'):
         return 'configuration'
-    return 'default'
+    return 'unplaced'
 
 
 def _declared_rows(task, cfg):
@@ -6713,6 +6719,21 @@ def _task_activity(jedi_task_id, counts):
 def _movable_statuses():
     from monitor_app.panda.operations import MOVABLE_TASK_STATUSES
     return MOVABLE_TASK_STATUSES
+
+
+def prodtask_recommended_placement(task, queues=None):
+    """The recommended production queue for the task and the placement
+    record of the recommendation, ``(site, {recommended, reason})``;
+    refuses with the reason when no queue is open to it."""
+    from swf_epicprod.front import recommend, regulated_queues, task_need
+    state, _built_at = _front_state()
+    cfg = task.get_effective_config()
+    result = recommend(state, task_need(cfg, rows=_declared_rows(task, cfg)),
+                       queues or regulated_queues())
+    if not result['recommended']:
+        raise ServiceError(f'Not placed: {result["reason"]}.', status=409)
+    return result['recommended'], {'recommended': result['recommended'],
+                                   'reason': result['reason']}
 
 
 def _placement_record(site, placement, changed_by):

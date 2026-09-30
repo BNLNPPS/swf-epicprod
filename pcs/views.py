@@ -5806,7 +5806,7 @@ def prod_task_compose_task_detail(request, name):
     spec and cached condor/panda commands, which the light initial payload omits.
     The compose JS merges this into the task entry the first time it is opened
     (never clobbering). GET JSON; read-only — does not regenerate/save commands."""
-    from .commands import build_evgen_task_params, EVGEN_DEFAULT_SITE
+    from .commands import build_evgen_task_params
     from .services import resolve_prodtask
     try:
         task = resolve_prodtask(name, ProdTask.objects.select_related(
@@ -5853,8 +5853,7 @@ def prod_task_compose_task_detail(request, name):
         # It is shown at the moment of firing and editable there, because the
         # site is part of what a trial establishes: one run at OSG says
         # nothing about whether another destination accepts the writes.
-        'trial_site': (task.get_effective_config().get('panda_site')
-                       or EVGEN_DEFAULT_SITE),
+        'trial_site': task.get_effective_config().get('panda_site') or '',
         # What this task runs on that nobody set for it, and where it came
         # from, so a filled value is visible and can be changed rather than
         # quietly standing in for a decision.
@@ -6054,7 +6053,10 @@ def _trial_site(task, md, state=None):
         return {'site': chosen, 'site_chosen': True}
     cfg = getattr(task, 'prod_config', None)
     default = ((cfg.data or {}).get('panda_site') if cfg else '') or ''
-    return {'site': default or 'BNL_OSG_PanDA_1', 'site_chosen': False}
+    # Nobody placed it: submission places it on the recommended
+    # production queue (CONTINUOUS_PRODUCTION.md, Placement).
+    return {'site': default or 'unplaced (the recommended queue at submission)',
+            'site_chosen': False}
 
 
 def trial_detail(request, name):

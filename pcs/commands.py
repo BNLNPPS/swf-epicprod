@@ -14,12 +14,6 @@ import os
 import re
 import shlex
 
-# Where an EVGEN task goes when its configuration names no site. Named here
-# rather than written inline at the point of use so the page can show the
-# reader the site a task would actually run at, and offer to change it.
-EVGEN_DEFAULT_SITE = 'BNL_OSG_PanDA_1'
-
-
 def _bg_param(task, key):
     """Background execution params prefer the k tag, with EvGen as fallback."""
     ds = task.dataset
@@ -974,16 +968,18 @@ def prodtask_manifest_rows(task, cfg=None):
 
 
 def pinned_site(task, cfg=None, ds=None):
-    """The PanDA queue a task submits to. A trial's site is the
-    destination it was fired at to qualify, so it outranks the
-    configuration's: a trial that records GREX and submits to OSG
-    qualifies the wrong path and reports success for it."""
+    """The PanDA queue a task is placed on, '' when nobody placed it
+    (CONTINUOUS_PRODUCTION.md, Placement): an unplaced task is placed on
+    the recommended production queue when it is submitted. A trial's
+    site is the destination it was fired at to qualify, so it outranks
+    the task's and the configuration's: a trial that records GREX and
+    submits to OSG qualifies the wrong path and reports success for it."""
     if cfg is None:
         cfg = task.get_effective_config()
     if ds is None:
         ds = task.dataset
     trial_site = str(((ds.metadata if ds is not None else None) or {}).get('trial_site') or '')
-    return trial_site or cfg.get('panda_site') or EVGEN_DEFAULT_SITE
+    return trial_site or cfg.get('panda_site') or ''
 
 
 def prodtask_priority_level(task, plan=None):

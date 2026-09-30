@@ -287,7 +287,7 @@ def ready_backlog():
         queue = 'unknown'
         try:
             cfg = task.get_effective_config()
-            queue = pinned_site(task, cfg=cfg)
+            queue = pinned_site(task, cfg=cfg) or UNPLACED
             entry['level'], entry['level_source'] = prodtask_priority_level(task)
             entry['problems'] = list(prodtask_readiness_problems(task))
             open_attempt = open_attempt_problem(task)
@@ -297,6 +297,7 @@ def ready_backlog():
             # the ready hours count the whole backlog, not only the
             # eligible part; a task without a matched input has none.
             entry['rows'] = task_rows(task, cfg)
+            entry['need'] = task_need(cfg, rows=entry['rows'])
         except Exception as exc:  # noqa: BLE001
             logger.exception('front: reading ready task %s failed', task.pk)
             entry['problems'].append(f'reading the task failed: {type(exc).__name__}: {exc}')
@@ -304,6 +305,46 @@ def ready_backlog():
     for entries in by_queue.values():
         entries.sort(key=lambda e: (bool(e['problems']), e['level'] or 9, e['created_at']))
     return by_queue
+
+
+UNPLACED = 'unplaced'
+
+
+def _stored_decisions():
+    """The previous cycle's per-queue decisions, from the stored state."""
+    from monitor_app.models import CachedProduct
+    row = CachedProduct.objects.filter(key=STATE_KEY).first()
+    return ((row.value or {}).get('queues') or {}) if row else {}
+
+
+def place_unplaced(backlog, decisions, placement, feedable):
+    """Move each unplaced ready task in ``backlog`` to the queue
+    ``recommend`` names for it among ``feedable``, recording the
+    recommendation on the entry (``placement``), which rides to the feed.
+    A task no feedable queue is open to stays unplaced, with the reason.
+    Pure over its arguments; mutates ``backlog``."""
+    entries = backlog.pop(UNPLACED, [])
+    left = []
+    state = {'queues': decisions, 'placement': placement}
+    for entry in entries:
+        if entry.get('problems') or not feedable:
+            entry['unplaced_reason'] = ('no queue the front feeds' if not feedable
+                                        else 'not ready')
+            left.append(entry)
+            continue
+        result = recommend(state, entry.get('need'), feedable)
+        if not result['recommended']:
+            entry['unplaced_reason'] = result['reason']
+            left.append(entry)
+            continue
+        entry['placement'] = {'recommended': result['recommended'],
+                              'reason': result['reason']}
+        backlog.setdefault(result['recommended'], []).append(entry)
+    for entries_q in backlog.values():
+        entries_q.sort(key=lambda e: (bool(e['problems']), e['level'] or 9, e['created_at']))
+    if left:
+        backlog[UNPLACED] = left
+    return backlog
 
 
 # The decision
@@ -378,6 +419,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         r['candidate_pk'] = candidate.get('pk') if candidate else None
         r['candidate_rows'] = candidate['rows'] if candidate else None
         r['candidate_level'] = candidate['level'] if candidate else None
+        r['candidate_placement'] = candidate.get('placement') if candidate else None
         r.update(more)
         return r
 
@@ -699,7 +741,7 @@ def recommend(state, need, queues=None):
 
 # The feed
 
-def feed_task(candidate_pk, created_by='front'):
+def feed_task(candidate_pk, created_by='front', site='', placement=None):
     """Submit one ready task: the PCS submit request, which allocates the
     attempt (association source ``pcs_front_feed``) and enqueues the
     credentialed ``submit_evgen_task`` doer. Raises on refusal
@@ -708,7 +750,8 @@ def feed_task(candidate_pk, created_by='front'):
     from pcs.models import ProdTask
     from pcs.services import prodtask_submit_request
     task = ProdTask.objects.get(pk=candidate_pk)
-    prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE)
+    prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE,
+                            site=site, placement=placement)
     return task
 
 
@@ -725,7 +768,11 @@ def _apply_feeds(outcomes, *, created_by):
         try:
             if pk is None:
                 raise ValueError('the candidate carries no task pk')
-            feed_task(pk, created_by=created_by)
+            # An unplaced candidate is placed on the queue that fed it.
+            placed = record.get('candidate_placement')
+            feed_task(pk, created_by=created_by,
+                      site=record.get('queue', '') if placed else '',
+                      placement=placed)
         except Exception as exc:  # noqa: BLE001
             logger.exception('front: feed of %s (pk %s) refused', record.get('candidate'), pk)
             applied.append(('error', 'feed_failed',
@@ -790,8 +837,6 @@ def run_cycle(*, dry_run=False, created_by='front'):
                          lambda: _declared_gate(queue, settings['h_high']),
                          lambda exc: {'red': False, 'state': 'unread',
                                       'reason': f'declared record unreadable: {exc}'})
-        feeds = _safe(f'{queue} feeds', lambda: _recent_feeds(queue, activation_window_s), [])
-        last_feed_age_h = _safe(f'{queue} last feed', lambda: _last_feed_age_h(queue), None)
         census_q = (census or {}).get('queues', {}).get(queue) if census else None
         # What placement reads (recommend): the gates as judged, whatever
         # the front's own switches decide, and the queue's limits.
@@ -801,6 +846,26 @@ def run_cycle(*, dry_run=False, created_by='front'):
                       'breaker': settings.get('breaker')},
             'limits': _safe(f'{queue} limits', lambda: queue_limits(queue), None),
         }
+
+    # Unplaced ready tasks go to the recommended queue among those the
+    # front may feed: switched on and calibrated (an uncalibrated queue
+    # is held, no_calibration). The ranking reads the previous cycle's
+    # stored decisions with this cycle's gates and limits.
+    feedable = [q for q in queues
+                if enabled and settings_by_queue[q].get('feed')
+                and ((census or {}).get('queues', {}).get(q) or {})
+                .get('hours_at_capacity') is not None]
+    _safe('placing unplaced tasks',
+          lambda: place_unplaced(backlog, _stored_decisions(), placement, feedable),
+          failed('placing unplaced tasks'))
+
+    for queue in queues:
+        settings = settings_by_queue[queue]
+        gates = placement[queue]['gates']
+        canary, declared = gates['canary'], gates['declared']
+        feeds = _safe(f'{queue} feeds', lambda: _recent_feeds(queue, activation_window_s), [])
+        last_feed_age_h = _safe(f'{queue} last feed', lambda: _last_feed_age_h(queue), None)
+        census_q = (census or {}).get('queues', {}).get(queue) if census else None
         if census is None:
             outcomes = [('held', 'census_unavailable',
                          {'queue': queue, 'mode': mode, 'ready_total': len(backlog.get(queue, [])),

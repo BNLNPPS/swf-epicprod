@@ -2,7 +2,8 @@
 pure over the front's stored state (CONTINUOUS_PRODUCTION.md, Placement)."""
 import unittest
 
-from swf_epicprod.front import fit_problems, gate_blockers, recommend, stall_signal
+from swf_epicprod.front import (fit_problems, gate_blockers, place_unplaced, recommend,
+                                 stall_signal)
 
 GREEN = {'canary': {'status': 'healthy', 'red': False},
          'credential': {'red': False}, 'declared': {'red': False},
@@ -125,6 +126,37 @@ class StallTest(unittest.TestCase):
 
     def test_nothing_waiting(self):
         self.assertEqual(stall_signal({'queued': 0, 'running': 4}, 15.0)['state'], '')
+
+
+def _entry(name, problems=(), level=1):
+    return {'task': name, 'pk': 1, 'level': level, 'rows': 100, 'need': NEED,
+            'problems': list(problems), 'created_at': '2026-09-30T00:00:00'}
+
+
+class PlaceUnplacedTest(unittest.TestCase):
+    def _placement(self):
+        return {'A': {'gates': GREEN, 'limits': LIMITS},
+                'B': {'gates': GREEN, 'limits': LIMITS}}
+
+    def test_goes_to_recommended_feedable_queue(self):
+        backlog = {'unplaced': [_entry('t1')], 'A': []}
+        decisions = {'A': _decision(committed_h=6.0), 'B': _decision(committed_h=1.0)}
+        place_unplaced(backlog, decisions, self._placement(), ['A', 'B'])
+        self.assertNotIn('unplaced', backlog)
+        self.assertEqual(backlog['B'][0]['task'], 't1')
+        self.assertEqual(backlog['B'][0]['placement']['recommended'], 'B')
+
+    def test_only_feedable_queues(self):
+        backlog = {'unplaced': [_entry('t1')]}
+        decisions = {'A': _decision(committed_h=6.0), 'B': _decision(committed_h=1.0)}
+        place_unplaced(backlog, decisions, self._placement(), ['A'])
+        self.assertEqual(backlog['A'][0]['task'], 't1')
+
+    def test_not_ready_or_nothing_feedable_stays(self):
+        backlog = {'unplaced': [_entry('t1', problems=['x']), _entry('t2')]}
+        place_unplaced(backlog, {}, self._placement(), [])
+        self.assertEqual([e['task'] for e in backlog['unplaced']], ['t1', 't2'])
+        self.assertEqual(backlog['unplaced'][1]['unplaced_reason'], 'no queue the front feeds')
 
 
 if __name__ == '__main__':

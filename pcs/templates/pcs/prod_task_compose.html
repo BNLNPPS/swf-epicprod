@@ -511,7 +511,7 @@
     let siteOptions = null;   // {task, data} for the selected task
     const SITE_SOURCE_LABEL = {
         trial: 'the site this trial was fired at', task: 'placed on this task',
-        configuration: 'from its configuration', default: 'the default queue'};
+        configuration: 'from its configuration', unplaced: 'not placed'};
     function siteChoice() {
         const el = document.querySelector('#pcs-site-control input[name="pcs-site"]:checked');
         return el ? el.value : '';
@@ -553,8 +553,10 @@
     }
     function siteControlHtml(d) {
         const att = d.attempt;
-        let head = `Submissions go to <strong>${htmlEscape(d.site)}</strong> (${htmlEscape(SITE_SOURCE_LABEL[d.site_source] || d.site_source)})`;
-        if (!d.site_in_production_set) head += ', <span class="text-danger">not a production queue</span>';
+        let head = d.site
+            ? `Submissions go to <strong>${htmlEscape(d.site)}</strong> (${htmlEscape(SITE_SOURCE_LABEL[d.site_source] || d.site_source)})`
+            : 'Not placed: a submission goes to the queue selected here, the recommended one unless you choose another';
+        if (d.site && !d.site_in_production_set) head += ', <span class="text-danger">not a production queue</span>';
         head += '.';
         if (att) head += ` PanDA task ${htmlEscape(att.jedi_task_id)} is at <strong>${htmlEscape(att.site || 'unknown')}</strong>, ${htmlEscape(att.status || 'status unknown')}.`;
         const stall = att && att.stall && att.stall.state;
@@ -1583,7 +1585,9 @@
             // in and says so rather than leaving the row blank.
             cfgRows += cfg.panda_site
                 ? cfgRow('PanDA Site', cfg.panda_site, 'panda_site')
-                : cfgRow('PanDA Site', `${htmlEscape(t.trial_site || '')} <span style="font-size:.85em;">(submission default)</span>`);
+                : cfgRow('PanDA Site', t.trial_site
+                    ? `${htmlEscape(t.trial_site)} <span style="font-size:.85em;">(from its configuration)</span>`
+                    : 'unplaced <span style="font-size:.85em;">(the recommended queue at submission; see Site)</span>');
             if (cfg.panda_working_group) cfgRows += cfgRow('Working Group', cfg.panda_working_group, 'panda_working_group');
             if (cfg.data && Object.keys(cfg.data).length) {
                 Object.entries(cfg.data).forEach(([k,v]) => { cfgRows += cfgRow('data.'+k, textOrUrl(v)); });
