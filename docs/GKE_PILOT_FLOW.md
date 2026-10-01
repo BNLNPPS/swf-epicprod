@@ -97,8 +97,9 @@ requested from the PanDA team, regenerates the ranges it left.
 |---|---|---|
 | `enabled` | False | the cycle starts pods only when true |
 | `queue` | `BNL_ePIC_GOOGLE_es` | the PanDA queue served |
-| `kubeconfig` | `/etc/swf-monitor/gke-kubeconfig` | the cluster credential |
-| `namespace` | `''` | where the pods run; required |
+| `credential` | `/etc/swf-monitor/gke-sa.json` | the Google service-account key for the cluster (the PanDA team's Harvester key, `epic-harvester-sa-restricted`) |
+| `cluster`, `location` | `epic-panda-us-east4`, `us-east4` | the GKE cluster; its endpoint and CA are read from the Kubernetes Engine API at each cycle |
+| `namespace` | `default` | where the pods run |
 | `template` | the package's `gke/pilot-job.yaml` | the pod template |
 | `max_pods` | 0 | the most pilot pods alive at once |
 | `cpu`, `memory` | `'14'`, `'100Gi'` | each pod's request and limit |
@@ -106,15 +107,30 @@ requested from the PanDA team, regenerates the ranges it left.
 | `proxy`, `secret_name` | as above, `epicprod-pilot-proxy` | the credential |
 
 The cycle refuses to start pods, and records why, while `enabled` is
-false, `namespace` is empty, `max_pods` is 0, the kubeconfig is
+false, `namespace` is empty, `max_pods` is 0, the credential is
 missing or the template still carries a placeholder.
 
-## Open until the credential arrives
+## The cluster, as read on 2026-10-01
 
-- The cluster values: namespace, node pool, image, the CVMFS volume
-  claims, and whether preemption notices reach the pod. They are read
-  from the cluster, and from the PanDA team's Harvester template for
-  the queue, then set in the template.
-- Cron enqueue (`*/5`) is added with the first enabled cycle.
-- A first pod is started by hand (`max_pods` 1) against a trial task
-  with `--es-loop`, before the cap is raised.
+The PanDA team gave the agent the key their Harvester uses, and the
+cluster admits pandaserver02's address (192.153.161.16). A read-only
+probe found:
+- the node pool `epic-main-16-20gb`: n4-highmem-16 spot nodes,
+  autoscaling to 35, each allocating 15.89 CPUs and about 116 GiB to
+  pods;
+- the namespace `default`, empty;
+- CVMFS from the `cvmfs-nodeplugin` daemonset (namespace `cvmfs`),
+  mounted on each node at `/var/lib/cvmfs-k8s`. A pilot pod mounts
+  that path at `/cvmfs` with host-to-container propagation.
+
+The service account cannot list the project's image registry. The
+image is the grid image the Harvester pods ran (their pilot logs:
+AlmaLinux 9.8, apptainer, uid 1000), `atlasadc/atlas-grid-almalinux9`.
+The first pod confirms it.
+
+## Still to do
+
+- A first pod by hand (`max_pods` 1) against an Event Service trial
+  task with `--es-loop`, then the cap raised.
+- Cron enqueue (`*/5`) with the first enabled cycle.
+- Whether preemption notices reach the pod.

@@ -33,13 +33,14 @@ class BlockersTest(unittest.TestCase):
     def test_defaults_are_held(self):
         with open(TEMPLATE_DEFAULT) as f:
             text = f.read()
-        reasons = blockers(dict(DEFAULTS), text)
-        self.assertEqual(len(reasons), 5)
+        cfg = dict(DEFAULTS, credential='/nonexistent')
+        reasons = blockers(cfg, text + PLACEHOLDER)
+        self.assertEqual(len(reasons), 4)  # enabled, max_pods, credential, template
 
     def test_ready(self):
         with tempfile.NamedTemporaryFile() as kc:
             cfg = dict(DEFAULTS, enabled=True, namespace='epic', max_pods=4,
-                       kubeconfig=kc.name)
+                       credential=kc.name)
             self.assertEqual(blockers(cfg, 'image: x'), [])
 
 
@@ -55,6 +56,7 @@ class RenderTest(unittest.TestCase):
         c = pod['spec']['containers'][0]
         self.assertEqual(c['resources']['limits'], {'cpu': '13', 'memory': '90Gi'})
         self.assertIn(WRAPPER, c['args'][0])
+        self.assertTrue(c['args'][0].startswith('install -m 600 /proxy/x509up /pilotdir/x509up'))
         self.assertIn('-q BNL_ePIC_GOOGLE_es', c['args'][0])
         self.assertNotIn('--resource-type', c['args'][0])
         secrets = [v['secret']['secretName'] for v in pod['spec']['volumes'] if 'secret' in v]

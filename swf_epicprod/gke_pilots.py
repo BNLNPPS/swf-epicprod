@@ -26,8 +26,12 @@ LABEL = 'epicprod-pilot'
 DEFAULTS = {
     'enabled': False,
     'queue': 'BNL_ePIC_GOOGLE_es',
-    'kubeconfig': '/etc/swf-monitor/gke-kubeconfig',
-    'namespace': '',
+    # A Google service-account key; the cluster's endpoint and CA are read
+    # from the Kubernetes Engine API with it at each cycle.
+    'credential': '/etc/swf-monitor/gke-sa.json',
+    'cluster': 'epic-panda-us-east4',
+    'location': 'us-east4',
+    'namespace': 'default',
     'template': '',
     'max_pods': 0,
     'cpu': '14',
@@ -75,8 +79,8 @@ def blockers(cfg, template_text=None):
         out.append('gke_pilots.namespace is empty')
     if int(cfg.get('max_pods') or 0) <= 0:
         out.append('gke_pilots.max_pods is 0')
-    if not os.path.exists(cfg.get('kubeconfig') or ''):
-        out.append(f"no kubeconfig at {cfg.get('kubeconfig')}")
+    if not os.path.exists(cfg.get('credential') or ''):
+        out.append(f"no cluster credential at {cfg.get('credential')}")
     if template_text is not None and PLACEHOLDER in template_text:
         out.append('the pod template still has values to set from the cluster')
     return out
@@ -103,7 +107,10 @@ def render_job(template, cfg, name=None):
     container['resources'] = {'requests': dict(resources), 'limits': dict(resources)}
     queue = cfg['queue']
     container['command'] = ['/bin/bash', '-c']
+    # The proxy Secret is mounted read-only and group-readable; grid tools
+    # want their own copy at mode 600, as Harvester's pods make it.
     container['args'] = [
+        'install -m 600 /proxy/x509up /pilotdir/x509up && '
         f'exec {WRAPPER} -q {queue} -r {queue} -s {queue} -i PR -j managed '
         f"--getjobrequests {int(cfg['getjobrequests'])}"]
     return job
@@ -121,8 +128,35 @@ def activated_jobs(queue):
 
 
 def _clients(cfg):
-    from kubernetes import client, config
-    api = config.new_client_from_config(config_file=cfg['kubeconfig'])
+    """Kubernetes clients for the cluster, authenticated as the service
+    account: a short-lived token from its key, the endpoint and CA from
+    the Kubernetes Engine API."""
+    import base64
+    import json
+    import tempfile
+    import requests
+    from google.oauth2 import service_account
+    import google.auth.transport.requests as gtr
+    from kubernetes import client
+    creds = service_account.Credentials.from_service_account_file(
+        cfg['credential'], scopes=['https://www.googleapis.com/auth/cloud-platform'])
+    creds.refresh(gtr.Request())
+    with open(cfg['credential']) as f:
+        project = json.load(f)['project_id']
+    r = requests.get(
+        f"https://container.googleapis.com/v1/projects/{project}/locations/"
+        f"{cfg['location']}/clusters/{cfg['cluster']}",
+        headers={'Authorization': f'Bearer {creds.token}'}, timeout=30)
+    r.raise_for_status()
+    cluster = r.json()
+    ca = tempfile.NamedTemporaryFile(prefix='gke-ca-', suffix='.crt', delete=False)
+    ca.write(base64.b64decode(cluster['masterAuth']['clusterCaCertificate']))
+    ca.close()
+    conf = client.Configuration()
+    conf.host = 'https://' + cluster['endpoint']
+    conf.ssl_ca_cert = ca.name
+    conf.api_key = {'authorization': 'Bearer ' + creds.token}
+    api = client.ApiClient(conf)
     return client.CoreV1Api(api), client.BatchV1Api(api)
 
 

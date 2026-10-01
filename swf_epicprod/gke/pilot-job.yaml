@@ -1,9 +1,12 @@
 # The pilot pod of BNL_ePIC_GOOGLE_es (docs/GKE_PILOT_FLOW.md): one
 # Kubernetes Job, one pod, one pilot pulling work from the queue. The
 # cycle (swf_epicprod/gke_pilots.py) sets the name, labels, resources,
-# proxy and command. The values marked __SET_FROM_CLUSTER__ come from
-# the cluster and the PanDA team's Harvester template for the queue;
-# the cycle refuses to start a pod while any remains.
+# proxy and command. The cluster values were read from cluster
+# epic-panda-us-east4 on 2026-10-01: the spot node pool, and CVMFS as the
+# cvmfs-nodeplugin daemonset mounts it on every node
+# (/var/lib/cvmfs-k8s). The image is the grid image the PanDA team's
+# Harvester pods ran (AlmaLinux 9, apptainer, uid 1000; their pilot
+# logs). A value left as __SET_FROM_CLUSTER__ stops the cycle.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -15,35 +18,47 @@ spec:
     spec:
       restartPolicy: Never
       nodeSelector:
-        cloud.google.com/gke-nodepool: __SET_FROM_CLUSTER__
+        cloud.google.com/gke-nodepool: epic-main-16-20gb
       tolerations:
         - key: cloud.google.com/gke-spot
           operator: Equal
           value: "true"
           effect: NoSchedule
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: pilot
-          image: __SET_FROM_CLUSTER__
+          image: atlasadc/atlas-grid-almalinux9
+          workingDir: /pilotdir
           env:
             - name: X509_USER_PROXY
-              value: /proxy/x509up
+              value: /pilotdir/x509up
             - name: PILOT_NOKILL
               value: "True"
             - name: TMPDIR
-              value: /tmp
+              value: /pilotdir
+            - name: HOME
+              value: /pilotdir
           volumeMounts:
-            - name: cvmfs-eic
-              mountPath: /cvmfs/eic.opensciencegrid.org
+            - name: cvmfs
+              mountPath: /cvmfs
+              mountPropagation: HostToContainer
               readOnly: true
             - name: proxy
               mountPath: /proxy
               readOnly: true
+            - name: pilotdir
+              mountPath: /pilotdir
       volumes:
-        - name: cvmfs-eic
-          persistentVolumeClaim:
-            claimName: __SET_FROM_CLUSTER__
-            readOnly: true
+        - name: cvmfs
+          hostPath:
+            path: /var/lib/cvmfs-k8s
+            type: Directory
         - name: proxy
           secret:
             secretName: epicprod-pilot-proxy
-            defaultMode: 0400
+            defaultMode: 0440
+        - name: pilotdir
+          emptyDir: {}
