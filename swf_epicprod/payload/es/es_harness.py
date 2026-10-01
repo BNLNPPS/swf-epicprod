@@ -438,7 +438,10 @@ def find_input(job_dir, lfn):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--slots', type=int, default=int(os.environ.get('ES_SLOTS', '1')))
+    # ES_SLOTS may be 'auto' (the dispatcher resolves it and passes --slots),
+    # so only a number in it serves as the default.
+    env_slots = os.environ.get('ES_SLOTS', '').strip()
+    ap.add_argument('--slots', type=int, default=int(env_slots) if env_slots.isdigit() else 1)
     ap.add_argument('--work', required=True)
     ap.add_argument('--sandbox', default=os.getcwd())
     ap.add_argument('--payload', default=None)
