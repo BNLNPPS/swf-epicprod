@@ -134,7 +134,11 @@ userid 1000", job 3809911). The template's init container `account`
 copies the image's `passwd` and `group` and appends the pilot's
 account, `epicprod` (1000:1000, home `/pilotdir`), and the pilot
 container mounts both over its own; `USER` and `LOGNAME` name it as
-well.
+well. The node's default AppArmor profile refuses apptainer's mounts
+in its user namespace ("Failed to set mount propagation: Permission
+denied"), so the pilot container runs with AppArmor `Unconfined`; a
+debug pod with that setting started the payload image as uid 1000
+(2026-10-01).
 
 ## Still to do
 

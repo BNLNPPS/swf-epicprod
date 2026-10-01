@@ -47,6 +47,12 @@ spec:
         - name: pilot
           image: atlasadc/atlas-grid-almalinux9
           workingDir: /pilotdir
+          # The node's default AppArmor profile refuses apptainer's mounts
+          # in its user namespace ("Failed to set mount propagation:
+          # Permission denied"); unconfined, the payload image starts.
+          securityContext:
+            appArmorProfile:
+              type: Unconfined
           env:
             - name: X509_USER_PROXY
               value: /pilotdir/x509up
