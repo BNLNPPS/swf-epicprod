@@ -1042,6 +1042,9 @@ else
   stage logs skipped "copy_log is false on this configuration"
 fi
 
+# TEST ONLY: a canary's dead catalog from here on (the registrations).
+source ${SCRIPT_DIR}/test_jlab_unreachable.sh
+
 if [ "${COPYFULL:-false}" == "true" ] ; then
   # Validate ROOT file before transfer
   echo "=== Validating FULL ROOT file before transfer ==="
