@@ -79,8 +79,11 @@ fi
 # The standard wrapper is not executable on CVMFS (mode 644); bash runs it,
 # as Harvester's pods do. Our servers and pilot flavour come first, so the
 # caller's arguments can override them; our pilot comes last, so it wins.
+# --allow-same-user=False, as the Perlmutter launch passes: with it on, a
+# pilot's request after its first job carries that job's task as a string
+# task_id, which the server's v1 API refuses (GKE pod, 2026-10-01).
 exec bash "${STANDARD_WRAPPER}" \
-  -e eic --pythonversion 3 --pilot-user epic \
+  -e eic --pythonversion 3 --pilot-user epic --allow-same-user=False \
   --url https://pandaserver01.sdcc.bnl.gov -p 25443 \
   --rucio-host https://nprucio01.sdcc.bnl.gov:443 \
   "$@" --piloturl "${PILOTURL}"
