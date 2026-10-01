@@ -273,9 +273,18 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   (180 s), has not marked its own end (`ended_at`, JOB_REPORTING.md) and
   has not reached its write cap is closed out: the ranges of every close
   that stood credited (`update_event_ranges`) and the job's final update
-  sent as `finished` (`update_job`) with the credited count, or as
-  `failed` when no close stood, so that a pass without progress counts
-  against `maxFailure` (Passes, not failures, below); both are
+  sent as `finished` (`update_job`) with the credited count, none
+  included: a lost node is not a failure of the job, and a pass without
+  progress ends `fg_stumble` (Passes, not failures, below). The one
+  exception is the guard against a job that takes its own node down,
+  which would look like a node loss on every pass: when the file's
+  preceding jobs were also lost with no progress (closed out by us,
+  nothing credited) and this one makes `es_closeout.no_progress_limit`
+  (3) in a row, it is sent `failed`, so it counts against `maxFailure`,
+  and an `es_no_progress_limit` action raises the `es_no_progress`
+  alarm for the file (2026-10-01; before, every no-progress close-out
+  was sent `failed`, and a routine spot preemption read as a failed
+  job). Both are
   production-role calls, and the server archives the job through the
   fine-grained accounting above. Each close-out is an `es_closeout` action.
   `tools/es_force_finish.py` does the same for one job by hand. A node
@@ -313,7 +322,12 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   queue's Event Service tasks therefore set `maxAttempt` high, since
   passes that make progress should continue until the file is done, and
   bound the passes without progress with `maxFailure` (submitter
-  `--es-max-attempt`, `--es-max-failure`).
+  `--es-max-attempt`, `--es-max-failure`); a lost node counts there only
+  at the close-out's no-progress limit. A pass loses everything only
+  when its node goes before the first close stands, so the harness makes
+  its first close as soon as a unit has handed over rather than a
+  cadence after its start (payload 0.24.9; job 3809939 on a GKE spot
+  node lost its node 9 minutes in, its first units done at about 6).
 - **The test** (`tools/npps0/preempt_job.sh`, test only) takes a running
   job's node away on npps0: after a chosen close it waits a set time and
   SIGKILLs the job's whole pilot pass at once, so nothing is told and

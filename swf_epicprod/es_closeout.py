@@ -14,10 +14,15 @@ close-out then
    job's attempt number and the credited count), so the server archives
    it through its fine-grained accounting: finished ranges counted, the
    rest released to the file for the next job, the job
-   ``finished``/``fg_partial``. A job with no close that stood is sent
-   ``failed``: its pass made no progress, and only a failed job counts
-   against the file's ``maxFailure``, the bound on passes without
-   progress (``maxAttempt`` counts every pass).
+   ``finished``/``fg_partial``. A lost node is not a failure of the job,
+   so a job with no close that stood is sent ``finished`` as well and
+   ends ``fg_stumble``, a pass without progress (``maxAttempt`` counts
+   every pass). The exception guards against a job that takes its own
+   node down, which would look like a node loss on every pass: when the
+   file's previous ``no_progress_limit - 1`` jobs were also lost with no
+   progress (closed out by us, nothing credited), this one is sent
+   ``failed``, so it counts against the file's ``maxFailure``, and an
+   ``es_no_progress_limit`` action raises the ``es_no_progress`` alarm.
 
 Both are production-role calls, the role Harvester uses for lost
 workers. Never a kill: ``killJob`` bypasses the fine-grained accounting.
@@ -50,6 +55,8 @@ defaults on first read so they show on the System page:
 - ``es_closeout.queues`` (['BNL_NPPS_GPU']): the queues whose Event
   Service jobs are closed out when their node is lost.
 - ``es_closeout.quiet_s`` (180): how long a record must be quiet.
+- ``es_closeout.no_progress_limit`` (3): consecutive no-progress losses of
+  one file's jobs, this one included, at which the job is sent ``failed``.
 """
 import json
 import os
@@ -62,7 +69,7 @@ PREEMPTED_CODE = 1256          # the pilot's "job killed: worker preempted / los
 CHUNK = 1000
 RECORD_WRITE_CAP = 1500        # payload/es/es_record.py MAX_WRITES
 RUNNING_STATES = ('running', 'starting', 'stagein', 'stageout')
-DEFAULTS = {'enabled': True, 'queues': ['BNL_NPPS_GPU'], 'quiet_s': 180}
+DEFAULTS = {'enabled': True, 'queues': ['BNL_NPPS_GPU'], 'quiet_s': 180, 'no_progress_limit': 3}
 PCLIENT_SETUP = os.path.expanduser('~/pclient/run/setup.sh')
 AUTH_VO = 'EIC.production'
 PCLIENT_TIMEOUT_S = 180
@@ -149,11 +156,9 @@ def finish_job(pandaid, ids, status='finished', expect_queue=None, expect_attemp
         out['refused'] = f'job is at {queue}, not {expect_queue}'
     if out.get('refused') or not apply:
         return out
-    # Nothing to credit: the pass made no progress, and only a failed job
-    # counts against the file's maxFailure (a finished one ends fg_stumble
-    # and counts as a pass, npps0 job 3618786).
-    if not ids and status == 'finished':
-        status = 'failed'
+    # Nothing to credit is still a lost node, not a failure: a finished job
+    # with no ranges ends fg_stumble and counts as a pass (npps0 job
+    # 3618786). The caller sends failed only at the no-progress limit.
     out['status'] = status
     credited = 0
     for i in range(0, len(ids), CHUNK):
@@ -188,7 +193,8 @@ def _inside_pclient(payload_path):
     results = []
     for job in payload['jobs']:
         try:
-            results.append(finish_job(job['pandaid'], job['ids'], expect_queue=job.get('queue'),
+            results.append(finish_job(job['pandaid'], job['ids'], status=job.get('status', 'finished'),
+                                      expect_queue=job.get('queue'),
                                       expect_attempt=job.get('attempt'),
                                       say=lambda s: print(s, file=sys.stderr)))
         except Exception as e:                                # noqa: BLE001
@@ -247,6 +253,35 @@ def candidates(queues):
         return [(int(p), int(j) if j else None, q, int(a or 0)) for p, j, q, a in cursor.fetchall()]
 
 
+def no_progress_history(pandaid, limit=50):
+    """(jeditaskid, fileid, prior) for the job's input file: ``prior`` is
+    the run of the file's immediately preceding jobs, newest first, that
+    were lost with no progress, closed out by us (the preempted code) with
+    no events, as [(pandaid, node)]; it stops at the first job that was
+    anything else."""
+    from django.db import connections
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    with connections['panda'].cursor() as cursor:
+        cursor.execute(f'SELECT "jeditaskid", "fileid" FROM "{PANDA_SCHEMA}"."filestable4" '
+                       'WHERE "pandaid" = %s AND "type" = %s LIMIT 1', [pandaid, 'input'])
+        row = cursor.fetchone()
+        if not row:
+            return None, None, []
+        jeditaskid, fileid = int(row[0]), int(row[1])
+        cursor.execute(
+            f'SELECT j."pandaid", j."piloterrorcode", j."nevents", j."modificationhost" '
+            f'FROM "{PANDA_SCHEMA}"."filestable4" f JOIN "{PANDA_SCHEMA}"."jobsarchived4" j '
+            'ON j."pandaid" = f."pandaid" '
+            'WHERE f."jeditaskid" = %s AND f."fileid" = %s AND f."type" = %s AND f."pandaid" < %s '
+            'ORDER BY f."pandaid" DESC LIMIT %s', [jeditaskid, fileid, 'input', pandaid, limit])
+        prior = []
+        for pid, code, nevents, host in cursor.fetchall():
+            if int(code or 0) != PREEMPTED_CODE or int(nevents or 0) != 0:
+                break
+            prior.append((int(pid), host or ''))
+    return jeditaskid, fileid, prior
+
+
 def run_cycle(dry_run=False, created_by='es-closeout'):
     """One cycle. Returns (decisions, summary)."""
     from monitor_app.epicprod_logging import log_epicprod_action
@@ -256,6 +291,7 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
     seed = not dry_run
     enabled, queues = setting('enabled', seed), setting('queues', seed)
     quiet_s = float(setting('quiet_s', seed))
+    no_progress_limit = max(1, int(setting('no_progress_limit', seed)))
     if not isinstance(queues, (list, tuple)) or not all(isinstance(q, str) for q in queues):
         raise ValueError(f'es_closeout.queues is not a list of queue names: {queues!r}')
     summary = {'enabled': bool(enabled), 'queues': list(queues), 'quiet_s': quiet_s,
@@ -282,12 +318,23 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
             d.update(act=act, reason=reason, record_age_s=round(age))
             if act:
                 d['ids'] = closed_range_ids(record)
+                d['status'] = 'finished'
+                if not d['ids']:
+                    # A pass without progress. Failed only when the file's
+                    # jobs keep losing their node before anything stands.
+                    _, d['fileid'], prior = no_progress_history(pandaid)
+                    d['streak'] = len(prior) + 1
+                    d['streak_jobs'] = [pandaid] + [p for p, _ in prior]
+                    d['streak_nodes'] = [h for _, h in prior]
+                    if d['streak'] >= no_progress_limit:
+                        d['status'] = 'failed'
                 to_close.append(d)
             decisions.append(d)
         summary['quiet'] = len(to_close)
         if to_close and not dry_run:
             try:
                 results, _ = finish_in_pclient([{'pandaid': d['pandaid'], 'ids': d['ids'],
+                                                 'status': d['status'],
                                                  'queue': d['queue'], 'attempt': d['attempt']}
                                                 for d in to_close])
             except Exception as e:                            # noqa: BLE001
@@ -304,10 +351,26 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
                     outcome='ok' if ok else ('refused' if r.get('refused') else 'error'),
                     sublevel='normal', live_default=True,
                     message=(f"Event Service job {d['pandaid']} at {d['queue']}: {d['reason']}; "
-                             + (f"closed, {len(d['ids'])} ranges of closes that stood credited"
+                             + ((f"closed {d['status']}, {len(d['ids'])} ranges of closes that stood credited"
+                                 + (f"; no progress, {d['streak']} in a row on file {d.get('fileid')}"
+                                    if 'streak' in d else ''))
                                 if ok else f"not closed: {r.get('refused') or r.get('error') or r.get('update')}")),
                     ranges=len(d['ids']), jeditaskid=d['jeditaskid'] or 0,
-                    record_age_s=d['record_age_s'])
+                    record_age_s=d['record_age_s'], status=d['status'],
+                    no_progress_streak=d.get('streak', 0))
+                if ok and d['status'] == 'failed':
+                    log_epicprod_action(
+                        ACTION_INSTANCE, 'es_no_progress_limit', subject_type='panda_file',
+                        subject_key=f"{d['jeditaskid']}:{d.get('fileid')}", username=created_by,
+                        outcome='error', sublevel='normal', live_default=True,
+                        message=(f"Event Service file {d.get('fileid')} of task {d['jeditaskid']}: "
+                                 f"{d['streak']} jobs in a row lost their node with no progress "
+                                 f"(jobs {', '.join(map(str, d['streak_jobs']))}; earlier nodes "
+                                 f"{', '.join(d['streak_nodes']) or 'none recorded'}); job {d['pandaid']} "
+                                 "sent failed so it counts against maxFailure. A job that takes its "
+                                 "own node down looks like this; read the jobs' records."),
+                        jeditaskid=d['jeditaskid'] or 0, fileid=d.get('fileid') or 0,
+                        streak=d['streak'], jobs=d['streak_jobs'], limit=no_progress_limit)
     summary['duration_ms'] = int((time.monotonic() - t0) * 1000)
     if not dry_run:
         log_epicprod_action(

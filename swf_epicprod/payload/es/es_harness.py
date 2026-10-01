@@ -747,7 +747,12 @@ def main():
         # A close: on the cadence, or the last one when nothing else is
         # coming; one at a time.
         drained = not taking or (pool.exhausted and not len(pool) and not args.loop)
-        if pending and not closes and (time.time() - last_close >= args.close_s
+        # The first close goes as soon as a unit has handed over, not a
+        # cadence after the start: until a close stands, a lost node costs
+        # the whole pass (job 3809939, node lost 9 minutes in, nothing
+        # credited, with the first units done at about 6 minutes).
+        if pending and not closes and (not summary['closes']
+                                       or time.time() - last_close >= args.close_s
                                        or (drained and not in_flight)):
             closes.append(Close(len(summary['closes']) + len(closes) + 1, args, pending))
             pending, last_close = [], time.time()
