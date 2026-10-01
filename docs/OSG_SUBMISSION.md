@@ -355,9 +355,32 @@ does two things:
   queue's arguments unchanged and our `pilot3.tar.gz` appended as
   `--piloturl`, which overrides any earlier one.
 
-The queue points its workers at it in place of the standard wrapper;
-that setting is PanDA operations'. It is published by the same steps as
-a tarball.
+It also sets the pilot environment our Event Service queues run with,
+as the npps0 pass script and the Perlmutter launch do:
+- our servers and flavour (`-e eic`, `--url pandaserver01 -p 25443`,
+  `--pilot-user epic`, `--rucio-host nprucio01`), placed before the
+  caller's arguments so they can be overridden;
+- BNL Rucio for stage-out (`RUCIO_CONFIG`, `RUCIO_ACCOUNT`);
+- the generic Event Service executor, with yampl from
+  `es-channel-py311-el9/` in the same directory;
+- the queue's pilot-side configuration from
+  `queuedata/<queue>.json` in the same directory, when one is
+  published there.
+
+Since 2026-10-01 the directory holds, beside the wrapper:
+- `pilot3-3.14.3.3-epic4.tar.gz`, the Perlmutter Event Service pilot
+  (pilot3 PRs 220, 221 and 224), now named by the `pilot3.tar.gz`
+  symlink;
+- `es-channel-py311-el9/`, yampl and its Python 3.11 binding;
+- `queuedata/BNL_ePIC_GOOGLE_es.json` (source
+  `gke/BNL_ePIC_GOOGLE_es/queuedata.json`): the server's configuration
+  for the queue, with the `es_events` and `es_failover` activities of
+  Perlmutter's.
+
+The queue points its workers at the wrapper in place of the standard
+one; for `BNL_ePIC_GOOGLE_es` the production operations agent starts
+those workers itself (GKE_PILOT_FLOW.md). The wrapper is published by
+the same steps as a tarball.
 
 ### Excluding what delivers nothing
 
