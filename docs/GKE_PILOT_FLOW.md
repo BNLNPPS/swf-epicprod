@@ -88,7 +88,10 @@ Secret when the file changes.
 **Preemption.** When a spot node is reclaimed, its pod dies with its
 job. The ES close-out, which lists this queue in `es_closeout.queues`,
 credits the ranges the job finished within minutes
-(NODE_EVENT_DISPATCHER.md, Preemption). The queue's `jobseed=all`,
+(NODE_EVENT_DISPATCHER.md, Preemption). The queue file's
+`zip_time_gap` is 300 s (from 7200, 2026-10-01), so the pilot passes
+finished ranges to the server at the close cadence rather than every
+two hours, as on `BNL_NPPS_GPU`. The queue's `jobseed=all`,
 requested from the PanDA team, regenerates the ranges it left.
 
 ## Settings (SysConfig `gke_pilots.*`)
