@@ -231,9 +231,29 @@ fill fraction can be watched.
    and the door listing for lost reports.
 
 Steps 1 to 3 were completed by 2026-09-08 on the BNL-XRD design, step 1
-on 2026-09-08 with a hand-placed file under `/TEST/`. Step 2's
-acceptance, a canary payload run with the JLab catalog unreachable to
-the job, has not been run. Step 4 is outstanding.
+on 2026-09-08 with a hand-placed file under `/TEST/`. Step 4 is
+outstanding.
+
+Step 2's acceptance passed on 2026-10-01, for both failover paths. A
+payload canary submitted with `--canary-jlab-unreachable` (swf-monitor
+`submit-evgen-task.py`) runs with `EPICPROD_TEST_JLAB_UNREACHABLE=1`,
+which points the job's registration at a refused local port after the
+landing and delivered-output checks (payload `test_jlab_unreachable.sh`,
+0.24.7; test only). On `BNL_OSG_EPIC_PROD_1`:
+
+- task 40416, output RSE BNL-XRD: the output was preserved at its
+  deterministic path, the registration recorded pending, the job exited
+  0; the registrar registered it in place, AVAILABLE at BNL-XRD;
+- task 40417, output RSE EIC-XRD: the upload failed, the output was
+  stashed at BNL-XRD with its registration owed, the job exited 0; the
+  drain registered it, AVAILABLE at BNL-XRD.
+
+Two defects stood in the way and were fixed on the way: inside the
+production image the BNL doors failed TLS for want of a current CA set
+(payload 0.24.6 takes the CVMFS OSG set; EPICPROD_PAYLOAD.md), and the
+drain and the registrar read only `epicproduction` jobs, so a canary's
+stash or pending registration never came home (both now include
+`canary` jobs).
 
 ## Asks and open items
 
