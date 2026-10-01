@@ -210,6 +210,14 @@ does not give.
   job while harvester keeps starting workers for it (task 40225: 922 GB
   requested, 54 workers started and ended empty in four hours). The
   submitter's `--es-ram-per-core-mb` sets it for Event Service tasks.
+- **A slot that cannot run ends the job early.** A slot whose
+  container exits reports its unit's ranges failed once and takes no
+  more; when every slot has exited, the harness stops taking ranges,
+  lets a pending close finish and exits 3 with each slot's log tail in
+  its log, and the dispatcher's job report carries it (payload 0.24.8).
+  Before, the harness held its ranges idle to the deadline and
+  re-reported the dead units every pass (job 3809911, apptainer refused
+  on a GKE pod).
 - **Range reporting keeps up.** The pilot took 6,000 finished-range
   messages in 62 s and tarred a batch of 5,884 in 47 s (npps0 job
   3618821); reporting is not the bottleneck at these scales.

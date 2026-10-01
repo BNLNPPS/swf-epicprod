@@ -131,6 +131,16 @@ def container_command(args, inner, extra_binds=()):
     return cmd
 
 
+def slot_log_tail(slot, lines=5):
+    """The last lines of a slot's log, on one line, for the harness log."""
+    try:
+        with open(os.path.join(slot.work, 'slot.log'), errors='replace') as f:
+            tail = f.read().splitlines()[-lines:]
+    except OSError as e:
+        return f"(slot.log unreadable: {e})"
+    return ' | '.join(t.strip() for t in tail if t.strip()) or '(slot.log empty)'
+
+
 def kill_group(proc):
     """SIGKILL a process started in its own session, with everything under it."""
     try:
@@ -223,7 +233,10 @@ class Slot:
         done, err = os.path.join(out, 'done'), os.path.join(out, 'error.json')
         if not (os.path.exists(done) or os.path.exists(err)):
             if self.proc.poll() is not None:
-                return self.unit, {'message': f'slot exited {self.proc.returncode} with the unit in flight'}, False
+                # Once only: the unit is cleared so it is not reported again
+                # on every pass, and the slot then reads as exited.
+                uid, self.unit = self.unit, None
+                return uid, {'message': f'slot exited {self.proc.returncode} with the unit in flight'}, False
             return None
         record = {}
         try:
@@ -512,6 +525,7 @@ def main():
         f"deadline {args.deadline_s or 'none'} s, margin {args.margin_s} s")
 
     reported = [0]                                          # reports sent since the harness last waited on the pilot
+    exited = {}                                             # slot index: exit code, for slots whose container ended
     unit_walls = []                                         # (events, wall s) of the finished units
 
     def status():
@@ -627,6 +641,22 @@ def main():
             log(f"close {rec['index']}: {rec.get('outcome')} {rec.get('did')} "
                 f"({rec.get('events')} events, {len(c.units)} units) in {rec['wall_s']} s"
                 + ('' if rec['ok'] else f"; {rec.get('message')}"))
+        # A slot whose container has exited takes no more units; each is
+        # logged once with its log's tail. With none left nothing can run
+        # here, so the harness stops taking ranges, lets a pending close
+        # finish and ends nonzero, rather than holding its ranges idle to the
+        # deadline (job 3809911: every slot refused by apptainer, 56 ranges
+        # held for 15 minutes). Unreported ranges go back to the server.
+        for s in slots:
+            if s.index not in exited and s.unit is None and s.proc.poll() is not None:
+                exited[s.index] = s.proc.returncode
+                log(f"slot {s.index} exited {s.proc.returncode}: {slot_log_tail(s)}")
+        if slots and taking and len(exited) == len(slots):
+            log(f"ERROR: every slot has exited ({len(slots)}); taking no further range")
+            taking = False
+            feed.exhausted = True
+            pool.clear()
+            summary['slots_exited'] = dict(exited)
         if args.preempt_at_s and time.time() - started >= args.preempt_at_s:
             # TEST AND DEMO ONLY: the node is taken away. What is lost is the
             # processing cut off in the slots, and the units finished since
@@ -742,7 +772,7 @@ def main():
     summary['ended_at'] = time.time()
     with open(args.summary, 'w') as f:
         json.dump(summary, f)
-    return 0
+    return 3 if summary.get('slots_exited') else 0
 
 
 if __name__ == '__main__':
