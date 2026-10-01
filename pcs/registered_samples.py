@@ -177,6 +177,152 @@ def _match_from_inventory(input_edition, did):
     return True
 
 
+def _inventory_records():
+    """The recorded EVGEN inventory (the assimilation's snapshot), or []."""
+    import json
+    import os
+    from .services import EVGEN_RUCIO_SNAPSHOT_NAME, RUCIO_SNAPSHOT_DIR
+    try:
+        with open(os.path.join(RUCIO_SNAPSHOT_DIR, EVGEN_RUCIO_SNAPSHOT_NAME)) as f:
+            return json.load(f).get('datasets') or []
+    except (OSError, ValueError) as e:
+        _log.warning('EVGEN inventory unreadable: %s', e)
+        return []
+
+
+def _matched_dids():
+    """Every DID an EVGEN-stage record already matches."""
+    from .models import Dataset
+    out = set()
+    for ds in Dataset.objects.filter(metadata__stage='evgen').only('metadata'):
+        for m in ((ds.metadata or {}).get('rucio') or {}).get('matched') or []:
+            if m.get('did'):
+                out.add(str(m['did']))
+    return out
+
+
+def _fits_edition(identity, edition):
+    """Why a derived registered sample is not the edition's EVGEN input, or
+    '' when it is: the same physics tag, evgen tag and sample, the tags that
+    name an EVGEN sample (models.evgen_paths_by_tags)."""
+    from .services import find_or_create_evgen_tag
+    if identity['is_background'] or identity['physics_new']:
+        return 'its physics has no tag in the record'
+    if identity['physics_tag'] != (edition.physics_tag.tag_label if edition.physics_tag else ''):
+        return f"its physics is {identity['physics_tag']}, the task's is {edition.physics_tag.tag_label}"
+    evgen_tag, _ = find_or_create_evgen_tag(identity['evgen'], dry_run=True)
+    if evgen_tag is None or evgen_tag.pk != edition.evgen_tag_id:
+        return (f"its generator is {evgen_tag.tag_label if evgen_tag else 'not tagged'}, "
+                f"the task's is {edition.evgen_tag.tag_label if edition.evgen_tag else 'none'}")
+    if (identity['sample'] or '') != (edition.sample_name or ''):
+        return f"its sample is {identity['sample'] or 'none'}, the task's is {edition.sample_name or 'none'}"
+    return ''
+
+
+def task_evgen_candidates(task):
+    """The registered EVGEN datasets that can be the task's input: in the
+    recorded inventory, matched by no EVGEN-stage record, and deriving to the
+    task's own physics tag, evgen tag and sample. The compose page offers
+    them when no input resolves (docs/EPICPROD_EVGEN_INPUTS.md, Setting a
+    task's input). A path pre-filter on the beam and Q² tokens keeps the
+    derivation to the plausible few. Reads the snapshot and the record only."""
+    edition = task.dataset
+    params = (edition.physics_tag.parameters or {}) if edition.physics_tag else {}
+    beam = (f"{params.get('beam_energy_electron')}x{params.get('beam_energy_hadron')}"
+            if params.get('beam_energy_electron') and params.get('beam_energy_hadron') else '')
+    q2 = str(params.get('q2_range') or '')
+    matched = _matched_dids()
+    out = []
+    for rec in _inventory_records():
+        did = str(rec.get('did') or '')
+        if not did or did in matched:
+            continue
+        tokens = did_tail(did).split('/')
+        if (beam and beam not in tokens) or (q2 and q2 not in tokens):
+            continue
+        identity, _ = derive_registered_sample(did)
+        if identity is None or _fits_edition(identity, edition):
+            continue
+        from .services import _rucio_evgen_entry
+        entry = _rucio_evgen_entry(rec)
+        out.append({'did': did, 'files': entry.get('file_count') or 0,
+                    'bytes': entry.get('bytes') or 0, 'events': rec.get('events'),
+                    'rses': [r.get('rse') for r in entry.get('rses') or []],
+                    'complete': entry.get('complete')})
+    return out
+
+
+def set_task_evgen_input(task, did, *, changed_by, origin=None):
+    """Set an existing task's EVGEN input to a registered dataset: the
+    EVGEN-stage record beside the task's edition (same physics, evgen and
+    sample tags, its source location the dataset's path) with the Rucio match
+    written from the recorded inventory, so the task resolves its input and
+    the assimilation counts the dataset matched from then on. The repair for
+    a task composed without its EVGEN-stage record. Refuses a dataset whose
+    physics, generator or sample is not the task's, one another record
+    already matches, and a task that already resolves an input. One
+    ``task_evgen_input`` event. Returns {'input_edition', 'did'}."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from .models import Dataset, evgen_paths_by_tags, evgen_paths_for_tags
+    from .services import ServiceError, _ensure_r0_stage_tag, _ensure_s0_stage_tag
+
+    edition = task.dataset
+    if edition is None:
+        raise ServiceError('the task has no dataset')
+    if evgen_paths_for_tags(edition, evgen_paths_by_tags()):
+        raise ServiceError('the task already resolves an EVGEN input')
+    identity, reason = derive_registered_sample(did)
+    if identity is None:
+        raise ServiceError(reason)
+    why = _fits_edition(identity, edition)
+    if why:
+        raise ServiceError(f"{identity['did']} is not this task's input: {why}")
+    if identity['did'] in _matched_dids():
+        raise ServiceError(f"{identity['did']} is already matched by another record")
+    created_by = changed_by or 'operator'
+    with transaction.atomic():
+        s0 = _ensure_s0_stage_tag(created_by=created_by)
+        r0 = _ensure_r0_stage_tag(created_by=created_by)
+        probe = Dataset(scope='group.EIC', detector_version=edition.detector_version,
+                        detector_config=edition.detector_config,
+                        physics_tag=edition.physics_tag, evgen_tag=edition.evgen_tag,
+                        simu_tag=s0, reco_tag=r0, background_tag=edition.background_tag,
+                        sample_name=edition.sample_name)
+        composed = probe.build_dataset_name()
+        input_edition = Dataset.objects.filter(composed_name=composed).first()
+        source = {'kind': 'rucio', 'location': identity['path'], 'did': identity['did']}
+        if input_edition is None:
+            input_edition = Dataset(
+                scope='group.EIC', detector_version=edition.detector_version,
+                detector_config=edition.detector_config, campaign=edition.campaign,
+                physics_tag=edition.physics_tag, evgen_tag=edition.evgen_tag,
+                simu_tag=s0, reco_tag=r0, background_tag=edition.background_tag,
+                sample_name=edition.sample_name,
+                description=f"EVGEN input of {edition.composed_name}: {identity['did']}",
+                metadata={'stage': 'evgen', 'source': source}, created_by=created_by)
+            try:
+                input_edition.save()
+            except Exception as e:                              # noqa: BLE001
+                raise ServiceError(f'{composed}: {e}')
+        else:
+            md = dict(input_edition.metadata or {})
+            md['stage'] = 'evgen'
+            md['source'] = source
+            input_edition.metadata = md
+            input_edition.save(update_fields=['metadata'])
+        if not _match_from_inventory(input_edition, identity['did']):
+            raise ServiceError(f"{identity['did']} is not in the recorded EVGEN inventory; "
+                               'run Update EVGEN from Rucio first')
+        log_epicprod_action(
+            'web', 'task_evgen_input', subject_type='prod_task', subject_key=task.name,
+            username=changed_by, sublevel='normal', live_default=True,
+            message=(f"EVGEN input of {task.name} set to {identity['did']} "
+                     f"(record {input_edition.composed_name})"),
+            did=identity['did'], input_edition=input_edition.composed_name,
+            edition=edition.composed_name, **_origin_attrs(origin))
+    return {'input_edition': input_edition.composed_name, 'did': identity['did']}
+
+
 def registered_sample_intake(did, campaign_name, *, requestor, nevents=None,
                              priority=None, changed_by='', origin=None, comment=''):
     """Take a registered EVGEN dataset into the record as a physics

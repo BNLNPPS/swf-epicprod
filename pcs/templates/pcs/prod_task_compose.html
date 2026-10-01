@@ -1351,7 +1351,13 @@
     function evgenPriorityRow(t) {
         const entries = Array.isArray(t.evgen_priority) ? t.evgen_priority : [];
         if (!entries.length) {
-            return `<div class="mb-2"><strong>PWG priority</strong> <span class="text-muted">— no EVGEN input resolved for this task (set on <a href="${EVGEN_INPUTS_URL}">EVGEN inputs</a>)</span></div>`;
+            // No input resolves: a task composed without its EVGEN-stage
+            // record. A signed-in user picks the registered dataset that is
+            // its input (docs/EPICPROD_EVGEN_INPUTS.md, Setting a task's input).
+            const choose = currentUser
+                ? ` <button type="button" class="btn btn-sm btn-primary py-0 ms-1 evgen-input-choose" data-task-id="${t.id}">Choose the EVGEN input</button><div class="evgen-input-candidates mt-1"></div>`
+                : ' <span class="text-muted">(sign in to choose it)</span>';
+            return `<div class="mb-2"><strong>PWG priority</strong> <span class="text-muted">— no EVGEN input resolved for this task (<a href="${EVGEN_INPUTS_URL}">EVGEN inputs</a>)</span>${choose}</div>`;
         }
         const lines = entries.map(e => {
             let buttons = '';
@@ -1391,6 +1397,56 @@
         } catch (err) {
             b.disabled = false;
             alert('Could not set the priority: ' + err.message);
+        }
+    });
+
+    // Choose the EVGEN input of a task that resolves none: the candidates are
+    // the registered datasets matching the task's physics, generator and
+    // sample, fetched on the click, never in the page build.
+    document.addEventListener('click', async function (e) {
+        const choose = e.target.closest ? e.target.closest('button.evgen-input-choose') : null;
+        const use = e.target.closest ? e.target.closest('button.evgen-input-use') : null;
+        if (!choose && !use) return;
+        const btn = choose || use;
+        const t = allTasks.find(x => String(x.id) === btn.getAttribute('data-task-id'));
+        if (!t) return;
+        btn.disabled = true;
+        if (choose) {
+            const box = btn.parentElement.querySelector('.evgen-input-candidates');
+            box.innerHTML = '<span class="text-muted">Looking for registered datasets with this task\'s physics…</span>';
+            try {
+                const r = await fetch(taskApiUrl(t, 'evgen-candidates/'));
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+                const c = j.candidates || [];
+                if (!c.length) {
+                    box.innerHTML = '<span class="text-muted">No unmatched registered dataset has this task\'s physics, generator and sample. Register it on <a href="' + EVGEN_INPUTS_URL + '">EVGEN inputs</a> first.</span>';
+                    btn.disabled = false;
+                    return;
+                }
+                box.innerHTML = '<table class="table table-sm table-bordered w-auto mb-0"><thead><tr><th>Registered EVGEN dataset</th><th>Files</th><th>Events</th><th>RSEs</th><th></th></tr></thead><tbody>'
+                    + c.map(d => `<tr><td>${htmlEscape(d.did)}</td><td>${d.files || ''}</td><td>${d.events != null ? Number(d.events).toLocaleString() : ''}</td><td>${htmlEscape((d.rses || []).join(', '))}</td>`
+                        + `<td><button type="button" class="btn btn-sm btn-success py-0 evgen-input-use" data-task-id="${t.id}" data-did="${htmlEscape(d.did)}">Use as input</button></td></tr>`).join('')
+                    + '</tbody></table>';
+            } catch (err) {
+                box.innerHTML = '';
+                btn.disabled = false;
+                alert('Could not list the candidates: ' + err.message);
+            }
+            return;
+        }
+        try {
+            const r = await fetch(taskApiUrl(t, 'evgen-input/'), {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+                body: JSON.stringify({did: btn.getAttribute('data-did')}),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+            window.location.reload();
+        } catch (err) {
+            btn.disabled = false;
+            alert('Could not set the EVGEN input: ' + err.message);
         }
     });
 

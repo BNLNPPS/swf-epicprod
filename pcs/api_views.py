@@ -841,6 +841,34 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
             return Response({'detail': e.detail}, status=e.status)
         return Response(result, status=status.HTTP_202_ACCEPTED)
 
+    @action(detail=True, methods=['get'], url_path='evgen-candidates')
+    def evgen_candidates(self, request, name=None):
+        """The registered EVGEN datasets that can be this task's input:
+        unmatched in the record and deriving to the task's physics, evgen
+        and sample tags (docs/EPICPROD_EVGEN_INPUTS.md, Setting a task's
+        input). Reads the recorded inventory and the record only."""
+        from .registered_samples import task_evgen_candidates
+        return Response({'candidates': task_evgen_candidates(self.get_object())})
+
+    @action(detail=True, methods=['post'], url_path='evgen-input')
+    def evgen_input(self, request, name=None):
+        """Set the task's EVGEN input to a registered dataset ({did}): the
+        EVGEN-stage record beside its edition with the Rucio match, so the
+        task resolves its input. Refuses with the reason. Signed-in users
+        only; the tunnel fallback identity reads, never sets."""
+        from .registered_samples import set_task_evgen_input
+        username = getattr(request.user, 'username', '') or ''
+        if not username or username == 'swf-remote-proxy':
+            return Response({'detail': 'sign in to set a task\'s EVGEN input'},
+                            status=status.HTTP_403_FORBIDDEN)
+        task = self.get_object()
+        try:
+            result = set_task_evgen_input(task, str(request.data.get('did') or ''),
+                                          changed_by=username)
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(result)
+
     @action(detail=True, methods=['get'], url_path='adopt-readiness')
     def adopt_readiness(self, request, name=None):
         """What "Move this task to PCS" would do for a name-matched legacy

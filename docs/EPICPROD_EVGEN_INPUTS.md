@@ -301,6 +301,28 @@ stale, never doubled. Reversibility is mitigable: editions are
 permanent identities, and a request and task made in error are
 withdrawn.
 
+### Setting a task's input
+
+A task composed directly, not through a request or the intake, can lack
+the EVGEN-stage record: its edition then resolves no input, the compose
+page reads "no EVGEN input resolved", and the registered dataset that is
+its input stays unmatched, since the assimilation matches onto
+EVGEN-stage records. The compose page repairs it: **Choose the EVGEN
+input** lists the registered datasets that can be the task's input,
+those matched by no EVGEN-stage record whose path derives to the task's
+own physics tag, evgen tag and sample (the intake's derivation), and
+**Use as input** sets one (`GET`/`POST
+pcs/api/prod-tasks/<task>/evgen-candidates/`, `evgen-input/`;
+`pcs.registered_samples.set_task_evgen_input`). It writes the EVGEN-stage
+record beside the edition, the same tags on stage tags s0.r0, its source
+location the dataset's path, with the Rucio match from the recorded
+inventory, so the task resolves its input at once and the dataset reads
+matched. It refuses a dataset whose physics, generator or sample is not
+the task's, one another record matches, and a task that already resolves
+an input; one `task_evgen_input` action records it. Setting it requires
+a signed-in user. Campaign membership is separate: a task composed with
+no campaign stays out of the campaign plan until it is given one.
+
 ## Current state
 
 Implemented: the assimilation sweep, the input matcher, the catalog
