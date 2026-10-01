@@ -76,6 +76,14 @@ the Q² token**. Two consequences follow, and they are the whole point:
 - **Fan-out for every axis the request omits.** An abstract DIS request states
   no generator, radiation, or charge, so it matches every Rucio dataset that
   agrees on the axes it does state. One request resolves to several datasets.
+- **The evgen tag is an axis too.** The record's evgen tag states what
+  the path may not: a dataset whose path names a generator or version is
+  admitted only when they are the tag's. An `unrecorded` tag, the
+  unversioned legacy samples (`DIS/NC/18x275/minQ2=10`), therefore never
+  resolves to a versioned sample (`DIS/pythia8.316-1.0/...`); before this
+  rule (2026-10-01) the fan-out matched all fifteen legacy DIS NC records
+  to the versioned Q² ranges, and two PCS submissions (tasks 40440, 40443)
+  ran the versioned files for minQ2 requests.
 - **Two location forms, one tail.** A CSV-imported request names the door
   path (`/volatile/eic/EPIC/EVGEN/…`); an edition composed by the ingest
   (PCS_INGEST.md) names the dataset definition's EVGEN path (`EVGEN/…`).

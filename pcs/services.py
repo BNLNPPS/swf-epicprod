@@ -5849,6 +5849,31 @@ def _evgen_input_match(req_tail, did_tail):
     return True
 
 
+def _evgen_tag_admits(ds, did_tail):
+    """Whether a Rucio EVGEN DID can realize the record's evgen tag. The path
+    fan-out (``_evgen_input_match``) lets a request that names no generator
+    match every dataset agreeing on the axes it does name; the record's evgen
+    tag is a further axis the path alone does not state. A DID whose path
+    names a generator or version is admitted only when they are the tag's,
+    so an ``unrecorded`` tag (the unversioned legacy samples, e.g.
+    ``DIS/NC/18x275/minQ2=10``) never resolves to a versioned sample (tasks
+    40440 and 40443 ran pythia8.316 ranged files for minQ2 requests,
+    2026-10-01). A DID naming no generator, or a record with no evgen tag,
+    is admitted as before."""
+    from .physics_match import derive_evgen
+    tag = getattr(ds, 'evgen_tag', None)
+    if tag is None:
+        return True
+    derived = derive_evgen(did_tail) or {}
+    gen = str(derived.get('generator') or '').lower()
+    ver = str(derived.get('generator_version') or '').lower()
+    if not gen and not ver:
+        return True
+    params = tag.parameters or {}
+    return (gen, ver) == (str(params.get('generator') or '').lower(),
+                          str(params.get('generator_version') or '').lower())
+
+
 def _rucio_evgen_entry(m, checked_at=None):
     """One resolved Rucio EVGEN dataset -> a metadata['rucio'] match entry.
 
@@ -5962,7 +5987,8 @@ def refresh_evgen_rucio(*, apply=False, snapshot_dir=RUCIO_SNAPSHOT_DIR,
         if not req_tail:
             summary['datasets_unmatched'] += 1
             continue
-        matches = [d for d, dtail in indexed if _evgen_input_match(req_tail, dtail)]
+        matches = [d for d, dtail in indexed if _evgen_input_match(req_tail, dtail)
+                   and _evgen_tag_admits(ds, dtail)]
         if not matches:
             summary['datasets_unmatched'] += 1
             continue
