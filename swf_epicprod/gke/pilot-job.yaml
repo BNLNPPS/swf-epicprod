@@ -28,6 +28,21 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+      # The image has no account for uid 1000, and apptainer (the payload's
+      # containers) refuses to start without one: the image's passwd and
+      # group plus the pilot's account, mounted over its own.
+      initContainers:
+        - name: account
+          image: atlasadc/atlas-grid-almalinux9
+          command: ['/bin/bash', '-c']
+          args:
+            - >-
+              cp /etc/passwd /etc/group /account/ &&
+              echo 'epicprod:x:1000:1000:epicprod pilot:/pilotdir:/bin/bash' >> /account/passwd &&
+              echo 'epicprod:x:1000:' >> /account/group
+          volumeMounts:
+            - name: account
+              mountPath: /account
       containers:
         - name: pilot
           image: atlasadc/atlas-grid-almalinux9
@@ -41,8 +56,8 @@ spec:
               value: /pilotdir
             - name: HOME
               value: /pilotdir
-            # uid 1000 has no passwd entry in the image; getpass.getuser()
-            # (the Rucio client's token path) reads these first.
+            # The account's name, which getpass.getuser() (the Rucio
+            # client's token path) reads before passwd.
             - name: USER
               value: epicprod
             - name: LOGNAME
@@ -57,7 +72,17 @@ spec:
               readOnly: true
             - name: pilotdir
               mountPath: /pilotdir
+            - name: account
+              mountPath: /etc/passwd
+              subPath: passwd
+              readOnly: true
+            - name: account
+              mountPath: /etc/group
+              subPath: group
+              readOnly: true
       volumes:
+        - name: account
+          emptyDir: {}
         - name: cvmfs
           hostPath:
             path: /var/lib/cvmfs-k8s

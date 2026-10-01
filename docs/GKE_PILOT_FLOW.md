@@ -126,11 +126,15 @@ probe found:
 The service account cannot list the project's image registry. The
 image is the grid image the Harvester pods ran (their pilot logs:
 AlmaLinux 9.8, apptainer, uid 1000), `atlasadc/atlas-grid-almalinux9`.
-The first pod confirms it. The image has no passwd entry for uid 1000,
-so the template sets `USER` and `LOGNAME`: the Rucio client names its
-token path by `getpass.getuser()`, which reads them before passwd, and
-without them stage-in fails with `getpwuid(): uid not found: 1000`
-(job 3809903, 2026-10-01).
+The first pod confirms it. The image has no account for uid 1000, and
+two things on the path need one: the Rucio client's `getpass.getuser()`
+at stage-in (`getpwuid(): uid not found: 1000`, job 3809903) and
+apptainer, which refuses to start the payload's containers ("unknown
+userid 1000", job 3809911). The template's init container `account`
+copies the image's `passwd` and `group` and appends the pilot's
+account, `epicprod` (1000:1000, home `/pilotdir`), and the pilot
+container mounts both over its own; `USER` and `LOGNAME` name it as
+well.
 
 ## Still to do
 
