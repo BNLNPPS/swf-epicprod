@@ -249,12 +249,14 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   output never left the node. Everything in a close that stood is in
   Rucio and credited.
 - **Credit as the closes land.** The pilot passes finished ranges to the
-  server every `es_stageout_gap`, which it takes from the queue's
-  `zip_time_gap` (pilot3 `genericexecutor.py`, `stageout_es`); at the
-  customary 7200 s a job lost inside two hours had credited nothing.
-  Set to the close cadence (300 s on `BNL_NPPS_GPU` since 2026-09-26),
-  the server's credit rises with each close (npps0 task 40256: 2,820 to
-  7,754 events over 22 minutes).
+  server every `es_stageout_gap` (pilot3 `genericexecutor.py`,
+  `stageout_es`). The queue field `zip_time_gap` maps to it, but the
+  pilot's built-in configuration overrides it with 601 s on every queue
+  (`pilot/info/configinfo.py`, `resolve_queuedata`, marked "for testing";
+  read 2026-10-01 from the GKE pilot's log), so the cadence is about ten
+  minutes whatever the queue says, and the server's credit rises in
+  those steps (npps0 task 40256: 2,820 to 7,754 events over 22 minutes).
+  A shorter cadence needs a pilot change.
 - **The server's side exists.** A job whose heartbeat stops is failed
   after the workflow's `HEARTBEAT_TIMEOUT` (panda-server
   `copyArchive.py`, 2 hours by default), and archiving a fine-grained
@@ -367,10 +369,10 @@ exercised.
   (`pilot/api/data.py`, `prepare_destinations`); with no `es_events`
   entry the ES request `['es_events', 'pw']` resolves to the
   production write storage — BNL_PROD_DISK_1 — with `es_failover`
-  falling back the same way. The stage-out cadence is already
-  configured: the pilot's `es_stageout_gap` maps from the queue field
-  `zip_time_gap`, which the queue carries as 7200 s. No configuration
-  work is needed.
+  falling back the same way. The stage-out cadence needs no
+  configuration: the pilot's `es_stageout_gap` maps from the queue field
+  `zip_time_gap`, and the pilot's built-in configuration overrides it
+  with 601 s (Preemption, Credit as the closes land).
 - *Merge*: one ATLAS-only gap exists — registration of the
   pre-merge zips (`zipoutput` files, the `registerEsFiles` path) is
   implemented only in the ATLAS adder plugin; `AdderSimplePlugin`
