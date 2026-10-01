@@ -6292,6 +6292,8 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
     # The attempt records the queue it was sent to and, when a person or
     # the front chose it, what the recommendation was.
     meta = dict(panda_tasks.metadata or {})
+    if changed_by:
+        meta['submitted_by'] = changed_by
     if residual:
         meta['residual_of'] = residual_of
     if placement:

@@ -1152,10 +1152,15 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
 
     task_priority, priority_source = prodtask_task_priority(task, cfg=cfg)
 
+    # The task's owner in PanDA is who submitted this attempt (recorded on
+    # it at allocation); a row created by automation (association_sweep,
+    # nightly_cron) otherwise credited every submission to the automation.
+    submitted_by = str(((panda_tasks.metadata if panda_tasks is not None else None)
+                        or {}).get('submitted_by') or '')
     spec = {
         'outDS': out_ds,
         'vo': data.get('vo', 'epic'),
-        'userName': task.created_by,
+        'userName': submitted_by or task.created_by,
         'workingGroup': cfg.get('panda_working_group') or 'EIC',
         'site': site,
         'prodSourceLabel': data.get('prod_source_label', 'test'),

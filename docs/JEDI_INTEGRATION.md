@@ -76,7 +76,7 @@ Submission chain: `submit_csv.sh` → `submit_panda_api.py` (`client.submit_task
 | JEDI Parameter | PCS Source | Notes |
 |---------------|-----------|-------|
 | `taskName` | physical PanDA attempt name | first attempt uses the PCS composed identity; retries/site races append `.tryN`; see [Output dataset and file naming](#output-dataset-and-file-naming) |
-| `userName` | `task.created_by` | PCS user who created the task |
+| `userName` | the attempt's `submitted_by`, else `task.created_by` | the user who submitted this attempt (recorded on its `PandaTasks` row at allocation); the task's creator only when no submitter was recorded, so a row created by automation (`association_sweep`, `nightly_cron`) does not take credit for a person's submission |
 | `vo` | `'eic'` | Virtual organization |
 | `workingGroup` | `config.panda_working_group` | e.g. `'EIC'` |
 | `campaign` | Derived from detector version | e.g. `'26.02.0'` |
