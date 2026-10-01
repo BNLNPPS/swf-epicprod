@@ -217,7 +217,10 @@ def run_cycle(*, dry_run=False, created_by='gke_pilots'):
     text, template = _load_template(template_path)
     summary = {'queue': cfg['queue'], 'started': 0, 'dry_run': dry_run}
     summary['activated'] = activated_jobs(cfg['queue'])
-    stop = blockers(cfg, text)
+    # The placeholder is looked for in the template's values, not its
+    # comments, which name it.
+    import yaml
+    stop = blockers(cfg, yaml.safe_dump(template))
     if stop:
         summary.update(outcome='held', reason='; '.join(stop))
     else:
