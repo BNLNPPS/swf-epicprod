@@ -51,6 +51,9 @@ from call_home import CallHome, default_flag, load_job_env, status_key  # noqa: 
 from es_record import RecordOut, trim_unit  # noqa: E402
 
 
+PILOT_REPORTS_PER_S = 100.0    # the pilot takes one channel message per 10 ms pass (esmessage.py)
+
+
 def meminfo_kb(field):
     """One field of /proc/meminfo in kB, or None."""
     try:
@@ -526,6 +529,7 @@ def main():
 
     reported = [0]                                          # reports sent since the harness last waited on the pilot
     exited = {}                                             # slot index: exit code, for slots whose container ended
+    backlog = [0.0, time.time()]                            # reports the pilot has not taken yet (estimate), as of when
     unit_walls = []                                         # (events, wall s) of the finished units
 
     def status():
@@ -591,6 +595,11 @@ def main():
 
     def report(slot, uid, record, ok, range_ids, extra=''):
         wall = record.get('wall_s') or 0
+        # The pilot takes one report per 10 ms pass; what it has not taken
+        # yet is the backlog the final grace must cover.
+        now = time.time()
+        backlog[0] = max(0.0, backlog[0] - (now - backlog[1]) * PILOT_REPORTS_PER_S) + len(range_ids)
+        backlog[1] = now
         for rid in range_ids:
             if ok:
                 feed.report(f"{os.path.join(slot.outbox, uid, 'unit.json')},ID:{rid},CPU:{wall},WALL:{wall}")
@@ -762,10 +771,14 @@ def main():
     # The pilot takes one report per pass of its loop, ten milliseconds
     # each, and drops what it has not taken when the payload exits (job
     # 3556537: 116 of a close's 326 reports landed); a burst of reports
-    # is given its time before the harness ends.
-    grace = min(300.0, 5.0 + 0.05 * reported[0])
+    # is given its time before the harness ends: the backlog still untaken,
+    # at five times the pilot's pace. Sized from every report of the job, the
+    # grace hit its 300 s cap on any long job (3809919: 7,682 reports, five
+    # idle minutes at the end, for a last burst of 411).
+    untaken = max(0.0, backlog[0] - (time.time() - backlog[1]) * PILOT_REPORTS_PER_S)
+    grace = min(300.0, 5.0 + 5 * untaken / PILOT_REPORTS_PER_S)
     log(f"no more ranges: {len(summary['done'])} done, {len(summary['failed'])} failed; "
-        f"{grace:.0f} s for the pilot to take the last {reported[0]} reports, then stopping slots")
+        f"{grace:.0f} s for the pilot to take the last ~{untaken:.0f} of {reported[0]} reports, then stopping slots")
     time.sleep(grace)
     for s in slots:
         s.stop()
