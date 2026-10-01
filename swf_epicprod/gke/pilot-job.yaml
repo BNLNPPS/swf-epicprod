@@ -41,6 +41,12 @@ spec:
               value: /pilotdir
             - name: HOME
               value: /pilotdir
+            # uid 1000 has no passwd entry in the image; getpass.getuser()
+            # (the Rucio client's token path) reads these first.
+            - name: USER
+              value: epicprod
+            - name: LOGNAME
+              value: epicprod
           volumeMounts:
             - name: cvmfs
               mountPath: /cvmfs

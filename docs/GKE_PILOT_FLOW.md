@@ -126,7 +126,11 @@ probe found:
 The service account cannot list the project's image registry. The
 image is the grid image the Harvester pods ran (their pilot logs:
 AlmaLinux 9.8, apptainer, uid 1000), `atlasadc/atlas-grid-almalinux9`.
-The first pod confirms it.
+The first pod confirms it. The image has no passwd entry for uid 1000,
+so the template sets `USER` and `LOGNAME`: the Rucio client names its
+token path by `getpass.getuser()`, which reads them before passwd, and
+without them stage-in fails with `getpwuid(): uid not found: 1000`
+(job 3809903, 2026-10-01).
 
 ## Still to do
 
