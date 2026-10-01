@@ -51,4 +51,6 @@ else
 fi
 echo "epicprod-pilot-wrapper: ATHENA_PROC_NUMBER=${ATHENA_PROC_NUMBER} (${source_note}), piloturl ${PILOTURL}"
 
-exec "${STANDARD_WRAPPER}" "$@" --piloturl "${PILOTURL}"
+# The standard wrapper is not executable on CVMFS (mode 644); bash runs it,
+# as Harvester's pods do.
+exec bash "${STANDARD_WRAPPER}" "$@" --piloturl "${PILOTURL}"
