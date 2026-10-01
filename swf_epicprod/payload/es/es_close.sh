@@ -26,6 +26,7 @@ if ls environment*.sh >/dev/null 2>&1; then
 fi
 export DETECTOR_VERSION_REQUESTED=${DETECTOR_VERSION:-main}
 source /opt/detector/epic-${DETECTOR_VERSION_REQUESTED}/bin/thisepic.sh >/dev/null 2>&1 || true
+source ${PAYLOAD}/grid_env.sh
 export RUCIO_CONFIG=${PAYLOAD}/rucio.cfg RUCIO_ACCOUNT=eicprod
 
 record() {

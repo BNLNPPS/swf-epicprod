@@ -228,6 +228,7 @@ source /opt/detector/epic-${DETECTOR_VERSION_REQUESTED}/bin/thisepic.sh
 export DETECTOR_VERSION=${DETECTOR_VERSION_REQUESTED}
 export DETECTOR_CONFIG=${DETECTOR_CONFIG_REQUESTED:-${DETECTOR_CONFIG:-$DETECTOR}}
 export SCRIPT_DIR=$(realpath $(dirname $0))
+source ${SCRIPT_DIR}/grid_env.sh
 # Call home while the job is in PanDA debug mode (call_home.py,
 # docs/JOB_REPORTING.md): a background watcher sends the payload report as
 # status/<job id>.json every EPICPROD_CALL_HOME_S seconds while the
