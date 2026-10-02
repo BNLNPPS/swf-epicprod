@@ -268,6 +268,45 @@ def open_attempt_problem(task):
             f'no jediTaskID yet')
 
 
+STORAGE_ALARM = 'alarm_storage_headroom'
+# An event the alarm engine has not seen for this long is not current.
+STORAGE_EVENT_FRESH_S = 3600
+DEFAULT_OUT_RSE = 'EIC-XRD'  # the payload's default (run.sh OUT_RSE)
+
+
+def full_output_rses(now=None):
+    """{rse: subject} for every RSE the storage headroom alarm currently
+    reads as near full, by door space or by catalog quota. Feeding work
+    whose output lands there only loses the output when it fills
+    (2026-10-02, BNL-XRD). Pure read of the alarm's active events; an
+    alarm that is not running holds nothing."""
+    from monitor_app.models import Entry
+    alarm = (Entry.objects.filter(context_id='swf-alarms', kind='alarm',
+                                  data__entry_id=STORAGE_ALARM)
+             .values_list('id', flat=True).first())
+    if alarm is None:
+        return {}
+    now = (now or timezone.now()).timestamp()
+    out = {}
+    events = (Entry.objects.filter(context_id='swf-alarms', kind='event',
+                                   data__alarm_config_id=str(alarm),
+                                   data__clear_time=None)
+              .values_list('data', flat=True))
+    for data in events:
+        rse = str(data.get('rse') or '')
+        if rse and now - float(data.get('last_seen') or 0) < STORAGE_EVENT_FRESH_S:
+            out.setdefault(rse, str(data.get('subject') or 'near full'))
+    return out
+
+
+def output_storage_problem(cfg, full):
+    """The readiness problem of a task whose output RSE is near full."""
+    rse = str(cfg.get('rucio_rse') or DEFAULT_OUT_RSE)
+    if rse in full:
+        return f'its output storage {rse} is near full ({full[rse]}); free space or move its output'
+    return None
+
+
 def ready_backlog():
     """The ``ready`` tasks by pinned queue, eligible ones first in
     priority order (level 1 first, unset last, then oldest), each with
@@ -277,6 +316,7 @@ def ready_backlog():
     from pcs.models import ProdTask
     from pcs.services import prodtask_readiness_problems
     by_queue = {}
+    full = _safe('reading output storage', full_output_rses, {})
     tasks = (ProdTask.objects.filter(status='ready')
              .select_related('dataset', 'request', 'prod_config', 'campaign')
              .order_by('created_at'))
@@ -293,6 +333,9 @@ def ready_backlog():
             open_attempt = open_attempt_problem(task)
             if open_attempt:
                 entry['problems'].append(open_attempt)
+            storage = output_storage_problem(cfg, full)
+            if storage:
+                entry['problems'].append(storage)
             # Rows are read for every ready task that can be sized, so
             # the ready hours count the whole backlog, not only the
             # eligible part; a task without a matched input has none.

@@ -606,6 +606,21 @@ feeding a new Storage view — storage faults surface before payloads
 find them. The single catalog instance for science data is on the
 record as a resilience item.
 
+The front feeds no task whose output storage is near full (2026-10-02:
+BNL-XRD filled and thousands of finished jobs lost their output to it).
+The swf-monitor alarm `storage_headroom` reads every output store each
+tick, by the door's own space report, by the dCache quota, and by the
+production account's quota in the catalog, and holds an event per store
+below a tenth free. A ready task whose output RSE (`rucio_rse`, else
+the payload's default EIC-XRD) has such an event, seen within the hour,
+carries the readiness problem "its output storage is near full", so it
+is ineligible for feeding and the ready page names why
+(`full_output_rses` and `output_storage_problem` in
+`swf_epicprod/front.py`). The hold lifts when the event clears. The
+payload's stash at BNL-XRD is the backstop for a catalog outage, not
+for a full store; preventing the full store is this hold and the alarm
+ahead of it.
+
 ## Declared downtime
 
 Measured health is not the only evidence; planned downtime is
