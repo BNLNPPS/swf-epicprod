@@ -12,7 +12,7 @@ from .api_views import (
     validation_campaign_catalog, validation_results_receive,
     evgen_mark, evgen_register, pc_ingest_analyze, pc_ingest_accept,
     pc_ingest_request, pc_ingest_sweep_definitions, storage_listing,
-    delivered_outputs_receive,
+    delivered_outputs_receive, stageout_log_grant,
 )
 
 router = DefaultRouter()
@@ -39,6 +39,10 @@ urlpatterns = [
          name='validation_campaign_catalog'),
     path('v1/validation-results/', validation_results_receive,
          name='validation_results'),
+    # Log upload grants for pilots (LOG_STAGEOUT_FALLBACK.md); open, under
+    # the devcloud login wall's open v1 prefix
+    path('v1/stageout/log-grant/', stageout_log_grant,
+         name='stageout_log_grant'),
     path('prod-requests/compose/', prod_request_compose,
          name='prod_request_compose'),
     path('requests/<int:pk>/priority/', prod_request_priority,

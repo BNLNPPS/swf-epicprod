@@ -8068,3 +8068,77 @@ def standard_prodconfig_create(edition, *, changed_by, origin=None,
         **origin_attrs)
     return {'name': name, 'config_id': config.pk, 'log_id': log_id,
             'ping_fulfilled': ping_fulfilled, 'values': preview}
+
+
+# ── Log upload grants ────────────────────────────────────────────────────────
+# A pilot whose log transfer failed holds the log in the stage-out bucket
+# (docs/LOG_STAGEOUT_FALLBACK.md). It carries no credential: it asks here, the
+# job is checked against the PanDA record, and the production operations agent
+# signs a POST for exactly that log's object. The grant is served from the
+# shared cache the agent writes; the web tier holds no credential.
+
+LOG_GRANT_LIVE_STATES = ('starting', 'running', 'transferring', 'holding')
+LOG_GRANT_MIN_REMAINING_S = 3600
+LOG_GRANT_RETRY_AFTER_S = 10
+_LOG_GRANT_NAME = _re.compile(r'^[A-Za-z0-9_.\-]{1,250}$')
+
+
+def _log_grant_path(pandaid):
+    root = getattr(_settings, 'SWF_TMP_DIR', '/data/swf-tmp')
+    return _os.path.join(root, 'log-grants', f'{int(pandaid)}.json')
+
+
+def log_grant_request(pandaid, lfn):
+    """The upload grant for a live job's log, or a request for one.
+
+    Returns (http_status, body): 200 with the grant (url, fields, key,
+    expires_at), 202 while the agent signs it, 404 when the job is not live
+    or the file is not its log, 400 for a malformed request, 503 when the
+    agent cannot be reached.
+    """
+    import time as _time
+    try:
+        pandaid = int(pandaid)
+    except (TypeError, ValueError):
+        return 400, {'detail': 'pandaid must be an integer'}
+    if not isinstance(lfn, str) or not _LOG_GRANT_NAME.match(lfn):
+        return 400, {'detail': 'lfn must be a plain file name'}
+
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    sql = f'''
+        SELECT j."jobstatus", j."computingsite", f."dataset"
+        FROM "{PANDA_SCHEMA}"."jobsactive4" j
+        JOIN "{PANDA_SCHEMA}"."filestable4" f ON f."pandaid" = j."pandaid"
+        WHERE j."pandaid" = %s AND f."lfn" = %s AND f."type" = 'log'
+    '''
+    with connections['panda'].cursor() as cursor:
+        cursor.execute(sql, [pandaid, lfn])
+        row = cursor.fetchone()
+    if not row:
+        return 404, {'detail': f'no live job {pandaid} with log {lfn}'}
+    jobstatus, site, dataset = row
+    if jobstatus not in LOG_GRANT_LIVE_STATES:
+        return 404, {'detail': f'job {pandaid} is {jobstatus}, not live'}
+    if not (site and dataset and _LOG_GRANT_NAME.match(site) and _LOG_GRANT_NAME.match(dataset)):
+        return 404, {'detail': f'job {pandaid} has no usable site or log dataset'}
+
+    try:
+        with open(_log_grant_path(pandaid)) as fp:
+            grant = _json.load(fp)
+    except (OSError, ValueError):
+        grant = None
+    if (grant and grant.get('lfn') == lfn
+            and grant.get('expires_at', 0) > _time.time() + LOG_GRANT_MIN_REMAINING_S):
+        return 200, {k: grant[k] for k in ('url', 'fields', 'key', 'expires_at')}
+
+    msg = {'msg_type': 'log_grant', 'namespace': 'prodops', 'pandaid': str(pandaid),
+           'lfn': lfn, 'site': site, 'dataset': dataset}
+    from monitor_app.activemq_connection import ActiveMQConnectionManager
+    try:
+        triggered = ActiveMQConnectionManager().send_message('/queue/epicprod.ops', _json.dumps(msg))
+    except Exception as e:
+        _logging.getLogger(__name__).error(f'log grant trigger failed for job {pandaid}: {e}')
+        triggered = False
+    if not triggered:
+        return 503, {'detail': 'the production operations agent cannot be reached'}
+    return 202, {'status': 'pending', 'retry_after': LOG_GRANT_RETRY_AFTER_S}

@@ -1884,3 +1884,20 @@ def pc_ingest_sweep_definitions(request):
     except ServiceError as e:
         return Response({'detail': e.detail}, status=e.status)
     return Response(result, status=status.HTTP_202_ACCEPTED)
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def stageout_log_grant(request):
+    """The upload grant for a live job's log: ?pandaid=<id>&lfn=<log lfn>.
+
+    Called by the ePIC pilot when its log transfer fails, from worker nodes
+    that hold no account, so it is open; what it grants is one object for one
+    live job's own log, for 12 hours. 200 carries the presigned POST, 202
+    asks the caller to retry after `retry_after` seconds while the
+    production operations agent signs it. See docs/LOG_STAGEOUT_FALLBACK.md.
+    """
+    code, body = services.log_grant_request(request.GET.get('pandaid'),
+                                            request.GET.get('lfn'))
+    return Response(body, status=code)

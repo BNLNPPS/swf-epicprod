@@ -170,6 +170,9 @@ Submission and execution:
 - [JOB_REPORTING.md](docs/JOB_REPORTING.md) — how a job's own account
   of itself reaches the production system, including from a job that
   fails.
+- [LOG_STAGEOUT_FALLBACK.md](docs/LOG_STAGEOUT_FALLBACK.md) — a pilot
+  log whose transfer fails is held in the stage-out bucket under a
+  per-job grant, and does not fail the job.
 - [DEVCLOUD_SUCCESSION.md](docs/DEVCLOUD_SUCCESSION.md) —
   epic-devcloud.org succession.
 
