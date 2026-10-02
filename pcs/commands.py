@@ -439,6 +439,10 @@ def build_task_params(task):
         'token': 'local',
         'destination': 'local',
         'value': log_filename,
+        # A log held by the pilot's fallback is absent from its report; the
+        # adder sets it to nooutput instead of failing the job
+        # (docs/LOG_STAGEOUT_FALLBACK.md).
+        'allowNoOutput': True,
     }
 
     # jobParameters: env + exec command, then output template

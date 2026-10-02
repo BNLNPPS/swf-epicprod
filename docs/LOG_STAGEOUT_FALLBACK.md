@@ -45,10 +45,19 @@ then, production operations copy each held log to the log dataset's RSE and
 register it in BNL Rucio, once BNL Rucio takes it. A job failed only on its
 log is credited from its payload report, which records the registered output.
 
-## The adder
+## The log dataset
 
 PanDA's adder fails a finished job whose log is missing from the pilot's
 report (DDM 200), and it cannot register a log held in the object store
-(NPPS0_TEST_QUEUE.md). Until the adder treats an unregistrable log as pending
-rather than fatal, a job whose log is held still ends failed in PanDA; its
-output and its log are kept, and the production record credits the output.
+(NPPS0_TEST_QUEUE.md). Both task builders, the submission kernel
+(swf-monitor `scripts/evgen_panda_submit.py`) and the PCS command builder
+(`pcs/commands.py`), therefore mark the log item `allowNoOutput`. JEDI carries
+the attribute to the log dataset and to each job's log file
+(`TaskRefinerBase`, `JediFileSpec`), and the adder sets a log absent from the
+report to `nooutput` and leaves the job finished (`adder_gen.py`). No change
+to PanDA is needed. A log the pilot could neither transfer nor hold still
+fails the job, because the pilot reports the job failed; the attribute
+changes only the case of a held log. Only the ATLAS pilot plugin reads the
+attribute, so the ePIC pilot is unaffected by it. A task submitted without
+the attribute still ends failed in PanDA when its log is held; its output and
+its log are kept, and the production record credits the output.
