@@ -231,7 +231,10 @@ request with that reason rather than reading as absent. The doer lists the
 directory on the JLab production door, takes each file's size and
 adler32 from the door (`xrdfs query checksum`; the server computes it
 and no bytes are read), and registers one dataset per directory
-holding files, one replica per file with its PFN on the door, and the
+holding files. A directory named `obsolete`, at any depth below the
+registered path, is never registered: files the production team sets
+aside go there, and the run reports how many it left out. The run
+registers one replica per file with its PFN on the door, and the
 attachments, then verifies the result against the catalog's file list.
 A checksum the door does not return makes the run incomplete and
 nothing is registered. Re-running is safe: existing datasets, replicas,
