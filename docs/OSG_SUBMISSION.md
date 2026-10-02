@@ -229,6 +229,27 @@ argument; the served-tarball route has not yet been exercised.
 That test directory belongs to the PanDA team at BNL and we do not
 write to it. Ours is the canary directory below.
 
+Since 2026-10-02 the two ePIC production queues run the canary pilot,
+`/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/pilot3.tar.gz`
+(then `pilot3-3.14.3.3-epic5`), named by an explicit `--piloturl` in
+place of `{pilotUrlOption}` in the submit description's `arguments`:
+
+- `UM_GREX_PanDA_1`: `submit_pilot3_push_umgrex.sdf` on
+  pandaharvester01, its own template; backup
+  `submit_pilot3_push_umgrex.sdf-backup-2026-10-02`.
+- `BNL_OSG_EPIC_PROD_1`: a template of its own,
+  `submit_pilot2_push_bnl_osg_epicprod.sdf` on osgsub01, a copy of the
+  shared `submit_pilot2_push_bnl_osg.sdf` with the pilot URL set, and
+  the queue's `templateFile` in `panda_queueconfig.json` pointed at it;
+  backup `panda_queueconfig.json-backup-2026-10-02`.
+  `BNL_OSG_PanDA_1` and `BNL_OSG_PanDA_pilotest` keep the shared
+  template and its CRIC-driven pilot URL.
+
+Harvester reads the template at every submission and reloads its queue
+configuration within ten minutes, so no service action is needed. A
+new pilot reaches both queues by moving the canary symlink (below);
+reverting a queue is restoring its backup.
+
 ### Our canary pilot directory, and publishing to it
 
 `/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/` is the ePIC
