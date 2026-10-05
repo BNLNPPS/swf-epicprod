@@ -3263,11 +3263,12 @@ PLAN_STATUS_SLUGS = (('complete', 'complete'),
 # snapper embed, and the campaign Time history filter carry-through all
 # share. The filter state rides `f` (monitor_app.inclusive_filter: the
 # selections as facet:value pairs, the shown rows their union, or their
-# intersection under `match=all`); the rest are the former one-per-facet
-# parameters, still read from old links.
-PLAN_FILTER_PARAMS = ('f', 'match', 'requestor', 'process', 'generator', 'beam',
-                      'q2', 'sample', 'nev', 'priority', 'status', 'dispo',
-                      'astate')
+# intersection under `match=all`) and `n` (the frame every row must
+# carry); the rest are the former one-per-facet parameters, still read
+# from old links.
+PLAN_FILTER_PARAMS = ('f', 'match', 'n', 'requestor', 'process', 'generator',
+                      'beam', 'q2', 'sample', 'nev', 'priority', 'status',
+                      'dispo', 'astate')
 
 # Reader-facing wording for the campaign-plan recommendation values
 # (the internal identifiers stay stable in payloads and the executor).
@@ -3280,7 +3281,7 @@ CAMPAIGN_PLAN_DISPO_LABELS = {
 
 # The plan's former one-parameter-per-facet URL vocabulary, read as
 # selections so old links keep working (monitor_app.inclusive_filter).
-PLAN_LEGACY_PARAMS = {key: key for key in PLAN_FILTER_PARAMS if key not in ('f', 'match')}
+PLAN_LEGACY_PARAMS = {key: key for key in PLAN_FILTER_PARAMS if key not in ('f', 'match', 'n')}
 
 
 def _plan_facets(assembly=False, has_completion=True):
