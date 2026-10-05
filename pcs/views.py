@@ -3262,9 +3262,10 @@ PLAN_STATUS_SLUGS = (('complete', 'complete'),
 # The plan's filter parameters — the vocabulary the plan page, its
 # snapper embed, and the campaign Time history filter carry-through all
 # share. The filter state rides `f` (monitor_app.inclusive_filter: the
-# selections as facet:value pairs, the shown rows their union); the rest
-# are the former one-per-facet parameters, still read from old links.
-PLAN_FILTER_PARAMS = ('f', 'requestor', 'process', 'generator', 'beam',
+# selections as facet:value pairs, the shown rows their union, or their
+# intersection under `match=all`); the rest are the former one-per-facet
+# parameters, still read from old links.
+PLAN_FILTER_PARAMS = ('f', 'match', 'requestor', 'process', 'generator', 'beam',
                       'q2', 'sample', 'nev', 'priority', 'status', 'dispo',
                       'astate')
 
@@ -3279,7 +3280,7 @@ CAMPAIGN_PLAN_DISPO_LABELS = {
 
 # The plan's former one-parameter-per-facet URL vocabulary, read as
 # selections so old links keep working (monitor_app.inclusive_filter).
-PLAN_LEGACY_PARAMS = {key: key for key in PLAN_FILTER_PARAMS if key != 'f'}
+PLAN_LEGACY_PARAMS = {key: key for key in PLAN_FILTER_PARAMS if key not in ('f', 'match')}
 
 
 def _plan_facets(assembly=False, has_completion=True):
@@ -3331,10 +3332,11 @@ def _plan_facets(assembly=False, has_completion=True):
 
 def _plan_filter(query):
     """The plan's inclusive filter over ``query`` (a QueryDict or a plain
-    mapping): the shown rows are the union of every selected value."""
+    mapping): the shown rows match any selected value, or every one
+    under ``match=all``."""
     from monitor_app.inclusive_filter import InclusiveFilter
 
-    return InclusiveFilter(query, legacy=PLAN_LEGACY_PARAMS)
+    return InclusiveFilter(query, legacy=PLAN_LEGACY_PARAMS, noun='configurations')
 
 
 def _campaign_plan_state(campaign, query, pc_view):
@@ -3747,8 +3749,8 @@ def pcs_campaign_plan(request):
         return f'{request.path}?{encoded}' if encoded else request.path
 
     # The inclusive filter's rows: every value of every facet with its
-    # count over all rows, selected values bold, the shown rows the
-    # union of the selections (monitor_app.inclusive_filter).
+    # count over all rows, selected values bold, the shown rows matching
+    # any selection, or every one under Match all (monitor_app.inclusive_filter).
     inclusive_filter = flt.context(rows_all, facets, request)
 
     # Registered EVGEN samples no request names reach the plan only when
