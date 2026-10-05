@@ -122,11 +122,13 @@ any count quickly, which reads as consumption. The measure is the depth
 of not-yet-running work at a queue in hours at the queue's capacity:
 
 - **runnable depth**: the jobs of the queue's tasks that PanDA holds
-  but has not started (activated, assigned, defined, starting, and the
-  jobs Harvester has fetched for workers not yet running), times the
+  but has not started (activated, assigned, defined, sent), times the
   queue's median finished walltime, divided by the queue's running
   ceiling (the measured peak, or the declared capacity where one
-  exists);
+  exists). A starting job counts as running: a job is recorded
+  running late and works for most of its life as starting (on
+  2026-10-05, the median finished job spent 87 of 115 minutes starting
+  at BNL_OSG_EPIC_PROD_1 and 4.9 of 5.1 at UM_GREX_PanDA_1);
 - **committed depth**: runnable depth plus every submission the front
   has made whose jobs are not yet visible (a task submitted and not yet
   generated, a submission request not yet answered), counted at its
