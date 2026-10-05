@@ -80,10 +80,18 @@ room of the unsaturated sites (the sum of
 `max(threshold × running, NQUEUELIMIT) - queued` over them, bounded by
 the ATLAS engine's per-pass maximum) and the saturated sites named, so
 that task selection serves the unsaturated sites only. A pass with no
-room is throttled, never uncapped. On a server whose generator does
-not take the saturated-site list (below), any saturated site throttles
-the work queue: an unthrottled answer would generate for that site's
-tasks. The priority
+room is throttled, never uncapped.
+
+A saturated site never holds the whole work queue. When every site
+with jobs is saturated, the pass goes on for the sites with no jobs yet
+(a new task at a quiet site), capped at the default floor of a standing
+reading charged in the ledger like a site. On a server whose generator
+does not take the saturated-site list (below), the pass still goes on,
+capped at the open sites' room, and the generator may fill a saturated
+site's tasks within that cap. The rule that held the whole work queue
+instead, `HOLD_QUEUE_ON_SATURATED_SITE`, is off since 2026-10-05: with
+the mode at `throttle` it held every production pass at every site
+from at least 2026-09-26 while UM_GREX_PanDA_1 alone was saturated. The priority
 valve is the ATLAS one applied per site: a saturated site with a
 waiting task of higher priority than anything queued there is not named,
 and the pass carries that priority as its minimum.
@@ -150,12 +158,10 @@ the site exclusion to take effect, the generator change of the previous
 section; without it the generator applies the pass cap and the
 throttled answer and ignores the saturated-site list. The engine reads
 at import whether the installed task buffer's
-`getTasksToBeProcessed_JEDI` takes `excluded_sites` and, when it does
-not, throttles the work queue on any saturated site (the decision's
+`getTasksToBeProcessed_JEDI` takes `excluded_sites` (the decision's
 `exclusion_honored`); the server upgraded on 2026-09-16 (master
-8f155ac9) does not, so production on BNL_OSG_PanDA_1 pauses every
-other site of the `wlcg` work queue while it is saturated. The
-generator change lifts that. The priority valve is not in this engine: the
+8f155ac9) does not, so a saturated site's tasks can receive jobs
+within each pass's cap until the generator change is in. The priority valve is not in this engine: the
 ATLAS engine reads the highest queued priority from `JOB_STATS_HP`,
 which the ePIC server does not populate, and the waiting-task peek is
 not site-aware; a site-aware read of both is a server change for the

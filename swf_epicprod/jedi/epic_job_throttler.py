@@ -16,8 +16,9 @@ throttled when every site is saturated; otherwise the pass is capped at
 the room of the unsaturated sites and the saturated sites are named
 for exclusion from task selection. A job generator without site
 exclusion (the installed server as of 2026-09-17) generates for the
-saturated site's tasks on any unthrottled answer, so for it a
-saturated site throttles the work queue.
+saturated site's tasks on any unthrottled answer; a saturated site
+never holds the whole work queue for that, nor for being the only site
+with jobs (``HOLD_QUEUE_ON_SATURATED_SITE``, off since 2026-10-05).
 
 The statistics come from tables refreshed about once a minute, and a
 pass is granted every second or so, so a reading can be re-read many
@@ -51,6 +52,14 @@ CONFIG_TAGS = ("THROTTLE_THRESHOLD", "NQUEUELIMIT", "NRUNNINGCAP", "NQUEUECAP")
 # passes read no site and passed uncapped while the SCORE passes held
 # NERSC_Perlmutter_epic saturated; 140,000 jobs generated in 30 minutes).
 NO_SITE = "(no site has jobs)"
+# A saturated site holding the whole work queue: off (Torre, 2026-10-05).
+# With it on, UM_GREX_PanDA_1 saturated held every production pass at
+# every site from at least 2026-09-26 to 2026-10-05. Off, a pass the rule
+# would have held goes on, capped: at the room of the open sites or, with
+# none open, at the floor of the NO_SITE reading, which stands for the
+# sites with no jobs yet (a new task at a quiet site) and is charged in
+# the ledger like a site.
+HOLD_QUEUE_ON_SATURATED_SITE = False
 
 
 @dataclass
@@ -123,6 +132,11 @@ def decide(readings: list[SiteReading], exclusion_honored: bool = False) -> Deci
     saturated: list[str] = []
     open_sites: list[str] = []
     room = 0
+    # The NO_SITE reading beside real sites is the spare for the sites with
+    # no jobs yet, used only when the hold-all rule is off and no real site
+    # is open; alone, it is read as a site.
+    spare = next((r for r in readings if r.site == NO_SITE), None) if len(readings) > 1 else None
+    readings = [r for r in readings if r is not spare]
     for r in sorted(readings, key=lambda x: x.site):
         why = r.saturation()
         if why:
@@ -136,10 +150,15 @@ def decide(readings: list[SiteReading], exclusion_honored: bool = False) -> Deci
         # Unreachable when the caller charges the no-site reading; kept as
         # the bounded answer for a caller that does not.
         return Decision(False, PASS_MAX_JOBS, [], [NO_SITE], ["no site has jobs: one capped pass"])
-    if len(saturated) == len(readings):
-        return Decision(True, None, saturated, [], lines + ["every site saturated: THROTTLED"])
-    if saturated and not exclusion_honored:
-        return Decision(True, None, saturated, [], lines + [f"saturated {saturated} and the generator has no site exclusion: THROTTLED"])
+    if HOLD_QUEUE_ON_SATURATED_SITE:
+        if len(saturated) == len(readings):
+            return Decision(True, None, saturated, [], lines + ["every site saturated: THROTTLED"])
+        if saturated and not exclusion_honored:
+            return Decision(True, None, saturated, [], lines + [f"saturated {saturated} and the generator has no site exclusion: THROTTLED"])
+    elif saturated and room <= 0 and spare is not None and spare.room > 0:
+        max_num_jobs = min(spare.room, PASS_MAX_JOBS)
+        lines.append(f"saturated {saturated}, no open site: unthrottled for sites with no jobs: max_num_jobs={max_num_jobs} (spare room {spare.room}, granted {spare.granted})")
+        return Decision(False, max_num_jobs, saturated, [NO_SITE], lines)
     max_num_jobs = min(room, PASS_MAX_JOBS)
     if max_num_jobs <= 0:
         return Decision(True, None, saturated, [], lines + ["no room at any open site: THROTTLED"])
@@ -183,8 +202,9 @@ def readings_from_stats(
                 nqueuecap=cfg.get("NQUEUECAP"),
             )
         )
-    if not readings:
-        readings.append(SiteReading(site=NO_SITE))
+    # With no site at all it is the reading; beside sites it is the spare
+    # for the sites with no jobs yet (HOLD_QUEUE_ON_SATURATED_SITE).
+    readings.append(SiteReading(site=NO_SITE))
     return readings
 
 

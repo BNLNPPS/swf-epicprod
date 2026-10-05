@@ -64,14 +64,40 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(d.max_num_jobs, 150)  # GREX: max(200, 100) - 50
         self.assertEqual(d.granted_sites, ["GREX"])
 
-    def test_saturated_site_throttles_when_the_generator_cannot_exclude(self):
-        # 2026-09-17: BNL_PanDA_1's room let the generator fill BNL_OSG_PanDA_1 to 23,000
+    def test_saturated_site_never_holds_the_others_without_exclusion(self):
+        # 2026-10-05: the hold-all rule seized every production site for one sick site
         d = decide([
             site("BNL_OSG_PanDA_1", running=0, not_run=6621, nqueuelimit=3123),
             site("BNL_PanDA_1", running=30, not_run=0, nqueuelimit=2000),
         ])
-        self.assertTrue(d.throttled)
+        self.assertFalse(d.throttled)
+        self.assertEqual(d.max_num_jobs, PASS_MAX_JOBS)
         self.assertEqual(d.excluded_sites, ["BNL_OSG_PanDA_1"])
+        self.assertEqual(d.granted_sites, ["BNL_PanDA_1"])
+
+    def test_only_site_with_jobs_saturated_passes_for_the_quiet_sites(self):
+        # 2026-10-05: GREX the only site with jobs held a new task anywhere else
+        r = readings_from_stats({"UM_GREX_PanDA_1": {"SCORE": {"activated": 77141}}}, "SCORE", {})
+        self.assertEqual([x.site for x in r], ["UM_GREX_PanDA_1", ejt.NO_SITE])
+        d = decide(r)
+        self.assertFalse(d.throttled)
+        self.assertEqual(d.max_num_jobs, PASS_MAX_JOBS)
+        self.assertEqual(d.excluded_sites, ["UM_GREX_PanDA_1"])
+        self.assertEqual(d.granted_sites, [ejt.NO_SITE])
+        # the spare is bounded by its floor in the ledger like a site
+        r[1].granted = DEFAULT_NQUEUELIMIT
+        self.assertTrue(decide(r).throttled)
+
+    def test_hold_all_rule_when_switched_on(self):
+        readings = [
+            site("BNL_OSG_PanDA_1", running=0, not_run=6621, nqueuelimit=3123),
+            site("BNL_PanDA_1", running=30, not_run=0, nqueuelimit=2000),
+        ]
+        ejt.HOLD_QUEUE_ON_SATURATED_SITE = True
+        try:
+            self.assertTrue(decide(readings).throttled)
+        finally:
+            ejt.HOLD_QUEUE_ON_SATURATED_SITE = False
 
     def test_grants_count_as_pending_until_the_reading_carries_them(self):
         r = site("OSG", running=0, not_run=748, nqueuelimit=3123)
@@ -149,7 +175,7 @@ class ReadingsTest(unittest.TestCase):
             "GREX": {"MCORE": {"running": 7}},
         }
         r = readings_from_stats(stats, "SCORE", {"OSG": {"THROTTLE_THRESHOLD": 3, "NQUEUELIMIT": 20}})
-        self.assertEqual([x.site for x in r], ["GREX", "OSG"])
+        self.assertEqual([x.site for x in r], ["GREX", "OSG", ejt.NO_SITE])
         osg = r[1]
         self.assertEqual((osg.running, osg.not_run, osg.defined), (104, 9, 2))
         self.assertEqual((osg.threshold, osg.nqueuelimit), (3.0, 20))
