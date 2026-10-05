@@ -1287,6 +1287,47 @@ def prod_request_priority(request, pk):
     return Response(result, status=status.HTTP_200_OK)
 
 
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def prod_request_anchor(request, pk):
+    """Bind one production request to a physics configuration. Body:
+    ``pc`` (the configuration label, e.g. pc435), ``comment`` (optional).
+    Thin wrapper over ``services.prod_request_anchor_set``."""
+    try:
+        result = services.prod_request_anchor_set(
+            pk, request.data.get('pc'), request.data.get('comment'),
+            changed_by=request.user.username,
+        )
+    except ServiceError as e:
+        return Response({'detail': e.detail}, status=e.status)
+    return Response(result, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def prodtask_priority(request, pk):
+    """Set one production task's own priority. Body: ``priority`` (1, 2,
+    3, or null/0 to clear), ``comment`` (optional). Thin wrapper over
+    ``services.prodtask_priority_set``; the campaign plan's priority
+    controls call it for a configuration no request is anchored to."""
+    refused = _priority_refusal(request)
+    if refused is not None:
+        return refused
+    try:
+        result = services.prodtask_priority_set(
+            pk, request.data.get('priority'),
+            request.data.get('comment'),
+            changed_by=request.user.username,
+        )
+    except ServiceError as e:
+        return Response({'detail': e.detail}, status=e.status)
+    return Response(result, status=status.HTTP_200_OK)
+
+
 @api_view(['GET'])
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])

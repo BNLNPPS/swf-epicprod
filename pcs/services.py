@@ -5129,6 +5129,95 @@ def prod_request_priority_set(pk, priority, comment='', *, changed_by=''):
             'changed': previous != value, 'log_id': log_id}
 
 
+def prod_request_anchor_set(pk, pc_label, comment='', *, changed_by=''):
+    """Bind a production request to a physics configuration after the
+    fact: ``data['physics_config_anchor']`` set to the configuration's
+    newest edition, the binding the composer writes when a request adopts
+    an existing configuration and the CSV import writes for every row. The
+    request then projects onto every edition of the configuration
+    (``pc_request_projection``): the plan shows its requestor and
+    priority, and the plan's priority control writes it. One
+    action-stream event carrying the previous and new anchors."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    from .models import PhysicsConfig
+
+    label = (pc_label or '').strip()
+    if not label:
+        raise ServiceError('a physics configuration label is required')
+    pc = PhysicsConfig.objects.filter(label=label).first()
+    if pc is None:
+        raise ServiceError(f'physics configuration {label} not found', 404)
+    edition = (Dataset.objects.filter(physics_config=pc)
+               .order_by('-created_at', '-pk').first())
+    if edition is None:
+        raise ServiceError(f'{label} has no dataset edition to anchor to')
+    try:
+        req = ProdRequest.objects.get(pk=int(pk))
+    except (ProdRequest.DoesNotExist, ValueError, TypeError):
+        raise ServiceError(f'request {pk} not found', 404)
+    data = dict(req.data or {})
+    previous = data.get('physics_config_anchor') or ''
+    anchor = edition.composed_name
+    comment = (comment or '').strip()
+    if previous != anchor:
+        data['physics_config_anchor'] = anchor
+        req.data = data
+        req.save(update_fields=['data'])
+    log_id = log_epicprod_action(
+        'web', 'prod_request_anchor_set',
+        subject_type='prod_request', subject_key=str(req.pk),
+        username=changed_by, sublevel='normal', live_default=True,
+        message=(f'request {req.pk} anchored to {label} ({anchor})'
+                 + (f', was {previous}' if previous else '')
+                 + (f': {comment}' if comment else '')),
+        pc=label, anchor=anchor, previous=previous, comment=comment,
+        changed=previous != anchor,
+    )
+    return {'request': req.pk, 'pc': label, 'anchor': anchor,
+            'previous': previous, 'changed': previous != anchor, 'log_id': log_id}
+
+
+def prodtask_priority_set(pk, priority, comment='', *, changed_by=''):
+    """Set one production task's own priority (1 highest to 3; None or 0
+    clears it). A task's own value is the first its submission reads
+    (``commands.prodtask_priority_level``: task, then plan, then
+    request), so it sets the priority of a configuration no request is
+    anchored to: the campaign plan's priority control writes it for such
+    a row. The same levels and event shape as
+    ``prod_request_priority_set``."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    if priority in (None, 0, '0', ''):
+        value = None
+    elif isinstance(priority, bool) or not isinstance(priority, int) \
+            or priority not in REQUEST_PRIORITY_LEVELS:
+        raise ServiceError(
+            f'priority must be one of {REQUEST_PRIORITY_LEVELS} or null')
+    else:
+        value = priority
+    try:
+        task = ProdTask.objects.get(pk=int(pk))
+    except (ProdTask.DoesNotExist, ValueError, TypeError):
+        raise ServiceError(f'task {pk} not found', 404)
+    previous = task.priority
+    comment = (comment or '').strip()
+    if previous != value:
+        task.priority = value
+        task.save(update_fields=['priority'])
+    log_id = log_epicprod_action(
+        'web', 'prodtask_priority_set',
+        subject_type='prod_task', subject_key=task.name,
+        username=changed_by, sublevel='normal', live_default=True,
+        message=(f'task {task.name} priority {previous} -> {value}'
+                 + (f': {comment}' if comment else '')),
+        previous=previous, priority=value, comment=comment,
+        changed=previous != value,
+    )
+    return {'task': task.pk, 'name': task.name, 'previous': previous,
+            'priority': value, 'changed': previous != value, 'log_id': log_id}
+
+
 def questionnaire_priority_set(pk, priority, comment='', *, changed_by=''):
     """Set one questionnaire response's priority (1 highest to 3; None or
     0 clears it), kept in the response's ``data`` JSON as ``priority``

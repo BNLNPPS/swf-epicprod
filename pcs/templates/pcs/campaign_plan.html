@@ -508,9 +508,9 @@
                 <td>{% if r.generator != 'unrecorded' %}{{ r.generator }}{% endif %}</td>
                 <td>{{ r.sample }}</td>
                 <td>{% if r.requestors %}{{ r.requestors|join:", " }}{% endif %}</td>
-                <td class="text-end text-nowrap plan-priority-cell" data-current="{{ r.priority|default_if_none:'' }}" data-requests="{{ r.request_ids|join:',' }}">
+                <td class="text-end text-nowrap plan-priority-cell" data-current="{{ r.priority|default_if_none:'' }}" data-requests="{{ r.request_ids|join:',' }}" data-tasks="{{ r.task_ids|join:',' }}">
                     <span class="plan-priority-value">{% if r.priority is not None %}{{ r.priority }}{% endif %}</span>
-                    {% if may_set_priority %}{% if r.request_ids %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit plan-priority-edit" title="Set the priority of this configuration's request{{ r.request_ids|length|pluralize }}" aria-label="Set priority"><i class="bi bi-pencil-square"></i></button>{% else %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit plan-edit-disabled" disabled title="No request is anchored to this configuration; priority is a property of requests" aria-label="No request to set priority on"><i class="bi bi-pencil-square"></i></button>{% endif %}{% endif %}
+                    {% if may_set_priority %}{% if r.request_ids %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit plan-priority-edit" title="Set the priority of this configuration's request{{ r.request_ids|length|pluralize }}" aria-label="Set priority"><i class="bi bi-pencil-square"></i></button>{% elif r.task_ids %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit plan-priority-edit" title="No request is anchored to this configuration: set the priority of its task{{ r.task_ids|length|pluralize }}" aria-label="Set priority"><i class="bi bi-pencil-square"></i></button>{% else %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 plan-target-edit plan-edit-disabled" disabled title="This configuration has neither an anchored request nor a task in this campaign to hold a priority" aria-label="Nothing to set priority on"><i class="bi bi-pencil-square"></i></button>{% endif %}{% endif %}
                 </td>
                 <td class="text-end text-nowrap plan-target-cell" data-current="{{ r.expected_events|default_if_none:'' }}" data-suggest="{{ r.requested_events|default_if_none:'' }}">
                     <span class="plan-target-value">{% if r.expected_events is not None %}{% if r.expected_source == 'included' %}<strong>{{ r.expected_events }}</strong>{% else %}{{ r.expected_events }}{% endif %} <span class="text-muted">· {{ r.expected_source }}</span>{% elif r.requested_events is not None %}{{ r.requested_events }} <span class="text-muted">· requested</span>{% else %}<span class="swf-no-target">no target</span>{% endif %}</span>
@@ -666,13 +666,17 @@
     function savePriority(td, tr) {
         const raw = panelPriority.value;
         const priority = raw === '' ? null : parseInt(raw, 10);
-        const ids = (td.dataset.requests || '').split(',').filter(Boolean);
+        const requestIds = (td.dataset.requests || '').split(',').filter(Boolean);
+        // With no anchored request the configuration's tasks hold the priority.
+        const onTasks = !requestIds.length;
+        const ids = onTasks ? (td.dataset.tasks || '').split(',').filter(Boolean) : requestIds;
+        const noun = onTasks ? 'task' : 'request';
         const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1];
         panelSave.disabled = true;
         panelStatus.style.color = '';
         panelStatus.textContent = 'Saving…';
         Promise.all(ids.map(function (id) {
-            return fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/requests/' + id + '/priority/', {
+            return fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/' + (onTasks ? 'task-priority/' + id + '/' : 'requests/' + id + '/priority/'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf || ''},
                 body: JSON.stringify({priority: priority}),
@@ -683,7 +687,7 @@
             closePanel();
             statusEl.style.color = '';
             statusEl.textContent = 'Priority ' + (priority === null ? 'cleared' : 'set to ' + priority)
-                + ' on ' + ids.length + ' request' + (ids.length === 1 ? '' : 's') + ' of '
+                + ' on ' + ids.length + ' ' + noun + (ids.length === 1 ? '' : 's') + ' of '
                 + (tr.dataset.pc || tr.dataset.name) + '.';
         }).catch(function (error) {
             panelStatus.style.color = '#c62828';
@@ -780,21 +784,24 @@
         let skipped = 0;
         rows.forEach(function (tr) {
             const cell = tr.querySelector('.plan-priority-cell');
-            const ids = ((cell && cell.dataset.requests) || '').split(',').filter(Boolean);
+            const requestIds = ((cell && cell.dataset.requests) || '').split(',').filter(Boolean);
+            // With no anchored request the configuration's tasks hold the priority.
+            const onTasks = !requestIds.length;
+            const ids = onTasks ? ((cell && cell.dataset.tasks) || '').split(',').filter(Boolean) : requestIds;
             if (!ids.length) { skipped++; return; }
             ids.forEach(function (id) {
-                posts.push(fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/requests/' + id + '/priority/', {
+                posts.push(fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/' + (onTasks ? 'task-priority/' + id + '/' : 'requests/' + id + '/priority/'), {
                     method: 'POST', headers: headers,
                     body: JSON.stringify({priority: priority}),
                 }).then(function (r) { return r.ok ? r.json() : failureText(r); }));
             });
         });
         if (!posts.length) {
-            priorityStatusEl.textContent = 'None of the selected rows has an anchored request; priority is a property of requests.';
+            priorityStatusEl.textContent = 'None of the selected rows has an anchored request or a task in this campaign to hold a priority.';
             return;
         }
         priorityStatusEl.style.color = '';
-        priorityStatusEl.textContent = 'Saving…' + (skipped ? ' (' + skipped + ' selected row' + (skipped === 1 ? ' has' : 's have') + ' no request and stay unchanged)' : '');
+        priorityStatusEl.textContent = 'Saving…' + (skipped ? ' (' + skipped + ' selected row' + (skipped === 1 ? ' has' : 's have') + ' nothing to hold a priority and stay' + (skipped === 1 ? 's' : '') + ' unchanged)' : '');
         prioritySaveBtn.disabled = true;
         Promise.all(posts).then(reloadPlan).catch(function (error) {
             priorityStatusEl.textContent = String(error.message || error);

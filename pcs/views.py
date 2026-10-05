@@ -3390,6 +3390,7 @@ def _campaign_plan_state(campaign, query, pc_view):
     withdrawn_marks = (services.campaign_withdrawn_editions(campaign.name)
                        if campaign is not None else {})
     task_by_pc = _campaign_task_by_pc(campaign)
+    task_priorities = _campaign_task_priorities(campaign)
     rows = []
     for head in heads:
         params = (head.physics_tag.parameters or {}) if head.physics_tag_id \
@@ -3407,8 +3408,14 @@ def _campaign_plan_state(campaign, query, pc_view):
             bh = ''
         comp = (completion_by_pc.get(head.physics_config.label)
                 if head.physics_config_id else None) or {}
+        row_requests = request_ids.get(head.composed_name, [])
+        own = (task_priorities.get(head.physics_config.label)
+               if head.physics_config_id else None) or {}
         rows.append({
-            'priority': comp.get('priority'),
+            # The best anchored request's priority; with no request, the
+            # configuration's tasks' own (what their submission reads).
+            'priority': comp.get('priority') if row_requests else own.get('priority'),
+            'task_ids': [] if row_requests else own.get('ids', []),
             'delivered_events': comp.get('delivered_events'),
             # The per-edition split, shown when delivery is spread across
             # editions or a withdrawn edition holds a share.
@@ -3514,6 +3521,26 @@ def campaign_plan_pc_filter(campaign_name, query):
         return None, None
     return (state['active_filters'],
             {r['pc_label'] for r in state['rows'] if r['pc_label']})
+
+
+def _campaign_task_priorities(campaign):
+    """{pc label: {'ids': [task pk, ...], 'priority': best own level or
+    None}} over the campaign's tasks: the priority of a configuration no
+    request is anchored to is its tasks' own (submission reads a task's
+    own value first; commands.prodtask_priority_level)."""
+    out = {}
+    if campaign is None:
+        return out
+    rows = (ProdTask.objects.filter(campaign=campaign,
+                                    dataset__physics_config__isnull=False)
+            .values_list('pk', 'priority', 'dataset__physics_config__label')
+            .order_by('pk'))
+    for pk, priority, label in rows:
+        entry = out.setdefault(label, {'ids': [], 'priority': None})
+        entry['ids'].append(pk)
+        if priority in (1, 2, 3) and (entry['priority'] is None or priority < entry['priority']):
+            entry['priority'] = priority
+    return out
 
 
 def _campaign_task_by_pc(campaign):
