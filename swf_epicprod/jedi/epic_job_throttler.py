@@ -9,7 +9,7 @@ ePIC tasks are pinned to one site each, so the ATLAS engine's count
 over a whole work queue puts a saturated site and a starved one in the
 same group; this decision reads the same statistics per site and
 applies the ATLAS rule to each: a site is saturated when its queued
-jobs (assigned, activated, starting, defined) exceed the larger of
+jobs (assigned, activated, defined; starting counts as running) exceed the larger of
 ``THROTTLE_THRESHOLD`` times its running jobs and ``NQUEUELIMIT``, or
 when a cap on running or queued jobs is exceeded. The work queue is
 throttled when every site is saturated; otherwise the pass is capped at
@@ -44,7 +44,13 @@ PASS_MAX_JOBS = 300
 # of jobs, at the bunch size it uses when nothing runs.
 DEFAULT_NQUEUELIMIT = 4 * 500
 DEFAULT_THRESHOLD = 2.0
-NOT_RUN_STATES = ("assigned", "activated", "starting")
+# A starting job is on a slot: a job is recorded running late and
+# works for most of its life as starting
+# (2026-10-05, median of the last 200 finished: 87 of 115 min at
+# BNL_OSG_EPIC_PROD_1, 4.9 of 5.1 min at UM_GREX_PanDA_1, which read 0
+# running). Counted as running, not queued, unlike the ATLAS engine.
+RUNNING_STATES = ("running", "starting")
+NOT_RUN_STATES = ("assigned", "activated")
 CONFIG_TAGS = ("THROTTLE_THRESHOLD", "NQUEUELIMIT", "NRUNNINGCAP", "NQUEUECAP")
 # The reading a pass is charged to while no site has jobs at all: a pass
 # with nothing queued anywhere is not unbounded, it is bounded by the
@@ -186,7 +192,7 @@ def readings_from_stats(
     for site in sorted(stats):
         running = not_run = defined = 0
         for by_status in (stats[site] or {}).values():
-            running += int(by_status.get("running", 0) or 0)
+            running += sum(int(by_status.get(s, 0) or 0) for s in RUNNING_STATES)
             not_run += sum(int(by_status.get(s, 0) or 0) for s in NOT_RUN_STATES)
             defined += int(by_status.get("defined", 0) or 0)
         cfg = site_config.get(site, {})

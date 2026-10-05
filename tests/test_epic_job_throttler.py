@@ -177,9 +177,10 @@ class ReadingsTest(unittest.TestCase):
         r = readings_from_stats(stats, "SCORE", {"OSG": {"THROTTLE_THRESHOLD": 3, "NQUEUELIMIT": 20}})
         self.assertEqual([x.site for x in r], ["GREX", "OSG", ejt.NO_SITE])
         osg = r[1]
-        self.assertEqual((osg.running, osg.not_run, osg.defined), (104, 9, 2))
+        # starting counts as running (2026-10-05: jobs are recorded running late)
+        self.assertEqual((osg.running, osg.not_run, osg.defined), (105, 8, 2))
         self.assertEqual((osg.threshold, osg.nqueuelimit), (3.0, 20))
-        self.assertEqual(osg.bound, 312)  # max(3 x 104, 20)
+        self.assertEqual(osg.bound, 315)  # max(3 x 105, 20)
         self.assertEqual(readings_from_stats(stats, "MCORE", {})[1].queued, osg.queued)
 
 

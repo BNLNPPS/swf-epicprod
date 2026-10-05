@@ -48,8 +48,13 @@ with production on `wlcg` alone that is the reading wanted, and the
 
 Statistics per site come from the taskbuffer's
 `getJobStatisticsByResourceTypeSite`: for each computing site of the
-work queue, running, not-run (assigned, activated, starting) and
-defined jobs, summed over every resource type. A site's queue is one
+work queue, running, not-run (assigned, activated) and defined jobs,
+summed over every resource type. A starting job counts as running,
+unlike in the ATLAS engine: a job is recorded running late and spends
+most of its working life as starting (on
+2026-10-05, the median finished job spent 87 of 115 minutes starting
+at BNL_OSG_EPIC_PROD_1 and 4.9 of 5.1 at UM_GREX_PanDA_1, which the
+engine read as 0 running). A site's queue is one
 pool whatever the resource type of the jobs in it, and the generator
 asks once per resource type: read per resource type, the MCORE pass saw
 NERSC_Perlmutter_epic empty while the SCORE pass held it saturated, and
