@@ -804,6 +804,7 @@ def _evgen_manifest_internal(task, events_per_job):
 
 
 RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4})\.eicrecon\.edm4eic\.root$')
+TRY_SEGMENT_RE = re.compile(r'^try\d+$')
 
 
 def _delivered_row_keys(task):
@@ -872,6 +873,10 @@ def _delivered_row_keys(task):
             # /RECO/<ver>/<config>/<subpath...>/<stem>
             if len(parts) < 4 or parts[0] != 'RECO':
                 continue
+            # A rerun writes under its try segment (TAG_PREFIX=tryN,
+            # _add_try_env); the row is the same below it.
+            if TRY_SEGMENT_RE.match(parts[3]):
+                parts = parts[:3] + parts[4:]
             head = '/'.join(parts[3:-1])
             stem = parts[-1]
             keys.add((head, stem, chunk))
