@@ -6423,6 +6423,7 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
     if site:
         prodtask_place(task, site, changed_by=changed_by, placement=placement)
         task.refresh_from_db()
+    refuse_closed_queue(pinned_site(task))
     # Commissioning relaxation: a draft task may be submitted directly — the
     # 'ready' freeze is not required. Readiness is surfaced as a non-blocking
     # warning by the caller, not gated here. See docs/COMMISSIONING_RELAXATIONS.md.
@@ -6580,6 +6581,7 @@ def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by
     if site:
         prodtask_place(task, site, changed_by=changed_by, placement=placement)
         task.refresh_from_db()
+    refuse_closed_queue(pinned_site(task))
     mark = {'kind': kind, 'by': changed_by or '', 'at': _timezone.now().isoformat(),
             'site': pinned_site(task) or '', 'rows': rows,
             'placement': placement or None}
@@ -6983,6 +6985,19 @@ def _placement_record(site, placement, changed_by):
             'by': changed_by or '', 'at': _timezone.now().isoformat()}
 
 
+def refuse_closed_queue(site):
+    """Raise when ``site`` is a production queue the operator has closed
+    to production submission (``swf_epicprod.front.closed_queues``). The
+    one check behind place, submit, the reruns, the queued submission,
+    trial and move; canary probes do not pass through PCS submission."""
+    from swf_epicprod.front import closed_queues
+    reason = closed_queues().get(str(site or '').strip())
+    if reason:
+        raise ServiceError(
+            f'{site} is closed to production submission: {reason}. '
+            'Choose another queue.', status=409)
+
+
 def prodtask_place(task, site, *, changed_by='', placement=None):
     """Place the task on a production queue: every later submission of it
     (Submit, the reruns) goes there. A trial's site is its dataset's
@@ -6998,6 +7013,7 @@ def prodtask_place(task, site, *, changed_by='', placement=None):
         raise ServiceError(
             f'{site or "(none)"} is not a production queue; the production '
             'queues are ' + ', '.join(queues) + '.', status=400)
+    refuse_closed_queue(site)
     before = pinned_site(task)
     ds = task.dataset
     if ds is not None and (ds.metadata or {}).get('trial') and (ds.metadata or {}).get('trial_site'):
@@ -7029,6 +7045,7 @@ def prodtask_move_request(*, task, site, changed_by='', placement=None):
     if not task.panda_task_id:
         raise ServiceError('Task has no PanDA task to move; place it and submit.',
                            status=409)
+    refuse_closed_queue(site)
     live = _get_task_record(int(task.panda_task_id))
     if not live:
         raise ServiceError(f'PanDA task {task.panda_task_id} not found.', status=404)
@@ -7094,6 +7111,8 @@ def prodtask_compose_trial(*, task, events=None, site='', created_by='',
             task, events=events or trials.DEFAULT_TRIAL_EVENTS,
             site=site or '', created_by=created_by or 'operator',
             prod_config=config, input_did=input_did or '')
+        from .commands import pinned_site
+        refuse_closed_queue(pinned_site(trial))
     log_id = log_epicprod_action(
         'web', 'prodtask_trial', subject_type='prod_task',
         subject_key=trial.name, subject_label=trial.name,

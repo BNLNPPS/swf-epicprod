@@ -103,6 +103,19 @@ def regulated_queues():
     return list(DEFAULT_QUEUES)
 
 
+def closed_queues():
+    """``front.closed_queues``: {queue: reason} for the production queues
+    closed to production submission by an operator (NERSC_Perlmutter_epic
+    with no allocation, 2026-10-06). A closed queue is never recommended,
+    and PCS refuses to place, submit, rerun, trial or move work there.
+    Canary probes do not pass through PCS submission and still run."""
+    value = setting('front.closed_queues', {})
+    if isinstance(value, dict):
+        return {str(k): str(v or 'closed by the operator') for k, v in value.items() if k}
+    logger.error('front.closed_queues is not a {queue: reason} mapping: %r; none closed', value)
+    return {}
+
+
 # Gates
 
 def _canary_gate(queue):
@@ -721,8 +734,10 @@ def _depth_line(r):
     return f"{r['not_started']} jobs queued, depth in hours not yet calibrated"
 
 
-def recommend(state, need, queues=None):
-    """Rank the production queues for a task's work. Pure.
+def recommend(state, need, queues=None, closed=None):
+    """Rank the production queues for a task's work. Pure apart from
+    reading the closed queues (``closed_queues``) when ``closed`` is not
+    given.
 
     ``state`` is the front's stored state (``front_state``), ``need`` the
     task's ``task_need``. A queue with a red gate or a limit the task
@@ -738,6 +753,7 @@ def recommend(state, need, queues=None):
     decisions = state.get('queues') or {}
     placement = state.get('placement') or {}
     queues = list(queues or decisions.keys())
+    closed = closed_queues() if closed is None else closed
     rows = []
     for queue in queues:
         d = decisions.get(queue) or {}
@@ -759,7 +775,8 @@ def recommend(state, need, queues=None):
             'canary': ((gates or {}).get('canary') or {}).get('status') or d.get('canary') or 'unknown',
             'limits': limits,
             'fit': fit_problems(need, limits),
-            'blockers': gate_blockers(gates, {'breaker': d.get('breaker')}),
+            'blockers': (gate_blockers(gates, {'breaker': d.get('breaker')})
+                         + ([f'closed: {closed[queue]}'] if queue in closed else [])),
             'front_state': d.get('state', ''), 'front_reason': d.get('reason', ''),
         }
         if limits is None:

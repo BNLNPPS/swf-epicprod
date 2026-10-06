@@ -386,6 +386,17 @@ times cores, cores). The rest rank in three steps:
 The front's switches (`front.enabled`, a queue's feed switch) govern
 only the front's own feeding, not a person's placement.
 
+**Closed queues.** `front.closed_queues`, a SysConfig mapping of queue
+to reason, closes a production queue to production work outright: the
+recommendation shows it with its reason and never ranks it, and PCS
+refuses to place, submit, rerun, queue, trial or move work there
+(`pcs.services.refuse_closed_queue`). Canary probes do not pass through
+PCS submission and still run. Healthy gates do not show capacity: on
+2026-10-06 the recommendation named NERSC_Perlmutter_epic, canary
+healthy and nothing queued, while the m3763 allocation was exhausted;
+both Perlmutter queues were closed "no allocation" until the balance is
+read automatically.
+
 **The Site control.** It sits on the compose page, in a task's detail,
 and shows:
 - the queue the task goes to and where that comes from;
