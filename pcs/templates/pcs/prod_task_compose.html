@@ -516,6 +516,31 @@
         const el = document.querySelector('#pcs-site-control input[name="pcs-site"]:checked');
         return el ? el.value : '';
     }
+    function submitNow() {
+        // Submit and the reruns wait in line for the pressure front unless this is ticked.
+        const el = document.getElementById('pcs-submit-now');
+        return !!(el && el.checked);
+    }
+    const QUEUED_KIND_LABEL = {submit: 'Submit', rerun_residual: 'Rerun Residual', rerun_entire: 'Rerun Entire Task'};
+    function queuedHtml(q) {
+        if (!q) return '';
+        const f = q.front;
+        let front = 'The front has not yet decided on this queue.';
+        if (f) {
+            front = `The front's latest decision for ${htmlEscape(q.site || 'the queue')}: <strong>${htmlEscape(f.state || '')}</strong> (${htmlEscape(f.reason || '')})`
+                + (f.committed_h !== null && f.committed_h !== undefined ? `, ${f.committed_h} h queued against a low mark of ${f.h_low} h` : '')
+                + (q.front_is_this_task && f.candidate_h ? `; this task is ${f.candidate_h} h of the queue, the high mark ${f.h_high} h` : '')
+                + (f.gate_reason ? `; ${htmlEscape(f.gate_reason)}` : '') + '.';
+        }
+        return `<div class="alert alert-info py-1 px-2 mb-2 small"><strong>Queued for the front:</strong> `
+            + `${htmlEscape(QUEUED_KIND_LABEL[q.kind] || q.kind)}`
+            + (q.site ? ` at <strong>${htmlEscape(q.site)}</strong>` : ', not placed: the front chooses the queue')
+            + (q.rows ? `, ${q.rows} jobs` : '')
+            + `, by ${htmlEscape(q.by || '?')} <span data-relative-time="${htmlEscape(q.at || '')}"></span>. `
+            + `The front submits it when the queue's queued work drops below its low mark. ${front}`
+            + (currentUser ? ` <button type="button" class="btn btn-secondary btn-sm ms-1 py-0" id="pcs-site-unqueue">Cancel</button>` : '')
+            + `</div>`;
+    }
     function withSite(body) {
         // The options must be the selected task's; a queue is sent only
         // when it differs from where the task already goes, and the
@@ -612,18 +637,20 @@
             if (att && att.movable) {
                 actions += `<button type="button" class="btn btn-success btn-sm" id="pcs-site-move" disabled>Move remaining work here</button>`;
             }
-            actions += `<span class="item-meta" id="pcs-site-hint"></span></div>`;
+            actions += `<span class="item-meta" id="pcs-site-hint"></span>
+                <label class="ms-3"><input type="checkbox" id="pcs-submit-now"> Submit now, skipping the front's line</label></div>`;
         } else {
             actions = `<div class="item-meta">Sign in to place or move this task.</div>`;
         }
         return `<h6>Site</h6>
             <div class="small mb-1">${head}</div>
+            ${queuedHtml(d.queued)}
             ${rec}
             <table class="table table-sm table-bordered mb-1 w-auto" style="font-size:.8rem;">
             <thead><tr><th></th><th>Queue</th><th>Queued work</th><th>Jobs queued / running</th>
                 <th>p90 start latency</th><th>This task, queue full</th><th>Limits and fit</th><th>Gates</th></tr></thead>
             <tbody>${rows}</tbody></table>
-            <div class="item-meta mb-2">${htmlEscape(needLine)}${stored} Submit, Trial and the reruns go to the queue selected here.</div>
+            <div class="item-meta mb-2">${htmlEscape(needLine)}${stored} Submit, Trial and the reruns go to the queue selected here; Submit and the reruns wait in line for the front unless Submit now is ticked.</div>
             ${actions}`;
     }
     function updateSiteButtons() {
@@ -643,6 +670,25 @@
     function wireSiteControl() {
     browseContent.addEventListener('change', e => {
         if (e.target && e.target.name === 'pcs-site') updateSiteButtons();
+    });
+    browseContent.addEventListener('click', async e => {
+        // Cancel the submission queued for the front.
+        const cancel = e.target.closest('#pcs-site-unqueue');
+        if (!cancel) return;
+        const t = allTasks.find(x => x.id === selectedItemId);
+        if (!t || !confirm(`Cancel the submission of "${taskComposedName(t)}" queued for the front?`)) return;
+        cancel.disabled = true;
+        const resp = await fetch(taskApiUrl(t, 'unqueue/'), {
+            method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken}, body: '{}'});
+        if (!resp.ok) {
+            let msg = `Cancel refused (HTTP ${resp.status})`;
+            try { const d = await resp.json(); msg = d.detail || msg; } catch (_) {}
+            alert(msg);
+            cancel.disabled = false;
+            return;
+        }
+        updateTaskFromApiData(t.id, await resp.json().catch(() => null));
+        if (selectedItemId === t.id) showTaskDetail(t.id);
     });
     browseContent.addEventListener('click', async e => {
         const btn = e.target.closest('#pcs-site-place, #pcs-site-move');
@@ -2115,6 +2161,10 @@
         if (op === 'rerun_entire_task' || op === 'rerun_residual') {
             body = withSite(body);
             if (body.site) confirmText += ` It runs at ${body.site}.`;
+            // A person's rerun waits in line for the pressure front unless
+            // Submit now is ticked (docs/CONTINUOUS_PRODUCTION.md, Placement).
+            if (submitNow()) { body.now = true; confirmText += ' It is submitted now, skipping the front.'; }
+            else { confirmText += ' It is queued for the front, which submits it when the queue has room.'; }
         }
         if (!confirm(confirmText)) return;
 
@@ -2129,12 +2179,14 @@
         if (resp.ok) {
             const updated = await resp.json().catch(() => null);
             updateTaskFromApiData(t.id, updated);
-            if (op === 'rerun_entire_task' || op === 'rerun_residual') {
+            if ((op === 'rerun_entire_task' || op === 'rerun_residual') && updated && updated.queued) {
+                btn.textContent = 'Queued for the front';
+            } else if (op === 'rerun_entire_task' || op === 'rerun_residual') {
                 pendingSubmitName = t.name;
                 subscribeSubmitOutcomes();
                 if (submitPollTimer) clearTimeout(submitPollTimer);
                 pollForPandaTask(t.id, 30);
-                btn.textContent = 'Rerun queued';
+                btn.textContent = 'Rerun submitted';
             } else {
                 pendingPandaOperation = {taskName: t.name, operation: op, jediTaskId: String(jediTaskId)};
                 subscribePandaOperationOutcomes();
@@ -2198,14 +2250,23 @@
         const t = allTasks.find(x => x.id === selectedItemId);
         if (!t) return;
         const submitBody = withSite({});
+        if (submitNow()) submitBody.now = true;
         if (!confirm(`Submit "${t.name}" to PanDA`
-                     + (submitBody.site ? ` at ${submitBody.site}?` : '?'))) return;
+                     + (submitBody.site ? ` at ${submitBody.site}` : '')
+                     + (submitBody.now ? ' now, skipping the front?'
+                        : '? It is queued for the front, which submits it when the queue has room.'))) return;
         btnSubmitTask.disabled = true;
         btnSubmitTask.textContent = 'Submitting…';
         const resp = await fetch(taskApiUrl(t, 'submit/'),
             {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
              body: JSON.stringify(submitBody)});
-        if (resp.ok) {
+        if (resp.ok && submitBody.now !== true) {
+            // Queued for the front: nothing reaches PanDA until the queue has room.
+            const updated = await resp.json().catch(() => null);
+            updateTaskFromApiData(t.id, updated);
+            btnSubmitTask.textContent = 'Queued for the front';
+            setTimeout(() => { if (selectedItemId === t.id) showTaskDetail(t.id); }, 500);
+        } else if (resp.ok) {
             const updated = await resp.json().catch(() => null);
             updateTaskFromApiData(t.id, updated);
             refreshTaskFromApi(t.id).then(fresh => {

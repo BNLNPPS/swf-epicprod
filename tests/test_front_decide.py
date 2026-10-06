@@ -42,6 +42,22 @@ class DecideTest(unittest.TestCase):
         off = dict(SETTINGS, feed=False)
         self.assertEqual(run(census(), [entry('t')], settings=off)[0][:2], ('held', 'queue_off'))
 
+    def test_a_task_a_person_queued_is_fed_where_the_switch_is_off(self):
+        # 2026-10-05: hand placements wait in line; the switch governs only
+        # the front's own placements.
+        off = dict(SETTINGS, feed=False)
+        hand = dict(entry('h'), hand=True, kind='rerun_residual')
+        out = run(census(), [entry('t'), hand], settings=off, mode='active')
+        self.assertEqual(out[0][:2], ('fed', 'fed:h'))
+        self.assertEqual(out[0][2]['candidate_kind'], 'rerun_residual')
+        self.assertEqual(out[0][2]['ready_total'], 1)
+        # every other gate still stands: a queue already supplied holds it
+        self.assertEqual(run(census(not_started=5000), [hand], settings=off)[0][:2],
+                         ('supplied', 'supplied'))
+        # and a task bigger than the high mark is held for the operator
+        big = dict(hand, rows=20000)
+        self.assertEqual(run(census(), [big], settings=off)[0][:2], ('oversize', 'oversize_task'))
+
     def test_gates(self):
         red = {'canary': dict(GREEN['canary'], red=True, reason='canary failing'),
                'credential': GREEN['credential']}

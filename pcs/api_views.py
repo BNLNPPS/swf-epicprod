@@ -686,14 +686,25 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         PanDA credential, so this only publishes a request to the prod-ops
         agent."""
         task = self.get_object()
+        user = getattr(request.user, 'username', '') or ''
         try:
-            services.prodtask_submit_request(
-                task=task, changed_by=getattr(request.user, 'username', '') or '',
-                site=request.data.get('site') or '',
-                placement=request.data.get('placement'))
+            # A person's submission waits in line for the pressure front
+            # (CONTINUOUS_PRODUCTION.md, Placement); ``now`` sends it at once.
+            if request.data.get('now'):
+                services.prodtask_submit_request(
+                    task=task, changed_by=user,
+                    site=request.data.get('site') or '',
+                    placement=request.data.get('placement'))
+            else:
+                services.prodtask_queue_submission(
+                    task=task, kind='submit', changed_by=user,
+                    site=request.data.get('site') or '',
+                    placement=request.data.get('placement'))
+                task.refresh_from_db()
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
         data = dict(self.get_serializer(task).data)
+        data['queued'] = (task.overrides or {}).get('queued')
         # Commissioning: submit is allowed from draft; readiness problems are
         # surfaced as a non-blocking warning rather than gating the submission.
         warnings = services.prodtask_readiness_problems(task)
@@ -782,27 +793,56 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         """Queue a residual .tryN submission over the undelivered
         remainder (docs/JEDI_INTEGRATION.md § Residual rerun)."""
         task = self.get_object()
+        user = getattr(request.user, 'username', '') or ''
         try:
-            services.prodtask_rerun_residual_request(
-                task=task, site=request.data.get('site') or '',
-                placement=request.data.get('placement'),
-                changed_by=getattr(request.user, 'username', '') or '')
+            if request.data.get('now'):
+                services.prodtask_rerun_residual_request(
+                    task=task, site=request.data.get('site') or '',
+                    placement=request.data.get('placement'), changed_by=user)
+            else:
+                services.prodtask_queue_submission(
+                    task=task, kind='rerun_residual', changed_by=user,
+                    site=request.data.get('site') or '',
+                    placement=request.data.get('placement'))
+                task.refresh_from_db()
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
-        return Response(self.get_serializer(task).data)
+        data = dict(self.get_serializer(task).data)
+        data['queued'] = (task.overrides or {}).get('queued')
+        return Response(data)
 
     @action(detail=True, methods=['post'], url_path='rerun-entire-task')
     def rerun_entire_task(self, request, name=None):
         """Queue a new full PanDA task attempt for this campaign task."""
         task = self.get_object()
+        user = getattr(request.user, 'username', '') or ''
         try:
-            services.prodtask_rerun_entire_task_request(
-                task=task, site=request.data.get('site') or '',
-                placement=request.data.get('placement'),
-                changed_by=getattr(request.user, 'username', '') or '')
+            if request.data.get('now'):
+                services.prodtask_rerun_entire_task_request(
+                    task=task, site=request.data.get('site') or '',
+                    placement=request.data.get('placement'), changed_by=user)
+            else:
+                services.prodtask_queue_submission(
+                    task=task, kind='rerun_entire', changed_by=user,
+                    site=request.data.get('site') or '',
+                    placement=request.data.get('placement'))
+                task.refresh_from_db()
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
-        return Response(self.get_serializer(task).data, status=status.HTTP_202_ACCEPTED)
+        data = dict(self.get_serializer(task).data)
+        data['queued'] = (task.overrides or {}).get('queued')
+        return Response(data, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['post'], url_path='unqueue')
+    def unqueue(self, request, name=None):
+        """Cancel the task's submission queued for the pressure front."""
+        task = self.get_object()
+        try:
+            services.prodtask_unqueue(
+                task=task, changed_by=getattr(request.user, 'username', '') or '')
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(self.get_serializer(task).data)
 
     @action(detail=True, methods=['get'], url_path='site-options')
     def site_options(self, request, name=None):

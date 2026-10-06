@@ -344,6 +344,29 @@ holds with `no_calibration`). The feed places the task on that queue and
 records the recommendation. A task no such queue is open to stays in
 the ready pool marked unplaced, with the reason.
 
+**A person's submission waits in line.** Submit, Rerun Residual and
+Rerun Entire Task do not send the task to PanDA; they queue it for the
+front (2026-10-05). The queued submission is
+`ProdTask.overrides['queued']`: its kind (`submit`, `rerun_residual`,
+`rerun_entire`), who queued it and when, the recommendation shown, and,
+for a residual, the jobs it would run, measured when it is queued (the
+JLab listing the preview reads). A queued task is in the front's ready
+backlog whatever its status, at the queue it is placed on, or unplaced
+for the front to place. The front submits it when the queue's committed
+depth is below its low mark, as for any ready task, with the kind's own
+submission (the residual is recomputed then). A queued task placed by a
+person is fed even where the queue's feed switch is off: the person's
+choice of queue is the consent, and the switch governs only the front's
+own placements. Every other gate stands, and a task larger than the
+queue's high mark is held as `oversize_task` with the reason on the
+task's Site control. The task's Site control shows the queued
+submission, the front's latest decision for its queue, and Cancel.
+"Submit now" (the Site control's checkbox) submits at once, as before;
+it is the deliberate exception. GREX on 2026-09-30 is the case: three
+residual reruns placed there by hand put 83,000 jobs into a queue that
+runs about 20,000 a day, and jobs waiting past two days were reassigned
+at the cost of an attempt each.
+
 **The recommendation.** `swf_epicprod.front.recommend` is a pure
 function over the front's stored state. Each cycle stores, per queue:
 - the gates as judged (canary, credential, declared downtime, the fast

@@ -315,15 +315,22 @@ def ready_backlog():
     from pcs.commands import pinned_site, prodtask_priority_level
     from pcs.models import ProdTask
     from pcs.services import prodtask_readiness_problems
+    from django.db.models import Q
     by_queue = {}
     full = _safe('reading output storage', full_output_rses, {})
-    tasks = (ProdTask.objects.filter(status='ready')
+    # The ready tasks, and every task a person queued for the front
+    # (``overrides['queued']``: a submit or a rerun), whatever its status.
+    tasks = (ProdTask.objects.filter(Q(status='ready') | Q(overrides__has_key='queued'))
              .select_related('dataset', 'request', 'prod_config', 'campaign')
              .order_by('created_at'))
     for task in tasks:
+        queued = (task.overrides or {}).get('queued') or None
         entry = {'task': task.composed_name, 'pk': task.pk, 'level': None,
                  'level_source': 'none', 'rows': None, 'problems': [],
-                 'created_at': task.created_at.isoformat()}
+                 'created_at': (queued or {}).get('at') or task.created_at.isoformat(),
+                 'kind': (queued or {}).get('kind') or 'submit',
+                 # Queued by a person: fed even where the feed switch is off.
+                 'hand': bool(queued and queued.get('by'))}
         queue = 'unknown'
         try:
             cfg = task.get_effective_config()
@@ -339,7 +346,9 @@ def ready_backlog():
             # Rows are read for every ready task that can be sized, so
             # the ready hours count the whole backlog, not only the
             # eligible part; a task without a matched input has none.
-            entry['rows'] = task_rows(task, cfg)
+            # A queued residual carries the jobs measured when it was queued.
+            entry['rows'] = (int(queued['rows']) if entry['kind'] == 'rerun_residual'
+                             and (queued or {}).get('rows') else task_rows(task, cfg))
             entry['need'] = task_need(cfg, rows=entry['rows'])
         except Exception as exc:  # noqa: BLE001
             logger.exception('front: reading ready task %s failed', task.pk)
@@ -463,13 +472,21 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         r['candidate_rows'] = candidate['rows'] if candidate else None
         r['candidate_level'] = candidate['level'] if candidate else None
         r['candidate_placement'] = candidate.get('placement') if candidate else None
+        r['candidate_kind'] = candidate.get('kind', 'submit') if candidate else None
         r.update(more)
         return r
 
     if not enabled:
         return [('held', 'front_off', rec())]
     if not qs['feed']:
-        return [('held', 'queue_off', rec())]
+        # The switch governs the front's own placements; a task a person
+        # queued here is still fed, under every other gate.
+        backlog = [e for e in backlog if e.get('hand')]
+        if not backlog:
+            return [('held', 'queue_off', rec())]
+        eligible = [e for e in backlog if not e['problems']]
+        base['ready_total'], base['ready_eligible'] = len(backlog), len(eligible)
+        base['hand_only'] = True
     if str(qs['breaker']) != 'closed':
         return [('degraded', f"breaker_{qs['breaker']}", rec())]
     if declared.get('red'):
@@ -784,17 +801,29 @@ def recommend(state, need, queues=None):
 
 # The feed
 
-def feed_task(candidate_pk, created_by='front', site='', placement=None):
-    """Submit one ready task: the PCS submit request, which allocates the
-    attempt (association source ``pcs_front_feed``) and enqueues the
-    credentialed ``submit_evgen_task`` doer. Raises on refusal
-    (``ServiceError``: already submitted, agent queue unreachable) or a
-    missing task; the caller records the refusal."""
+def feed_task(candidate_pk, created_by='front', site='', placement=None, kind='submit'):
+    """Submit one ready or queued task with its kind's own submission: the
+    PCS submit request (association source ``pcs_front_feed``), or a
+    queued rerun's residual or entire-task request (their own sources,
+    submitted by the front). Each allocates the attempt and enqueues the
+    credentialed ``submit_evgen_task`` doer, and clears the queued mark.
+    Raises on refusal (``ServiceError``: already submitted, nothing to
+    rerun, agent queue unreachable) or a missing task; the caller records
+    the refusal."""
     from pcs.models import ProdTask
-    from pcs.services import prodtask_submit_request
+    from pcs.services import (prodtask_rerun_entire_task_request,
+                              prodtask_rerun_residual_request,
+                              prodtask_submit_request)
     task = ProdTask.objects.get(pk=candidate_pk)
-    prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE,
-                            site=site, placement=placement)
+    if kind == 'rerun_residual':
+        prodtask_rerun_residual_request(task=task, site=site, placement=placement,
+                                        changed_by=created_by)
+    elif kind == 'rerun_entire':
+        prodtask_rerun_entire_task_request(task=task, site=site, placement=placement,
+                                           changed_by=created_by)
+    else:
+        prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE,
+                                site=site, placement=placement)
     return task
 
 
@@ -815,7 +844,7 @@ def _apply_feeds(outcomes, *, created_by):
             placed = record.get('candidate_placement')
             feed_task(pk, created_by=created_by,
                       site=record.get('queue', '') if placed else '',
-                      placement=placed)
+                      placement=placed, kind=record.get('candidate_kind') or 'submit')
         except Exception as exc:  # noqa: BLE001
             logger.exception('front: feed of %s (pk %s) refused', record.get('candidate'), pk)
             applied.append(('error', 'feed_failed',

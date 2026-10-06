@@ -6437,6 +6437,8 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
         panda_tasks.delete()
         raise ServiceError(
             'Submission could not be queued (ops-agent queue unreachable).', status=503)
+    # A real submission, sent, takes the task out of the front's line.
+    _clear_queued(task)
     return task
 
 
@@ -6507,6 +6509,80 @@ def prodtask_panda_operation_request(*, task, operation, jedi_task_id=None,
             status=503,
         )
     return {'queued': True, 'operation': operation, 'jedi_task_id': jedi_task_id}
+
+
+QUEUE_KINDS = ('submit', 'rerun_residual', 'rerun_entire')
+
+
+def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by=''):
+    """Queue a person's submission for the pressure front instead of
+    sending it to PanDA (CONTINUOUS_PRODUCTION.md, Placement: a person's
+    submission waits in line). ``kind`` is ``submit``, ``rerun_residual``
+    or ``rerun_entire``; ``site`` places the task first (``prodtask_place``).
+    A residual is sized now, from the same listing the preview reads, and
+    refused when there is nothing to rerun. The mark is
+    ``task.overrides['queued']``; the front feeds it with the kind's own
+    submission, and any real submission clears it. One ``prodtask_queued``
+    event. Returns the mark."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from .commands import build_evgen_task_params, pinned_site
+    if kind not in QUEUE_KINDS:
+        raise ServiceError(f'kind must be one of {", ".join(QUEUE_KINDS)}', status=400)
+    if kind == 'submit' and task.panda_task_id is not None:
+        raise ServiceError(
+            f'Already submitted as jediTaskID {task.panda_task_id}; use a rerun.', status=409)
+    if kind != 'submit' and task.panda_task_id is None:
+        raise ServiceError(
+            'Task has no recorded PanDA submission; use Submit.', status=409)
+    rows = None
+    if kind == 'rerun_residual':
+        try:
+            spec = build_evgen_task_params(task, residual=True)
+        except ValueError as e:
+            raise ServiceError(f'Residual rerun refused: {e}', status=409)
+        rows = int(((spec.get('residual') or {}).get('rows_residual')) or 0)
+        if rows <= 0:
+            raise ServiceError('Residual rerun refused: every job has its output.', status=409)
+    if site:
+        prodtask_place(task, site, changed_by=changed_by, placement=placement)
+        task.refresh_from_db()
+    mark = {'kind': kind, 'by': changed_by or '', 'at': _timezone.now().isoformat(),
+            'site': pinned_site(task) or '', 'rows': rows,
+            'placement': placement or None}
+    task.overrides = dict(task.overrides or {}, queued=mark)
+    task.save(update_fields=['overrides', 'updated_at'])
+    log_epicprod_action(
+        'pcs', 'prodtask_queued', outcome='ok', username=changed_by or '',
+        subject_type='campaign_task', subject_key=task.name,
+        message=(f'{task.name}: {kind} queued for the front'
+                 + (f' at {mark["site"]}' if mark['site'] else ', unplaced')
+                 + (f', {rows} jobs' if rows is not None else '')),
+        kind=kind, site=mark['site'], rows=rows)
+    return mark
+
+
+def prodtask_unqueue(*, task, changed_by=''):
+    """Cancel a queued submission. One ``prodtask_unqueued`` event."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    overrides = dict(task.overrides or {})
+    mark = overrides.pop('queued', None)
+    if mark is None:
+        raise ServiceError('Nothing is queued for this task.', status=409)
+    task.overrides = overrides
+    task.save(update_fields=['overrides', 'updated_at'])
+    log_epicprod_action(
+        'pcs', 'prodtask_unqueued', outcome='ok', username=changed_by or '',
+        subject_type='campaign_task', subject_key=task.name,
+        message=f'{task.name}: queued {mark.get("kind")} cancelled', kind=mark.get('kind'))
+    return mark
+
+
+def _clear_queued(task):
+    """A real submission takes the task out of the front's line."""
+    overrides = dict(task.overrides or {})
+    if overrides.pop('queued', None) is not None:
+        task.overrides = overrides
+        task.save(update_fields=['overrides', 'updated_at'])
 
 
 def prodtask_rerun_entire_task_request(*, task, site='', placement=None,
@@ -6760,7 +6836,18 @@ def prodtask_site_options(task):
         attempt['activity'] = activity
         attempt['stall'] = (stall_signal(activity, queue_state.get('p90_start_latency_h'))
                             if activity else None)
+    # A queued submission and the front's latest decision for its queue:
+    # when it will go, or why it is held.
+    queued = (task.overrides or {}).get('queued')
+    if queued:
+        queued = dict(queued)
+        decision = (state.get('queues') or {}).get(site or '') or {}
+        queued['front'] = {k: decision.get(k) for k in (
+            'state', 'reason', 'committed_h', 'h_low', 'h_high', 'candidate',
+            'candidate_h', 'feed_switch', 'gate_reason')} if decision else None
+        queued['front_is_this_task'] = bool(decision) and decision.get('candidate') == task.composed_name
     return {
+        'queued': queued or None,
         'site': site, 'site_source': prodtask_site_source(task, cfg),
         'site_in_production_set': site in queues,
         'queues': queues, 'need': need,
