@@ -146,15 +146,16 @@
                 <button class="btn btn-dark-green btn-sm" id="btn-trial-task" disabled>Trial</button>
                 <button class="btn btn-danger btn-sm" id="btn-delete-task" disabled>Delete</button>
                 <button class="btn btn-success btn-sm" id="btn-lock-task" disabled>Lock</button>
+                <div style="flex-basis:100%; height:0;"></div>
                 <span id="submit-task-wrap" tabindex="0">
                     <button class="btn btn-success btn-sm" id="btn-submit-task" disabled>Submit to PanDA</button>
                 </span>
+                <!-- Submit and the reruns wait in line for the pressure front unless this is ticked. -->
+                <label class="d-flex align-items-center gap-1 ms-1"><input type="checkbox" id="pcs-submit-now"{% if not username %} disabled{% endif %}> Submit now, skipping the front's line</label>
                 <button class="btn btn-secondary btn-sm" id="btn-clear-suggestions" style="display:none;">Clear</button>
                 <button class="btn btn-secondary btn-sm" id="btn-cancel" style="display:none;">Cancel</button>
                 <button class="btn btn-primary btn-sm" id="btn-save" style="display:none;" disabled>Save Task</button>
             </div>
-            <!-- Submit and the reruns wait in line for the pressure front unless this is ticked. -->
-            <label><input type="checkbox" id="pcs-submit-now"{% if not username %} disabled{% endif %}> Submit now, skipping the front's line</label>
         </div>
         <div class="panel-body">
             <!-- BROWSE VIEW: shows detail for whatever item is selected -->
