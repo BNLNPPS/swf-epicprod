@@ -3458,6 +3458,29 @@ def _campaign_plan_state(campaign, query, pc_view):
             'edition': head.detector_version,
             'withdrawn': head.detector_version in withdrawn_marks,
         })
+    if str(query.get('user_view') or '') == '1':
+        # The user view shows each configuration once, as its newest
+        # edition with a task of its own (USER_VIEW.md, Pages): a
+        # production edition over an EVGEN-stage record, a current one
+        # over a withdrawn one, one with its own task over one without,
+        # then the newest release. Heads without a configuration are
+        # left out, as in the per-configuration view.
+        def _release(edition):
+            parts = str(edition or '').split('.')
+            return tuple(int(p) for p in parts) if all(p.isdigit() for p in parts) else ()
+
+        newest = {}
+        for r in rows:
+            label = r['pc_label']
+            if not label:
+                continue
+            rank = (not r['evgen_stage'], not r['withdrawn'],
+                    r['name'] in task_by_edition, _release(r['edition']))
+            keep = newest.get(label)
+            if keep is None or rank > keep[0]:
+                newest[label] = (rank, r)
+        rows = [r for _rank, r in newest.values()]
+
     if pc_view:
         # One row per physics configuration — the completion table the
         # home panel's counts link into. The representative edition is
