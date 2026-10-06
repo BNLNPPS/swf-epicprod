@@ -98,6 +98,11 @@ The Q² token is the one axis compared by value, not string:
   above the floor. `minQ2=10` resolves to `q2_10to100` and `q2_100to1000`, never
   to `q2_1to10` (which would include events below the floor). `minQ2=1` resolves
   to all three ranges.
+- A Rucio dataset named by a floor (the unversioned legacy samples,
+  `DIS/NC/18x275/minQ2=10`) is a sample of its own, generated above that floor,
+  not a slice of a lower one: it matches only a request with the same floor.
+  Before this rule (2026-10-06) `minQ2=10` resolved to the `minQ2=10`,
+  `minQ2=100` and `minQ2=1000` samples together.
 
 ### Version policy
 

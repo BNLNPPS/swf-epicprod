@@ -5920,12 +5920,16 @@ def _evgen_q2_match(req_tok, did_tok):
     """Q² compatibility for input resolution — distinct from the output
     sweep's ``_q2_overlap``: an explicit request range must equal the Rucio
     range exactly; a ``minQ2=N`` request matches any Rucio range lying entirely
-    at or above the floor (lo >= N). No boundary-touching overlap.
+    at or above the floor (lo >= N). No boundary-touching overlap. A floor
+    DID (the unversioned legacy samples, ``minQ2=10``) is a sample of its
+    own, not a slice of a higher floor's: it matches only the same floor.
     """
     rb = _evgen_q2_bounds(req_tok)
     db = _evgen_q2_bounds(did_tok)
     if rb is None or db is None:
         return req_tok == did_tok
+    if db[2] == 'min':
+        return rb[2] == 'min' and rb[0] == db[0]
     if rb[2] == 'min':
         return db[0] >= rb[0]
     return rb[0] == db[0] and rb[1] == db[1]
