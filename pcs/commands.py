@@ -1010,13 +1010,11 @@ def prodtask_priority_level(task, plan=None):
     req = task.request
     if req is not None and req.priority in PRIORITY_LEVELS:
         return req.priority, 'request'
-    if ds is not None:
-        from .services import pc_request_projection
-        levels = [r.priority for r in
-                  pc_request_projection([ds]).get(ds.composed_name, [])
-                  if r.priority in PRIORITY_LEVELS]
-        if levels:
-            return min(levels), 'request'
+    if ds is not None and ds.physics_config_id:
+        from .services import pc_anchored_request_priorities
+        level = pc_anchored_request_priorities().get(ds.physics_config_id)
+        if level in PRIORITY_LEVELS:
+            return level, 'request'
     return None, 'none'
 
 

@@ -2563,6 +2563,36 @@ def pc_anchored_requests():
     return by_anchor
 
 
+_ANCHORED_PRIORITIES = {'at': 0.0, 'value': {}}
+
+
+def pc_anchored_request_priorities(max_age_s=60):
+    """{physics configuration pk: best priority (1 highest) of the
+    requests anchored to it}, the priority a plan row shows for a
+    configuration through its requests. Built from one read of the
+    requests and one of their anchor editions, and reused for
+    ``max_age_s`` seconds, since a page reads it for every listed task."""
+    import time
+    now = time.monotonic()
+    if now - _ANCHORED_PRIORITIES['at'] < max_age_s:
+        return _ANCHORED_PRIORITIES['value']
+    by_anchor = pc_anchored_requests()
+    pc_by_anchor = dict(Dataset.objects.filter(composed_name__in=by_anchor,
+                                               physics_config__isnull=False)
+                        .values_list('composed_name', 'physics_config_id'))
+    value = {}
+    for anchor, reqs in by_anchor.items():
+        pc_id = pc_by_anchor.get(anchor)
+        if pc_id is None:
+            continue
+        for r in reqs:
+            if r.priority in (1, 2, 3) and (value.get(pc_id) is None
+                                             or r.priority < value[pc_id]):
+                value[pc_id] = r.priority
+    _ANCHORED_PRIORITIES.update(at=now, value=value)
+    return value
+
+
 def pc_request_projection(datasets):
     """Project PC-anchored requests onto dataset editions.
 
