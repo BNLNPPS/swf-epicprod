@@ -990,7 +990,9 @@ def prodtask_priority_level(task, plan=None):
     """The production priority level of a task (1 to 3, or None) and its
     source: the task's own value (seeded from its request, carried by
     instancing), else the campaign plan's entry for the task's physics
-    configuration, else the request's. ``(level, source)`` with source
+    configuration, else the request's: the task's own request, else the
+    best of the requests anchored to its configuration, the priority the
+    plan row shows. ``(level, source)`` with source
     one of task, plan, request, none. ``plan`` is the campaign's plan
     document when the caller holds it (a page reading a thousand tasks
     reads the plan once); absent, it is read here."""
@@ -1008,6 +1010,13 @@ def prodtask_priority_level(task, plan=None):
     req = task.request
     if req is not None and req.priority in PRIORITY_LEVELS:
         return req.priority, 'request'
+    if ds is not None:
+        from .services import pc_request_projection
+        levels = [r.priority for r in
+                  pc_request_projection([ds]).get(ds.composed_name, [])
+                  if r.priority in PRIORITY_LEVELS]
+        if levels:
+            return min(levels), 'request'
     return None, 'none'
 
 
