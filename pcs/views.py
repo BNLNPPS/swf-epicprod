@@ -3390,6 +3390,7 @@ def _campaign_plan_state(campaign, query, pc_view):
     withdrawn_marks = (services.campaign_withdrawn_editions(campaign.name)
                        if campaign is not None else {})
     task_by_pc = _campaign_task_by_pc(campaign)
+    task_by_edition = _campaign_task_by_edition(campaign)
     task_priorities = _campaign_task_priorities(campaign)
     rows = []
     for head in heads:
@@ -3444,8 +3445,9 @@ def _campaign_plan_state(campaign, query, pc_view):
             'sample': head.sample_name,
             'pc_label': (head.physics_config.label
                          if head.physics_config_id else ''),
-            'task': (task_by_pc.get(head.physics_config.label)
-                     if head.physics_config_id else None),
+            'task': (task_by_edition.get(head.composed_name)
+                     or (task_by_pc.get(head.physics_config.label)
+                         if head.physics_config_id else None)),
             'requestors': (list(head.physics_config.requestors or [])
                            if head.physics_config_id else []),
             'propagation': head.propagation,
@@ -3558,6 +3560,25 @@ def _campaign_task_by_pc(campaign):
             .order_by('pk'))
     for t in rows:
         out.setdefault(t.dataset.physics_config.label, t.composed_name)
+    return out
+
+
+def _campaign_task_by_edition(campaign):
+    """The campaign's task per edition, by the edition's composed name:
+    a plan row opens its own edition's task, so an edition made for a
+    patched release opens its own task, not the configuration's first.
+    Past-output records are not tasks to work on and are left out; such
+    a row falls back to its configuration's task."""
+    out = {}
+    if campaign is None:
+        return out
+    rows = (ProdTask.objects.filter(campaign=campaign,
+                                    dataset__isnull=False)
+            .exclude(status='past_output')
+            .select_related('dataset')
+            .order_by('pk'))
+    for t in rows:
+        out.setdefault(t.dataset.composed_name, t.composed_name)
     return out
 
 
