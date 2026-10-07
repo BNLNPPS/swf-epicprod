@@ -28,6 +28,11 @@
         the decisions are on the <a href="{% url 'monitor_app:log_list' %}?app_name=epicprod&amp;instance_name=front">action stream</a>;
         the plan is <a href="https://github.com/BNLNPPS/swf-epicprod/blob/main/docs/CONTINUOUS_PRODUCTION.md">CONTINUOUS_PRODUCTION.md</a>.
     </p>
+    <p class="mb-3" id="nersc-allocation">
+        <strong>NERSC allocation</strong>{% if nersc_read_at %} (read <span data-relative-time="{{ nersc_read_at }}">{{ nersc_read_at }}</span>, hourly){% endif %}:
+        {% for text in nersc_lines %}{{ text }}{% if not forloop.last %}; {% endif %}{% endfor %}.
+        Closed queues: {% for q, reason in closed_queues.items %}{{ q }} ({{ reason }}){% if not forloop.last %}, {% endif %}{% empty %}none{% endfor %}.
+    </p>
     <details class="mb-3" id="definitions">
         <summary>Definitions</summary>
         <ul class="mb-2 mt-1">

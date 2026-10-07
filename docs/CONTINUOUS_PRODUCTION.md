@@ -397,6 +397,20 @@ healthy and nothing queued, while the m3763 allocation was exhausted;
 both Perlmutter queues were closed "no allocation" until the balance is
 read automatically.
 
+**The NERSC balance.** The production-operations agent reads the
+node-hours left in each NERSC project production charges
+(`nersc.projects`, m3763) hourly from the NERSC IRI API
+(`swf_epicprod/nersc_allocation.py`, doer `nersc_allocation_read`). The
+access token is a file on this host that a PanDA operations cron
+refreshes daily (`nersc.token_file`); the token's owner must be a member
+of the project, since the IRI project list holds only the owner's
+projects, and a project outside it reads "not visible to the token".
+The balance is the cached product `nersc_allocation`, shown on the front
+page beside the closed queues, and each read is a
+`nersc_allocation_read` action. Opening and closing a NERSC queue from
+the balance follows once the balance is readable; until then
+`front.closed_queues` is set by hand.
+
 **The Site control.** It sits on the compose page, in a task's detail,
 and shows:
 - the queue the task goes to and where that comes from;

@@ -6222,11 +6222,15 @@ def front_page(request):
     switches; it computes nothing and reaches neither PanDA nor Rucio.
     """
     from monitor_app.models import CachedProduct, SysConfig
-    from swf_epicprod.front import DEFAULT_QUEUES, QUEUE_DEFAULTS, STATE_KEY
+    from swf_epicprod.front import DEFAULT_QUEUES, QUEUE_DEFAULTS, STATE_KEY, closed_queues
+    from swf_epicprod.nersc_allocation import PRODUCT_KEY as NERSC_KEY
+    from swf_epicprod.nersc_allocation import line as nersc_line
 
     config = SysConfig.get_config()
     row = CachedProduct.objects.filter(key=STATE_KEY).first()
     state = (row.value if row else None) or {}
+    nersc_row = CachedProduct.objects.filter(key=NERSC_KEY).first()
+    nersc = (nersc_row.value if nersc_row else None) or {}
     queues = list(config.get('front.queues') or DEFAULT_QUEUES)
     labels = {'supplied': 'supplied', 'fed': 'fed', 'would_feed': 'would feed',
               'awaiting_observation': 'awaiting observation',
@@ -6307,6 +6311,9 @@ def front_page(request):
         'unsized_tasks': ready.get('unsized_tasks') or 0,
         'pilot_mode': str(config.get('pilot.mode', 'shadow')),
         'pilot_rows': _pilot_rows(state.get('pilots') or {}),
+        'nersc_lines': nersc_line(nersc),
+        'nersc_read_at': nersc.get('read_at'),
+        'closed_queues': closed_queues(),
     })
 
 
