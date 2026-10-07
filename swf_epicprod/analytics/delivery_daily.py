@@ -140,12 +140,12 @@ def collect_files(campaigns, limit_files=0):
           f'(failed uploads) left out')
 
     file_events = load_file_events()
-    daily = {name: {} for name in campaigns}
     ordered = sorted(wanted)
     if limit_files:
         ordered = ordered[:int(limit_files)]
         print(f'capped at {len(ordered)} of {len(wanted)} files '
               f'(validation run)')
+    records = []
     for start in range(0, len(ordered), BULK_CHUNK):
         chunk = ordered[start:start + BULK_CHUNK]
         for row in _bulkmeta(token, chunk):
@@ -159,22 +159,60 @@ def collect_files(campaigns, limit_files=0):
             registered = dt.datetime.strptime(
                 created, '%a, %d %b %Y %H:%M:%S %Z').replace(
                     tzinfo=dt.timezone.utc)
-            day = registered.astimezone(ET).date().isoformat()
-            location = '/'.join(name.split('/')[:-1])
-            slot = daily[family].setdefault(
-                (location, day), {'files': 0, 'bytes': 0, 'events': 0,
-                                  'unmeasured': 0})
-            slot['files'] += 1
-            slot['bytes'] += int(row.get('bytes') or 0)
-            events = file_events.get(name)
-            if events is None:
-                slot['unmeasured'] += 1
-            else:
-                slot['events'] += events
+            records.append((name, family, registered,
+                            int(row.get('bytes') or 0)))
         done = min(start + BULK_CHUNK, len(ordered))
         if done % 10000 < BULK_CHUNK:
             print(f'  bulkmeta {done}/{len(ordered)}')
-    return daily, unknown, unattached
+
+    records, duplicates = count_each_row_once(records)
+    if duplicates:
+        print(f'rows delivered more than once, later copies left out: '
+              f'{sum(duplicates.values())} in {len(duplicates)} locations')
+    daily = {name: {} for name in campaigns}
+    for name, family, registered, nbytes in records:
+        day = registered.astimezone(ET).date().isoformat()
+        location = '/'.join(name.split('/')[:-1])
+        slot = daily[family].setdefault(
+            (location, day), {'files': 0, 'bytes': 0, 'events': 0,
+                              'unmeasured': 0})
+        slot['files'] += 1
+        slot['bytes'] += nbytes
+        events = file_events.get(name)
+        if events is None:
+            slot['unmeasured'] += 1
+        else:
+            slot['events'] += events
+    return daily, unknown, unattached, duplicates
+
+
+def count_each_row_once(records):
+    """Each manifest row counted once. A RECO file's row is
+    ``pcs.commands.reco_row_key`` (version, config, input dir, stem,
+    chunk), the same for every attempt of a version; where a row was
+    delivered by more than one attempt, the earliest-registered copy
+    stands and the later ones are left out. Files that are not RECO
+    outputs pass unchanged. ``records`` are (name, family, registered,
+    bytes); returns the kept records and {location: copies left out}."""
+    from pcs.commands import reco_row_key
+
+    first = {}
+    for record in records:
+        key = reco_row_key(record[0])
+        if key is None:
+            continue
+        held = first.get(key)
+        if held is None or (record[2], record[0]) < (held[2], held[0]):
+            first[key] = record
+    kept, duplicates = [], {}
+    for record in records:
+        key = reco_row_key(record[0])
+        if key is None or first[key] is record:
+            kept.append(record)
+            continue
+        location = '/'.join(record[0].split('/')[:-1])
+        duplicates[location] = duplicates.get(location, 0) + 1
+    return kept, duplicates
 
 
 def location_map(campaigns):
@@ -263,7 +301,7 @@ def expected_map(campaigns):
 def build_snaps(campaigns, limit_files=0):
     from django.utils import timezone
 
-    daily, unknown, unattached = collect_files(campaigns, limit_files)
+    daily, unknown, unattached, duplicates = collect_files(campaigns, limit_files)
     mapping = location_map(campaigns)
     expected = expected_map(campaigns)
 
@@ -353,7 +391,7 @@ def build_snaps(campaigns, limit_files=0):
             projection['campaigns'][campaign] = {
                 'totals': totals, 'leaves': leaves}
         snaps.append((day, projection))
-    return snaps, unmapped, unknown, unattached
+    return snaps, unmapped, unknown, unattached, duplicates
 
 
 def rebuild_delivery_daily(campaigns=None, *, apply=False, created_by='',
@@ -375,7 +413,8 @@ def rebuild_delivery_daily(campaigns=None, *, apply=False, created_by='',
         raise ValueError('limit_files is validation-only: refusing to '
                          'apply a partial rebuild')
     campaigns = tuple(campaigns) if campaigns else target_campaigns()
-    snaps, unmapped, unknown, unattached = build_snaps(campaigns, limit_files)
+    snaps, unmapped, unknown, unattached, duplicates = build_snaps(
+        campaigns, limit_files)
 
     today_et = timezone.now().astimezone(ET).date()
     writable = [(day, projection) for day, projection in snaps
@@ -406,6 +445,8 @@ def rebuild_delivery_daily(campaigns=None, *, apply=False, created_by='',
         'unknown_families': unknown, 'applied': bool(apply),
         'unattached_files': sum(unattached.values()),
         'unattached_locations': len(unattached),
+        'duplicate_row_copies': sum(duplicates.values()),
+        'duplicate_row_locations': dict(sorted(duplicates.items())),
         'removed': 0, 'written': 0,
     }
     if writable:

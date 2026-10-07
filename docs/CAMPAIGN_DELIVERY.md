@@ -106,9 +106,16 @@ in the registering call), so the DIDs failed uploads leave behind are
 named under a location but attached to nothing, and the name search
 that inventories the roots returns them (6,707 in one Upsilon location,
 261 GB, after the BNL-XRD door died on 2026-09-20). Each location's
-attached set is read once per build and the rest is left out. Unmapped
-locations, files not resolving to a target campaign, and unattached
-DIDs are counted in the build summary, never dropped silently.
+attached set is read once per build and the rest is left out. A
+manifest row is counted once: a RECO file is keyed to its row as the
+residual keys it (`pcs.commands.reco_row_key`: version, configuration,
+input directory, stem, chunk, the same below every try segment), and
+where more than one attempt of a version delivered the row, the
+earliest-registered copy stands and the later copies are left out of
+files, bytes and events (2,098 Upsilon rows in 26.07.1, each in a base
+dataset and one rerun's). Unmapped locations, files not resolving to a
+target campaign, unattached DIDs and duplicate row copies are counted
+in the build summary, never dropped silently.
 
 The preceding `file_events_measure` step keeps the measurement store
 current (The events source, below). Both steps record their outcome

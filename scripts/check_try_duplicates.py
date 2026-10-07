@@ -16,7 +16,6 @@ events. Read-only; nothing is written.
 
 import argparse
 import os
-import re
 from collections import defaultdict
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'swf_monitor_project.settings')
@@ -25,11 +24,9 @@ import django  # noqa: E402
 
 django.setup()
 
-from pcs.commands import RECO_LFN_TAIL_RE  # noqa: E402
+from pcs.commands import reco_row_key  # noqa: E402
 from pcs.services import (_jlab_rucio_auth, _jlab_rucio_get,  # noqa: E402
                           _ndjson, fetch_jlab_rucio_did_files)
-
-TRY_RE = re.compile(r'^try\d+$')
 
 
 def try_datasets(root):
@@ -44,16 +41,9 @@ def keys_of(did_name):
     """{(tail, stem, chunk): events} for one RECO dataset's files."""
     out = {}
     for f in fetch_jlab_rucio_did_files('epic', did_name):
-        name = str(f.get('name') or '')
-        m = RECO_LFN_TAIL_RE.search(name)
-        if not m:
-            continue
-        parts = [p for p in name[:m.start()].split('/') if p]
-        if len(parts) < 4 or parts[0] != 'RECO':
-            continue
-        if TRY_RE.match(parts[3]):
-            parts = parts[:3] + parts[4:]
-        out[('/'.join(parts[3:-1]), parts[-1], m.group(1))] = f.get('events')
+        key = reco_row_key(str(f.get('name') or ''))
+        if key is not None:
+            out[key[2:]] = f.get('events')
     return out
 
 

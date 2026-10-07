@@ -807,6 +807,26 @@ RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4})\.eicrecon\.edm4eic\.root$')
 TRY_SEGMENT_RE = re.compile(r'^try\d+$')
 
 
+def reco_row_key(name):
+    """The manifest row a RECO file delivers, as (version, config,
+    relative dir, stem, chunk), or None for a name that is not a RECO
+    output. The payload's naming convention (simulation_campaign_hepmc3
+    run.sh) writes each input row's RECO file to ``RECO/<ver>/<config>/
+    <input dir below EVGEN>/<stem>.<chunk>.eicrecon.edm4eic.root``, and a
+    rerun writes under its try segment (TAG_PREFIX=tryN, _add_try_env)
+    with the row the same below it, so the key maps one-to-one onto
+    manifest rows across every attempt of a version."""
+    m = RECO_LFN_TAIL_RE.search(name)
+    if not m:
+        return None
+    parts = [p for p in name[:m.start()].split('/') if p]
+    if len(parts) < 4 or parts[0] != 'RECO':
+        return None
+    if TRY_SEGMENT_RE.match(parts[3]):
+        parts = parts[:3] + parts[4:]
+    return (parts[1], parts[2], '/'.join(parts[3:-1]), parts[-1], m.group(1))
+
+
 def _delivered_row_keys(task):
     """The (relative-dir, stem, chunk) keys of every RECO file already
     delivered for this task across its attempts — registered in JLab
@@ -864,22 +884,9 @@ def _delivered_row_keys(task):
         for fname in names:
             if fname in unarrived:
                 continue
-            m = RECO_LFN_TAIL_RE.search(fname)
-            if not m:
-                continue
-            chunk = m.group(1)
-            base = fname[:m.start()]
-            parts = [p for p in base.split('/') if p]
-            # /RECO/<ver>/<config>/<subpath...>/<stem>
-            if len(parts) < 4 or parts[0] != 'RECO':
-                continue
-            # A rerun writes under its try segment (TAG_PREFIX=tryN,
-            # _add_try_env); the row is the same below it.
-            if TRY_SEGMENT_RE.match(parts[3]):
-                parts = parts[:3] + parts[4:]
-            head = '/'.join(parts[3:-1])
-            stem = parts[-1]
-            keys.add((head, stem, chunk))
+            key = reco_row_key(fname)
+            if key is not None:
+                keys.add(key[2:])
     return keys, dids, arrival
 
 
