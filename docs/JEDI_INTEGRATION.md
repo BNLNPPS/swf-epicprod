@@ -128,6 +128,7 @@ Submission chain: `submit_csv.sh` → `submit_panda_api.py` (`client.submit_task
 |---------------|-----------|-------|
 | `skipScout` | `config.data['skip_scout']` | Skip scout jobs if True; the Prod Config UI presents this as the positive **Scout Mode** toggle |
 | `disableAutoRetry` | `config.data` | Optional |
+| `disableReassign` | always set on the client-API path | JEDI marks every generated job `relocationFlag=2`, which the PanDA server's two reassignment rules skip: the inactive site (no production start for two hours, jobs activated over four) and jobs activated over two days. Production places and moves its own work (CONTINUOUS_PRODUCTION.md, Placement); each server reassignment of a waiting job closes it unrun and costs its input an attempt. The queue-level equivalent, `disableReassign` in a queue's CRIC catchall, is not used. |
 | `useRucio` | `config.use_rucio` | Whether to register outputs in Rucio |
 
 ## Output dataset and file naming

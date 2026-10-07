@@ -1203,6 +1203,11 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         # test") — skipScout uses walltime directly and avoids the noInput
         # pseudo-input HS06 brokerage pitfall. A config can flip it on later.
         'skipScout': bool(data.get('skip_scout', True)),
+        # The PanDA server's reassignment off (JEDI_INTEGRATION.md, Flags):
+        # production places and moves its own work, and each server
+        # reassignment of a waiting job costs its input an attempt (task
+        # 40584, 10/7: 50,000 jobs closed unrun at an idle queue).
+        'disableReassign': True,
         'nJobs': len(csv_rows),
         'nEventsPerJob': 1,
         'exec': f'python3 evgen_job_dispatcher.py %RNDM=0 {csv_base}',
