@@ -6305,7 +6305,23 @@ def front_page(request):
         'drain_h': hours.get('drain_h'),
         'ready_segments': ready_segments, 'capacity_segments': capacity_segments,
         'unsized_tasks': ready.get('unsized_tasks') or 0,
+        'pilot_mode': str(config.get('pilot.mode', 'shadow')),
+        'pilot_rows': _pilot_rows(state.get('pilots') or {}),
     })
+
+
+def _pilot_rows(pilots):
+    """The pilot decisions as the front page's rows: each harvester limit
+    in force beside the value the regulator would set."""
+    rows = []
+    for queue, p in sorted(pilots.items()):
+        in_force = p.get('in_force') or {}
+        would = p.get('would_set') or {}
+        limits = [{'in_force': in_force.get(k), 'would': would.get(k)}
+                  for k in ('maxWorkers', 'nQueueLimitWorkerMax', 'nQueueLimitJobMax')]
+        limits.append({'in_force': None, 'would': would.get('maxNewWorkersPerCycle')})
+        rows.append(dict(p, queue=queue, limits=limits))
+    return rows
 
 
 def request_size_plot(request):

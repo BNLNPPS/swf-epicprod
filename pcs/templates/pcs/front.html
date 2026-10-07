@@ -168,6 +168,34 @@
         </tbody>
     </table>
 
+    <h2 id="pilots" class="front-section">Pilot supply</h2>
+    <p class="mb-1">The harvester limits each regulated queue would carry, from the harvester's report and the queue census against the queue's running target (mode: {{ pilot_mode }}; the regulator changes nothing on the harvester in shadow mode).</p>
+    <table class="table table-striped table-bordered table-sm align-middle w-auto mb-2 swf-sortable">
+        <thead><tr>
+            <th>Queue</th><th>State</th><th>Reason</th>
+            <th>Running pilots</th><th>Target</th><th>Queued pilots</th><th>Queued target</th><th>Pilots ended per hour</th><th>Activated jobs</th>
+            <th>Total pilots (maxWorkers)</th><th>Queued pilots (nQueueLimitWorkerMax)</th><th>Fetched jobs (nQueueLimitJobMax)</th><th>New per cycle</th>
+        </tr></thead>
+        <tbody>
+        {% for p in pilot_rows %}
+            <tr>
+                <td><a href="{% url 'monitor_app:epic_queue_detail' queue_name=p.queue %}#job-fetching" title="The queue's Harvester card">{{ p.queue }}</a></td>
+                <td>{% if p.log_id %}<a href="{% url 'monitor_app:log_detail' log_id=p.log_id %}" title="This decision's record">{{ p.state }}</a>{% else %}{{ p.state }}{% endif %}</td>
+                <td>{{ p.reason }}{% if p.gate_reason %}: {{ p.gate_reason }}{% endif %}{% if p.error %}: {{ p.error }}{% endif %}</td>
+                <td>{{ p.running|default_if_none:'' }}</td>
+                <td><a href="{% url 'monitor_app:system_status' %}#sysconfig-view" title="pilot.queue.{{ p.queue }}.target_running on the System page">{% if p.target_running %}{{ p.target_running }}{% else %}unset{% endif %}</a></td>
+                <td>{{ p.queued|default_if_none:'' }}</td>
+                <td>{{ p.queued_target|default_if_none:'' }}</td>
+                <td>{{ p.start_rate_h|default_if_none:'' }}</td>
+                <td>{{ p.activated|default_if_none:'' }}</td>
+                {% for l in p.limits %}<td>{{ l.in_force|default_if_none:'unread' }}{% if l.would != None and l.would != l.in_force %} &rarr; <strong>{{ l.would }}</strong>{% endif %}</td>{% endfor %}
+            </tr>
+        {% empty %}
+            <tr><td colspan="13">No pilot decision is recorded yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
     <h2 id="ready" class="front-section">Ready pool</h2>
     {% if backlog %}
     <table class="table table-striped table-bordered table-sm align-middle w-auto mb-2 swf-sortable">

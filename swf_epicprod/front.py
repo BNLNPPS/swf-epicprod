@@ -382,6 +382,13 @@ def _stored_decisions():
     return ((row.value or {}).get('queues') or {}) if row else {}
 
 
+def _stored_pilots():
+    """The previous cycle's pilot decisions, from the stored state."""
+    from monitor_app.models import CachedProduct
+    row = CachedProduct.objects.filter(key=STATE_KEY).first()
+    return ((row.value or {}).get('pilots') or {}) if row else {}
+
+
 def place_unplaced(backlog, decisions, placement, feedable):
     """Move each unplaced ready task in ``backlog`` to the queue
     ``recommend`` names for it among ``feedable``, recording the
@@ -1017,18 +1024,44 @@ def run_cycle(*, dry_run=False, created_by='front'):
         latest[d['queue']] = d
     hours = _safe('hours summary', lambda: hours_summary(backlog, latest),
                   failed('hours summary'))
+
+    # Pilot-side regulation (CONTINUOUS_PRODUCTION.md), shadow mode: the
+    # harvester limits each regulated queue would carry, recorded every
+    # cycle for comparison with the realized running count.
+    from swf_epicprod import pilots as pilot_regulation
+    previous_pilots = _safe('stored pilot state', _stored_pilots, {})
+    pilot_decisions = _safe('pilot decisions', lambda: pilot_regulation.run(
+        census, placement, previous_pilots, now=t0, errors=errors),
+        failed('pilot decisions')) or {}
+    for queue, p in pilot_decisions.items():
+        if dry_run:
+            continue
+        would = p.get('would_set') or {}
+        p['log_id'] = _safe(f'{queue} pilot record', lambda: log_epicprod_action(
+            'front', 'pilot_decision', subject_type='panda_queue',
+            subject_key=queue, username=created_by, outcome=p['state'],
+            sublevel='normal' if p['state'] == 'error' else 'low',
+            message=(f'pilots {queue}: {p["state"]} ({p["reason"]}); '
+                     f'running {p.get("running", "?")} of target {p.get("target_running")}, '
+                     f'queued {p.get("queued", "?")} of {p.get("queued_target", "?")}'
+                     + (f'; would set {would}' if p['state'] == 'would_set' else '')
+                     + (f'; {p["error"]}' if p.get('error') else '')),
+            **{k: v for k, v in p.items() if k not in ('queue', 'log_id')}),
+            failed(f'{queue} pilot record'))
     summary = {'observed_at': (census or {}).get('observed_at') if census else None,
                'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
                'jedi_throttled': jedi_throttled,
                'queues': len(queues), 'decisions_recorded': written,
                'errors': errors,
                'states': {q: d['state'] for q, d in latest.items()},
+               'pilot_states': {q: p['state'] for q, p in pilot_decisions.items()},
                'duration_s': round((timezone.now() - t0).total_seconds(), 1)}
     if not dry_run:
         state_payload = {'observed_at': summary['observed_at'], 'cycle_at': t0.isoformat(),
                          'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
                          'jedi_throttled': jedi_throttled,
                          'queues': latest, 'placement': placement,
+                         'pilots': pilot_decisions,
                          'backlog': backlog, 'errors': errors,
                          'hours': hours, 'duration_s': summary['duration_s']}
         from monitor_app.cached_product import get_product
