@@ -615,8 +615,10 @@ after the reporter has read back the previous one, so at most once per
 update interval. The limits are not raised, and the reason is recorded,
 when:
 
-- pilots stay queued at the site at `Q` for longer than the p90 start
-  latency while running is below `T`: the site's scheduler is not
+- pilots stay queued at the site at `Q` for longer than an hour while
+  running is below `T` (an hour fixed, since the census's start latency
+  is the PanDA job's wait, which a backlog stretches to days): the
+  site's scheduler is not
   starting them, and more supply would not help (`site_not_starting`,
   with a notice);
 - PanDA holds fewer activated jobs for the queue than `Q`: supply

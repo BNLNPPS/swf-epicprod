@@ -47,7 +47,7 @@ STEP_UP = 0.5
 REPORT_STALE_INTERVALS = 3
 DEGRADED_MIN_ENDED = 20
 DEGRADED_FRACTION = 0.5
-SATURATED_DEFAULT_H = 1.0
+SATURATED_HOLD_H = 1.0
 # The harvester keys the regulator sets, and the pq_table reading of
 # each where the harvester records it.
 LIMIT_KEYS = ('maxWorkers', 'nQueueLimitWorkerMax', 'nQueueLimitJobMax',
@@ -181,9 +181,11 @@ def decide(queue, reading, census_q, blockers, settings, *, mode, now, last=None
         since = ((last or {}).get('saturated_since') if (last or {}).get('saturated') else None) \
             or now.isoformat()
     record.update({'saturated': saturated, 'saturated_since': since})
-    hold_h = p90_h if p90_h else SATURATED_DEFAULT_H
+    # A fixed hour: the census's p90 start latency is the PanDA job's
+    # wait, which a backlog stretches to days (49 h at GREX, 10/7), not
+    # the pilot's wait at the site.
     reason = None
-    if saturated and _hours_since(since, now) >= hold_h:
+    if saturated and _hours_since(since, now) >= SATURATED_HOLD_H:
         reason = 'site_not_starting'
     elif activated < queued_target:
         reason = 'no_work'
