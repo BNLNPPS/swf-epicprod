@@ -538,6 +538,107 @@ switched to `throttle` by one configuration row once its readings have
 been checked against the queue census. Its per-site limits are set
 from the front's shadow-mode record.
 
+## Pilot-side regulation: the harvester's queue limits
+
+The third regulator in series with the front and the job throttler. The
+front admits tasks and the throttler paces their generation; neither
+puts a pilot at the site. At
+a push queue the harvester fetches activated jobs from PanDA and submits
+one pilot per fetched job, within limits set per queue in its queue
+configuration. Where those limits sit below what the site can run,
+activated work waits for pilots, and a job that waits past PanDA's
+two-day limit is reassigned at the cost of an attempt (the 2026-09-30
+GREX case under Placement). The regulator sets the limits from the
+front's census against a running target per queue. The harvester
+itself is unchanged; the regulator edits only the values in the queue's
+existing configuration entry.
+
+**The limits.** UM_GREX_PanDA_1 is served by the harvester on
+pandaharvester01 (version 0.7.5) in push mode (`mapType` `OneToOne`,
+template `production.push`). Its entry in
+`/opt/harvester/etc/panda/panda_queueconfig.json` is the live source:
+the cacher carries no `queues_config_file`, so the harvester reads the
+file, and re-reads it within its 600 s update interval without a
+restart. Four groups of keys govern pilot supply:
+
+| Key | Effect | Value on 2026-10-06 |
+|---|---|---|
+| `nQueueLimitJobMax`, `nQueueLimitJobMin`, `nQueueLimitJobRatio` | jobs fetched and not yet running are held at `ratio` percent of the running jobs, between min and max; the fetcher asks PanDA for more only below that | 2,000, 1,000, 100 |
+| `nQueueLimitWorkerMax` | pilots submitted and not yet running at the site | 5,000 |
+| `maxNewWorkersPerCycle` | new pilots per submitter cycle | 500 |
+| `maxWorkers` | pilots queued, ready and running together | 5,000 |
+
+A push-mode pilot is made only for a fetched job, so the fetch depth
+also bounds the pilots queued at the site; the worker-ratio keys apply
+to pull queues only and the harvester ignores them here.
+
+**The measure.** Each front cycle reads, per queue: running pilots and
+pilots queued at the site from the harvester's worker records, which
+count a working job as running whatever its PanDA state (PanDA records
+most of a GREX job's life as `starting`); pilots started and ended over
+the interval and those that ended with errors; the activated jobs PanDA
+holds for the queue; the queue's p90 start latency; and the limits in
+force, read back from the harvester's `pq_table` by the harvester
+reporter (swf-monitor `docs/HARVESTER_REPORTER.md`).
+
+**The rule.** The running target `T` is set per queue by the operator
+from the site's allocation (`pilot.queue.<queue>.target_running`; the
+GREX allocation supports at least 1,000 running). The queued-pilot
+target `Q` is the number of pilots the site starts in one hour at the
+measured start rate, bounded below by a floor and above by `T`. The
+limits follow:
+
+- `maxWorkers` = `T` + `Q`;
+- `nQueueLimitWorkerMax` = `Q`;
+- `nQueueLimitJobMax` = `nQueueLimitJobMin` = `Q` plus one cycle's new
+  pilots, with the ratio unset, so the jobs fetched and waiting track
+  the queued pilots, not the running count;
+- `maxNewWorkersPerCycle` = enough to refill `Q` within ten cycles.
+
+A cycle raises a limit by at most half its current value and lowers it
+at once. The cycle runs every five minutes, but a change is made only
+after the reporter has read back the previous one, so at most once per
+update interval. The limits are not raised, and the reason is recorded,
+when:
+
+- pilots stay queued at the site at `Q` for longer than the p90 start
+  latency while running is below `T`: the site's scheduler is not
+  starting them, and more supply would not help (`site_not_starting`,
+  with a notice);
+- PanDA holds fewer activated jobs for the queue than `Q`: supply
+  follows work, which is the front's concern (`no_work`).
+
+The limits drop to the floor when pilots end fast with errors above a
+rate floor, or when a front gate for the queue is red (canary, breaker,
+declared downtime), so that pilots do not consume jobs at a failing
+site (`degraded`). When the limits in force differ from the last values
+set, the entry was changed outside the regulator: it holds, records
+both values (`changed_outside`) and notifies, and never overwrites the
+outside change.
+
+**The actuation.** A credentialed doer of the production-operations
+agent, `harvester_queue_limits`, reaches pandaharvester01 over ssh,
+reads the file, sets the keys above in the one queue's entry, validates
+the JSON, writes a dated backup, and replaces the file atomically with
+sudo. The action-stream event records the queue, the old and new
+values, the measure and the reason. The cycle decides and enqueues the
+doer and holds no credential. A change takes effect at the harvester's
+next reload and is confirmed when the reporter reads the new limits
+back.
+
+**The record.** Each cycle writes a `pilot_decision` record per
+regulated queue beside its `front_decision`, and the front page's queue
+table shows the target, the queued and running pilots, the limits in
+force and the values the regulator would set.
+
+**Rollout.** `pilot.mode` `shadow` first: the cycle computes and
+records the limits it would set and changes nothing, and the record is
+compared with the realized running count. Then `active` on
+UM_GREX_PanDA_1 alone (`pilot.queue.<queue>.enabled`), then the other
+harvester queues one at a time. Once a queue is active, its entry is
+set only by the regulator, with the `changed_outside` hold as the
+guard.
+
 ## The submission ladder
 
 1. **Canary probe** — site integrity before production. A small
@@ -771,14 +872,15 @@ site contact states about six times the current use is available under
 fair share; the queue has run at exactly its 950-job ceiling on some
 days and near idle on many others, and carries about a hundred running
 jobs at this writing. A standing pressure front is the fix for chronic
-under-feeding; the site-side ceiling and harvester items remain on the
-supply track.
+under-feeding, with pilot supply regulated beside it (§ Pilot-side
+regulation); the site-side ceiling remains on the supply track.
 
 ## Supply side (parallel track)
 
 The campaign-analysis measures stand: queue definition fields (maxtime,
-corePower), harvester slot refill, the pull-mode trial, the JLab queue,
-the Google cap. None gate this build; each raises the ceiling the
+corePower), the pull-mode trial, the JLab queue, the Google cap.
+Harvester pilot supply is in the control loop (§ Pilot-side
+regulation). None gate this build; each raises the ceiling the
 pressure front can reach.
 
 ## Sequencing
@@ -810,14 +912,15 @@ pressure front can reach.
    ride the pending server upgrade, in `observe` mode first, with the
    per-site limits set from the shadow-mode record; once it throttles,
    the front's phase-one caps retire.
-9. Rucio exerciser and the Storage view.
-10. Probe and rider build-out (site-canary increments 8–9), extending
+9. Pilot-side regulation: shadow mode, then active on UM_GREX_PanDA_1,
+   then the other harvester queues.
+10. Rucio exerciser and the Storage view.
+11. Probe and rider build-out (site-canary increments 8–9), extending
     node-level evidence to every node work reaches.
 
 ## Asks and open items
 
 - The EVGEN registration action run over the coverage worklist (the
   credential is in place; the action has not yet run for real).
-- corePower for the GREX queue; harvester refill and ceiling; the
-  pull-mode trial (PanDA operations).
+- corePower for the GREX queue; the pull-mode trial (PanDA operations).
 - Later: a non-interactive service credential for the dispatcher.
