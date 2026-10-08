@@ -7193,7 +7193,7 @@ def brains_query_request(*, conversation_id, username, message,
             'Brains is unreachable (queue send failed).', status=503)
 
 
-def jev_like_request(*, text, created_by='web user'):
+def jev_like_request(*, text, created_by='web user', response_url=''):
     """Ask for the configurations matching a request in plain words
     (docs/JEV.md, Plain-language search). Served from the stored answer
     when the same words were ranked within the week; otherwise publishes
@@ -7211,7 +7211,9 @@ def jev_like_request(*, text, created_by='web user'):
     if answer and not answer.get('error'):
         return {'key': key, 'answer': answer}
     msg = {'msg_type': 'jev_like', 'namespace': 'prodops', 'text': words,
-           'key': key, 'created_by': created_by}
+           'key': key, 'created_by': created_by,
+           # A Mattermost /jev answer is posted there when it is ready.
+           'response_url': response_url or ''}
     from monitor_app.activemq_connection import ActiveMQConnectionManager
     try:
         triggered = ActiveMQConnectionManager().send_message(

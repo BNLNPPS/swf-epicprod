@@ -72,8 +72,48 @@ def rank(text):
     return out[:SHOWN], usage
 
 
-def run(text, created_by='jev_like'):
-    """Rank, store, record. Returns the stored value."""
+PUBLIC_BASE = 'https://epic-devcloud.org/prod'
+MATTERMOST_SHOWN = 10
+
+
+def mattermost_text(value):
+    """The answer as a Mattermost message: the query, the ranked
+    configurations linked to their pages on the external face, the
+    experimental label and the citation."""
+    from .jev import CITATION
+    lines = [f"**Configurations for** \"{value.get('query', '')}\" "
+             f"(experimental, ranked by {CITATION})"]
+    if value.get('error'):
+        lines.append(f"Jev could not answer: {value['error']}")
+        return '\n'.join(lines)
+    levels = value.get('levels') or SHORT_LEVELS
+    for i, n in enumerate((value.get('ranked') or [])[:MATTERMOST_SHOWN], 1):
+        level = levels[n['level']] if 0 <= n['level'] < len(levels) else ''
+        lines.append(f"{i}. [{n['label']}]({PUBLIC_BASE}/pcs/config/{n['label']}/) "
+                     f"{level}: {n['text']}")
+    if not value.get('ranked'):
+        lines.append('No configuration came back.')
+    return '\n'.join(lines)
+
+
+def post_response(url, value):
+    """Post the answer to a Mattermost slash command's response URL.
+    Returns '' or the reason it failed."""
+    import json
+    import urllib.request
+    body = json.dumps({'response_type': 'in_channel', 'text': mattermost_text(value)}).encode()
+    req = urllib.request.Request(url, data=body, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp.read()
+        return ''
+    except OSError as exc:
+        return f'{type(exc).__name__}: {exc}'
+
+
+def run(text, created_by='jev_like', response_url=''):
+    """Rank, store, record, and post to a Mattermost response URL when
+    one is given. Returns the stored value."""
     from monitor_app.cached_product import get_product
     from monitor_app.epicprod_logging import log_epicprod_action
 
@@ -91,12 +131,14 @@ def run(text, created_by='jev_like'):
         value['error'] = str(exc)
     value['at'] = timezone.now().isoformat()
     get_product(PRODUCT_PREFIX + key, lambda: value, ttl_seconds=PRODUCT_TTL_S, refresh=True)
+    post_error = post_response(response_url, value) if response_url else ''
     log_epicprod_action(
         'ops-agent', 'jev_like', username=created_by,
         outcome='error' if value['error'] else 'ok',
         sublevel='normal' if value['error'] else 'low',
         message=(f'Jev search "{text[:80]}": '
-                 + (value['error'] or f"{len(value['ranked'])} configurations ranked")),
-        key=key, cost_usd=round(cost, 5),
+                 + (value['error'] or f"{len(value['ranked'])} configurations ranked")
+                 + (f'; Mattermost post failed: {post_error}' if post_error else '')),
+        key=key, cost_usd=round(cost, 5), mattermost=bool(response_url),
         duration_s=round((timezone.now() - started).total_seconds(), 2))
     return value
