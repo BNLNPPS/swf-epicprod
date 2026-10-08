@@ -58,8 +58,11 @@ THE TASK.
    why it does not belong, and the selection change that would keep it
    off (the action added to the maintenance set, a sublevel change, a
    condition on its outcome).
-2. Recurring problems: each failure group the FLOOR names, and any other
-   group you judge material. Judge it: real_problem (a fault that costs
+2. Recurring problems: each key in FLOOR.keys, under that exact key, and
+   any other failure group you judge material. A key with a ~suffix is a
+   failure group (one action, component and cause); a key without one is
+   an action and component that failed and then recovered repeatedly
+   (flapping), judged as a whole. Judge it: real_problem (a fault that costs
    production or data and has no resolution in the channel), expected (a
    designed retry or a known transient that clears), known_and_handled
    (a finding or resolution in the channel covers it; cite the post), or
@@ -177,10 +180,12 @@ def validate_remainder(remainder):
 
 def issue_set(artifact):
     """What the watch found, as a comparable set: the noise actions and the
-    real problems. A run whose set equals the last registered one is not
-    registered again (the assessments page carries changes, not every run)."""
+    real problems by action and component. A run whose set equals the last
+    registered one is not registered again (the assessments page carries
+    changes, not every run); a new cause of an action already judged a real
+    problem is not a new problem."""
     noise = sorted({n.get('action', '') for n in artifact.get('noise') or []})
-    real = sorted({r.get('key', '') for r in artifact.get('recurring') or []
+    real = sorted({r.get('key', '').split('~', 1)[0] for r in artifact.get('recurring') or []
                    if r.get('judgment') == 'real_problem'})
     return {'verdict': artifact.get('verdict', 'ok'), 'noise': noise, 'real_problems': real}
 

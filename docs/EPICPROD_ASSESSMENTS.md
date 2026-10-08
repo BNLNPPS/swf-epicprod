@@ -247,7 +247,9 @@ unresolved.
 - **Floor** (`spec.floor`, raise-only): `attention` when one cause fails
   three or more times in 24 hours, on three or more distinct days of
   seven, or when an action fails and then recovers three or more times in
-  24 hours. The model must judge every group the floor names.
+  24 hours. The bundle lists the keys the floor names (`floor.keys`: a
+  failure group, or an action and component for flapping), and the model
+  must judge each under that key.
 - **Judgment** (`spec.SYSTEM_PROMPT`, schema version 1): noise (posts
   that do not belong, with the selection change that keeps them off);
   recurring problems, each judged `real_problem`, `expected`,
@@ -266,8 +268,9 @@ unresolved.
   is registered as an assessment (subject `live_channel`,
   `epicprod-live`) and its action marked `notify` for the Capcom feed only
   when what it found changed from the last registered run: a new verdict,
-  a new real problem, new noise, or the return to clean after a
-  registered finding. The assessments page carries changes, not every
+  a new real problem (by action and component; a new cause of an action
+  already judged a real problem is not a new problem), new noise, or the
+  return to clean after a registered finding. The assessments page carries changes, not every
   run. Only a changed `alarm` reaches the channel; a failed trigger
   reaches it on first sight, as any automated failure.
 

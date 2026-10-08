@@ -159,6 +159,7 @@ def assemble(now=None, window_hours=spec.WINDOW_HOURS):
         'flapping': flaps,
         'policy': _policy(),
         'floor': {'verdict': verdict, 'reasons': reasons,
+                  'keys': [r.split(':', 1)[0] for r in reasons],
                   'rules': {'repeat_24h': spec.REPEAT_24H, 'flap_24h': spec.FLAP_24H,
                             'days_7d': spec.DAYS_7D}},
         'manifest': manifest.entries,
