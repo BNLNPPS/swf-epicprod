@@ -17,11 +17,21 @@ Settings in SysConfig, seeded at their defaults on first read:
 - ``nersc.token_file``: the IRI client configuration file holding
   ``base_url`` and ``access_token``.
 - ``nersc.projects`` (['m3763']): the projects whose balance is read.
+- ``nersc.queues``: {queue: project} for the production queues each
+  project's CPU allocation pays for.
+- ``nersc.close_at_used`` (0.9): the fraction of a project's CPU
+  node-hours used at which its queues close.
 
-Nothing here opens or closes a queue; ``front.closed_queues`` stays the
-operator's until the balance is readable and a rule is set.
+Each readable balance sets the queues (Torre, 2026-10-08): a queue whose
+project has used ``close_at_used`` or more is closed in
+``front.closed_queues`` with a reason starting ``NERSC allocation:``; a
+queue closed for allocation (that reason, or an operator's reason naming
+the allocation) reopens when a new balance brings usage below it. A
+queue an operator closed for any other reason is left alone, and an
+unreadable balance changes nothing.
 """
 import json
+import logging
 import os
 import time
 import urllib.error
@@ -29,8 +39,13 @@ import urllib.request
 
 from django.utils import timezone
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_TOKEN_FILE = '/data/wguan2/hpc_tokens/nersc_iri_config.yaml'
 DEFAULT_PROJECTS = ['m3763']
+DEFAULT_QUEUES = {'NERSC_Perlmutter_epic': 'm3763', 'NERSC_Perlmutter_epic_es': 'm3763'}
+DEFAULT_CLOSE_AT_USED = 0.9
+RULE_PREFIX = 'NERSC allocation: '
 PRODUCT_KEY = 'nersc_allocation'
 PRODUCT_TTL_S = 7 * 24 * 3600
 HTTP_TIMEOUT_S = 30
@@ -136,6 +151,89 @@ def line(record):
     return out
 
 
+def _allocation_reason(reason):
+    """True when a closed queue's reason is the allocation: the rule's
+    own, or an operator's that names it."""
+    reason = str(reason or '')
+    return reason.startswith(RULE_PREFIX) or 'allocation' in reason.lower()
+
+
+def queue_switches(record, queues, close_at, closed):
+    """The queue changes a balance calls for. Pure.
+
+    ``queues`` {queue: project}; ``closed`` the current
+    ``front.closed_queues``. Returns [{queue, project, used, action,
+    reason}] with action 'close' or 'open', only where the state
+    changes; a project without a readable CPU balance decides nothing."""
+    out = []
+    if not record or record.get('error'):
+        return out
+    for queue, project in sorted(queues.items()):
+        cpu = ((record.get('projects') or {}).get(project) or {}).get('cpu') or {}
+        if not cpu.get('allocation'):
+            continue
+        used = cpu['usage'] / cpu['allocation']
+        current = closed.get(queue)
+        if used >= close_at:
+            reason = f'{RULE_PREFIX}{project} CPU {close_at:.0%} or more used'
+            if current is None or (_allocation_reason(current) and current != reason):
+                out.append({'queue': queue, 'project': project, 'used': used,
+                            'action': 'close', 'reason': reason})
+        elif current is not None and _allocation_reason(current):
+            out.append({'queue': queue, 'project': project, 'used': used,
+                        'action': 'open', 'reason': current})
+    return out
+
+
+def apply_queue_switches(record, created_by):
+    """Close or reopen the NERSC queues from the balance, under a row
+    lock so a concurrent operator edit of the closed queues is not lost;
+    each change is a ``nersc_queue_switch`` action. Returns the changes."""
+    from django.db import transaction
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from monitor_app.models import SysConfig
+
+    queues = SysConfig.get_setting('nersc.queues', DEFAULT_QUEUES)
+    close_at = SysConfig.get_setting('nersc.close_at_used', DEFAULT_CLOSE_AT_USED)
+    if not (isinstance(queues, dict) and all(isinstance(v, str) for v in queues.values())):
+        logger.error('nersc.queues is not a {queue: project} mapping: %r; using the defaults', queues)
+        queues = dict(DEFAULT_QUEUES)
+    if not isinstance(close_at, (int, float)) or not 0 < close_at <= 1:
+        logger.error('nersc.close_at_used is not a fraction in (0, 1]: %r; using %s',
+                     close_at, DEFAULT_CLOSE_AT_USED)
+        close_at = DEFAULT_CLOSE_AT_USED
+    with transaction.atomic():
+        obj, _ = SysConfig.objects.select_for_update().get_or_create(
+            id=1, defaults={'config_data': {}})
+        closed = obj.config_data.get('front.closed_queues')
+        if not isinstance(closed, dict):
+            logger.error('front.closed_queues is not a mapping: %r; queues left unchanged', closed)
+            return []
+        changes = queue_switches(record, queues, close_at, closed)
+        if not changes:
+            return []
+        closed = dict(closed)
+        for c in changes:
+            if c['action'] == 'close':
+                closed[c['queue']] = c['reason']
+            else:
+                closed.pop(c['queue'], None)
+        obj.config_data['front.closed_queues'] = closed
+        obj.updated_by = created_by
+        obj.save()
+    for c in changes:
+        verb = 'closed' if c['action'] == 'close' else 'reopened'
+        log_epicprod_action(
+            'ops-agent', 'nersc_queue_switch', username=created_by, outcome='ok',
+            sublevel='normal', subject_type='queue', subject_key=c['queue'],
+            message=(f"{verb} {c['queue']}: {c['project']} CPU {c['used']:.1%} used "
+                     f"(closes at {close_at:.0%})"),
+            queue=c['queue'], project=c['project'], action_taken=c['action'],
+            used_fraction=round(c['used'], 4), close_at_used=close_at,
+            previous_reason=c['reason'] if c['action'] == 'open' else '')
+    return changes
+
+
 def run(created_by='nersc_allocation'):
     """Read, store the cached product, record the read. Returns the record."""
     from monitor_app.cached_product import get_product
@@ -154,4 +252,6 @@ def run(created_by='nersc_allocation'):
         sublevel='normal' if record['error'] else 'low',
         message='NERSC allocation: ' + ' | '.join(line(record)),
         **{k: v for k, v in record.items() if k != 'token_file'})
+    if not record['error']:
+        record['queue_switches'] = apply_queue_switches(record, created_by)
     return record

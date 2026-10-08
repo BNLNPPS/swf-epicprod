@@ -407,9 +407,15 @@ of the project, since the IRI project list holds only the owner's
 projects, and a project outside it reads "not visible to the token".
 The balance is the cached product `nersc_allocation`, shown on the front
 page beside the closed queues, and each read is a
-`nersc_allocation_read` action. Opening and closing a NERSC queue from
-the balance follows once the balance is readable; until then
-`front.closed_queues` is set by hand.
+`nersc_allocation_read` action.
+
+Each readable balance opens and closes the NERSC queues: a queue in
+`nersc.queues` (queue to project; both Perlmutter queues to m3763)
+closes when its project has used `nersc.close_at_used` (0.9) or more of
+its CPU node-hours, with a reason starting "NERSC allocation:", and
+reopens when a new balance brings usage below it. A queue closed for
+any other reason stays as the operator set it, and an unreadable balance
+changes nothing. Each change is a `nersc_queue_switch` action.
 
 **The Site control.** It sits on the compose page, in a task's detail,
 and shows:

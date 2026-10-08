@@ -105,8 +105,8 @@ def regulated_queues():
 
 def closed_queues():
     """``front.closed_queues``: {queue: reason} for the production queues
-    closed to production submission by an operator (NERSC_Perlmutter_epic
-    with no allocation, 2026-10-06). A closed queue is never recommended,
+    closed to production submission by an operator, or by the NERSC
+    balance (``swf_epicprod.nersc_allocation``). A closed queue is never recommended,
     and PCS refuses to place, submit, rerun, trial or move work there.
     Canary probes do not pass through PCS submission and still run."""
     value = setting('front.closed_queues', {})
