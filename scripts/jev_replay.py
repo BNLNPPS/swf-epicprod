@@ -1,6 +1,6 @@
 """Replay PCS's request-to-configuration links through Jev and measure them.
 
-Jev (TypeSafe AI, on OpenRouter as typesafe/jev-router) answers a Choice
+Jev (TypeSafe AI's decision model, model jev-latest) answers a Choice
 question: which physics configuration a request asks for, with a
 probability per candidate and a confidence. This replays two sets of
 links already on the record and reports how often Jev's choice agrees
@@ -20,7 +20,9 @@ the configurations whose descriptions share the most weighted tokens
 with the request; the report states how often the reference link is
 among them, since a link outside the candidates cannot be chosen.
 
-Read-only: nothing in PCS is written. Requires OPENROUTER_API_KEY.
+Read-only: nothing in PCS is written. Requires TYPESAFE_API_KEY. The
+cost is estimated from the input tokens at $42 per billion (output
+tokens are free); TypeSafe's answer reports tokens, not cost.
 
     cd <swf-monitor>/src && source ~/.env
     <venv>/bin/python <swf-epicprod>/scripts/jev_replay.py \\
@@ -46,8 +48,9 @@ django.setup()
 
 from pcs.models import Dataset, PhysicsConfig, ProdTask, ProdRequest, Questionnaire  # noqa: E402
 
-URL = 'https://openrouter.ai/api/v1/api/alpha/decisions'
-MODEL = 'typesafe/jev-router'
+URL = 'https://api.typesafe.ai/v1/systemone'
+MODEL = 'jev-latest'
+USD_PER_INPUT_TOKEN = 42e-9
 MAX_OPTIONS = 255
 BANDS = ((0.9, 1.01), (0.5, 0.9), (0.0, 0.5))
 TOKEN_RE = re.compile(r'[a-z0-9]+(?:\.[0-9]+)*')
@@ -89,8 +92,7 @@ def ask(key, state, options, docs):
     body = {'model': MODEL, 'state': state,
             'questions': {'configuration': {
                 'type': 'choice', 'instructions': INSTRUCTIONS,
-                'criteria': {label: docs[label] for label in options}}},
-            'provider': {'data_collection': 'deny'}}
+                'criteria': {label: docs[label] for label in options}}}}
     req = urllib.request.Request(URL, data=json.dumps(body).encode(),
                                  headers={'Authorization': f'Bearer {key}',
                                           'Content-Type': 'application/json'})
@@ -146,9 +148,9 @@ def main():
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--out', default='')
     args = ap.parse_args()
-    key = os.environ.get('OPENROUTER_API_KEY')
+    key = os.environ.get('TYPESAFE_API_KEY')
     if not key:
-        print('OPENROUTER_API_KEY is not set', file=sys.stderr)
+        print('TYPESAFE_API_KEY is not set', file=sys.stderr)
         return 2
     docs, toks, idf = build_index(list(PhysicsConfig.objects.all()))
     items = request_items if args.set == 'requests' else questionnaire_items
@@ -175,7 +177,8 @@ def main():
             continue
         answer = (resp.get('answers') or {}).get('configuration') or {}
         choice, conf = answer.get('choice'), float(answer.get('confidence') or 0.0)
-        cost += float((resp.get('usage') or {}).get('cost') or 0.0)
+        input_tokens = int((resp.get('usage') or {}).get('input_tokens') or 0)
+        cost += input_tokens * USD_PER_INPUT_TOKEN
         agree = choice in targets
         b = band(conf)
         tally[(b, 'n')] += 1
@@ -186,7 +189,7 @@ def main():
         top = sorted((answer.get('probabilities') or {}).items(), key=lambda kv: -kv[1])[:5]
         rec = {'id': qid, 'targets': sorted(targets), 'choice': choice, 'confidence': conf,
                'agree': agree, 'in_candidates': in_candidates, 'top5': top,
-               'cost': (resp.get('usage') or {}).get('cost')}
+               'input_tokens': input_tokens}
         if out:
             out.write(json.dumps(rec) + '\n')
         if not agree:
