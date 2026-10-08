@@ -108,6 +108,13 @@
         <p class="text-muted mt-3">The natural language text you write in the search bar will start a dialog with the LLM.</p>
       </div>
     </div>
+    <div class="row mt-2">
+      <div class="col-md-12">
+        <button type="button" id="pcs-jev-btn" class="btn btn-lg btn-primary">Jev, which configurations?</button>
+        <span class="badge bg-warning text-dark ms-2" title="An experiment in ranking with a decision model; the order is a suggestion, not a record">experimental</span>
+        <p class="text-muted mt-3">Describe the physics in your own words (process, beams, range, generator); the physics configurations that answer it come back ranked, nearest first, by <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">Jev</a> (TypeSafe AI).</p>
+      </div>
+    </div>
     {% csrf_token %}
   </form>
 </div>
@@ -350,6 +357,93 @@
 })();
 </script>
 
+<div class="pcs-find-results" id="pcs-jev-panel" style="display:none;">
+  <h2 class="h5">Configurations for &ldquo;<span id="pcs-jev-query"></span>&rdquo; <span class="badge bg-warning text-dark ms-1">experimental</span> <span class="text-muted small">ranked by <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">Jev</a> (TypeSafe AI)</span></h2>
+  <p id="pcs-jev-status" class="text-muted mb-2"></p>
+  <table id="pcs-jev-table" class="table table-striped table-bordered table-sm align-middle w-auto" style="display:none;">
+    <thead><tr><th>Rank</th><th>Configuration</th><th>How it answers</th><th>What it is</th><th title="Jev's probability-weighted level, 0 not it to 5 a match">Score</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script>
+(function() {
+  /* Jev search: POST the bar's words; a stored answer renders at once,
+     otherwise a short-lived jev_like_ready EventSource with a bounded
+     poll backstop waits for the agent (SSE_PUSH.md rules: opened on the
+     click, closed on the answer). docs/JEV.md, Plain-language search. */
+  const btn = document.getElementById('pcs-jev-btn');
+  if (!btn) return;
+  const panel = document.getElementById('pcs-jev-panel');
+  const statusEl = document.getElementById('pcs-jev-status');
+  const table = document.getElementById('pcs-jev-table');
+  const qInput = document.querySelector('.pcs-find-box input[name="q"]');
+  const csrf = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+  const postUrl = "{% url 'pcs:find_jev_post' %}";
+  const resultUrl = key => "{% url 'pcs:find_jev_result' '0000000000000000' %}".replace('0000000000000000', key);
+  const configUrl = label => "{% url 'pcs:pcs_config_detail' 'pc0' %}".replace('pc0', label);
+  const streamUrl = "{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=jev_like_ready";
+  let es = null, pollTimer = null;
+
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function stop() {
+    if (es) { es.close(); es = null; }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    btn.disabled = false;
+  }
+  function render(answer) {
+    stop();
+    if (answer.error) { statusEl.textContent = 'Jev could not answer: ' + answer.error; return; }
+    const levels = answer.levels || [];
+    const rows = (answer.ranked || []).map((n, i) =>
+      '<tr><td>' + (i + 1) + '</td><td class="text-nowrap"><a href="' + configUrl(n.label) + '">' + esc(n.label)
+      + '</a> <a class="small" href="' + configUrl(n.label) + '#like-this-one">like this one</a></td><td>'
+      + esc(levels[n.level] || '') + '</td><td>' + esc(n.text) + '</td><td title="confidence '
+      + Number(n.confidence).toFixed(2) + '">' + Number(n.score).toFixed(2) + '</td></tr>');
+    table.querySelector('tbody').innerHTML = rows.join('');
+    table.style.display = rows.length ? '' : 'none';
+    statusEl.textContent = rows.length ? '' : 'No configuration came back.';
+  }
+  async function fetchResult(key) {
+    try {
+      const r = await fetch(resultUrl(key));
+      if (!r.ok) return false;
+      const d = await r.json();
+      if (d.answer) { render(d.answer); return true; }
+    } catch (e) { /* transient; the poll retries */ }
+    return false;
+  }
+  btn.addEventListener('click', async () => {
+    const q = (qInput.value || '').trim();
+    if (!q) { qInput.focus(); return; }
+    panel.style.display = '';
+    document.getElementById('pcs-jev-query').textContent = q;
+    table.style.display = 'none';
+    statusEl.textContent = 'Jev is ranking the configurations…';
+    btn.disabled = true;
+    let d;
+    try {
+      const r = await fetch(postUrl, {method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({q: q})});
+      d = await r.json();
+      if (!r.ok) { statusEl.textContent = d.error || ('HTTP ' + r.status); stop(); return; }
+    } catch (e) { statusEl.textContent = 'The request failed: ' + e; stop(); return; }
+    if (d.answer) { render(d.answer); return; }
+    const deadline = Date.now() + 90000;
+    es = new EventSource(streamUrl);
+    es.onmessage = ev => {
+      try { const m = JSON.parse(ev.data); if (m.key === d.key) fetchResult(d.key); }
+      catch (e) { /* heartbeat or non-JSON frame */ }
+    };
+    pollTimer = setInterval(async () => {
+      if (Date.now() > deadline) { stop(); statusEl.textContent = 'No answer after 90 seconds; try again.'; return; }
+      await fetchResult(d.key);
+    }, 3000);
+  });
+})();
+</script>
+
 {% if hits is not None %}
 <div class="pcs-find-results">
   {% if hits %}
@@ -362,7 +456,7 @@
   {% endif %}
   <table id="pcs-find-table" class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
     <thead>
-      <tr><th>Kind</th><th title="PWG priority of the EVGEN input, 1 = highest; set on the EVGEN inputs page">PWG priority</th><th>Dataset</th><th>Campaign</th><th>Files</th><th>Size</th></tr>
+      <tr><th>Kind</th><th title="PWG priority of the EVGEN input, 1 = highest; set on the EVGEN inputs page">PWG priority</th><th>Dataset</th><th title="The dataset's physics configuration; Like this one opens its nearest configurations, ranked by Jev (experimental)">Configuration</th><th>Campaign</th><th>Files</th><th>Size</th></tr>
     </thead>
     <tbody>
       {% for e in hits %}
@@ -383,6 +477,7 @@
           <div class="small">stated with its direct path on the <a href="{% url 'pcs:rucio_did_detail' e.scope e.name %}">produced dataset&rsquo;s page</a></div>
           {% endif %}
         </td>
+        <td class="text-nowrap">{% if e.pc %}<a href="{% url 'pcs:pcs_config_detail' label=e.pc %}">{{ e.pc }}</a> <a href="{% url 'pcs:pcs_config_detail' label=e.pc %}#like-this-one" class="small" title="Its nearest configurations, ranked by Jev (experimental)">like this one</a>{% endif %}</td>
         <td>{{ e.campaign|default:"&mdash;" }}</td>
         <td data-sort-val="{{ e.files|default:0 }}">{{ e.files|default:"&mdash;" }}</td>
         <td data-sort-val="{{ e.bytes|default:0 }}">{% if e.bytes %}{{ e.bytes|filesizeformat }}{% else %}&mdash;{% endif %}</td>

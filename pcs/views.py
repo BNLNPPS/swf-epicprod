@@ -2197,11 +2197,13 @@ def _build_find_corpus():
     # inputs and source location come from its dataset's metadata, the
     # tag fallback from the dataset's physics/evgen tags and sample.
     for t in annotate_pwg_priority(
-            ProdTask.objects.select_related('campaign', 'dataset')
+            ProdTask.objects.select_related('campaign', 'dataset',
+                                            'dataset__physics_config')
             .only('overrides', 'name', 'description', 'csv_file',
                   'campaign__name', 'dataset__composed_name',
                   'dataset__metadata', 'dataset__physics_tag',
-                  'dataset__evgen_tag', 'dataset__sample_name')):
+                  'dataset__evgen_tag', 'dataset__sample_name',
+                  'dataset__physics_config__label')):
         camp = t.campaign.name if t.campaign else ''
         for out in (t.overrides or {}).get('outputs') or []:
             did = str(out.get('did') or '')
@@ -2228,6 +2230,9 @@ def _build_find_corpus():
                 'facets': facets,
                 'pwg_priority': t.pwg_priority,
                 'pwg_resolved': bool(t.evgen_paths),
+                # The configuration, for "like this one" (docs/JEV.md).
+                'pc': (t.dataset.physics_config.label
+                       if t.dataset and t.dataset.physics_config_id else ''),
                 'blob': blob + (f' pwg priority {t.pwg_priority}'
                                 if t.pwg_priority else ''),
             })
@@ -2300,7 +2305,7 @@ def _find_corpus():
     from monitor_app.cached_product import get_product
     # A PWG mark change re-keys the corpus, so the badges follow at once.
     marks_stamp = EvgenMark.objects.aggregate(m=Max('priority_set_at'))['m']
-    key = f"pcs_find_corpus:v6:{marks_stamp.isoformat() if marks_stamp else 'none'}"
+    key = f"pcs_find_corpus:v7:{marks_stamp.isoformat() if marks_stamp else 'none'}"
     product = get_product(key, _build_find_corpus, ttl_seconds=900)
     return product.get('value') or []
 
@@ -2388,6 +2393,44 @@ def find_data(request):
 
 
 _BRAINS_ID_RE = re.compile(r'^brains-[a-f0-9]{12}$')
+
+
+def find_jev_post(request):
+    """Ask Jev for the configurations matching the find bar's words
+    (docs/JEV.md, Plain-language search). POST JSON {q}; returns {key,
+    answer} with the stored answer, or {key, answer: null} when the agent
+    is ranking it; the page then waits for the jev_like_ready event and
+    reads find_jev_result."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body or b'{}')
+    except ValueError as e:
+        return JsonResponse({'error': f'unparseable body: {e}'}, status=400)
+    # Crawler-bill insurance, as for Brains: a per-session ceiling.
+    rl_key = 'jev-rl:' + (request.session.session_key
+                          or request.META.get('REMOTE_ADDR', 'unknown'))
+    asked = cache.get(rl_key, 0)
+    if asked >= 60:
+        return JsonResponse({'error': 'Jev search limit reached, try again later.'},
+                            status=429)
+    cache.set(rl_key, asked + 1, 600)
+    from .services import ServiceError, jev_like_request
+    try:
+        out = jev_like_request(text=str(body.get('q') or ''),
+                               created_by=getattr(request.user, 'username', '') or 'web user')
+    except ServiceError as e:
+        return JsonResponse({'error': str(e)}, status=getattr(e, 'status', 400))
+    return JsonResponse(out)
+
+
+def find_jev_result(request, key):
+    """The stored Jev answer for a find query key, or {pending: true}."""
+    from swf_epicprod import jev_like
+    if not re.fullmatch(r'[0-9a-f]{16}', key or ''):
+        return JsonResponse({'error': 'bad key'}, status=400)
+    answer = jev_like.stored(key)
+    return JsonResponse({'key': key, 'answer': answer, 'pending': answer is None})
 
 
 def find_brains_post(request):

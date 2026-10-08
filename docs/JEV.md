@@ -69,4 +69,28 @@ tokens, about $0.50) and one configuration on request, into the cached
 product `jev_config_neighbors`; a neighbour at the top level is listed as
 a possible duplicate. The configuration page shows the fifteen nearest
 in its card "Configurations like this one", marked experimental and
-citing Jev.
+citing Jev; on the find page, every produced dataset's row names its
+configuration with a link to the same card.
+
+## Plain-language search
+
+The find page's "Jev, which configurations?" takes the bar's words, a
+request in plain language ("18 on 275 neutral-current DIS above Q² of 10,
+radiative"), and returns the configurations that answer it, ranked
+(`swf_epicprod/jev_like.py`). Word overlap narrows the catalog to 60
+candidates; Jev scores each on one rubric, ascending: not what the
+request asks for; related physics; the requested process at a different
+beam; the requested process and beam at a different range or sample
+variant; the request apart from the generator version, radiative setting
+or beam-effects variant; exactly what the request asks for. A catalog
+with no configuration for the request says so by ranking everything
+below a match.
+
+The click posts the words (`/pcs/find/jev/`); words ranked within the
+week are answered from the store (`jev_like:<key>`, keyed by the
+normalized words). Otherwise the production-operations agent ranks them
+(doer `jev_like`, about 0.5 s and $0.0004), stores the answer and
+publishes `jev_like_ready`; the page, which opened a short-lived stream
+on the click with a bounded poll behind it, reads the stored answer
+(`/pcs/find/jev/<key>/`). The web tier makes no call to Jev and holds no
+key. A session may ask 60 times in ten minutes.

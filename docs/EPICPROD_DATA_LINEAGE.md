@@ -293,7 +293,10 @@ search corpus is a cached product built from local state; the render
 path makes no Rucio call. The page's second action opens the Brains
 dialog — an interactive conversation with the DISpatcher engine over
 the production toolset (`EPICPROD_LLM_OPERATIONS.md` § Find Data
-Brains Dialog).
+Brains Dialog). Its third, experimental, ranks the physics
+configurations that answer the bar's words with Jev, and each produced
+dataset's row links to its configuration's nearest configurations
+(`JEV.md`).
 
 The **Storage exceptions page** (`/pcs/storage/<listing>/`, under the
 Data menu) lists what is wrong with placed data in the catalog from the

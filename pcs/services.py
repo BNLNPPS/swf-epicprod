@@ -7193,6 +7193,37 @@ def brains_query_request(*, conversation_id, username, message,
             'Brains is unreachable (queue send failed).', status=503)
 
 
+def jev_like_request(*, text, created_by='web user'):
+    """Ask for the configurations matching a request in plain words
+    (docs/JEV.md, Plain-language search). Served from the stored answer
+    when the same words were ranked within the week; otherwise publishes
+    jev_like to the prod-ops agent, which ranks them with Jev, stores the
+    answer and announces jev_like_ready on the relay topic. Returns
+    {'key', 'answer' or None}. Raises ServiceError on an empty query or an
+    unreachable queue."""
+    import json as _json
+    from swf_epicprod import jev_like
+    words = jev_like.normalized(text)
+    if not words:
+        raise ServiceError('empty query', status=400)
+    key = jev_like.key_for(words)
+    answer = jev_like.stored(key)
+    if answer and not answer.get('error'):
+        return {'key': key, 'answer': answer}
+    msg = {'msg_type': 'jev_like', 'namespace': 'prodops', 'text': words,
+           'key': key, 'created_by': created_by}
+    from monitor_app.activemq_connection import ActiveMQConnectionManager
+    try:
+        triggered = ActiveMQConnectionManager().send_message(
+            '/queue/epicprod.ops', _json.dumps(msg))
+    except Exception as e:
+        raise ServiceError(f'Could not reach the prod-ops agent queue: {e}', status=503)
+    if not triggered:
+        raise ServiceError('Jev search could not be queued (ops-agent queue unreachable).',
+                           status=503)
+    return {'key': key, 'answer': None}
+
+
 def brains_event_request(*, conversation_id, username, query):
     """Publish an applied-search event into a Brains dialog's durable
     narrative. Record-only on the bot side — no LLM run. Raises

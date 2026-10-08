@@ -65,6 +65,8 @@ urlpatterns = [
 
     # Datasets
     path('find/', views.find_data, name='find_data'),
+    path('find/jev/', views.find_jev_post, name='find_jev_post'),
+    path('find/jev/<str:key>/', views.find_jev_result, name='find_jev_result'),
     path('find/brains/', views.find_brains_post, name='find_brains_post'),
     path('find/brains/event/', views.find_brains_event,
          name='find_brains_event'),
