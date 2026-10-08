@@ -44,7 +44,11 @@ during a wave of finishing jobs is what the stash covers.
   agent's timeout) leaving the rest to the next pass, which skips what
   went home (2026-09-18: 41,780 entries after the JLab outage, at about
   2.5 files a second). Nothing is copied and nothing is removed. A file
-  that will not register keeps its entry and is tried again on later
+  the storage answers is not there is settled as missing at first sight:
+  its upload never completed, it is an undelivered output owed a residual
+  rerun, and retrying it would only repeat the report. A storage probe
+  that does not answer either way is not an absence and is retried. A
+  file that will not register keeps its entry and is tried again on later
   passes, eight times at most, with its reason kept in the drain's
   state file beside the storage store. An output under `/TEST/` carries a seven-day lifetime
   once registered, as the payload canaries' do. `--entry <logical name>`

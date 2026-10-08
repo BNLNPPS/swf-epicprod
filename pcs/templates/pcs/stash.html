@@ -36,7 +36,7 @@
                 <td>{{ e.stashed_as }}</td>
                 <td>{{ e.owes }}</td>
                 <td>{{ e.reason }}</td>
-                <td class="{% if e.outcome == 'home' %}finished_fill{% elif e.outcome == 'failed' %}failed_fill{% endif %}">{% if e.outcome == 'home' %}registered{% elif e.outcome == 'failed' %}failed{% else %}waiting{% endif %}</td>
+                <td class="{% if e.outcome == 'home' %}finished_fill{% elif e.outcome == 'failed' or e.outcome == 'missing' %}failed_fill{% endif %}">{% if e.outcome == 'home' %}registered{% elif e.outcome == 'missing' %}not at the storage{% elif e.outcome == 'failed' %}failed{% else %}waiting{% endif %}</td>
                 <td>{{ e.attempts }}</td>
                 <td>{% if e.last_attempt %}<span data-relative-time="{{ e.last_attempt }}">{{ e.last_attempt }}</span>{% endif %}</td>
                 <td>{{ e.last_error }}</td>
