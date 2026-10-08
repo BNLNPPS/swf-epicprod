@@ -221,6 +221,56 @@ designed as dashboard input.
   ([EPICPROD_ASSESSMENTS_V1.md](EPICPROD_ASSESSMENTS_V1.md) carries the
   notice contract).
 
+## The live watch
+
+The channel `epicprod-live` carries findings, resolutions, operator
+actions, assessments, arrivals and the failures that matter; nothing in
+the campaign assessments judges the channel itself. On 2026-10-08, 45 of
+its 58 posts in a day were maintenance passes, and a stash failure that
+lost an output every few hours flipped between partial and recovered
+eighteen times without anyone acting on it. The live watch is a fourth
+assessment kind on the same harness that watches both: what reaches the
+channel that does not belong there, and which failures keep coming back
+unresolved.
+
+- **Evidence** (`swf_epicprod/livewatch/evidence.py`): the channel's
+  posts over the last 24 hours, read with the assessment bundle's reader,
+  those in the four-hour window marked; the action record's failure
+  records over seven days grouped by action, component and cause (a cause
+  is the record's reason with its paths, ids and counts folded, and its
+  key reads the cause's opening, since reasons are cut at 300 characters
+  when recorded), with counts over 24 hours and 7 days, distinct days,
+  subjects and examples; per action and component, how often a failure
+  was followed by a success in 24 hours; and the publication policy in
+  force (`monitor_app/live_notices.py`). Maintenance passes, which the
+  channel no longer shows, are in the record and so in the evidence.
+- **Floor** (`spec.floor`, raise-only): `attention` when one cause fails
+  three or more times in 24 hours, on three or more distinct days of
+  seven, or when an action fails and then recovers three or more times in
+  24 hours. The model must judge every group the floor names.
+- **Judgment** (`spec.SYSTEM_PROMPT`, schema version 1): noise (posts
+  that do not belong, with the selection change that keeps them off);
+  recurring problems, each judged `real_problem`, `expected`,
+  `known_and_handled` (a channel post covers it, cited) or `unresolved`,
+  a real problem carrying a draft finding a person could post; and
+  posts the channel should have carried and did not.
+- **Run**: every four hours by cron enqueue of the ops agent's
+  `live_watch` handler (`scripts/live-watch-trigger.py`); corun
+  definition `live_watch` (`swf_epicprod.livewatch.bootstrap`), Codex Sol
+  at xhigh, thirty-minute worker timeout, the run within fifteen minutes;
+  the completion callback routes to `live_watch_completed`
+  (`scripts/live-watch-enforce.py`): validation, one repair run,
+  quarantine on a second failure.
+- **Where it lands**: every accepted run is the cached product
+  `live_watch` (the latest report) and a quiet `live_watch` action. A run
+  is registered as an assessment (subject `live_channel`,
+  `epicprod-live`) and its action marked `notify` for the Capcom feed only
+  when what it found changed from the last registered run: a new verdict,
+  a new real problem, new noise, or the return to clean after a
+  registered finding. The assessments page carries changes, not every
+  run. Only a changed `alarm` reaches the channel; a failed trigger
+  reaches it on first sight, as any automated failure.
+
 ## Implementation Plan
 
 The concrete v1 plan — workstreams, schema, prompt templates, sequencing —
