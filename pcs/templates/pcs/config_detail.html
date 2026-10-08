@@ -77,6 +77,34 @@
         </div>
     </div>
 
+    <div class="card mb-4" id="like-this-one">
+        <div class="card-header"><strong>Configurations like this one</strong>
+            <span class="badge bg-warning text-dark ms-2" title="An experiment in ranking with a decision model; the order is a suggestion, not a record">experimental</span>
+            <span class="text-muted ms-2">nearest in physics first, ranked by <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">Jev</a> (TypeSafe AI){% if neighbors.at %}, <span data-relative-time="{{ neighbors.at }}">{{ neighbors.at }}</span>{% endif %}</span>
+        </div>
+        <div class="card-body">
+            {% if neighbors.rows %}
+            <table class="table table-striped table-bordered table-sm align-middle w-auto mb-1 swf-sortable" data-swf-pin-columns="0">
+                <thead><tr><th>Rank</th><th>Configuration</th><th>How it differs</th><th>What it is</th><th title="Jev's probability-weighted level on the rubric, 0 unrelated to 5 the same configuration">Score</th></tr></thead>
+                <tbody>
+                {% for n in neighbors.rows %}
+                <tr>
+                    <td>{{ forloop.counter }}</td>
+                    <td><a href="{% url 'pcs:pcs_config_detail' label=n.label %}">{{ n.label }}</a></td>
+                    <td>{% if n.duplicate %}<strong>same configuration (possible duplicate)</strong>{% else %}{{ n.level }}{% endif %}</td>
+                    <td>{{ n.text }}</td>
+                    <td title="confidence {{ n.confidence|floatformat:2 }}">{{ n.score|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <div class="text-muted">Candidates are the 60 configurations sharing the most words with this one; Jev places each on one scale: other variant (same physics, beam and range), other range, other beam, related physics, unrelated.</div>
+            {% else %}
+            <span class="text-muted">Not ranked yet; the ranking runs nightly.</span>
+            {% endif %}
+        </div>
+    </div>
+
     <div class="card mb-4">
         <div class="card-header"><strong>Editions</strong>
             <span class="text-muted ms-2">this configuration × campaign</span>

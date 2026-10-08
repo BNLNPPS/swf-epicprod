@@ -3167,7 +3167,33 @@ def pcs_config_detail(request, label):
         'requests': sorted(requests_seen.values(), key=lambda r: r.pk),
         'known_labels': known_labels,
         'history': history,
+        'neighbors': _config_neighbors(config.label),
     })
+
+
+def _config_neighbors(label):
+    """Configurations like this one, as the agent last ranked them with
+    Jev (docs/JEV.md, Neighbours): read from the stored product, never
+    computed here. None when this configuration has not been ranked."""
+    from swf_epicprod import config_neighbors as cn
+    from swf_epicprod.jev import CITATION
+    entry = (cn.stored().get('computed') or {}).get(label)
+    if not entry:
+        return {'rows': [], 'citation': CITATION}
+    levels = cn.SHORT_LEVELS
+    labels = [n['label'] for n in entry.get('neighbors') or []]
+    configs = {pc.label: pc for pc in PhysicsConfig.objects.filter(label__in=labels)
+               .select_related('physics_tag')}
+    rows = []
+    for n in entry.get('neighbors') or []:
+        pc = configs.get(n['label'])
+        if pc is None:
+            continue
+        rows.append({'label': n['label'], 'text': cn.config_text(pc),
+                     'level': levels[n['level']] if 0 <= n['level'] < len(levels) else '',
+                     'score': n['score'], 'confidence': n['confidence'],
+                     'duplicate': n['level'] == len(levels) - 1})
+    return {'rows': rows, 'at': entry.get('at'), 'citation': CITATION}
 
 
 def _plan_embed_pc_prefixes(campaign):

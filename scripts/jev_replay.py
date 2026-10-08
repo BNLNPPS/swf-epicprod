@@ -31,13 +31,9 @@ tokens are free); TypeSafe's answer reports tokens, not cost.
 
 import argparse
 import json
-import math
 import os
-import re
 import sys
 import time
-import urllib.error
-import urllib.request
 from collections import Counter
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'swf_monitor_project.settings')
@@ -47,57 +43,20 @@ import django  # noqa: E402
 django.setup()
 
 from pcs.models import Dataset, PhysicsConfig, ProdTask, ProdRequest, Questionnaire  # noqa: E402
+from swf_epicprod.config_neighbors import Index  # noqa: E402
+from swf_epicprod.jev import MAX_CHOICE_OPTIONS, JevError, decide  # noqa: E402
 
-URL = 'https://api.typesafe.ai/v1/systemone'
-MODEL = 'jev-latest'
-USD_PER_INPUT_TOKEN = 42e-9
-MAX_OPTIONS = 255
 BANDS = ((0.9, 1.01), (0.5, 0.9), (0.0, 0.5))
-TOKEN_RE = re.compile(r'[a-z0-9]+(?:\.[0-9]+)*')
 INSTRUCTIONS = ('Which ePIC simulation physics configuration does this production '
                 'request ask for? Match the physics process, generator and version, '
                 'beam energies and species, kinematic range (Q2, angle, momentum) '
                 'and sample variant.')
 
 
-def tokens(text):
-    return TOKEN_RE.findall(str(text or '').lower())
-
-
-def pc_text(pc):
-    summary = pc.summary() if callable(getattr(pc, 'summary', None)) else getattr(pc, 'summary', '')
-    return ' | '.join(str(x) for x in (summary, pc.sample_name, pc.evgen_display,
-                                       pc.config_key) if x)
-
-
-def build_index(pcs):
-    docs = {pc.label: pc_text(pc) for pc in pcs}
-    df = Counter()
-    toks = {}
-    for label, text in docs.items():
-        toks[label] = set(tokens(text))
-        df.update(toks[label])
-    n = len(docs)
-    idf = {t: math.log((n + 1) / (c + 1)) + 1.0 for t, c in df.items()}
-    return docs, toks, idf
-
-
-def candidates(query, docs, toks, idf):
-    q = set(tokens(query))
-    ranked = sorted(docs, key=lambda label: -sum(idf.get(t, 0) for t in q & toks[label]))
-    return ranked[:MAX_OPTIONS]
-
-
-def ask(key, state, options, docs):
-    body = {'model': MODEL, 'state': state,
-            'questions': {'configuration': {
-                'type': 'choice', 'instructions': INSTRUCTIONS,
-                'criteria': {label: docs[label] for label in options}}}}
-    req = urllib.request.Request(URL, data=json.dumps(body).encode(),
-                                 headers={'Authorization': f'Bearer {key}',
-                                          'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        return json.loads(resp.read().decode())
+def ask(state, options, index):
+    return decide(state, {'configuration': {
+        'type': 'choice', 'instructions': INSTRUCTIONS,
+        'criteria': {label: index.text[label] for label in options}}})
 
 
 def label_of_anchor(anchor):
@@ -152,7 +111,7 @@ def main():
     if not key:
         print('TYPESAFE_API_KEY is not set', file=sys.stderr)
         return 2
-    docs, toks, idf = build_index(list(PhysicsConfig.objects.all()))
+    index = Index(list(PhysicsConfig.objects.select_related('physics_tag')))
     items = request_items if args.set == 'requests' else questionnaire_items
     out = open(args.out, 'w') if args.out else None
     tally = Counter()
@@ -161,24 +120,20 @@ def main():
     for i, (qid, state, targets, query) in enumerate(items(args.limit)):
         if args.limit and i >= args.limit:
             break
-        options = candidates(query, docs, toks, idf)
+        options = index.ranked(query, MAX_CHOICE_OPTIONS)
         in_candidates = bool(targets & set(options))
         # The baseline Jev is measured against: token overlap's own top pick.
         baseline_agree = options[0] in targets
         try:
-            resp = ask(key, state, options, docs)
-        except urllib.error.HTTPError as exc:
-            print(f'{qid}: HTTP {exc.code} {exc.read().decode()[:300]}', file=sys.stderr)
-            tally['http_error'] += 1
-            continue
-        except (OSError, ValueError) as exc:
-            print(f'{qid}: {type(exc).__name__}: {exc}', file=sys.stderr)
+            answers, usage = ask(state, options, index)
+        except JevError as exc:
+            print(f'{qid}: {exc}', file=sys.stderr)
             tally['error'] += 1
             continue
-        answer = (resp.get('answers') or {}).get('configuration') or {}
+        answer = answers.get('configuration') or {}
         choice, conf = answer.get('choice'), float(answer.get('confidence') or 0.0)
-        input_tokens = int((resp.get('usage') or {}).get('input_tokens') or 0)
-        cost += input_tokens * USD_PER_INPUT_TOKEN
+        input_tokens = int(usage.get('input_tokens') or 0)
+        cost += usage['cost_usd']
         agree = choice in targets
         b = band(conf)
         tally[(b, 'n')] += 1
@@ -195,7 +150,7 @@ def main():
         if not agree:
             disagreements.append(rec)
         time.sleep(0.05)
-    print(f'set {args.set}: {tally["n"]} answered, errors {tally["http_error"] + tally["error"]}, '
+    print(f'set {args.set}: {tally["n"]} answered, errors {tally["error"]}, '
           f'reference link among the candidates {tally["in_candidates"]}/{tally["n"]}, '
           f'cost ${cost:.4f}')
     n_all = max(tally['n'], 1)
