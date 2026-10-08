@@ -5,6 +5,7 @@ import os
 import sys
 import json
 import logging
+import time
 from typing import Dict, Any
 from rucio.client.uploadclient import UploadClient
 from rucio.client import Client
@@ -24,6 +25,10 @@ from jsonschema import validate as json_validate, ValidationError
 # jobs of 2026-09-21 exited pending with no file anywhere).
 PENDING_EXIT = 81
 NOT_HOME_EXIT = 1
+# The preserve's verification: tries and the wait between them when the
+# door does not answer.
+VERIFY_TRIES = 3
+VERIFY_WAIT_S = 20
 # The output dataset does not exist: it is created at submission
 # (docs/RUCIO_REGISTRATION_CONTRACT.md § 2), so a job that finds none was
 # not submitted through that path. A code between this script and run.sh,
@@ -454,11 +459,20 @@ def preserve(file_path: str, did_name: str, door: str, prefix: str, timeout: int
             logger.error("preserve: xrdcp to %s/%s exited %s: %s", door, path, copy.returncode,
                          (copy.stderr or '').strip()[-400:])
             return None
-        try:
-            stored = stored_at(door, path)
-        except Exception as exc:  # noqa: BLE001
-            stored = None
-            logger.error("preserve: verification of %s failed: %s", path, exc)
+        # A door that does not answer the verification is asked again: the
+        # copy has completed, and a slow stat is not a missing file
+        # (job 4601765, 2026-10-08: one 120 s stat timeout sent a home file
+        # down the fallback, whose cleanup tombstoned it).
+        stored = None
+        for attempt in range(VERIFY_TRIES):
+            try:
+                stored = stored_at(door, path)
+                break
+            except Exception as exc:  # noqa: BLE001
+                logger.error("preserve: verification of %s failed (try %d of %d): %s",
+                             path, attempt + 1, VERIFY_TRIES, exc)
+                if attempt + 1 < VERIFY_TRIES:
+                    time.sleep(VERIFY_WAIT_S)
         if stored is None or stored[0] != size or (stored[1] and stored[1] != adler):
             logger.error("preserve: %s does not verify (door %s, local %s bytes adler32 %s)",
                          path, stored, size, adler)
@@ -740,7 +754,14 @@ if __name__ == "__main__":
                 logger.warning("this attempt's output registered under a derived name: %s", diverted)
                 _write_marker('DIVERTED_OUT', diverted, logger)
             sys.exit(0)
-        logger.error("preserve-first could not home every output; falling back to the upload client")
+        # No fallback to the upload client here. It writes through the same
+        # door, so it cannot succeed where the preserve failed, and its
+        # failure cleanup tombstones the replica at the deterministic path:
+        # the path run.sh then stashes the output to, which Rucio's reaper
+        # later empties (job 4601765, 2026-10-08: a job finished with its
+        # output stashed and the file deleted). Not home: run.sh stashes.
+        logger.error("preserve-first could not home every output; handing the output to the stash")
+        sys.exit(NOT_HOME_EXIT)
 
     upload_client = UploadClient(logger=logger)
 

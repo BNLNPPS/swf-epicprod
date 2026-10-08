@@ -630,6 +630,22 @@ In order, each a committed step on the clone:
     missing merger exits 86 and a merged file short of its frames
     exits 87. The default adapter gives SignalBackgroundMerger the
     same command as before.
+21. **No fallback through the door that just failed** (2026-10-08,
+    payload 0.24.11). When the output RSE is the stash RSE, a preserve
+    that did not home the output fell back to the upload client. That
+    client writes through the same door, so it could not succeed where
+    the preserve failed; when the preserve had copied the file and only
+    its verification went unanswered, the client found the file present
+    and failed, and its cleanup set the replica unavailable and
+    tombstoned it. `run.sh` then stashed the output to the same
+    deterministic path, and Rucio's reaper deleted it there: the job
+    finished with its output reported stashed and no file at the
+    storage (job 4601765, task 40584: a 120 s stat timeout; the stash
+    drain found about three such outputs a day in early October).
+    The preserve now asks an unanswering door again, three times twenty
+    seconds apart, and a preserve that still does not home the output
+    exits not home, which `run.sh` stashes, with no upload-client
+    fallback and no tombstone.
 
 ## Multithreading
 
