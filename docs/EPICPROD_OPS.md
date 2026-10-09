@@ -575,9 +575,9 @@ A `wenauseic` cron enqueues `catalog_sync` for the ops agent nightly at 02:47:
 13 */4 * * * bash -lc 'source ~/.env && /opt/swf-monitor/current/.venv/bin/python /opt/swf-monitor/current/scripts/enqueue-ops-message.py storage_sweep --created-by four_hourly_cron' >> /opt/swf-monitor/shared/logs/storage-sweep-cron.log 2>&1
 ```
 
-The second line is the storage record's incremental pass, every four
-hours (STORAGE.md); the agent runs one storage pass at a time, and the
-doer records `skipped` when another pass holds the store.
+The second line is the storage record's pass, every four hours
+(STORAGE.md), outside the chain; the agent runs one storage pass at a
+time, and the doer records `skipped` when another pass holds the store.
 
 The chain runs credential expiry check → credential ping proposer →
 certificate ping proposer → PanDA sandbox keepalive (touches
@@ -600,8 +600,8 @@ group.EIC submissions → Rucio output snapshot → Rucio arrivals sweep →
 EVGEN assimilation → dataset definitions sweep (the
 simulation_campaign_datasets inventory, cost model, and completeness
 populations) → questionnaire match cache → progress refresh →
-file-events measure → delivery daily rebuild → storage sweep, the full
-pass (STORAGE.md) → campaign configuration proposer (a ping and its
+file-events measure → delivery daily rebuild → campaign configuration
+proposer (a ping and its
 remedy for every edition without a Standard Production configuration;
 swf-monitor PINGS.md), in order. The questionnaire automatch (LLM
 matching of requests to tasks, EPICPROD_QUESTIONNAIRE.md) was retired

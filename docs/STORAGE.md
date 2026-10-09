@@ -76,24 +76,27 @@ each.
   output records and the PanDA task status;
 - the stored files and datasets that have not yet settled.
 
-**Reads.** For each selected dataset, two calls: the per-RSE dataset
+**Reads.** For each selected dataset, the per-RSE dataset
 replica summary, which carries registered and available file counts,
 bytes, state, and the replica's creation and update times per RSE; and
 the dataset's replication rules, which carry the rule state, RSE
 expression, lock counts by OK, replicating and stuck, and the stuck and
-expiry times. For each selected file, its replica states by RSE, by DID
-in batches of a thousand at about a second per batch; on a file's first
-sight, the bulk metadata call the delivery rebuild already makes
-supplies its creation time, bytes and events attribute.
+expiry times; and, for a dataset with selected files, its content,
+which gives their attachment. For each selected file, its replica
+states by RSE, by DID in batches of a thousand at about a second per
+batch; on a file's first sight, the bulk metadata call the delivery
+rebuild already makes supplies its creation time, bytes and events
+attribute.
 
 **Settling.** A file settles when it holds an available replica on a
-disk RSE and every disk rule of its dataset is OK. A file still holding
-no available replica anywhere when the settling window has passed since
-its registration is recorded as a ghost and settles as one. A dataset
-settles when its producing task is final, or it has none in the task
-records, and every file in it has settled. Settled rows stay in the store and in the projection's counts
-and are not read again. The settling window is the SysConfig key
-`storage_settle_hours`.
+disk RSE and every disk rule of its dataset is OK. A file not settled
+when the settling window has passed since its registration settles as
+it stands, as a ghost if it holds no available replica anywhere. A
+dataset settles when its producing task is not running, or it has none
+in the task records, and every file in it has settled. Settled rows
+stay in the store and in the projection's counts and are not read
+again. The settling window is the SysConfig key `storage_settle_hours`,
+72 hours by default, since second copies by rule take about two days.
 
 **Scope.** Tape replicas are not read, rules whose expression names
 only tape RSEs are not followed, and a settled file is not read again
@@ -165,7 +168,7 @@ any source that failed to read, recorded in place.
   `account_files`); the account limit; the fill fraction, the account
   usage over the limit where the account figure is present, else the
   RSE-wide usage over the limit; and the usage record's time;
-- placed (gauge): files and bytes of production output that arrived
+- inventory (gauge): files and bytes of production output that arrived
   here, by replica state as last read; the same by campaign for the
   target campaigns with the remainder folded into `other`; and by
   root;
@@ -190,8 +193,8 @@ any source that failed to read, recorded in place.
 remainder folded):
 
 - files and bytes registered;
-- copies (gauge): settled files with one disk copy and with two or
-  more;
+- protection (gauge): files with one disk copy and with two or more,
+  and single-copy files older than the single-copy age;
 - unattached files and files without the events attribute;
 - datasets (gauge): total, open, empty, partial on every RSE, stalled
   (open, no arrival within the stalled threshold, producing task not
@@ -269,7 +272,7 @@ then backlogs and latencies, then state:
    over the stuck threshold; the backlog age as a small panel.
 4. *Ghosts* — the ghost population stacked by the grouping; appeared
    per interval beneath it.
-5. *Placed* — files or bytes placed, by replica state as last read,
+5. *Inventory* — files or bytes placed, by replica state as last read,
    stacked; the grouping selects campaign or root instead of state.
 6. *Rules* — locks replicating and stuck.
 7. *Capacity* — the fill fraction, where defined.

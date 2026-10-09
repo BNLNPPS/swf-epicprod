@@ -229,7 +229,7 @@ invokable on their own, so a single step can be rerun without the chain.
 | `rucio_arrivals_sweep` | `rucio-arrivals-sweep.py` | Detect new files landing in JLab Rucio. | 300 |
 | `evgen_rucio_update` | `import_evgen_rucio.py` | Assimilate the JLab Rucio EVGEN inventory into PCS. | 900 |
 | `evgen_register` | `register-evgen-rucio.py` | Register one EVGEN input directory in JLab Rucio: door listing, per-file checksums, and the Rucio writes. | 3600 |
-| `storage_sweep` | `storage-sweep.py` | The storage pass: placement state of production data on the JLab RSEs. Full pass nightly, incremental four-hourly. | 3600 |
+| `storage_sweep` | `storage-sweep.py` | The storage pass (STORAGE.md): production output on the JLab RSEs from registration until it settles, read as production activity selects. Four-hourly by cron enqueue. | 10800 |
 | `stash_drain` | `stash-drain.py` | Drain the failover stash, registering stashed outputs where they lie. | 1800 |
 
 ### Production record
@@ -378,8 +378,7 @@ doc does not duplicate them.
 `rucio_arrivals_sweep`, `epic_prod_past_import`, `file_events_measure`,
 `delivery_daily_rebuild` (the delivered-data daily record,
 CAMPAIGN_DELIVERY.md), `storage_sweep` (the storage record's pass,
-STORAGE.md: the nightly full pass as a `catalog_sync` chain step, the
-four-hourly incremental pass by cron enqueue, skipped while another pass
+STORAGE.md: four-hourly by cron enqueue, skipped while another pass
 holds the store), `campaign_config_propose` (the campaign configuration
 proposer: a ping and its remedy for every edition without a Standard
 Production configuration, through the AI proposal subsystem; swf-monitor
