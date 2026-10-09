@@ -267,11 +267,14 @@ unresolved.
   `live_watch` (the latest report) and a quiet `live_watch` action. A run
   is registered as an assessment (subject `live_channel`,
   `epicprod-live`) and its action marked `notify` for the Capcom feed only
-  when what it found changed from the last registered run: a new verdict,
-  a new real problem (by action and component; a new cause of an action
-  already judged a real problem is not a new problem), new noise, or the
-  return to clean after a registered finding. The assessments page carries changes, not every
-  run. Only a changed `alarm` reaches the channel; a failed trigger
+  when it is news (`spec.news`): a new verdict, the return to clean
+  included, or a real problem or noise action not named since that
+  verdict began. Real problems compare by action and component, so a new
+  cause of an action already judged a real problem is not news; a problem
+  that drops out while the verdict holds is not news either, since the
+  model's judgment of one cause can move between runs on the same
+  evidence. The assessments page carries news, not every run. Only a
+  newsworthy `alarm` reaches the channel; a failed trigger
   reaches it on first sight, as any automated failure.
 
 ## Implementation Plan

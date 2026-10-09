@@ -190,6 +190,23 @@ def issue_set(artifact):
     return {'verdict': artifact.get('verdict', 'ok'), 'noise': noise, 'real_problems': real}
 
 
+def news(found, episode):
+    """Whether a run is news against the episode: the verdict last
+    registered and every real problem and noise action named since that
+    verdict began. A new verdict is news, the return to ok included; so is
+    a real problem or noise action the episode has not named. One dropping
+    out is not, since the model's judgment of a cause can move between runs
+    on the same evidence. Pure; returns (news, the episode after this run)."""
+    if episode is None or found['verdict'] != episode.get('verdict'):
+        clean = found['verdict'] == 'ok' and (episode is None or episode.get('verdict') == 'ok')
+        return not clean, found
+    named_real = {k.split('~', 1)[0] for k in episode.get('real_problems') or []}
+    named_noise = set(episode.get('noise') or [])
+    new = bool(set(found['real_problems']) - named_real or set(found['noise']) - named_noise)
+    return new, dict(found, real_problems=sorted(named_real | set(found['real_problems'])),
+                     noise=sorted(named_noise | set(found['noise'])))
+
+
 def render_report(bundle, artifact):
     """The human report: the window and floor from the bundle, the
     judgment from the artifact, the generation report last."""
