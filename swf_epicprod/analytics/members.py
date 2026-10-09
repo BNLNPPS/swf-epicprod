@@ -490,7 +490,12 @@ def pwg_priority(campaign, window_start, window_end):
 
 
 def action_stream_activity(campaign, window_start, window_end):
-    """epicprod action-stream aggregate over the window, plus chain freshness."""
+    """epicprod action-stream aggregate over the window, plus chain freshness.
+
+    ``errors`` counts failed outcomes only (the shared FAILURE_OUTCOMES);
+    decision outcomes such as held, no_work and would_set are not failures.
+    """
+    from monitor_app.live_notices import FAILURE_OUTCOMES
     from monitor_app.models import AppLog
 
     rows = list(
@@ -509,7 +514,7 @@ def action_stream_activity(campaign, window_start, window_end):
         outcome = str(extra.get('outcome') or '')
         entry = by_action.setdefault(action, {'count': 0, 'errors': 0})
         entry['count'] += 1
-        if outcome and outcome != 'ok':
+        if outcome in FAILURE_OUTCOMES:
             entry['errors'] += 1
         subject_key = str(extra.get('subject_key') or '')
         is_campaign = (
@@ -527,7 +532,7 @@ def action_stream_activity(campaign, window_start, window_end):
             campaign_entry = target.setdefault(
                 action, {'count': 0, 'errors': 0})
             campaign_entry['count'] += 1
-            if outcome and outcome != 'ok':
+            if outcome in FAILURE_OUTCOMES:
                 campaign_entry['errors'] += 1
 
     sync = (
