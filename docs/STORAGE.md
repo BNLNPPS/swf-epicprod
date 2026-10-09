@@ -8,13 +8,15 @@ present moment and keeps no history of replica states, so a transfer
 backlog, a stuck rule, a file registered but never uploaded, or a
 campaign left on a single copy is visible only while it lasts and only
 to someone who looks. This document defines the storage record: a
-Snapper component that samples the placement state of production data
-on every RSE, the pass that maintains it, the view that shows the data
-lifecycle per RSE, and the retrieval surface that serves the listings
-behind every count. It follows the delivered-data record
-([CAMPAIGN_DELIVERY.md](CAMPAIGN_DELIVERY.md)), which records what a
-campaign delivered; this record covers where the data is, how it got
-there, and what is wrong with it.
+Snapper component that follows production output on the JLab RSEs from
+registration until it settles, the pass that maintains it, the view
+that shows that lifecycle per RSE, and the retrieval surface that
+serves the listings behind every count. It follows the delivered-data
+record ([CAMPAIGN_DELIVERY.md](CAMPAIGN_DELIVERY.md)), which records
+what a campaign delivered; this record covers where production output
+landed, how it got there, and what is wrong with it. Deletions, lost
+copies and tape migration are handled by data management and are
+outside the record.
 
 The Snapper concepts, the SWF deployment, and the display laws are in
 the snapper-ai documentation
@@ -34,68 +36,82 @@ folding.
 Registration begins with the questions the record must answer
 (DESIGN.md, invariant 6):
 
-- At an instant, how much production data was on each RSE, in what
-  replica state, for which campaign and data root.
+- At an instant, how much production output had arrived at each RSE,
+  in what replica state, for which campaign and data root.
 - Between two instants, what arrived at each RSE, as first copies from
-  jobs and as replicas by rule; what transfers completed; what was
-  deleted.
+  jobs and as replicas by rule; what transfers completed.
 - What was waiting: transfers in flight and their age, rules stuck,
   datasets partially placed, datasets whose arrivals stopped while
   their task still ran.
 - How fast the pipeline ran: job end to registration, registration to
-  availability, first copy to second copy, disk to tape.
-- How well each campaign was protected: single-copy files, disk-only
-  and tape-only data, the archival backlog.
+  availability, first copy to second copy.
+- How many disk copies each campaign's output settled with.
 - What was wrong in the catalog: files registered with no available
   replica anywhere (ghosts), files attached to no dataset, files
   without the event count the registration contract requires; and
-  whether those populations shrink between campaigns or grow.
+  whether those populations grow or shrink from one campaign to the
+  next.
 
-The live record refreshes every four hours, with a full reconciliation
-nightly. Nothing it watches changes by the hour, uploads trickle,
-rules progress over hours to days, ghosts sit until an administrator
-acts, and the pass is paced to cost the catalog little.
+The record refreshes every four hours. Each pass reads only what
+production changed since the previous pass, and an output is not read
+again once it has settled.
 
 ## The pass
 
 The pass is the owner's maintenance of the projection (DESIGN.md,
-invariants 1 and 4): it reads the catalog, keeps its own per-file and
-per-dataset state, and publishes the bounded component. It is a crawl:
-one dataset location at a time, two in flight, a pause after every
-catalog call, and never more than one location's file names in hand,
-so its memory stays at the size of one dataset whatever the size of
-the inventory (about 8.8 million files under the roots). Every row a
-pass touches is stamped with the pass, which makes the gone check a
-query per location and an interrupted pass resumable from where it
-stopped. A pass holds the store only while the process that opened it
-is alive, so a pass killed with its process never blocks the next one,
-which notes the abandonment and redoes the interval; a signalled pass
-records the interruption on its row. The counters a location's
-transitions accrue are written in the transaction that commits its
-rows, so an interruption loses nothing observed. It reads at three
-tiers, each from a call the
-residual-rerun and delivery paths already use against JLab Rucio.
+invariants 1 and 4), built from changes. Production activity selects
+what is read, and JLab Rucio supplies the values. Nothing is listed by
+location and a settled output is never read again, so the cost of a
+pass follows the volume of production since the previous pass, not
+the size of the inventory. Every call is one the residual-rerun and
+delivery paths already make against JLab Rucio, with a pause after
+each.
 
-**Dataset tier**, every dataset under the production roots (about 6,400
-today under `/RECO`, `/FULL` and `/EVGEN`): the per-RSE dataset replica
-summary, which carries registered and available file counts, bytes,
-state, and the replica's creation and update times per RSE; and the
-dataset's replication rules, which carry the rule state, RSE
+**Selection.** A pass reads three sets:
+
+- the files registered since the previous pass, named by the
+  catalog's created-after search under each production root;
+- the output datasets of the production tasks that are running or
+  reached a final state within the settling window, from the task
+  output records and the PanDA task status;
+- the stored files and datasets that have not yet settled.
+
+**Reads.** For each selected dataset, two calls: the per-RSE dataset
+replica summary, which carries registered and available file counts,
+bytes, state, and the replica's creation and update times per RSE; and
+the dataset's replication rules, which carry the rule state, RSE
 expression, lock counts by OK, replicating and stuck, and the stuck and
-expiry times. Two calls per dataset. This tier alone yields transfers
-in flight, stuck rules, partial datasets and per-RSE first arrivals.
+expiry times. For each selected file, its replica states by RSE, by DID
+in batches of a thousand at about a second per batch; on a file's first
+sight, the bulk metadata call the delivery rebuild already makes
+supplies its creation time, bytes and events attribute.
 
-**File tier**, the target campaigns (the current, last and producing
-campaigns the delivery record covers) and every dataset with no RSE
-holding all of its files available: the file DIDs from the name search per campaign,
-which lists files whether or not they are attached to a dataset, and
-their replica states by RSE from the replica listing in all states, by
-DID in batches of a thousand at about a second per batch. The bulk
-metadata call the delivery rebuild already makes supplies DID creation
-time, bytes and the events attribute.
+**Settling.** A file settles when it holds an available replica on a
+disk RSE and every disk rule of its dataset is OK. A file still holding
+no available replica anywhere when the settling window has passed since
+its registration is recorded as a ghost and settles as one. A dataset
+settles when its producing task is final, or it has none in the task
+records, and every file in it has settled. Settled rows stay in the store and in the projection's counts
+and are not read again. The settling window is the SysConfig key
+`storage_settle_hours`.
 
-**RSE tier**: RSE-wide usage per RSE (used, total, file count) read as
-the public `eicread` account; the production account's limits per RSE,
+**Scope.** Tape replicas are not read, rules whose expression names
+only tape RSEs are not followed, and a settled file is not read again
+to learn whether it was later deleted or lost. The record therefore
+counts what production placed and how it settled; what an RSE holds
+today is read from Rucio directly.
+
+A pass is resumable. Every row it touches is stamped with the pass, so
+an interrupted pass continues from where it stopped. A pass holds the
+store only while the process that opened it is alive, so a pass killed
+with its process never blocks the next one, which notes the
+abandonment and redoes the interval; a signalled pass records the
+interruption on its row. The counters a dataset's transitions accrue
+are written in the transaction that commits its rows, so an
+interruption loses nothing observed.
+
+**RSE tier**, every pass, a few calls: RSE-wide usage per RSE (used,
+total, file count) read as the public `eicread` account; the production account's limits per RSE,
 readable by any account; and the production account's own used bytes and
 files per RSE, which JLab serves only to the account itself, read as
 `eicprod` through the x509 proxy the agent holds (EVGEN_X509_PROXY), the
@@ -108,41 +124,16 @@ on with the RSE-wide usage.
 The pass keeps its own store, a SQLite database beside the file-events
 store: one row per file with its campaign, root, dataset path, bytes,
 creation time, replica states by RSE, the time each replica was first
-observed available, attachment, and event count; one row per dataset
-with its per-RSE summary and rules; one row per pass with its mode,
-coverage and duration. Transitions are derived by comparing a file's
-states with its previous row, so appearance, completion, deletion and
-clearance are observed at pass cadence; a file's replica carries no
-timestamp of its own, and a copying replica's age is measured from the
-DID's creation, an upper bound.
-
-Three modes:
-
-- **census**, once, over every file under the roots, establishing the
-  complete inventory and the initial ghost population;
-- **full**, nightly as a `catalog_sync` chain step, over the file tier
-  for the target campaigns (and the EVGEN root), which is where files
-  are marked gone;
-- **incremental**, every four hours, by file name and never by listing
-  a location: the files registered since the previous pass (the
-  created-after search names them) and the target campaigns' stored
-  files holding a non-available replica on a disk RSE, the transient
-  states a few hours can change; tape replicas unavailable as their
-  steady state, and marking files gone, are left to the nightly full
-  pass. Every open, partially placed, or non-OK-ruled dataset of the
-  target campaigns has its summary, rules and locks refreshed without a
-  file listing, two light calls per dataset, so rule progress reads
-  each pass. The dataset tier for the rest of the inventory rides the
-  incremental passes too, a sixth of the datasets per pass, the least
-  recently checked first, so every dataset's summary and rules are at
-  most a day old (`DATASET_TIER_SLICES`). The crawl is single-threaded
-  with a two-second pause after every catalog call, well under one
-  call a second; at that pace the whole dataset tier is about six
-  hours (6,361 datasets on 2026-09-13), which is why it is spread over
-  the day rather than run as one nightly step: the nightly full pass
-  carried it from 2026-09-06 to 09-13 and was killed at its hour's
-  timeout every night, so the tier had not been refreshed since the
-  census.
+observed available, attachment, event count, and the time it settled;
+one row per dataset with its per-RSE summary, rules and settling time;
+one row per pass with its coverage and duration. The store's initial
+inventory, a census of every file under the production roots, is the
+origin of its counters; rows outside the selection are kept as
+recorded and are not read again.
+Transitions are derived by comparing a file's states with its previous
+row, so appearance and completion are observed at pass cadence; a
+file's replica carries no timestamp of its own, and a copying
+replica's age is measured from the DID's creation, an upper bound.
 
 The job join: every production job records its manifest row as a
 pseudo-input file named by the sequence number, and an output file's
@@ -163,21 +154,21 @@ make this record large live in the pass's store and are served live.
 
 Each publication covers the interval `(previous source time, now]`.
 
-**Interval and pass** (kind: window; provenance). The interval; the pass
-mode, the campaigns covered, files and datasets checked, duration, and
+**Interval and pass** (kind: window; provenance). The interval; the
+campaigns covered, files and datasets checked, duration, and
 any source that failed to read, recorded in place.
 
-**Per RSE** (bounded map; every JLab RSE retained, 16 at most):
+**Per RSE** (bounded map; every JLab disk RSE retained, 16 at most):
 
-- type, disk or tape;
 - capacity (gauge): RSE-wide used and total bytes and file count; the
   production account's own used bytes and files (`account_used`,
   `account_files`); the account limit; the fill fraction, the account
   usage over the limit where the account figure is present, else the
   RSE-wide usage over the limit; and the usage record's time;
-- inventory (gauge): files and bytes by replica state; the same by
-  campaign for the target campaigns with the remainder folded into
-  `other`; and by root;
+- placed (gauge): files and bytes of production output that arrived
+  here, by replica state as last read; the same by campaign for the
+  target campaigns with the remainder folded into `other`; and by
+  root;
 - datasets (gauge): total, complete, partial, empty and unavailable on
   this RSE, from the dataset replica summaries;
 - rules (gauge): rules by state whose expression names this RSE; locks
@@ -193,26 +184,22 @@ any source that failed to read, recorded in place.
   landed here per compute site, files and bytes, attributed through
   the job join;
 - flow (cumulative counters): arrived files and bytes, split into first
-  copies and later replicas; transfers completed; files and bytes
-  deleted; ghosts appeared and cleared; bad replicas appeared.
+  copies and later replicas; transfers completed; ghosts appeared.
 
 **Per campaign** (bounded map of the target campaigns, 8 at most, the
 remainder folded):
 
 - files and bytes registered;
-- protection (gauge): single-copy files, two or more copies; disk-only,
-  tape-only, disk and tape;
-- unattached files, files without the events attribute, archival
-  backlog bytes (on disk, not on tape);
+- copies (gauge): settled files with one disk copy and with two or
+  more;
+- unattached files and files without the events attribute;
 - datasets (gauge): total, open, empty, partial on every RSE, stalled
   (open, no arrival within the stalled threshold, producing task not
   final);
-- flow (cumulative counters): arrived files and bytes, archived files
-  and bytes, jobs finished;
+- flow (cumulative counters): arrived files and bytes, jobs finished;
 - latency (assessment over the interval's arrivals): job end to
   registration, registration to availability, first to second copy,
-  disk to tape, each as count, median and 90th percentile, at pass
-  resolution.
+  each as count, median and 90th percentile, at pass resolution.
 
 **Exceptions** (bounded listings): ghosts as name, RSE, state, campaign,
 bytes and creation time; stuck rules as dataset, RSE, stuck time and
@@ -241,16 +228,16 @@ into the store. The backfill script
 store and writes `backfill-storage-v1` snaps on a daily grid at
 Eastern midnight, thirty days by default, carrying the arrived counters
 per RSE (arrived, first copies, replicas) and per target campaign
-(arrived, archived) with the census's absolute origin, on the PanDA
+(arrived) with the census's absolute origin, on the PanDA
 counter precedent. It attributes a file's first copy by the pass's own
 rule, its sole RSE or else the RSE whose dataset replica was created
 first, at the file's creation time; each further replica at the later
-of the file's creation and that dataset replica's creation; the
-archive at the first tape replica. Its dry run prints the seam, the
+of the file's creation and that dataset replica's creation. Its dry
+run prints the seam, the
 reconstructed totals at the last instant against the census counters,
 which differ by the files that arrived between that midnight and the
-census. Transfers, deletions, ghost appearance and clearance, ages and
-latencies do not reconstruct; those families begin at the census, and
+census. Transfers, ghost appearance, ages and latencies do not
+reconstruct; those families begin at the census, and
 the view states the record's start.
 
 ## The Storage view
@@ -277,20 +264,18 @@ then backlogs and latencies, then state:
 
 1. *Arrivals* — first copies and replicas per interval, from the flow
    counters, binned at render.
-2. *Transfers and deletions* — completed transfers and deletions per
-   interval.
+2. *Transfers* — completed transfers per interval.
 3. *Backlog* — copying files stacked by the grouping, with the count
    over the stuck threshold; the backlog age as a small panel.
-4. *Ghosts* — the ghost population stacked by the grouping; appeared and
-   cleared per interval beneath it.
-5. *Inventory* — files or bytes by replica state, stacked; the grouping
-   selects campaign or root instead of state.
+4. *Ghosts* — the ghost population stacked by the grouping; appeared
+   per interval beneath it.
+5. *Placed* — files or bytes placed, by replica state as last read,
+   stacked; the grouping selects campaign or root instead of state.
 6. *Rules* — locks replicating and stuck.
 7. *Capacity* — the fill fraction, where defined.
 
-**Scope-level families**: campaign protection as single-copy, disk-only,
-tape-only and disk-and-tape stacks per campaign; the archival backlog;
-catalog quality as ghosts, unattached files and files without an event
+**Scope-level families**: disk copies per campaign, single and
+multiple; catalog quality as ghosts, unattached files and files without an event
 count per campaign; the arrival yield, files arrived over jobs finished
 per campaign, derived at series time; latency medians per campaign as
 small panels; and the stage-out matrix, first copies per compute site,
@@ -358,23 +343,22 @@ does.
   exceptions page (`pcs/views.py`); `scripts/backfill_storage_arrivals.py`.
 - swf-monitor: `monitor_app/snapper_storage.py` (registration and
   publication, beside the delivery maintainer); the doer
-  `scripts/storage-sweep.py` with `--census`, `--full` and the default
-  incremental mode, `--resume` for an interrupted pass and
-  `--publish-only` to publish the store's last completed pass without a
-  crawl, invoked as the `storage_sweep` chain step after the
-  delivery rebuild and by a cron enqueue of the `storage_sweep` message
-  every four hours; provider additions in `snapper_providers.py` (curve
+  `scripts/storage-sweep.py`, one pass per run, with `--resume` for an
+  interrupted pass and `--publish-only` to publish the store's last
+  completed pass without reading the catalog, invoked by a cron enqueue
+  of the `storage_sweep` message every four hours; provider additions in `snapper_providers.py` (curve
   extraction under a `st` prefix family, the families, the focus view,
   the card); the card kind in `_snapper_cards.html`; the tool registry
-  entries for `epicprod_storage`; the SysConfig keys `storage_copying_stuck_hours`,
+  entries for `epicprod_storage`; the SysConfig keys
+  `storage_settle_hours`, `storage_copying_stuck_hours`,
   `storage_stalled_hours`, `storage_single_copy_warn_days`.
 - Store: `/data/wenauseic/swf-delivery/storage.sqlite`, beside the
   file-events store.
 - The series cache version bumps with the new curve vocabulary; the
   focus series cache takes the live 90-second class.
 - Order of delivery, each stage usable on its own: the census and the
-  store; the component and its publication on the chain and the
-  four-hourly cron; the view with its cut card; the retrieval tool; the arrivals
+  store; the component and its publication on the four-hourly cron;
+  the activity-guided pass; the view with its cut card; the retrieval tool; the arrivals
   backfill; detection.
 
 ## Related
