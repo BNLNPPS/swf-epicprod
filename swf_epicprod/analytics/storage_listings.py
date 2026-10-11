@@ -19,7 +19,7 @@ import logging
 import sqlite3
 
 from .storage import (DEFAULT_DB, NO_RSE, THRESHOLD_DEFAULTS, _parse_iso,
-                      _seconds_since, thresholds)
+                      _pass_alive, _seconds_since, thresholds)
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +41,18 @@ def _open_readonly(path):
 
 
 def _as_of(db):
-    """The last completed pass and any pass in progress."""
+    """The last completed pass and any pass in progress. An unfinished row
+    is in progress only while the process that opened it is alive, the
+    pass module's own rule; a row left by a dead process is abandoned."""
     completed = db.execute(
         'SELECT id, mode, started, finished, files_checked, datasets_checked'
         ' FROM passes WHERE finished IS NOT NULL ORDER BY id DESC LIMIT 1'
     ).fetchone()
     running = db.execute(
-        'SELECT id, mode, started FROM passes WHERE finished IS NULL'
-        ' ORDER BY id DESC LIMIT 1').fetchone()
+        'SELECT id, mode, started, pid, host FROM passes'
+        ' WHERE finished IS NULL ORDER BY id DESC LIMIT 1').fetchone()
+    if running and not _pass_alive(running[3], running[4]):
+        running = None
     block = {
         'completed_pass': ({'id': completed[0], 'mode': completed[1],
                             'started': completed[2], 'finished': completed[3],
