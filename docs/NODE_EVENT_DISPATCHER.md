@@ -230,14 +230,6 @@ finished inside its deadline. The plot showed the staircase start, the
 file exhausted at 30 minutes, the last close alone at the end, and a
 12-minute pilot tail, which the three rules above address.
 
-**Test and demonstration only: loop mode.** To show a core filled to
-the wall with a single input file, `--es-loop` at submission sets
-`ES_LOOP`: once every range of the file has arrived the harness stops
-asking (so "No more events" and the 30-minute clock never start) and
-replays the same events as filler units, saved in closes and never
-reported to the pilot, until the deadline margin. It is not a
-production mode and is to be removed after the demonstration.
-
 ### Preemption
 
 On a preemptible resource (GCP spot nodes, with 30 seconds' notice) the

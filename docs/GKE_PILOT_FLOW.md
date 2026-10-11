@@ -146,6 +146,6 @@ debug pod with that setting started the payload image as uid 1000
 ## Still to do
 
 - A first pod by hand (`max_pods` 1) against an Event Service trial
-  task with `--es-loop`, then the cap raised.
+  task, then the cap raised.
 - Cron enqueue (`*/5`) with the first enabled cycle.
 - Whether preemption notices reach the pod.
