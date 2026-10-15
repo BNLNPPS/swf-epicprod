@@ -86,6 +86,7 @@ METADATA_SCHEMA = {
             "enum": [
                 "p",
                 "Au197",
+                "Ag107",
                 "Cu63",
                 "He3",
                 "H2",
