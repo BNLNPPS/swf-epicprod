@@ -52,6 +52,11 @@ lock file.
 | `pcs/migrations/`, `pcs/models.py` | none: the run stops |
 | any other path | full |
 
+The lightweight deploy syncs the swf-monitor and snapper-ai dev trees
+along with this one, so their work that is committed and pushed but
+not yet deployed goes live with it; the refusal in step 4 keeps
+uncommitted and unpushed work out.
+
 The largest need in the range decides. The ops agent loads new code
 only at its restart, which only the full deploy performs, so anything
 it imports takes the full deploy. A payload change applies to tasks

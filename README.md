@@ -35,6 +35,19 @@ production cadence; production requests, tasks, and configurations.
 PCS is where physicists meet the production system. The `pcs/` Django
 application is installed into the swf-monitor runtime.
 
+## Contributing
+
+Open a pull request from your fork and merge it yourself; no review is
+required. Before the merge, the `deploy-preview` check on the pull
+request reports which deploy the merge will trigger: none, a quick web
+update, or a full deploy. The merge deploys to production at once, and
+the deploy is followed in the repository's Actions tab, where a refused
+or failed deploy shows red. A payload change bumps
+`swf_epicprod/payload/VERSION`; it applies to tasks submitted after the
+deploy. A change to PCS models or migrations is not deployed
+automatically: announce it, and it is deployed by hand on approval.
+The mechanism is [docs/AUTODEPLOY.md](docs/AUTODEPLOY.md).
+
 ## Documentation
 
 The epicprod documentation set lives in [`docs/`](docs/). The official
