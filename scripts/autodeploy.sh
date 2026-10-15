@@ -4,7 +4,7 @@
 # GitHub Actions runner on every push to main; safe to run by hand.
 #
 # Pulls the dev tree, takes the changed paths since the recorded deployed
-# commit, asks autodeploy-classify.sh which deploy they need, refuses when a
+# commit, asks autodeploy-choose.sh which deploy they need, refuses when a
 # tree the deploy ships from is dirty or unpushed, deploys, checks every
 # changed package file against the deployed copy, and records the commit.
 # Any refusal or failure exits nonzero, so the run shows red in Actions.
@@ -43,7 +43,7 @@ if [[ "$head" == "$last" ]]; then
 fi
 
 changed=$(git -C "$REPO" diff --name-only "$last" "$head")
-verdict=$(echo "$changed" | bash "$REPO/scripts/autodeploy-classify.sh")
+verdict=$(echo "$changed" | bash "$REPO/scripts/autodeploy-choose.sh")
 kind=${verdict%% *}
 log "range ${last:0:7}..${head:0:7}: $verdict ($(echo "$changed" | wc -l) paths)"
 

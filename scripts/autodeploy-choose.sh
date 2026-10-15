@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# autodeploy-classify.sh: the deploy a set of changed swf-epicprod paths needs
+# autodeploy-choose.sh: the deploy a set of changed swf-epicprod paths needs
 # (docs/AUTODEPLOY.md). Reads paths on stdin, one per line; prints one word:
 #
 #   none   nothing the swf-monitor deploy ships (docs, tests, scripts and

@@ -16,7 +16,7 @@ jobs:
       - name: Deploy this merge will trigger
         run: |
           base=$(git merge-base "origin/${{ github.base_ref }}" HEAD)
-          verdict=$(git diff --name-only "$base" HEAD | bash scripts/autodeploy-classify.sh 2> notes.txt)
+          verdict=$(git diff --name-only "$base" HEAD | bash scripts/autodeploy-choose.sh 2> notes.txt)
           case "${verdict%% *}" in
             none) text="No deploy: nothing here is shipped by the production deploy." ;;
             ui)   text="Quick web update (lightweight deploy) on merge." ;;

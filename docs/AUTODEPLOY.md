@@ -20,7 +20,7 @@ no inbound webhook. A push to `main` starts the `deploy` workflow
 2. Takes the paths changed between the last deployed commit, recorded
    in `/opt/swf-monitor/shared/epicprod-deployed-commit`, and the new
    head. A run missed or refused is therefore covered by the next one.
-3. Chooses the deploy with `scripts/autodeploy-classify.sh`.
+3. Chooses the deploy with `scripts/autodeploy-choose.sh`.
 4. Refuses when a tree the deploy ships from (swf-epicprod,
    swf-monitor, snapper-ai, site-canary, swf-common-lib) has
    uncommitted or unpushed work, so no session's work in progress
