@@ -1,0 +1,19 @@
+# Deploy what lands on main to production on swf-testbed (docs/AUTODEPLOY.md).
+# Runs only on a push to main, on the self-hosted runner there. Never add a
+# pull_request trigger here: a fork's PR must never run on the production host.
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: epicprod-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.repository == 'BNLNPPS/swf-epicprod'
+    runs-on: [self-hosted, swf-testbed]
+    timeout-minutes: 30
+    steps:
+      - name: Deploy main
+        run: bash /data/wenauseic/github/swf-epicprod/scripts/autodeploy.sh

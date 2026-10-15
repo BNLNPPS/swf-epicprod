@@ -1,0 +1,28 @@
+# Show on a PR which deploy its merge will trigger (docs/AUTODEPLOY.md).
+# Runs on GitHub's own machines and only reads the diff.
+name: deploy-preview
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Deploy this merge will trigger
+        run: |
+          base=$(git merge-base "origin/${{ github.base_ref }}" HEAD)
+          verdict=$(git diff --name-only "$base" HEAD | bash scripts/autodeploy-classify.sh 2> notes.txt)
+          case "${verdict%% *}" in
+            none) text="No deploy: nothing here is shipped by the production deploy." ;;
+            ui)   text="Quick web update (lightweight deploy) on merge." ;;
+            mcp)  text="Quick web and MCP update (lightweight deploy) on merge." ;;
+            full) text="Full production deploy on merge." ;;
+            stop) text="Database migration or model change: the merge will NOT deploy until the migration is approved and run by hand." ;;
+          esac
+          echo "::notice title=Deploy on merge::$text"
+          { echo "### Deploy on merge"; echo "$text"; [ -s notes.txt ] && { echo; cat notes.txt; }; } >> "$GITHUB_STEP_SUMMARY"

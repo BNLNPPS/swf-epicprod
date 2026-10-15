@@ -7,18 +7,21 @@ environment — live in the workspace `../CLAUDE.md`.
 
 ## Git policy
 
-Direct-to-main while the repository is solo-maintained (the
-`swf-remote` precedent). Convert to branches + PRs when a second
-contributor arrives. This repository is not part of the coordinated
-`infra/baseline-vN` branch set.
+Sessions push direct to main. Outside contributors open a PR from
+their fork and merge it themselves; we are not a review gate. This
+repository is not part of the coordinated `infra/baseline-vN` branch
+set.
 
 ## Deployment
 
-Code here reaches production through the shared venv chain: installed
-into the `swf-testbed/.venv` during development, carried into the
-deployed swf-monitor venv by the standard deploy. Picking up new
-swf-epicprod code in production is a deliberate install step, never an
-implicit fetch at deploy time.
+Every push to main deploys itself: the self-hosted runner on
+swf-testbed runs `scripts/autodeploy.sh`, which chooses none,
+lightweight or full from the changed paths and stops on a migration
+(`docs/AUTODEPLOY.md`). A session therefore does not deploy its own
+swf-epicprod push by hand; it checks the run in the Actions tab. Code
+reaches the deployed swf-monitor venv through the shared venv chain:
+installed editable into `swf-testbed/.venv`, synced by the lightweight
+deploy or frozen by the full one.
 
 ## Docs
 

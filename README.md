@@ -94,6 +94,8 @@ Production operations:
   restarting, and monitoring the production services.
 - [EPICPROD_OPS_AGENT.md](docs/EPICPROD_OPS_AGENT.md) — the credentialed
   production operations agent.
+- [AUTODEPLOY.md](docs/AUTODEPLOY.md) — automatic deployment: a merge to
+  main deploys itself, the deploy chosen from the changed paths.
 - [EPICPROD_TASK_CATALOG.md](docs/EPICPROD_TASK_CATALOG.md) — the
   production task catalog.
 - [EPICPROD_DATA_LINEAGE.md](docs/EPICPROD_DATA_LINEAGE.md) — produced
