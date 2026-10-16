@@ -21,7 +21,10 @@ Resolution policy (never guess):
   editions whose paths name other generators) make tag-trust unsafe,
   while a curated tag on a path that derives nothing stands unchallenged.
   Where neither side resolves, the configuration is **unresolved** and
-  keyed by its own tag labels so it can never falsely merge.
+  keyed by its own tag labels so it can never falsely merge. The
+  afterburner preset is an axis a path states only in an ``_ABCONV``
+  segment; where the path states none, the tag's preset is not a
+  conflict and the tag's identity stands (``evgen_tag_refines``).
 - **Sample**: the stored ``sample_name``, else the single-particle angle
   derived from the path; empty means the configuration has no variant.
 """
@@ -72,6 +75,19 @@ def _source_path(dataset):
     return path
 
 
+def evgen_tag_refines(tag_key, path_key):
+    """Whether an evgen tag's identity agrees with a path's derived identity,
+    both (generator, generator_version, radiative, afterburner_preset)
+    lowercased. Equal agrees; so does a tag that adds an afterburner preset
+    where the path states none: only an ``_ABCONV`` segment names the preset,
+    so a sample converted with a preset other than its beam species' (an eAg
+    sample through the eAu preset, e99) is recorded by its tag alone."""
+    if tag_key == path_key:
+        return True
+    return (tuple(tag_key[:3]) == tuple(path_key[:3])
+            and not path_key[3] and bool(tag_key[3]))
+
+
 def evgen_identity(dataset):
     """(identity, provenance) for the edition's evgen axis.
 
@@ -98,7 +114,7 @@ def evgen_identity(dataset):
                     str(derived.get('afterburner_preset', '')).lower())
 
     if tag_key and path_key:
-        if tag_key == path_key:
+        if evgen_tag_refines(tag_key, path_key):
             return tag_key, 'tag+path'
         return path_key, 'path-over-tag'
     if tag_key:

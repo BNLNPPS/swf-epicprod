@@ -201,6 +201,20 @@ def _matched_dids():
     return out
 
 
+def _evgen_refined_by(tag, evgen):
+    """Whether the edition's evgen tag names the derived generator identity,
+    adding at most an afterburner preset the path does not state
+    (physics_config.evgen_tag_refines)."""
+    from .physics_config import evgen_tag_refines
+    if tag is None:
+        return False
+
+    def key(p):
+        return tuple(str(p.get(k, '') or '').lower() for k in
+                     ('generator', 'generator_version', 'radiative', 'afterburner_preset'))
+    return evgen_tag_refines(key(tag.parameters or {}), key(evgen))
+
+
 def _fits_edition(identity, edition):
     """Why a derived registered sample is not the edition's EVGEN input, or
     '' when it is: the same physics tag, evgen tag and sample, the tags that
@@ -211,7 +225,8 @@ def _fits_edition(identity, edition):
     if identity['physics_tag'] != (edition.physics_tag.tag_label if edition.physics_tag else ''):
         return f"its physics is {identity['physics_tag']}, the task's is {edition.physics_tag.tag_label}"
     evgen_tag, _ = find_or_create_evgen_tag(identity['evgen'], dry_run=True)
-    if evgen_tag is None or evgen_tag.pk != edition.evgen_tag_id:
+    if not (evgen_tag is not None and evgen_tag.pk == edition.evgen_tag_id
+            or _evgen_refined_by(edition.evgen_tag, identity['evgen'])):
         return (f"its generator is {evgen_tag.tag_label if evgen_tag else 'not tagged'}, "
                 f"the task's is {edition.evgen_tag.tag_label if edition.evgen_tag else 'none'}")
     if (identity['sample'] or '') != (edition.sample_name or ''):
