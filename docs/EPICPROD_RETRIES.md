@@ -187,6 +187,16 @@ source, code and diagnostic pattern and invokes a `RETRYACTIONS`
 implementation (`no_retry`, `limit_retry`, and others). This is how a
 known-hopeless error stops consuming attempts.
 
+A job that failed on memory is retried with more of it. The
+`increase_memory` rules (cgroup out-of-memory kills, and the SIGTERM
+by which an OSG glidein evicts a job over its memory request) move the
+job's inputs to the next step of 1000, 2000, 3000, 4000, 6000 and
+8000 MB, and once more than 30% of a task's inputs are above its
+`ramCount` the task's own `ramCount` is raised, so its remaining jobs
+start at the larger size. The queues are push-mode, so each retry's
+worker is requested at the job's new size. A running task needs no
+operator action, no kill and no configuration edit.
+
 Two facts govern their use:
 
 - A rule enforces only when **both** switches are set,
@@ -312,5 +322,8 @@ returns the result over SSE (EPICPROD_OPS_AGENT.md).
   still applies; it takes the reactivation path by itself.
 - Jobs are failing on one known error and eating attempts → a retry
   rule, not an operation.
+- Jobs are failing on memory → nothing: the `increase_memory` rules
+  retry them at the next memory step and raise the task when most of
+  it needs more.
 - A ghost is holding an output name → **Rerun Residual**; it covers
   the row and writes in a new namespace.

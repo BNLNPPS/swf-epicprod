@@ -209,6 +209,18 @@ outcomes are recorded in place.
      download failure → `limit_retry` with `maxAttempt=2` — one extra
      attempt covers transient failures; the keepalive prevents the
      standing cause.
+   - `pilotErrorCode` 1212, diagnostic matching `out of memory` →
+     `increase_memory`, and `pilotErrorCode` 1201, diagnostic matching
+     `SIGTERM` → `increase_memory` — loaded enforcing on 2026-10-19,
+     when the BeAGLE eAu tasks failed 95–97% of jobs on memory and every
+     retry repeated the failure at the task's 4096 MB. 1212 is the
+     cgroup out-of-memory kill; 1201 is how an OSG glidein's eviction
+     for exceeding `request_memory` reaches PanDA. The action retries
+     the job's inputs at the next step of 1000, 2000, 3000, 4000, 6000
+     and 8000 MB, and raises the task's own `ramCount` once more than
+     30% of its inputs are above it. A SIGTERM kill that is not about
+     memory also retries one step up: the cost is a larger slot
+     request, not a doomed attempt.
 
    A rule enforces only when both its own `active` flag and its
    action's are `'Y'` (`taskbuffer/db_proxy_mods/misc_standalone_module.py`,
