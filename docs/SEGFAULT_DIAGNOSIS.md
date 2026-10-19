@@ -4,9 +4,11 @@ Payload crashes (segmentation faults and related signal deaths) in
 ePIC production jobs, found from the production record, catalogued by
 signature, reproduced as standalone runs, diagnosed with LLM assistance
 where the evidence allows, and handed to software experts as
-self-contained reproductions where it does not. This document is the
-plan and the implementation specification; each component names the
-files it touches and the check that shows it working.
+self-contained reproductions where it does not. Jobs killed for their
+memory are catalogued and reproduced beside them as a class of their
+own ([Memory kills](#memory-kills)). This document is the plan and the
+implementation specification; each component names the files it
+touches and the check that shows it working.
 
 Related: [EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md) (the payload, its
 exit codes and report), [EPICPROD_RETRIES.md](EPICPROD_RETRIES.md)
@@ -771,6 +773,93 @@ through Rucio. A live check under the trap (a SIGSEGV in the simulation
 stage) exited 139 with the tail in the note and the stage marked
 failed. The dig reads a filed report whose note begins `crash:` before
 resolving any tarball. The registry row is in EPICPROD_PAYLOAD.md.
+
+## Memory kills
+
+A job that exceeds its memory does not crash; the site removes it.
+The kernel's memory cgroup kills the largest process (pilot error 1212,
+"Memory cgroup out of memory", payload exit 137), or the batch system
+evicts the job for exceeding its memory request (pilot error 1201, "Job
+killed by signal: SIGTERM", on OSG glideins). The record of such a job
+holds no trace. It holds the job's peak memory as the pilot measured it
+(`maxrss`, `maxpss`), its request (`minramcount`), and the stage the
+payload digest names. What a memory signature establishes is how much
+memory a configuration's rows need, and whether the need grows through
+the row or is reached early and held.
+
+**Selection.** A failed job of a production task is a memory kill when
+its pilot error is 1212 with "out of memory" in the diagnostic; or 1201
+with "SIGTERM" in the diagnostic and a peak resident memory at or above
+`segfault_memory_rss_fraction` (SysConfig, 0.9) of its request; or its
+payload exit is 137 under another pilot label with the same peak
+condition. A SIGTERM or SIGKILL below that fraction is another kind of
+removal (wall time, preemption) and is not counted. Over the 65 days to
+2026-10-19 the rule selects about 181,000 jobs in eight tasks.
+
+**Signature.** One signature per task and stage: key
+`memory:task40855:simu`, class `memory`, split by stage under the rule
+of the record-level crash entries, with the kills of no recorded stage
+under the plain key `memory:task40855`. `exit_code` and `signal` carry
+the conventional status of the dominant removal, 137 and 9 for a cgroup
+kill, 143 and 15 for an eviction. The rest of the row is the record
+across the task's whole life, computed by aggregate queries on the
+PanDA record with no row per job: kills, the rate over finished plus
+failed, time to kill (10th and 50th percentile), the peak resident
+memory (median and maximum), and per site the kills, hosts, removal
+mechanism and request. Eight tasks give about a dozen signatures of a
+few kilobytes each.
+
+**Representatives.** Each signature keeps three jobs as `EpicProdJob`
+rows with `phase = 'payload_memory'`, in the shape of a crashed job's
+row: among the kills whose manifest row resolves, the shortest, median
+and longest time to kill. They are chosen once and kept, so a
+reproduction requested against one stays valid; about three dozen rows
+in all. The job page's card, the local reproduction and the package
+read them as they read a crashed job.
+
+**The nightly pass.** The inventory's memory pass
+(`scripts/segfault-inventory.py`, after the crash pass) finds the tasks
+with a memory kill in its window, recomputes those tasks' signatures
+over their life, and picks representatives for a signature that has
+none. Its `segfault_inventory` action carries the tasks and signatures
+touched. The automatic dig and the automatic study pass memory
+signatures by: there is no trace to read, and the diagnosis contract
+reads a crashing frame.
+
+**Reproduction.** The representative's row runs twice, as for a crash,
+and is measured rather than watched for a signal:
+
+- on the production queue where the kill happened, at the task's own
+  memory request and with no address-space limit, so the site's
+  enforcement repeats or does not;
+- on the reference queue with no limit, where the row runs to its end
+  and the payload report gives the stage's peak resident, proportional
+  and virtual memory and the trend of its proportional memory over the
+  stage: growth in kB per second, start, peak, and the quality of the
+  linear fit (`payload_report.py`, `series_trend`).
+
+The canary collection keeps, for every payload run, the job's peak
+resident memory and request from the PanDA record and, from a finished
+run's payload report, the memory summary of each stage. A run removed
+for memory by the selection's rule reads "Killed for memory" as its
+result. Against the representative's request, the pair settles the
+signature as reproduced when the production run is killed again or the
+reference run's peak reaches the request; as site dependent when the
+production run is killed and the reference peak stays below the
+request; as not reproduced when neither happens; and as inconclusive
+when a run failed for another stated reason. The measurement is
+recorded on the signature (`data['memory_measured']`: run, queue,
+stage, peaks, growth, fit, events) and shown on its page. Steady growth
+with a close linear fit over the whole stage is the shape of memory
+accumulated event by event; a plateau reached early is the working size
+of the configuration. The page states the numbers; the reading belongs
+to a finding.
+
+**Local reproduction and package.** The fragment and the package are
+built from a representative as for a crashed job and state the
+removal and the request. A run by hand leaves `payload-report.json` and
+each stage's prmon series in its working directory, which is the
+measurement.
 
 ## Findings
 
