@@ -131,6 +131,9 @@ Production operations:
 - [EPICPROD_PAYLOAD.md](docs/EPICPROD_PAYLOAD.md) — the epicprod
   payload: the in-job runner and payload implemented end to end,
   cloned from the production team's run script and evolved here.
+- [DEVELOPING_THE_PAYLOAD.md](docs/DEVELOPING_THE_PAYLOAD.md) —
+  developing the payload: new behaviour behind an `EPICPROD_SWITCH_*`
+  switch, tested with payload canaries from a pull request or branch.
 - [EPICPROD_INTERNAL_EVGEN.md](docs/EPICPROD_INTERNAL_EVGEN.md) —
   internal EVGEN: event generation as a payload stage, the steering
   derived from the tags, and the first trial.
