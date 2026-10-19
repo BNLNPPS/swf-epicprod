@@ -1,71 +1,64 @@
-# swf-epicprod — Claude Code Guidelines
+# swf-epicprod
 
-Production domain of the swf platform; see `README.md` for the
-architecture and this repository's relationship to `swf-monitor` and
-`swf-common-lib`. Workspace rules — doc-first, scope discipline,
-environment — live in the workspace `../CLAUDE.md`.
+Start from the SWF workspace guide, `../swf-testbed/CLAUDE.md`
+(<https://github.com/BNLNPPS/swf-testbed/blob/main/CLAUDE.md>): the
+system, the workspace, how to work, production and collaboration. This
+file adds what is particular to swf-epicprod, the production domain of
+the platform: PCS (the Physics Configuration System), the epicprod
+payload, the production operations and their documentation. `README.md`
+gives the architecture and the relationship to swf-monitor and
+swf-common-lib.
 
-## Git policy
+## Required reading
 
-Sessions push direct to main. Outside contributors open a PR from
-their fork and merge it themselves; we are not a review gate. This
-repository is not part of the coordinated `infra/baseline-vN` branch
-set.
+Before PCS or epicprod work, read these in `docs/`, in full for the
+area being changed: ARCHITECTURE_MAP (the plan of record for what lives
+where and each component's interface), PCS, PCS_DATASET_REQUEST_WORKFLOW,
+EPICPROD_TASK_CATALOG, JEDI_INTEGRATION, EPICPROD_OPS_AGENT, EPICPROD_OPS,
+EPICPROD_DATA_LINEAGE, EPICPROD_EVGEN_INPUTS, EPICPROD_ASSESSMENTS and
+COMMISSIONING_RELAXATIONS.
+
+- Retries, reruns and ghosts: EPICPROD_RETRIES.md before any answer.
+- Job failures: swf-monitor `docs/ERROR_ATTRIBUTION.md` and
+  `docs/SNAPPER_ERRORS.md` (the error-state record its corrections are
+  read through), before the production documents.
+- The payload: EPICPROD_PAYLOAD.md, and DEVELOPING_THE_PAYLOAD.md for a
+  change to it (switches, developer payload canaries).
+
+`README.md` is the one index of the documentation set; a new document is
+added there. Platform-service documents (action stream, SSE, external
+access, MCP, deployment) are in swf-monitor's `docs/`.
+
+## Git
+
+Maintainers commit to `main`. Outside contributors open a pull request
+from a fork and merge it themselves; there is no review gate. This
+repository is not in the coordinated `infra/baseline-vNN` set.
 
 ## Deployment
 
-Every push to main deploys itself: the self-hosted runner on
-swf-testbed runs `scripts/autodeploy.sh`, which chooses none,
-lightweight or full from the changed paths and stops on a migration
-(`docs/AUTODEPLOY.md`). A session therefore does not deploy its own
-swf-epicprod push by hand; it checks the run in the Actions tab. Code
-reaches the deployed swf-monitor venv through the shared venv chain:
-installed editable into `swf-testbed/.venv`, synced by the lightweight
-deploy or frozen by the full one.
+A push or merge to `main` deploys itself: the self-hosted runner on the
+production host runs `scripts/autodeploy.sh`, which chooses no deploy, a
+lightweight one or a full one from the changed paths, and stops on a
+change to `pcs/models.py` or `pcs/migrations/`, which is deployed by hand
+on explicit approval ([docs/AUTODEPLOY.md](docs/AUTODEPLOY.md)). A push
+is therefore not deployed again by hand; its run is checked in the
+Actions tab. A payload change reaches tasks submitted after the deploy.
 
-## Docs
+## Findings
 
-Material production findings and resolutions must be reported in
-`epicprod-live`, with affected scope, current status and supporting evidence.
-Private dialog, TJAI coordination and commits are not substitutes. The
-publication discipline is in swf-monitor `docs/NOTICE_ROUTING.md`
-(Findings and resolutions); it applies prospectively, without backfill.
-
-`docs/ARCHITECTURE_MAP.md` is the plan of record for what lives where
-(common-lib / swf-monitor-as-platform / swf-epicprod) and each
-component's consumption interface. The epicprod documentation set
-lives here, moved from `swf-monitor/docs/` 2026-07-10, each doc
-leaving a permanent stub at its old path. **The index of that set is
-`README.md`**, annotated and linked; it is the one index, and a new
-doc is added there. Required reading beyond the doc you are working
-in: `EPICPROD_RETRIES.md` before answering any retry, rerun, or ghost
-question.
-Platform-service docs (action stream, SSE, external access, MCP,
-deployment) remain in `swf-monitor/docs/`. Two of them are required
-reading for production work despite living there, because production
-failures are diagnosed through them:
-[`ERROR_ATTRIBUTION.md`](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/ERROR_ATTRIBUTION.md)
-— which PanDA error labels are unreliable and what corrects them, the
-evidence grades, and the representative-job dig — and
-[`SNAPPER_ERRORS.md`](https://github.com/BNLNPPS/swf-monitor/blob/main/docs/SNAPPER_ERRORS.md)
-— the error-state record those corrections are read through. A
-question of the form "why are these jobs failing" is answered from
-there before the production docs.
+Material production findings and resolutions are reported in
+`epicprod-live` with the affected scope, the current status and the
+evidence; private dialog, LLM messages and commits are not substitutes.
+The discipline is in swf-monitor `docs/NOTICE_ROUTING.md` (Findings and
+resolutions).
 
 ## The pcs application
 
-The `pcs` Django application lives here (top-level `pcs/` package) and
-is installed into the swf-monitor runtime — import path, app label,
-and `pcs_*` tables are unchanged from its swf-monitor origin, so
-migration history and cross-app imports are undisturbed. Its git
-history before 2026-07-10 remains in swf-monitor. Iterate with
-`sudo /data/wenauseic/github/swf-monitor/deploy-lightweight-ui-mcp.sh --ui`
-(syncs this tree onto the deployed venv's installed copy); migrations
-and management-command changes require the full swf-monitor deploy,
-which freezes this package non-editable into the deployed venv.
-
-## TeamComms
-
-Developers' LLM sessions message each other through TeamComms, for questions
-and answers across people and providers (Claude Code, Codex). Joining and use:
-<https://github.com/eic/epic-wfms-docs/blob/main/docs/teamcomms.md>.
+The `pcs` Django application lives here (top-level `pcs/`) and is
+installed into the swf-monitor runtime; its import path, app label and
+`pcs_*` tables are those of its swf-monitor origin, where its history
+before 2026-07-10 remains. On the production host, maintainers iterate
+with `sudo ../swf-monitor/deploy-lightweight-ui-mcp.sh --ui`, which syncs
+this tree onto the deployed copy; migrations and management commands
+take the full swf-monitor deploy.
