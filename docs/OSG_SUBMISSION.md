@@ -61,6 +61,33 @@ theirs. No glideinWMS component runs on the BNL hosts; the frontend is
 the JLab VO's, hosted with OSG, and its configuration is reachable only
 through JLab's OSG contacts.
 
+### Pull mode on BNL_OSG_PanDA_1
+
+Since 2026-10-19 `BNL_OSG_PanDA_1` runs in pull mode. Its pilots start without
+a job and ask the PanDA server for one when they begin, so the job dispatched
+is the highest-priority job activated at that moment. In push mode harvester
+binds each job to a pilot when it submits the pilot, often hours before the
+pilot starts, and later priorities cannot reach the jobs already bound.
+
+On osgsub01 the queue uses the template queue `production.pull` in
+`panda_queueconfig.json`: the `production.push` settings with `mapType`
+`NoJob` and no job-fetch limits, so the job fetcher skips the queue. Its submit
+description, `submit_pilot2_pull_bnl_osg.sdf`, is the push description with
+`--harvester-submit-mode PULL`, without the job input transfer, and with
+`request_memory = 3700`. Harvester holds the number of waiting pilots at the
+smaller of the queue's activated jobs and its waiting-pilot limit (1000), so
+pilots are not submitted ahead of work. Backups beside the files:
+`panda_queueconfig.json-backup-2026-10-19` (the push configuration) and
+`submit_pilot2_pull_bnl_osg.sdf-backup-2026-10-19`.
+
+The memory request is fixed at the pool's slot size. Slots are provisioned at
+about 3.7 GB per core: on 2026-10-19, of 4,515 slots admitting these pilots,
+1,251 offered at least 3,700 MB and 21 offered 6,000 MB or more. A job that
+exceeds its pilot's request is evicted by the slot (`memory usage exceeded
+request_memory`), which the pilot reports as error 1201, killed by SIGTERM.
+Jobs needing more than about 3.7 GB therefore cannot run in this pool on
+single-core pilots in either mode.
+
 ## The submit description
 
 The attributes of `submit_pilot2_push_bnl_osg.sdf` that shape the
