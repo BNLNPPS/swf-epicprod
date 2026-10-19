@@ -73,7 +73,7 @@
                         <tr><td style="width:40%"><strong>Name</strong></td><td><a href="{% url 'pcs:prod_config_detail' pk=task.prod_config.pk %}">{{ task.prod_config.name }}</a></td></tr>
                         <tr><td><strong>JUG_XL Tag</strong></td><td>{{ task.prod_config.jug_xl_tag|default:"-" }}</td></tr>
                         <tr><td><strong>Container</strong></td><td style="word-break:break-all;">{{ task.prod_config.container_image|default:"-" }}</td></tr>
-                        <tr><td><strong>BG Mixing</strong></td><td>{% if task.prod_config.bg_mixing %}Yes{% else %}No{% endif %}</td></tr>
+                        <tr><td><strong>BG Mixing</strong></td><td>{% if task.mixes_background %}Yes{% else %}No{% endif %}</td></tr>
                     </table>
                 </div>
             </div>

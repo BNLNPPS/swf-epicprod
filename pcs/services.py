@@ -1497,10 +1497,14 @@ def resolve_dataset(name, queryset=None):
     raise Dataset.DoesNotExist(f"No Dataset matches {name!r}")
 
 
-def prodtask_readiness_problems(task, plan=None):
+def prodtask_readiness_problems(task, plan=None, trial=False):
     """Reasons a task is NOT ready to lock/submit; empty list = ready.
     ``plan`` is the campaign plan document when the caller holds it
     (the compose page reads it once for its thousand tasks).
+    ``trial`` (and any trial task itself) leaves out what only a production
+    run needs from the campaign plan — the per-job event count, the event
+    target and the priority: a trial runs its own event count, counts toward
+    no target, and is how the per-job count is found (PCS.md § Trials).
 
     Checks what a valid PanDA submission needs, independent of how the task was
     built (composed tags or imported catalog metadata):
@@ -1543,10 +1547,17 @@ def prodtask_readiness_problems(task, plan=None):
             problems.append(
                 'Background mixing is enabled but no background tag or legacy '
                 'EvGen background parameters are attached.')
-        if ds.background_tag_id and not (bg_tag_prefix or bg_files):
-            problems.append(
-                'Background mixing is enabled but the background tag has no '
-                'bg_tag_prefix or bg_files parameter.')
+        if ds.background_tag_id:
+            # The files say what to mix, the prefix keeps the mixed output
+            # out of the signal-only sample's paths: a k tag needs both.
+            missing = [key for key, value in (('bg_files', bg_files),
+                                              ('bg_tag_prefix', bg_tag_prefix))
+                       if not value]
+            if missing:
+                problems.append(
+                    f'This dataset mixes background {ds.background_tag.tag_label}, '
+                    f'whose tag has no {" or ".join(missing)}: set '
+                    f'{"them" if len(missing) > 1 else "it"} on the tag.')
 
     csv_filters = (((task.overrides or {}).get('csv_import') or {})
                    .get('filters') or {})
@@ -1577,26 +1588,28 @@ def prodtask_readiness_problems(task, plan=None):
     from .commands import (pinned_site, prodtask_events_per_job,
                            prodtask_priority_level, prodtask_task_priority)
     data = cfg.get('data') or {}
-    if not internal and task.dataset_id:
-        if prodtask_events_per_job(task, cfg=cfg) <= 0:
+    trial = trial or bool(task.dataset_id and (task.dataset.metadata or {}).get('trial'))
+    if not trial:
+        if not internal and task.dataset_id:
+            if prodtask_events_per_job(task, cfg=cfg) <= 0:
+                problems.append(
+                    'No per-job event count: set events_per_job on the config, '
+                    'max_events_per_job on the task, or run a trial so the cost '
+                    'gives it.')
+        if task.dataset_id and task.dataset.expected_events is None and not (
+                task.request_id and task.request.nevents):
             problems.append(
-                'No per-job event count: set events_per_job on the config, '
-                'max_events_per_job on the task, or run a trial so the cost '
-                'gives it.')
-    if task.dataset_id and task.dataset.expected_events is None and not (
-            task.request_id and task.request.nevents):
-        problems.append(
-            "No event target: set the edition's target (the campaign plan) "
-            'or a request with an event count.')
-    level, _source = prodtask_priority_level(task, plan=plan)
-    if level is None:
-        problems.append(
-            'No priority: set it on the task, the campaign plan entry, or '
-            'the request.')
-    try:
-        prodtask_task_priority(task, cfg=cfg, plan=plan)
-    except ValueError as exc:
-        problems.append(str(exc))
+                "No event target: set the edition's target (the campaign plan) "
+                'or a request with an event count.')
+        level, _source = prodtask_priority_level(task, plan=plan)
+        if level is None:
+            problems.append(
+                'No priority: set it on the task, the campaign plan entry, or '
+                'the request.')
+        try:
+            prodtask_task_priority(task, cfg=cfg, plan=plan)
+        except ValueError as exc:
+            problems.append(str(exc))
     site = pinned_site(task, cfg=cfg, ds=ds)
     # An unplaced task is fitted to a queue when it is placed (the
     # recommendation excludes queues whose limits it exceeds).
@@ -7113,11 +7126,13 @@ def prodtask_compose_trial(*, task, events=None, site='', created_by='',
         raise ServiceError(blocked, status=409)
     # We trial a ready task. A trial proves the run you are about to make, so
     # the source has to be able to make it; trialling a task that could not
-    # run proves a configuration the task does not have. Where the caller
-    # supplies the input the source lacks, that is the readiness gap being
-    # closed at composition, and the source's own readiness is not the test.
+    # run proves a configuration the task does not have. What only the
+    # campaign plan supplies (target, priority, the per-job count a trial
+    # measures) is not asked of it. Where the caller supplies the input the
+    # source lacks, that is the readiness gap being closed at composition,
+    # and the source's own readiness is not the test.
     if not input_did:
-        problems = prodtask_readiness_problems(task)
+        problems = prodtask_readiness_problems(task, trial=True)
         if problems:
             raise ServiceError(
                 'not ready to run, so there is nothing to trial yet: '

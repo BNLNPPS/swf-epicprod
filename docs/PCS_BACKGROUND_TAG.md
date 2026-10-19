@@ -64,11 +64,23 @@ bare `NGeV` beam is assigned to the electron or hadron beam by source.
 `draft → locked`, creator-owned, no categories. A dataset carries at most one
 background tag, set independently of its physics tag.
 
-When a production config enables background mixing, the submission environment
-uses the dataset's background tag parameters first. `bg_tag_prefix` becomes
-`TAG_PREFIX`; `bg_files` becomes `BG_FILES` and is staged into the EVGEN sandbox
-by the submit doer. If the dataset has no usable `k` value, PCS falls back to
-the same parameters on the EvGen tag for older definitions.
+A dataset that carries a background tag over a real signal mixes: the `k` tag
+in its identity says so, and a run without the mix would be published under a
+name that claims it. The task's effective configuration therefore has
+`bg_mixing` on, noted as coming from the background tag, whatever its
+configuration or overrides say; a standalone background sample, on the
+signal-free `p6001`, mixes nothing. The configuration's `bg_mixing` remains the
+switch for older definitions that keep their background on the EvGen tag.
+
+When a task mixes, the submission environment uses the dataset's background tag
+parameters first: `signal_freq` and `signal_status` become `SIGNAL_FREQ` and
+`SIGNAL_STATUS`, `bg_tag_prefix` becomes `TAG_PREFIX`, and `bg_files` becomes
+`BG_FILES`, the JSON of background sources and frequencies the submit doer
+stages into the sandbox from the campaign `config_data`. The task is not ready
+until its background tag carries both `bg_files` and `bg_tag_prefix`: the files
+say what to mix, and the prefix keeps the mixed output out of the signal-only
+sample's paths. If the dataset has no usable `k` value, PCS falls back to the
+same parameters on the EvGen tag for older definitions.
 
 ## The no-signal physics tag
 

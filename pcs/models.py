@@ -15,6 +15,10 @@ from .name_tokens import (reserved_sample_token_description,
 from .permanence import PermanentIdentity
 
 
+#: The signal-free physics tag a standalone background sample names
+#: (PCS_BACKGROUND_TAG.md, The no-signal physics tag).
+NO_SIGNAL_PHYSICS_TAG = 'p6001'
+
 TAG_STATUS_CHOICES = [
     ('draft', 'Draft'),
     ('locked', 'Locked'),
@@ -1145,11 +1149,36 @@ class ProdTask(models.Model):
         else:
             result['data'] = base_data
         result['name'] = getattr(config, 'name', '')
+        # A dataset carrying a background tag over a real signal mixes: the
+        # k tag in its identity says so (PCS_BACKGROUND_TAG.md, Behavior), and
+        # a run without the mix would be published under a name that claims
+        # it. Identity decides, over the configuration and any override.
+        bg_tag = self.identity_background_tag()
+        if bg_tag is not None and not result.get('bg_mixing'):
+            result['bg_mixing'] = True
+            fills['bg_mixing'] = f'background tag {bg_tag.tag_label}'
         return result, fills
+
+    def identity_background_tag(self):
+        """The background tag this task's identity mixes in, else None. A
+        standalone background sample, on the signal-free physics tag, carries
+        a k tag and mixes nothing."""
+        ds = self.dataset if self.dataset_id else None
+        if ds is None or not ds.background_tag_id:
+            return None
+        if ds.physics_tag_id and ds.physics_tag.tag_label == NO_SIGNAL_PHYSICS_TAG:
+            return None
+        return ds.background_tag
+
+    @property
+    def mixes_background(self):
+        """Whether this task's jobs mix background into the signal."""
+        return bool(self.get_effective_config().get('bg_mixing'))
 
     def get_effective_config(self):
         """ProdConfig field values, campaign fill for what nobody set, then
-        per-task overrides. See ``_effective_config_and_fills``."""
+        per-task overrides, then background mixing where the identity carries
+        a background tag. See ``_effective_config_and_fills``."""
         result, _ = self._effective_config_and_fills()
         return result
 

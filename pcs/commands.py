@@ -959,6 +959,12 @@ def prodtask_events_per_job(task, cfg=None):
     override = events_per_job_override(task)
     if override:
         n_events = min(n_events, override) if n_events > 0 else override
+    if n_events <= 0:
+        # A trial runs its own event count when nothing else sizes the job:
+        # it is how the per-job count is measured (PCS.md § Trials).
+        md = (task.dataset.metadata if task.dataset_id else None) or {}
+        if md.get('trial'):
+            n_events = int(md.get('trial_events') or 0)
     return n_events
 
 
