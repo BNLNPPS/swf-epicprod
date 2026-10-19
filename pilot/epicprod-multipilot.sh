@@ -31,6 +31,11 @@ echo "$(date -u +%FT%TZ) epicprod-multipilot: ${N} wrappers (${WRAPPER}), $(npro
 pids=()
 for i in $(seq 1 "${N}"); do
   mkdir -p "${TOP}/pilot-${i}"
+  # A shipped queuedata.json reaches every wrapper, which reads it from its
+  # working directory before the CRIC cache (OSG_SUBMISSION.md, Queue
+  # behavior without a CRIC edit); a time floor there lets each pilot run
+  # jobs one after another as well as side by side.
+  [[ -r ${TOP}/queuedata.json ]] && cp "${TOP}/queuedata.json" "${TOP}/pilot-${i}/"
   ( cd "${TOP}/pilot-${i}" && exec bash "${WRAPPER}" "$@" ) \
     > "${TOP}/pilot-${i}.out" 2> "${TOP}/pilot-${i}.err" &
   pids+=($!)
