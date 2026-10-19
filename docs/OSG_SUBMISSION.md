@@ -73,8 +73,11 @@ On osgsub01 the queue uses the template queue `production.pull` in
 `panda_queueconfig.json`: the `production.push` settings with `mapType`
 `NoJob` and no job-fetch limits, so the job fetcher skips the queue. Its submit
 description, `submit_pilot2_pull_bnl_osg.sdf`, is the push description with
-`--harvester-submit-mode PULL`, without the job input transfer, and with
-`request_memory = 3700`. Harvester holds the number of waiting pilots at the
+`--harvester-submit-mode PULL`, without the job input transfer, and with fixed
+requests `request_memory = 3700` and `request_disk = 4500000` (KiB). A push
+pilot's requests are computed from its job; a pull pilot has no job, and the
+template's `{requestDisk}` then takes the queue's 30 GB work-directory maximum,
+which few slots offer. Harvester holds the number of waiting pilots at the
 smaller of the queue's activated jobs and its waiting-pilot limit (1000), so
 pilots are not submitted ahead of work. Backups beside the files:
 `panda_queueconfig.json-backup-2026-10-19` (the push configuration) and
