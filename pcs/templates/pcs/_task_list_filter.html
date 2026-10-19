@@ -573,6 +573,7 @@ Context expected:
   const state = {
     q: (initial.get('q') || '').trim(),
     status: initial.get('status') || '',
+    queue: initial.get('queue') || '',
     propagation: initial.get('propagation') || '',
     requestor: initial.get('requestor') || '',
     evgen: initial.get('evgen') || '',
@@ -685,7 +686,7 @@ Context expected:
   function syncUrl() {
     const u = new URL(window.location.href);
     const p = u.searchParams;
-    ['q','status','propagation','requestor','evgen','submission_path','priority','pwg_priority','nevents',
+    ['q','status','queue','propagation','requestor','evgen','submission_path','priority','pwg_priority','nevents',
      'edition','detector','beam','physics','q2','species','energy',
      'new_request','pre_tdr_use','early_science_use','other_use','background',
      'has_output','no_output','incomplete_output','has_simu','has_reco',
