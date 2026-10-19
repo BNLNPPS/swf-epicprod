@@ -856,6 +856,10 @@ accumulated event by event; a plateau reached early is the working size
 of the configuration. The page states the numbers; the reading belongs
 to a finding.
 
+**Pages.** The catalog and the reproduction runs page carry a Kind
+facet, Crash or Memory, ahead of their other facets (`?kind=memory`);
+the runs page's Result facet holds "Killed for memory".
+
 **Local reproduction and package.** The fragment and the package are
 built from a representative as for a crashed job and state the
 removal and the request. A run by hand leaves `payload-report.json` and
