@@ -794,7 +794,8 @@ with "SIGTERM" in the diagnostic and a peak resident memory at or above
 payload exit is 137 under another pilot label with the same peak
 condition. A SIGTERM or SIGKILL below that fraction is another kind of
 removal (wall time, preemption) and is not counted. Over the 65 days to
-2026-10-19 the rule selects about 181,000 jobs in eight tasks.
+2026-10-19 the rule selects about 181,500 jobs in eleven tasks, nearly
+all of them in the three eAu BeAGLE tasks of 26.07.3.
 
 **Signature.** One signature per task and stage: key
 `memory:task40855:simu`, class `memory`, split by stage under the rule
@@ -806,15 +807,15 @@ across the task's whole life, computed by aggregate queries on the
 PanDA record with no row per job: kills, the rate over finished plus
 failed, time to kill (10th and 50th percentile), the peak resident
 memory (median and maximum), and per site the kills, hosts, removal
-mechanism and request. Eight tasks give about a dozen signatures of a
-few kilobytes each.
+mechanism and request. Eleven tasks give sixteen signatures of a few
+kilobytes each.
 
 **Representatives.** Each signature keeps three jobs as `EpicProdJob`
 rows with `phase = 'payload_memory'`, in the shape of a crashed job's
 row: among the kills whose manifest row resolves, the shortest, median
 and longest time to kill. They are chosen once and kept, so a
-reproduction requested against one stays valid; about three dozen rows
-in all. The job page's card, the local reproduction and the package
+reproduction requested against one stays valid; under fifty rows in
+all. The job page's card, the local reproduction and the package
 read them as they read a crashed job.
 
 **The nightly pass.** The inventory's memory pass
