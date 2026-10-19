@@ -61,27 +61,34 @@ theirs. No glideinWMS component runs on the BNL hosts; the frontend is
 the JLab VO's, hosted with OSG, and its configuration is reachable only
 through JLab's OSG contacts.
 
-### Pull mode on BNL_OSG_PanDA_1
+### Pull mode on the OSG queues
 
-Since 2026-10-19 `BNL_OSG_PanDA_1` runs in pull mode. Its pilots start without
+Since 2026-10-19 `BNL_OSG_PanDA_1` and `BNL_OSG_EPIC_PROD_1` run in pull mode. Its pilots start without
 a job and ask the PanDA server for one when they begin, so the job dispatched
 is the highest-priority job activated at that moment. In push mode harvester
 binds each job to a pilot when it submits the pilot, often hours before the
 pilot starts, and later priorities cannot reach the jobs already bound.
 
-On osgsub01 the queue uses the template queue `production.pull` in
+On osgsub01 both queues use the template queue `production.pull` in
 `panda_queueconfig.json`: the `production.push` settings with `mapType`
-`NoJob` and no job-fetch limits, so the job fetcher skips the queue. Its submit
-description, `submit_pilot2_pull_bnl_osg.sdf`, is the push description with
-`--harvester-submit-mode PULL`, without the job input transfer, and with fixed
-requests `request_memory = 3700` and `request_disk = 4500000` (KiB). A push
+`NoJob` and no job-fetch limits, so the job fetcher skips them. Their submit
+descriptions, `submit_pilot2_pull_bnl_osg.sdf` and
+`submit_pilot2_pull_bnl_osg_epicprod.sdf` (the latter keeping the canary pilot
+URL), are the push descriptions with `--harvester-submit-mode PULL`, without
+the job input transfer, with fixed requests `request_memory = 3700` and
+`request_disk = 4500000` (KiB), and with `priority = 1`, so that within the
+shared submitting account pull pilots are matched ahead of any remaining push
+pilots. A push
 pilot's requests are computed from its job; a pull pilot has no job, and the
 template's `{requestDisk}` then takes the queue's 30 GB work-directory maximum,
 which few slots offer. Harvester holds the number of waiting pilots at the
 smaller of the queue's activated jobs and its waiting-pilot limit (1000), so
 pilots are not submitted ahead of work. Backups beside the files:
-`panda_queueconfig.json-backup-2026-10-19` (the push configuration) and
-`submit_pilot2_pull_bnl_osg.sdf-backup-2026-10-19`.
+`panda_queueconfig.json-backup-2026-10-19` (both queues push),
+`panda_queueconfig.json-backup-2026-10-19b` (`BNL_OSG_EPIC_PROD_1` still push),
+`submit_pilot2_pull_bnl_osg.sdf-backup-2026-10-19` and
+`submit_pilot2_pull_bnl_osg.sdf-backup-2026-10-19b`. The first pull pilot
+took the queue's highest-priority activated job.
 
 The memory request is fixed at the pool's slot size. Slots are provisioned at
 about 3.7 GB per core: on 2026-10-19, of 4,515 slots admitting these pilots,
