@@ -97,6 +97,8 @@ Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
 .pcs-cl-row .req-chip.pwg-tracking       { background: #ffe0cc; }
 .pcs-cl-row .nev      { color: #212529; white-space: nowrap; }
 .pcs-cl-row .prio     { color: #495057; white-space: nowrap; }
+.pcs-cl-row .queue-slot { margin-left: auto; color: #212529; white-space: nowrap; }
+.pcs-cl-row .queue-slot .ready-buffer { padding: .02rem .4rem; border-radius: .2rem; font-weight: 600; }
 .pcs-cl-row .sample   { font-style: italic; word-break: break-word; overflow-wrap: anywhere; flex: 1 1 auto; }
 .pcs-cl-row .flag-pill { display: inline-block; padding: 0 .35rem;
                           border-radius: .65rem; font-size: .72rem;
@@ -144,6 +146,7 @@ Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
          current filter state. data-active = currently chosen value (string
          facets) or '1' (boolean facets).{% endcomment %}
       <span class="pcs-cl-facet" data-facet="status"          ><span class="facet-label">Status</span>          <span class="facet-chosen"></span><span class="facet-count"></span></span>
+      <span class="pcs-cl-facet" data-facet="queue"           ><span class="facet-label">Queue</span>           <span class="facet-chosen"></span><span class="facet-count"></span></span>
       <span class="pcs-cl-facet" data-facet="requestor"       ><span class="facet-label">Requestor</span>       <span class="facet-chosen"></span><span class="facet-count"></span></span>
       <span class="pcs-cl-facet" data-facet="evgen"           ><span class="facet-label">Sample</span>          <span class="facet-chosen"></span><span class="facet-count"></span></span>
       <span class="pcs-cl-facet" data-facet="submission_path" ><span class="facet-label">Submission</span>      <span class="facet-chosen"></span><span class="facet-count"></span></span>
@@ -183,9 +186,9 @@ Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
      chips are only rendered when the operator clicks a facet title — the
      compose view column is too narrow to display every facet's values at once. */
 
-  const STR  = ['status','requestor','evgen','submission_path','priority','nevents',
+  const STR  = ['status','queue','requestor','evgen','submission_path','priority','nevents',
                 'detector','beam','physics','q2','species','energy'];
-  const DS   = { status:'status', requestor:'requestor', evgen:'evgen',
+  const DS   = { status:'status', queue:'queue', requestor:'requestor', evgen:'evgen',
                  submission_path:'submissionPath',
                  priority:'priority', nevents:'nevents',
                  detector:'detector', beam:'beam', physics:'physics',
@@ -220,6 +223,27 @@ Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
       {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
   function b(v) { return v ? '1' : '0'; }
+  /* The task's queue (pcs.views.annotate_task_queue): the ready buffer
+     while a submission waits for the pressure front, else the queue of
+     its PanDA submission or the queue placed on it. */
+  function queueSlotHtml(c) {
+    if (!c || !c.label) return '<span class="queue-slot"></span>';
+    if (c.kind === 'buffer') {
+      const title = 'In the ready buffer' + (c.site ? ' for ' + c.site : ', no queue yet')
+        + ': the pressure front submits it when ' + (c.site || 'a production queue') + ' is healthy and has room.';
+      return `<span class="queue-slot" title="${esc(title)}">Queue: <span class="ready-buffer queued_fill">ready buffer</span>${c.site ? ' for ' + esc(c.site) : ''}</span>`;
+    }
+    return `<span class="queue-slot" title="${esc(c.title || '')}">${c.kind === 'placed' ? 'Placed' : 'Queue'}: ${esc(c.label)}</span>`;
+  }
+  /* The compose page keeps a row's queue current as a task enters or
+     leaves the ready buffer there. */
+  window.pcsClSetQueue = function (taskId, cell) {
+    const row = listEl.querySelector(`.pcs-cl-row[data-task-id="${String(taskId)}"]`);
+    if (!row) return;
+    row.dataset.queue = (cell && cell.label) || '';
+    const slot = row.querySelector('.queue-slot');
+    if (slot) slot.outerHTML = queueSlotHtml(cell);
+  };
   function rowHtml(r, focusedId) {
     const outs = (r.outputs || []).map(o =>
       `<span class="${o.stage === 'FULL' ? 'out-simu' : 'out-reco'}">${o.stage === 'FULL' ? 'Simu' : 'Reco'} ${esc(o.files)}f/${esc(o.size)}${o.complete ? '' : ' <span class="out-incomplete">!</span>'}</span>`).join('');
@@ -229,7 +253,7 @@ Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
       ? `<div class="r3">${r.has_output ? outs + refs : '<span class="flag-pill pill-noout">no output</span>'}${r.campaign ? `<span style="margin-left:auto;">${esc(r.campaign)}</span>` : ''}</div>`
       : '';
     return `<div class="pcs-cl-row${String(r.id) === String(focusedId) ? ' selected' : ''}"`
-      + ` data-task-id="${r.id}" data-status="${esc(r.status)}" data-requestor="${esc(r.requestor)}"`
+      + ` data-task-id="${r.id}" data-status="${esc(r.status)}" data-queue="${esc((r.queue && r.queue.label) || '')}" data-requestor="${esc(r.requestor)}"`
       + ` data-submission-path="${esc(r.submission_path)}" data-pre-tdr="${b(r.pre_tdr)}"`
       + ` data-early-science="${b(r.early_science)}" data-other="${b(r.other)}" data-new-request="${b(r.new_request)}"`
       + ` data-background="${b(r.background)}" data-priority="${esc(r.priority)}" data-nevents="${esc(r.nevents)}"`
@@ -251,6 +275,7 @@ Row click is exposed via a 'pcs-cl:select' CustomEvent on the list root
       + (r.pre_tdr ? '<span class="flag-pill pill-ptdr" title="Possible pre-TDR use">pTDR</span>' : '')
       + (r.early_science ? '<span class="flag-pill pill-es" title="Early-science use">ES</span>' : '')
       + (r.other ? '<span class="flag-pill pill-other" title="Other use">Other</span>' : '')
+      + queueSlotHtml(r.queue)
       + `</div>${r3}</div>`;
   }
   (function buildRows() {

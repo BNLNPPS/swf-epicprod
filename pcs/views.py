@@ -76,7 +76,7 @@ def _prod_config_scout_mode_pref(username):
     return bool(UserPreference.get_prefs(username).get(PROD_CONFIG_SCOUT_MODE_PREF, False))
 
 
-CATALOG_TASK_LIST_CACHE_VERSION = 4
+CATALOG_TASK_LIST_CACHE_VERSION = 5  # 5: the Queue column (ready buffer)
 CATALOG_BUILD_TIMING_ENABLED = False
 
 # The official ePIC physics working groups
@@ -508,6 +508,12 @@ def _current_catalog_tasks(campaign, catalog_view, progress_snapshot, timings=No
         timings,
         'pwg priority preload',
         lambda: annotate_pwg_priority(tasks),
+        detail_fn=lambda rows: f'{len(rows)} rows',
+    )
+    tasks = _timed(
+        timings,
+        'queue (ready buffer, PanDA, placed)',
+        lambda: annotate_task_queue(tasks),
         detail_fn=lambda rows: f'{len(rows)} rows',
     )
     if catalog_view == 'progress':
@@ -5646,6 +5652,7 @@ def prod_task_compose(request):
     tasks_list = _annotate_task_questionnaire_matches(tasks_list)
     tasks_list = _annotate_task_pc_requests(tasks_list)
     tasks_list = annotate_pwg_priority(tasks_list)
+    tasks_list = annotate_task_queue(tasks_list)
     pwg_marks = {m.path: int(m.priority)
                  for m in EvgenMark.objects.filter(priority__gt=0)}
     focused_id = focused_task.pk if focused_task is not None else None
@@ -5676,6 +5683,8 @@ def prod_task_compose(request):
             'prod_config_name': t.prod_config.name,
             'csv_file': t.csv_file,
             'overrides': (t.overrides or {}) if heavy else None,
+            # A person's submission waiting in the ready buffer for the front.
+            'queued': (t.overrides or {}).get('queued'),
             'ai_content': ai_content_summary(t.overrides or {}),
             'propagation': t.dataset.propagation if t.dataset_id else '',
             'proposal': ((t.dataset.metadata or {}).get('proposal')
@@ -5857,7 +5866,46 @@ def _compose_task_row(t):
                     for o in t.outputs],
         'output_refs': [{'stage': r.get('stage'), 'owner': r.get('owner')} for r in t.output_refs],
         'campaign': t.campaign.name if t.campaign_id else '',
+        'queue': getattr(t, 'queue_cell', None) or {'kind': 'none', 'label': '', 'title': ''},
     }
+
+
+def annotate_task_queue(tasks):
+    """Each task's queue as the task lists show it, ``t.queue_cell``
+    (``kind``, ``label``, ``site``, ``title``): in the ready buffer when a
+    person's submission waits for the pressure front, with the queue it
+    is placed on if any; else the queue of its latest PanDA attempt; else
+    the queue a person placed it on; else none
+    (CONTINUOUS_PRODUCTION.md, Placement). One query over the attempts
+    of all the tasks. Returns the tasks."""
+    from .models import PandaTasks
+    last_site = {}
+    for task_id, site in (PandaTasks.objects
+                          .filter(prod_task_id__in=[t.pk for t in tasks])
+                          .order_by('prod_task_id', 'id')
+                          .values_list('prod_task_id', 'site')):
+        last_site[task_id] = site or ''
+    for t in tasks:
+        ov = t.overrides or {}
+        queued = ov.get('queued') if isinstance(ov.get('queued'), dict) else None
+        if queued:
+            site = str(queued.get('site') or '')
+            t.queue_cell = {
+                'kind': 'buffer', 'label': 'ready buffer', 'site': site,
+                'title': ('In the ready buffer' + (f' for {site}' if site else ', no queue yet')
+                          + ': the pressure front submits it when '
+                          + (site or 'a production queue') + ' is healthy and has room.')}
+        elif t.pk in last_site:
+            site = last_site[t.pk]
+            t.queue_cell = {'kind': 'panda', 'label': site or 'unknown', 'site': site,
+                            'title': 'The queue of its latest PanDA submission.'}
+        elif ov.get('panda_site'):
+            site = str(ov['panda_site'])
+            t.queue_cell = {'kind': 'placed', 'label': site, 'site': site,
+                            'title': 'Placed here; not submitted.'}
+        else:
+            t.queue_cell = {'kind': 'none', 'label': '', 'site': '', 'title': ''}
+    return tasks
 
 
 @_login_required_flash

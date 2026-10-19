@@ -18,6 +18,7 @@
             <h2>{{ task.composed_name }}</h2>
             <p class="text-muted">
                 <span class="badge bg-{% if task.status == 'draft' %}secondary{% elif task.status == 'ready' %}primary{% elif task.status == 'submitted' %}info{% elif task.status == 'completed' %}success{% elif task.status == 'past_output' %}dark{% elif task.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ task.status }}</span>
+                {% with q=task.overrides.queued %}{% if q %}<span class="queued_fill" style="display:inline-block;padding:.1rem .5rem;border-radius:.25rem;font-weight:600;white-space:nowrap;" title="In the ready buffer{% if q.site %} for {{ q.site }}{% else %}, no queue yet{% endif %}: the pressure front submits it when {% if q.site %}{{ q.site }}{% else %}a production queue{% endif %} is healthy and has room.">In the ready buffer{% if q.site %} for {{ q.site }}{% endif %}</span>{% endif %}{% endwith %}
                 Created by {{ task.created_by }} on {{ task.created_at|fmt_dt }}
                 {% if task.updated_at != task.created_at %} | Updated <span data-relative-time="{{ task.updated_at|date:'c' }}">{{ task.updated_at|fmt_dt }}</span>{% endif %}
             </p>
@@ -35,6 +36,8 @@
             {% if can_reset_submission %}
             <button class="btn btn-danger btn-sm" id="btn-reset-submission">Reset submission</button>
             {% endif %}
+            {% elif task.overrides.queued %}
+            <button type="button" class="btn btn-success btn-sm" disabled title="In the ready buffer: the pressure front submits it. Take it out on the compose page, under Site.">In the ready buffer</button>
             {% elif can_submit %}
             <button type="button" class="btn btn-success btn-sm" id="btn-submit-task">Submit to PanDA</button>
             {% endif %}
@@ -342,7 +345,7 @@ function pollForSubmittedTask(attemptsLeft) {
     }, 10000);
 }
 if (btnSubmitTask) btnSubmitTask.addEventListener('click', function() {
-    if (!confirm('Submit "{{ task.composed_name|escapejs }}" to PanDA?')) return;
+    if (!confirm('Submit "{{ task.composed_name|escapejs }}"? It goes into the ready buffer, and the pressure front submits it to PanDA when a production queue is healthy and has room.')) return;
     btnSubmitTask.disabled = true;
     btnSubmitTask.textContent = 'Submitting...';
     fetch('/swf-monitor/pcs/api/prod-tasks/{{ task.composed_name|urlencode }}/submit/', {
@@ -350,8 +353,8 @@ if (btnSubmitTask) btnSubmitTask.addEventListener('click', function() {
     }).then(r => r.json().then(d => ({ok: r.ok, d})))
       .then(({ok, d}) => {
           if (ok && d.queued) {
-              // Queued for the pressure front, which submits it when its queue has room.
-              btnSubmitTask.textContent = 'Queued for the front' + (d.queued.site ? ' at ' + d.queued.site : '');
+              // In the ready buffer: the pressure front submits it when a queue has room.
+              btnSubmitTask.textContent = 'In the ready buffer' + (d.queued.site ? ' for ' + d.queued.site : '');
           } else if (ok) {
               btnSubmitTask.textContent = 'Submitted - awaiting PanDA ID...';
               if (submitPollTimer) clearTimeout(submitPollTimer);

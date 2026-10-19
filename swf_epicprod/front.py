@@ -747,8 +747,9 @@ def recommend(state, need, queues=None, closed=None):
     given.
 
     ``state`` is the front's stored state (``front_state``), ``need`` the
-    task's ``task_need``. A queue with a red gate or a limit the task
-    exceeds is not recommendable. The rest rank by canary standing
+    task's ``task_need``. A queue whose feed switch is off, with a red
+    gate, or with a limit the task exceeds is not recommendable; a person
+    may still choose it explicitly. The rest rank by canary standing
     (healthy first), then by committed depth in hours (least first; an
     uncalibrated queue with nothing queued counts as empty, one with jobs
     queued ranks after every known depth), then by p90 start latency
@@ -783,7 +784,8 @@ def recommend(state, need, queues=None, closed=None):
             'limits': limits,
             'fit': fit_problems(need, limits),
             'blockers': (gate_blockers(gates, {'breaker': d.get('breaker')})
-                         + ([f'closed: {closed[queue]}'] if queue in closed else [])),
+                         + ([f'closed: {closed[queue]}'] if queue in closed else [])
+                         + ([] if d.get('feed_switch') else ['feed off'])),
             'front_state': d.get('state', ''), 'front_reason': d.get('reason', ''),
         }
         if limits is None:
@@ -807,7 +809,7 @@ def recommend(state, need, queues=None, closed=None):
     best = eligible[0] if eligible else None
     if best is None:
         reason = ('no production queue is open to this task: every queue '
-                  'has a red gate or a limit the task exceeds')
+                  'has its feed off, a red gate or a limit the task exceeds')
         if not placement:
             reason = ('no recommendation yet: the front stores its gate readings '
                       'with each cycle, and none is stored')

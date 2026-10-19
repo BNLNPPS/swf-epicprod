@@ -6603,8 +6603,8 @@ def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by
     log_epicprod_action(
         'pcs', 'prodtask_queued', outcome='ok', username=changed_by or '',
         subject_type='campaign_task', subject_key=task.name,
-        message=(f'{task.name}: {kind} queued for the front'
-                 + (f' at {mark["site"]}' if mark['site'] else ', unplaced')
+        message=(f'{task.name}: {kind} in the ready buffer'
+                 + (f' for {mark["site"]}' if mark['site'] else ', no queue yet')
                  + (f', {rows} jobs' if rows is not None else '')),
         kind=kind, site=mark['site'], rows=rows)
     return mark

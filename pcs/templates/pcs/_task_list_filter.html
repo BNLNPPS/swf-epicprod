@@ -137,6 +137,11 @@ Context expected:
     <a href="#" data-filter="status" data-value="" class="filter-link filter-active">All</a>
     <span id="pcs-tlf-status-opts"></span>
   </div>
+  <div class="pcs-tlf-bar-row" title="Where the task's work goes: the ready buffer while a submission waits for the pressure front, else the queue of its PanDA submission or the queue placed on it">
+    <span class="pcs-tlf-label">Queue:</span>
+    <a href="#" data-filter="queue" data-value="" class="filter-link filter-active">All</a>
+    <span id="pcs-tlf-queue-opts"></span>
+  </div>
   <div class="pcs-tlf-bar-row">
     <span class="pcs-tlf-label">Campaign propagation:</span>
     <a href="#" data-filter="propagation" data-value="" class="filter-link filter-active">All</a>
@@ -317,6 +322,7 @@ Context expected:
         {% else %}
         <th data-sort="dataset" class="pcs-sort sorting">Dataset</th>
         <th data-sort="status" class="pcs-sort sorting">Status</th>
+        <th data-sort="queue" class="pcs-sort sorting">Queue</th>
         <th data-sort="nevents" class="pcs-sort sorting">Nev (M)</th>
         <th data-sort="background" class="pcs-sort sorting">Backgd</th>
         <th data-sort="new_request" class="pcs-sort sorting">New</th>
@@ -333,6 +339,7 @@ Context expected:
       <tr class="pcs-tlf-row pcs-tlf-data{% if focused_task_id == t.pk %} table-active{% endif %}"
           data-task-id="{{ t.pk }}"
           data-status="{{ t.status|default:'' }}"
+          data-queue="{{ t.queue_cell.label|default:'' }}"
           data-propagation="{{ t.dataset.propagation|default:'' }}"
           data-ai-proposed="{% if t.dataset.metadata.proposal %}1{% else %}0{% endif %}"
           data-ai-executed="{% if t.dataset.composed_name in ai_executed_names %}1{% else %}0{% endif %}"
@@ -441,6 +448,11 @@ Context expected:
         </td>
         {% if catalog_view != 'progress' %}
         <td class="small {{ t.status|state_class }}" title="{{ t.status|state_title }}" data-sort-val="{{ t.status }}">{{ t.status|state_label }}</td>
+        {% if t.queue_cell.kind == 'buffer' %}
+        <td class="small queued_fill" title="{{ t.queue_cell.title }}" data-sort-val="ready buffer {{ t.queue_cell.site }}"><strong>ready buffer</strong>{% if t.queue_cell.site %} for {{ t.queue_cell.site }}{% endif %}</td>
+        {% else %}
+        <td class="small" title="{{ t.queue_cell.title }}" data-sort-val="{{ t.queue_cell.label }}">{% if t.queue_cell.kind == 'placed' %}placed: {% endif %}{{ t.queue_cell.label }}</td>
+        {% endif %}
         <td class="small text-end" data-sort-val="{{ nev|default:'' }}">{{ nev|millions }}</td>
         <td class="small text-center" data-sort-val="{% if bg|lower == 'yes' %}1{% else %}0{% endif %}">{% if bg|lower == 'yes' %}Yes{% endif %}</td>
         <td class="small text-center">{% if t.new_request %}Yes{% endif %}</td>
@@ -521,12 +533,12 @@ Context expected:
      state of the other filters. Initial state comes from URL query params
      so the catalog stays bookmarkable. */
 
-  const STR = ['status','propagation','requestor','evgen','submission_path','priority','pwg_priority','nevents',
+  const STR = ['status','queue','propagation','requestor','evgen','submission_path','priority','pwg_priority','nevents',
                'edition','detector','beam','physics','q2','species','energy'];
   const BOOL = ['new_request','pre_tdr_use','early_science_use','other_use','background',
                 'has_output','no_output','incomplete_output','has_simu','has_reco',
                 'has_input','no_input','incomplete_input','ai_proposed','ai_executed'];
-  const DS = { status:'status', propagation:'propagation',
+  const DS = { status:'status', queue:'queue', propagation:'propagation',
                requestor:'requestor', evgen:'evgen',
                submission_path:'submissionPath',
                priority:'priority', pwg_priority:'pwgPriority', nevents:'nevents',

@@ -26,7 +26,8 @@ at 2.9 attempts per success.
 
 The ProdTask lifecycle `draft → ready → submitted → completed | failed`
 exists (PCS_DATASET_REQUEST_WORKFLOW.md). The queue is every PCS ProdTask
-in `ready`.
+in `ready`, together with the submissions people have queued for the
+front (Placement, below); the pages call it the ready buffer.
 
 Campaign assembly fills it. For 26.09 the campaign specification can be
 assembled as completely as the record allows — configurations, inputs,
@@ -359,8 +360,12 @@ person is fed even where the queue's feed switch is off: the person's
 choice of queue is the consent, and the switch governs only the front's
 own placements. Every other gate stands, and a task larger than the
 queue's high mark is held as `oversize_task` with the reason on the
-task's Site control. The task's Site control shows the queued
-submission, the front's latest decision for its queue, and Cancel.
+task's Site control. A queued task reads "in the ready buffer" on every
+page: its Site control (with the front's latest reading of its queue
+and the button that takes it out), the task's header, and the Queue
+column and facet of the task lists, where the other tasks show the
+queue of their PanDA submission or the queue placed on them
+(`pcs.views.annotate_task_queue`).
 "Submit now" (the Site control's checkbox) submits at once, as before;
 it is the deliberate exception. GREX on 2026-09-30 is the case: three
 residual reruns placed there by hand put 83,000 jobs into a queue that
@@ -374,17 +379,19 @@ function over the front's stored state. Each cycle stores, per queue:
 - the queue's limits from schedconfig (`maxtime`, `maxrss`,
   `corecount`).
 
-A queue is not recommendable when a gate is red, or when one job of
-the task exceeds a limit (walltime, memory per job as memory per core
-times cores, cores). The rest rank in three steps:
+A queue is not recommendable when its feed switch is off, when a gate
+is red, or when one job of the task exceeds a limit (walltime, memory
+per job as memory per core times cores, cores). The rest rank in three
+steps:
 1. By canary standing, healthy first.
 2. By committed depth in hours, least first. An uncalibrated queue with
    nothing queued counts as empty; one with jobs queued ranks after
    every known depth.
 3. By p90 start latency, shortest first.
 
-The front's switches (`front.enabled`, a queue's feed switch) govern
-only the front's own feeding, not a person's placement.
+A queue whose feed switch is off is never recommended. A person may
+still choose it explicitly, and work a person places there is fed;
+`front.enabled` governs only the front's own feeding.
 
 **Closed queues.** `front.closed_queues`, a SysConfig mapping of queue
 to reason, closes a production queue to production work outright: the
