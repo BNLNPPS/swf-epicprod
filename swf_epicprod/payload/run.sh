@@ -243,6 +243,7 @@ if [ "${EPICPROD_CALL_HOME:-1}" != 0 ]; then
 fi
 export RUCIO_CONFIG=$SCRIPT_DIR/rucio.cfg
 export RUCIO_ACCOUNT=eicprod
+source ${SCRIPT_DIR}/rucio_auth.sh
 
 # Print out the location of the rucio config file
 echo $RUCIO_CONFIG
@@ -611,7 +612,7 @@ STASH_OUT=${TMPDIR}/${TASKNAME}.stash
 # upload client's path stands.
 PRESERVE_ARGS=()
 if [ "${OUT_RSE:-EIC-XRD}" == "${STASH_RSE}" ]; then
-  PRESERVE_ARGS=(--preserve-door "${STASH_DOOR}" --preserve-prefix "${STASH_PREFIX}" --preserve-timeout "${STASH_TIMEOUT:-600}")
+  PRESERVE_ARGS=(--preserve-door "${STASH_DOOR}" --preserve-prefix "${STASH_PREFIX}" --preserve-token-base "${STASH_TOKEN_BASE:-}" --preserve-timeout "${STASH_TIMEOUT:-600}")
 fi
 
 stash_output() {
@@ -623,7 +624,8 @@ stash_output() {
     stage stash fail "the output is not on disk to stash: ${file}"
     return 1
   fi
-  if timeout "${STASH_TIMEOUT:-600}" xrdcp -f "${file}" "${STASH_DOOR}/${target}"; then
+  stash_token_auth "${STASH_DOOR}" "${target}"
+  if timeout "${STASH_TIMEOUT:-600}" ${XRD_AUTH[@]+"${XRD_AUTH[@]}"} xrdcp -f "${file}" "${STASH_DOOR}/${target}"; then
     # The report is what the registrar reads: the logical name, the path
     # it sits at, what it owes (the same name, registered), and why.
     printf '%s\t%s\t%s\t%s\n' "${destination}" "${target}" "${destination}" "${reason}" \
@@ -635,6 +637,7 @@ stash_output() {
   stage stash fail "xrdcp to ${STASH_DOOR}/${target} failed"
   return 1
 }
+rucio_auth
 OUTPUT_STATE=$(python $SCRIPT_DIR/check_output.py epic ${RECO_DID} "${EVENTS_PER_TASK:-}" || echo UNKNOWN)
 FULL_STATE=SKIPPED
 if [ "${COPYFULL:-false}" == "true" ] && [ "${USERUCIO:-false}" == "true" ]; then
@@ -996,6 +999,7 @@ upload_logs() {
     # store goes straight to the output store instead.
     LOG_UPLOADED=0
     if [ -n "${LOG_RSE:-}" ]; then
+      rucio_auth
       if monitor logs python $SCRIPT_DIR/register_to_rucio.py \
           -f "${LOG_TEMP}/${TASKNAME}.log.tar.gz" \
           -d "/${LOG_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
@@ -1009,6 +1013,7 @@ upload_logs() {
       echo "No log RSE configured (log_rse unset on the production config); writing the log beside the science data."
     fi
     if [ "${LOG_UPLOADED}" -eq 0 ]; then
+      rucio_auth
       if monitor logs_fallback python $SCRIPT_DIR/register_to_rucio.py \
           -f "${LOG_TEMP}/${TASKNAME}.log.tar.gz" \
           -d "/${RECO_DIR}/${TASKNAME}.${TIME_TAG}.log.tar.gz" \
@@ -1072,6 +1077,7 @@ if [ "${COPYFULL:-false}" == "true" ] ; then
     # code (1, 81) before the pending, stash and 78 paths could run (task
     # 39994, 2026-09-16: 113 finished jobs lost at registration).
     rm -f "${DIVERTED_OUT}"
+    rucio_auth
     if monitor registration_full python $SCRIPT_DIR/register_to_rucio.py -f "${FULL_TEMP}/${TASKNAME}.edm4hep.root" -d "/${FULL_DIR}/${TASKNAME}.edm4hep.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_FULL}" ${FULL_EVENTS_ARGS[@]+"${FULL_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} ${PRESERVE_ARGS[@]+"${PRESERVE_ARGS[@]}"}; then
       REG_RC=0
     else
@@ -1168,6 +1174,7 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     # code (1, 81) before the pending, stash and 78 paths could run (task
     # 39994, 2026-09-16: 113 finished jobs lost at registration).
     rm -f "${DIVERTED_OUT}"
+    rucio_auth
     if monitor registration_reco python $SCRIPT_DIR/register_to_rucio.py -f "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" -d "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root" -s epic -r ${OUT_RSE:-EIC-XRD} --metadata-json "${METADATA_JSON_RECO}" ${RECO_EVENTS_ARGS[@]+"${RECO_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} ${PRESERVE_ARGS[@]+"${PRESERVE_ARGS[@]}"}; then
       REG_RC=0
     else
@@ -1232,6 +1239,7 @@ if [ "${EVGEN_INTERNAL:-false}" == "true" ] && [ "${COPYEVGEN:-false}" == "true"
   # code (1, 81) before the pending, stash and 78 paths could run (task
   # 39994, 2026-09-16: 113 finished jobs lost at registration).
   rm -f "${DIVERTED_OUT}"
+  rucio_auth
   if monitor registration_evgen python $SCRIPT_DIR/register_to_rucio.py -f "${EVGEN_LOCAL}" -d "/${EVGEN_DIR}/${EVGEN_NAME}" -s epic -r ${OUT_RSE:-EIC-XRD} ${EVGEN_EVENTS_ARGS[@]+"${EVGEN_EVENTS_ARGS[@]}"} ${LIFETIME_ARGS[@]+"${LIFETIME_ARGS[@]}"} ${PRESERVE_ARGS[@]+"${PRESERVE_ARGS[@]}"}; then
     REG_RC=0
   else

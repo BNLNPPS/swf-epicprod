@@ -8,9 +8,10 @@ import logging
 import time
 from typing import Dict, Any
 from rucio.client.uploadclient import UploadClient
-from rucio.client import Client
 from rucio.common.exception import InputValidationError, RSEWriteBlocked, NoFilesUploaded, NotAllFilesUploaded
 from jsonschema import validate as json_validate, ValidationError
+
+import tokens
 
 # The catalog could not be reached to register the output, and could not be
 # reached to say whether the output is there. The run script reads this as a
@@ -289,7 +290,7 @@ def _register_diverted(client, scope, upload_items, args):
         derived.pop('dataset_meta', None)
         derived.pop('lifetime', None)
         try:
-            UploadClient(logger=logging.getLogger('upload_client')).upload([derived])
+            UploadClient(_client=client, logger=logging.getLogger('upload_client')).upload([derived])
         except Exception as exc:  # noqa: BLE001
             logging.getLogger('upload_client').error(
                 "diverted registration of %s:%s failed: %s", scope, derived['did_name'], exc)
@@ -397,15 +398,27 @@ def local_adler32(path: str) -> str:
     return f'{value & 0xffffffff:08x}'
 
 
-def _xrd(args, timeout):
+def _xrd(args, timeout, env=None):
     import subprocess
-    return subprocess.run(['xrdfs'] + list(args), capture_output=True, text=True, timeout=timeout)
+    return subprocess.run(['xrdfs'] + list(args), capture_output=True, text=True, timeout=timeout, env=env)
 
 
-def stored_at(door: str, path: str, timeout: int = 120):
+def door_env(door: str, path: str, base_path: str, logger):
+    """The environment for xrdfs/xrdcp at a door path: a PanDA storage token
+    for that one path when the job has a PanDA token, else the job's X.509."""
+    try:
+        return tokens.xrd_env(tokens.storage_token(door, path, base_path))
+    except tokens.NoPandaToken:
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("preserve: no storage token for %s (%s); using X.509", path, exc)
+        return None
+
+
+def stored_at(door: str, path: str, timeout: int = 120, env=None):
     """(bytes, adler32 or '') of the file at a door path, or None when it
     is not there. The storage is asked, never the catalog."""
-    stat = _xrd([door, 'stat', path], timeout)
+    stat = _xrd([door, 'stat', path], timeout, env)
     if stat.returncode != 0:
         return None
     size = None
@@ -415,7 +428,7 @@ def stored_at(door: str, path: str, timeout: int = 120):
     if size is None:
         return None
     adler = ''
-    check = _xrd([door, 'query', 'checksum', path], max(timeout, 300))
+    check = _xrd([door, 'query', 'checksum', path], max(timeout, 300), env)
     if check.returncode == 0:
         parts = (check.stdout or '').split()
         if len(parts) >= 2 and parts[0].startswith('adler32'):
@@ -423,7 +436,7 @@ def stored_at(door: str, path: str, timeout: int = 120):
     return size, adler
 
 
-def preserve(file_path: str, did_name: str, door: str, prefix: str, timeout: int, logger):
+def preserve(file_path: str, did_name: str, door: str, prefix: str, timeout: int, logger, token_base: str = ''):
     """The first act with a finished output: copy it to its home at the RSE
     of record, the path the RSE's naming gives its logical name, with the
     job's own credential and no word to the catalog. Never overwrites: a
@@ -438,8 +451,9 @@ def preserve(file_path: str, did_name: str, door: str, prefix: str, timeout: int
     mark = str(os.environ.get('PANDAID') or '').strip() or datetime_mark()
     for name in (did_name, derived_did_name(did_name, mark)):
         path = f"{prefix.rstrip('/')}/{name.lstrip('/')}"
+        env = door_env(door, path, token_base, logger)
         try:
-            existing = stored_at(door, path)
+            existing = stored_at(door, path, env=env)
         except Exception as exc:  # noqa: BLE001
             logger.error("preserve: the door did not answer for %s: %s", path, exc)
             return None
@@ -452,7 +466,7 @@ def preserve(file_path: str, did_name: str, door: str, prefix: str, timeout: int
             return None
         try:
             copy = subprocess.run(['xrdcp', file_path, f'{door}/{path}'],
-                                  capture_output=True, text=True, timeout=timeout)
+                                  capture_output=True, text=True, timeout=timeout, env=env)
         except Exception as exc:  # noqa: BLE001
             logger.error("preserve: xrdcp to %s/%s failed: %s", door, path, exc)
             return None
@@ -467,7 +481,7 @@ def preserve(file_path: str, did_name: str, door: str, prefix: str, timeout: int
         stored = None
         for attempt in range(VERIFY_TRIES):
             try:
-                stored = stored_at(door, path)
+                stored = stored_at(door, path, env=env)
                 break
             except Exception as exc:  # noqa: BLE001
                 logger.error("preserve: verification of %s failed (try %d of %d): %s",
@@ -598,6 +612,11 @@ if __name__ == "__main__":
         help="The RSE's path prefix under the door (default /eic/EPIC)"
     )
     parser.add_argument(
+        '--preserve-token-base', dest="preserve_token_base", default='',
+        help="The RSE's oidc_base_path: removed from the door path to form the "
+             "storage token's scope path (default none, as on BNL-XRD)"
+    )
+    parser.add_argument(
         '--preserve-timeout', dest="preserve_timeout", type=int, default=600,
         help="Seconds allowed for the copy home (default 600)"
     )
@@ -610,6 +629,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    os.environ.pop('BEARER_TOKEN', None)
+    os.environ.pop('BEARER_TOKEN_FILE', None)
 
     file_paths = args.file_paths
     did_names = args.did_names
@@ -642,7 +664,7 @@ if __name__ == "__main__":
         print(f"Loaded metadata: {json.dumps(dataset_meta, indent=2)}")
 
     upload_items = []  # List to hold the upload items
-    client = Client()
+    client = tokens.rucio_client()
 
     def _dataset_exists(name):
         from rucio.common.exception import DataIdentifierNotFound
@@ -710,7 +732,8 @@ if __name__ == "__main__":
         homed = []
         for item in upload_items:
             home = preserve(item['path'], item['did_name'], args.preserve_door,
-                            args.preserve_prefix, args.preserve_timeout, logger)
+                            args.preserve_prefix, args.preserve_timeout, logger,
+                            args.preserve_token_base)
             if home is None:
                 break
             homed.append((item, home))
@@ -764,7 +787,7 @@ if __name__ == "__main__":
         logger.error("preserve-first could not home every output; handing the output to the stash")
         sys.exit(NOT_HOME_EXIT)
 
-    upload_client = UploadClient(logger=logger)
+    upload_client = UploadClient(_client=client, logger=logger)
 
     try:
         upload_client.upload(upload_items)

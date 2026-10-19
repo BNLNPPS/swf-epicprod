@@ -41,9 +41,9 @@ def main():
     if len(sys.argv) == 4 and str(sys.argv[3]).strip().isdigit():
         expected = int(sys.argv[3])
     try:
-        from rucio.client import Client
         from rucio.common.exception import DataIdentifierNotFound
-        client = Client()
+        import tokens
+        client = tokens.rucio_client()
         try:
             meta = client.get_did(scope, name)
         except DataIdentifierNotFound:

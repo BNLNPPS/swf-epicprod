@@ -9,11 +9,16 @@
 # dead catalog only at registration: the failover paths of
 # RUCIO_FAILOVER_STASH.md (preserved and pending at BNL-XRD, or stashed
 # there from another output RSE) run as they would in a JLab outage.
-if [ "${EPICPROD_TEST_JLAB_UNREACHABLE:-0}" = "1" ] && [ -n "${RUCIO_CONFIG:-}" ] \
-   && [ -f "${RUCIO_CONFIG}" ]; then
+# The copy is made from, and replaces, the X.509 config rucio_auth builds
+# on (rucio_auth.sh), so the token config it writes later points at the
+# refused port too.
+_test_src="${RUCIO_X509_CONFIG:-${RUCIO_CONFIG:-}}"
+if [ "${EPICPROD_TEST_JLAB_UNREACHABLE:-0}" = "1" ] && [ -n "${_test_src}" ] \
+   && [ -f "${_test_src}" ]; then
   _test_cfg="${TMPDIR:-/tmp}/rucio-jlab-unreachable.cfg"
   sed -E 's#^(rucio_host|auth_host)[[:space:]]*=.*#\1 = https://127.0.0.1:9#' \
-    "${RUCIO_CONFIG}" > "${_test_cfg}"
+    "${_test_src}" > "${_test_cfg}"
   export RUCIO_CONFIG="${_test_cfg}"
+  RUCIO_X509_CONFIG="${_test_cfg}"
   echo "TEST: JLab catalog unreachable for registration (RUCIO_CONFIG=${RUCIO_CONFIG})"
 fi

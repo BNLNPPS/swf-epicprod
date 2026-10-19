@@ -42,8 +42,8 @@ The stages of run.sh, as cloned:
 | Simulation | `npsim` under `prmon`, seeded per chunk | the container |
 | Reconstruction | `eicrecon` under `prmon` | the container |
 | Metadata | `parse_podio_metadata.py` reads geometry, beams and gun parameters from the FULL file; the software release from `eic-info` | PyROOT |
-| Logs | tars the stage logs and prmon outputs; uploads with `register_to_rucio.py --noregister` when `COPYLOG`, to `LOG_RSE` and on failure to the output store. Every path through the block records a stage outcome — started, uploaded, fell back, failed, copied by xrootd, or skipped by configuration — so a successful upload is distinguishable from a block that never ran, and a job killed mid-upload reports the stage as unfinished rather than not at all | the proxy |
-| Outputs | validates each output (`validate_rootfile.py`, exit 65 on failure); uploads each into its dataset, created at submission with its rule and metadata, and attaches it with its event count through `register_to_rucio.py` (exit 78 on failure), reporting whether the dataset's metadata agrees with what the job read from its file | the proxy, JLab Rucio |
+| Logs | tars the stage logs and prmon outputs; uploads with `register_to_rucio.py --noregister` when `COPYLOG`, to `LOG_RSE` and on failure to the output store. Every path through the block records a stage outcome — started, uploaded, fell back, failed, copied by xrootd, or skipped by configuration — so a successful upload is distinguishable from a block that never ran, and a job killed mid-upload reports the stage as unfinished rather than not at all | a PanDA token, else the proxy (item 22) |
+| Outputs | validates each output (`validate_rootfile.py`, exit 65 on failure); uploads each into its dataset, created at submission with its rule and metadata, and attaches it with its event count through `register_to_rucio.py` (exit 78 on failure), reporting whether the dataset's metadata agrees with what the job read from its file | a PanDA token, else the proxy (item 22); JLab Rucio |
 | Condor branches | bearer-token discovery under `_CONDOR_CREDS`, `xrdcp` fallbacks when Rucio is off, `.job.ad` and `.machine.ad` dumps | the condor path |
 
 Consequences of this split:
@@ -646,6 +646,48 @@ In order, each a committed step on the clone:
     seconds apart, and a preserve that still does not home the output
     exits not home, which `run.sh` stashes, with no upload-client
     fallback and no tombstone.
+22. **Tokens from PanDA, the proxy kept as fallback** (2026-10-19,
+    payload 0.24.14). A job whose pilot carries a PanDA token
+    (`OIDC_AUTH_TOKEN` or `PANDA_AUTH_TOKEN`, with its origin) asks the
+    PanDA server (`/api/v1/creds/get_access_token`) for the tokens it
+    writes with; one without, or one PanDA refuses, keeps the `eicprod`
+    proxy, as before. `payload/tokens.py` fetches them and
+    `payload/rucio_auth.sh` applies them:
+    - Rucio: before each Rucio step (`check_output.py`, and every
+      `register_to_rucio.py` call in `run.sh` and `es/es_close.sh`)
+      `rucio_auth` fetches a fresh token from the `rucio` client and
+      points `RUCIO_CONFIG` at a copy of `rucio.cfg` that uses it
+      (`auth_type = oidc`). With oidc the Rucio client takes the first
+      token WLCG discovery finds (`BEARER_TOKEN`, `BEARER_TOKEN_FILE`,
+      `$XDG_RUNTIME_DIR/bt_u<uid>`, `/tmp/bt_u<uid>`) before the file
+      its config names, so `tokens.rucio_client()` makes the one client
+      of `check_output.py` and `register_to_rucio.py` with
+      `BEARER_TOKEN_FILE` naming this job's token, and a stray token on
+      the node never stands in for it; the upload clients share that
+      client. The upload client gets its own path-scoped storage token
+      from the Rucio server for the copy (`get_upload_token`, on RSEs
+      with `oidc_support`), and otherwise sends no bearer and writes with
+      the proxy. That is the campaign image's patched Rucio client
+      (the token-upload-client patch on 40.2.0); an unpatched client
+      hands its Rucio session token to the storage as the bearer, so
+      the token path needs the patched client.
+    - Preserve: the copy home and its verification use a token from the
+      `storage` client, audience the door's host, scope
+      `storage.create` on that one path. It never overwrites.
+    - Stash: the `xrdcp -f` uses a token for that one path with
+      `storage.create` and `storage.modify`, so it overwrites as it does
+      with the proxy.
+
+    The storage scope is the door path less the RSE's `oidc_base_path`,
+    given as `STASH_TOKEN_BASE` (empty by default, as on BNL-XRD).
+    The token file is read at each fetch: the pilot refreshes it in
+    place during the job (pilot3 `refresh_oidc_token`), so a long job
+    gets a current token. The payload sends no `token_key`, so the
+    `rucio` and `storage` clients must not be configured with
+    `use_token_key` on the server; if they are, every job falls back
+    to the proxy. Validated by hand: token writes at BNL-XRD
+    (`epicxrd1.sdcc.bnl.gov:1094`) and LANCASTER-XRD, and a Rucio
+    upload with a scoped storage token.
 
 ## Multithreading
 
@@ -721,5 +763,5 @@ land in this tree; the condor submission path keeps its own copy.
   in the campaign image, or vendoring in the sandbox.
 - Storage operations: the BNL interim stash allocation
   (RUCIO_FAILOVER_STASH.md).
-- Credentials unchanged: the `eicprod` proxy shipped in the sandbox
-  registers the outputs, as today.
+- Credentials: a PanDA token where the pilot carries one, else the
+  `eicprod` proxy shipped in the sandbox (item 22).
