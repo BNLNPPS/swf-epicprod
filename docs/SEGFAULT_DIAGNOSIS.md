@@ -857,8 +857,10 @@ of the configuration. The page states the numbers; the reading belongs
 to a finding.
 
 **Pages.** The catalog and the reproduction runs page carry a Kind
-facet, Crash or Memory, ahead of their other facets (`?kind=memory`);
-the runs page's Result facet holds "Killed for memory".
+facet ahead of their other facets: Segfault, a payload that died on a
+signal it raised itself (SIGSEGV, SIGABRT, SIGBUS, SIGFPE), or Himem, a
+job killed from outside for its memory (`?kind=himem`). The runs page's
+Result facet holds "Killed for memory".
 
 **Local reproduction and package.** The fragment and the package are
 built from a representative as for a crashed job and state the
