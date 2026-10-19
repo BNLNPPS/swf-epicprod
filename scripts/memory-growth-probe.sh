@@ -38,21 +38,38 @@ EOF
 
 echo "probe: ${image} detector ${detver}, ${events} events after ${skip}, in ${work}"
 cd "${work}"
+# The image carries its own CA store; host certificate settings point outside it.
+unset SSL_CERT_FILE CURL_CA_BUNDLE REQUESTS_CA_BUNDLE
 apptainer exec --bind "${work}" --bind "${repo}" "${image}" \
   bash "${repo}/swf_epicprod/payload/run.sh" "${evgen}" "${ext}" "${events}" 0 \
-  > payload.out 2>&1 || echo "probe: run.sh exited $?"
+  > payload.out 2>&1 &
+payload=$!
+# Simulation memory sampled from outside: the payload keeps its prmon series
+# only on the grid. The npsim process RSS every 5 s while the payload runs.
+while kill -0 "${payload}" 2>/dev/null; do
+  rss=$(ps -eo rss=,args= | awk '/[n]psim|[d]dsim/ && !/awk/ {s += $1} END {print s + 0}')
+  echo "$(date +%s) ${rss}" >> npsim-rss.txt
+  sleep 5
+done
+wait "${payload}" || echo "probe: run.sh exited $?"
 
-python3 - "${work}/payload-report.json" <<'PY'
-import json, sys
-try:
-    report = json.load(open(sys.argv[1]))
-except (OSError, ValueError) as error:
-    sys.exit(f"probe: no payload report ({error})")
-stages = report.get("stages") or report.get("memory") or {}
-for name, stage in stages.items():
-    if not isinstance(stage, dict):
-        continue
-    trend = stage.get("trend", {})
-    print(f"{name:22} wall {stage.get('wall_s', '?'):>6} s  peak RSS {stage.get('rss_max_kb', 0) / 1024:7.0f} MB  "
-          f"start {trend.get('memory_start_kb', 0) / 1024:6.0f} MB  growth {trend.get('memory_growth_kb_per_s', 0):8.1f} kB/s")
+python3 - "${work}/npsim-rss.txt" "${events}" <<'PY'
+import sys
+events = int(sys.argv[2])
+rows = [tuple(map(int, line.split())) for line in open(sys.argv[1]) if line.split()]
+rows = [(t, kb) for t, kb in rows if kb > 0]
+if len(rows) < 4:
+    sys.exit("probe: npsim was not seen running")
+t0 = rows[0][0]
+xs = [t - t0 for t, _ in rows]
+ys = [kb / 1024 for _, kb in rows]
+# Growth over the second half of the run, past geometry and physics setup.
+half = [(x, y) for x, y in zip(xs, ys) if x >= xs[-1] / 2]
+n = len(half)
+mx = sum(x for x, _ in half) / n
+my = sum(y for _, y in half) / n
+slope = sum((x - mx) * (y - my) for x, y in half) / max(sum((x - mx) ** 2 for x, _ in half), 1e-9)
+print(f"simulation: {xs[-1]} s, {events} events; RSS at 60 s {next(y for x, y in zip(xs, ys) if x >= min(60, xs[-1])):.0f} MB, "
+      f"peak {max(ys):.0f} MB, end {ys[-1]:.0f} MB; growth over the second half {slope * 60:.1f} MB/min, "
+      f"about {slope * xs[-1] / events:.0f} MB per event")
 PY
