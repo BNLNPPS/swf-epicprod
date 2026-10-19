@@ -149,9 +149,7 @@ and the job-end-to-registration latency.
 
 A component, internal name `storage`, in the epicprod scope, published
 by the pass after each run. Publisher identity `swf-monitor:storage`,
-assessment policy `swf-storage-v1`, schema version 1, canonical JSON
-bounded at 64 KiB, the bound the PanDA activity and platform components
-carry. Snaps are full-only, so a component's size costs on every
+assessment policy `swf-storage-v1`, schema version 1. Snaps are full-only, so a component's size costs on every
 epicprod snap regardless of its own cadence; the listings that would
 make this record large live in the pass's store and are served live.
 

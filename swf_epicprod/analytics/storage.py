@@ -54,7 +54,6 @@ LISTING_HEAD = 50
 MAX_RSES = 16
 MAX_CAMPAIGNS = 8
 MAX_SITES = 32
-MAX_SERIALIZED_BYTES = 64 * 1024
 RUCIO_TIME = '%a, %d %b %Y %H:%M:%S %Z'
 FINAL_TASK_STATES = ('done', 'finished', 'failed', 'broken', 'aborted',
                      'exhausted', 'passed')
@@ -1391,17 +1390,6 @@ def projection(db, now, since, campaigns, pass_info):
             'verdicts': verdicts,
             'overall': 'warning' if verdicts else 'ok'},
     }
-    serialized = len(json.dumps(data, separators=(',', ':')))
-    if serialized > MAX_SERIALIZED_BYTES:
-        for key in ('ghosts', 'stuck_rules', 'stalled_datasets'):
-            rows = data['exceptions'][key]
-            data['exceptions']['overflow'][key] += len(rows) - len(rows[:10])
-            data['exceptions'][key] = rows[:10]
-        serialized = len(json.dumps(data, separators=(',', ':')))
-        if serialized > MAX_SERIALIZED_BYTES:
-            raise ValueError(
-                f'storage projection {serialized} bytes exceeds'
-                f' {MAX_SERIALIZED_BYTES}')
     return data
 
 
