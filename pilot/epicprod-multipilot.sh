@@ -18,10 +18,16 @@
 # signal from the batch system reaches every wrapper; the launcher exits
 # when the last one has, after copying their output to its own.
 #
+# The wrappers start a few seconds apart: pilots of one allocation that ask
+# the server for a job in the same instant contend for the same job rows,
+# and the losers get no job (getJobs InFailedSqlTransaction on the server).
+#
 # EPICPROD_PILOTS_PER_SLOT: wrappers to run (default 8).
+# EPICPROD_PILOT_STAGGER: seconds between wrapper starts (default 15).
 # EPICPROD_STANDARD_WRAPPER: the wrapper (default: the shipped copy, else CVMFS).
 
 N=${EPICPROD_PILOTS_PER_SLOT:-8}
+STAGGER=${EPICPROD_PILOT_STAGGER:-15}
 TOP=$(pwd)
 WRAPPER=${EPICPROD_STANDARD_WRAPPER:-${TOP}/bnlpanda.runpilot2-wrapper.sh}
 [[ -r ${WRAPPER} ]] || WRAPPER=/cvmfs/eic.opensciencegrid.org/panda/bnlpanda.runpilot2-wrapper.sh
@@ -39,6 +45,7 @@ for i in $(seq 1 "${N}"); do
   ( cd "${TOP}/pilot-${i}" && exec bash "${WRAPPER}" "$@" ) \
     > "${TOP}/pilot-${i}.out" 2> "${TOP}/pilot-${i}.err" &
   pids+=($!)
+  [[ ${i} -lt ${N} ]] && sleep "${STAGGER}"
 done
 
 pass_signal() {
