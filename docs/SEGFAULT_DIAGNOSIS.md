@@ -807,15 +807,15 @@ across the task's whole life, computed by aggregate queries on the
 PanDA record with no row per job: kills, the rate over finished plus
 failed, time to kill (10th and 50th percentile), the peak resident
 memory (median and maximum), and per site the kills, hosts, removal
-mechanism and request. Eleven tasks give sixteen signatures of a few
-kilobytes each.
+mechanism and request. The back-fill from 2026-07-01 gave 42 signatures
+over 37 tasks, a few kilobytes each.
 
 **Representatives.** Each signature keeps three jobs as `EpicProdJob`
 rows with `phase = 'payload_memory'`, in the shape of a crashed job's
 row: among the kills whose manifest row resolves, the shortest, median
 and longest time to kill. They are chosen once and kept, so a
-reproduction requested against one stays valid; under fifty rows in
-all. The job page's card, the local reproduction and the package
+reproduction requested against one stays valid; the back-fill wrote 77,
+a signature whose kills have no resolvable row having none. The job page's card, the local reproduction and the package
 read them as they read a crashed job.
 
 **The nightly pass.** The inventory's memory pass
