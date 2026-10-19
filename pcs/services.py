@@ -3717,6 +3717,7 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
 
     summary = {'campaigns': 0, 'rows': 0, 'created': 0, 'updated': 0, 'errors': []}
     touched_campaigns = set()
+    owners_by_campaign = {}
 
     versions_by_stage = {}
     for stage in PAST_CAMPAIGN_STAGES:
@@ -3764,11 +3765,23 @@ def import_epic_prod_past_campaigns(*, epic_prod_path=EPIC_PROD_PATH,
                 )
                 summary['campaigns'] += 1
 
+                if campaign.pk not in owners_by_campaign:
+                    owners_by_campaign[campaign.pk] = precreated_output_owners(campaign)
+                owners = owners_by_campaign[campaign.pk]
+
                 campaign_files = 0
                 campaign_bytes = 0
                 for block in _parse_past_index(text):
                     summary['rows'] += 1
                     epic_did = block['did']
+                    if epic_did in owners:
+                        # PCS created this dataset at submission and its
+                        # task carries it: the index lists that output, not
+                        # a past arrival, so nothing is created for it (the
+                        # reconcile's rule; 34 duplicates to 2026-10-18).
+                        summary.setdefault('owned', 0)
+                        summary['owned'] += 1
+                        continue
                     slug = _hashlib.sha1(epic_did.encode()).hexdigest()[:12]
                     pcs_name = f'past.{stage}.{version}.{slug}'
                     decomposed = _decompose_past_did(epic_did)

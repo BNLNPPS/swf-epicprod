@@ -39,7 +39,22 @@ _BEAM_RE    = re.compile(r'^\d+x\d+$')
 #: tasknames (the submission pipeline replaces '='); both normalize to the
 #: '=' form so either source matches the same tag.
 _Q2_RE      = re.compile(r'^(minQ2[=-]\d+|q2_\S+)$')
-_ION_RE     = re.compile(r'^e(H[0-9]+|He[0-9]+|Li[0-9]*|Ca|Cu|Ru|Pb|Au|C|O)$')
+#: an ion beam: 'e' and an element symbol, with or without its mass number
+#: (eAu, eHe3, eAg). A list of species dropped an unlisted one silently and
+#: the path derived as an ep sample (eAg, 2026-10-18). The symbol must be an
+#: element: 'eA' is the electron-ion directory of the definition paths.
+_ION_RE     = re.compile(r'^e([A-Z][a-z]?)[0-9]*$')
+_ELEMENTS   = frozenset((
+    'H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co '
+    'Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb '
+    'Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re '
+    'Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es '
+    'Fm Md No Lr').split())
+
+
+def _is_ion(tok):
+    m = _ION_RE.match(tok)
+    return bool(m) and m.group(1) in _ELEMENTS
 _NUCLEON    = {'ep', 'en'}
 _MASS_RE    = re.compile(r'^ma_[0-9]')
 _CHANNEL_RE = re.compile(r'^aem')
@@ -158,7 +173,7 @@ def derive_physics(path, beam=''):
             if _BEAM_RE.match(tok):
                 sig['beam_energy_electron'], sig['beam_energy_hadron'] = _beam_split(tok)
             elif _Q2_RE.match(tok):       sig['q2_range'] = tok.replace('minQ2-', 'minQ2=')
-            elif _ION_RE.match(tok):      ions.append(tok)
+            elif _is_ion(tok):            ions.append(tok)
             elif tok in _NUCLEON:         nucleons.append(tok)
             elif tok in _BEAMCONFIG:      sig['beam_config'] = tok
             elif tok in _DECAY:           sig['decay_mode'] = tok

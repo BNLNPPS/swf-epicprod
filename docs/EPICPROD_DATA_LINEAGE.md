@@ -169,7 +169,11 @@ the production team's nightly-regenerated, Rucio-derived record — and
 re-runs the idempotent import, so every campaign's recorded production
 content tracks what production publishes without operator action. The Past
 tab's "Update from epic-prod" button remains as the on-demand override of
-the same ingest, not the mechanism.
+the same ingest, not the mechanism. A DID the index lists that PCS created
+at submission (`precreated_output_owners`, the record on the PanDA attempt)
+is that task's output, and the ingest creates nothing for it, as the
+reconcile attributes it; before this rule (2026-10-18) the ingest gave 34
+such outputs a second, past-output edition.
 
 ## Architecture
 
