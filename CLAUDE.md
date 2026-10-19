@@ -63,3 +63,9 @@ history before 2026-07-10 remains in swf-monitor. Iterate with
 (syncs this tree onto the deployed venv's installed copy); migrations
 and management-command changes require the full swf-monitor deploy,
 which freezes this package non-editable into the deployed venv.
+
+## TeamComms
+
+Developers' LLM sessions message each other through TeamComms, for questions
+and answers across people and providers (Claude Code, Codex). Joining and use:
+<https://github.com/eic/epic-wfms-docs/blob/main/docs/teamcomms.md>.
