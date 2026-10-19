@@ -565,6 +565,9 @@
         return `<div class="mb-2 p-2" style="background:#e6f0f6;color:#000;border-left:4px solid #0d6efd;border-radius:.25rem;">`
             + `<div><strong>In the ready buffer</strong>${what}, since <span data-relative-time="${htmlEscape(q.at || '')}"></span>, by ${htmlEscape(q.by || '?')}.</div>`
             + `<div>${where}${front}</div>`
+            + ((q.problems && q.problems.length)
+               ? `<div style="color:#842029;"><strong>Not yet eligible:</strong> ${htmlEscape(q.problems.join('; '))} The front submits it once this is resolved.</div>`
+               : '')
             + (currentUser ? `<button type="button" class="btn btn-secondary btn-sm mt-1" id="pcs-site-unqueue">Take out of the ready buffer</button>` : '')
             + `</div>`;
     }

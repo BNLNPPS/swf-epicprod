@@ -6895,6 +6895,13 @@ def prodtask_site_options(task):
             'state', 'reason', 'committed_h', 'h_low', 'h_high', 'candidate',
             'candidate_h', 'feed_switch', 'gate_reason')} if decision else None
         queued['front_is_this_task'] = bool(decision) and decision.get('candidate') == task.composed_name
+        # What keeps the task itself from being fed, from its entry in the
+        # front's stored ready buffer (the readiness checks), whatever the
+        # queue's state.
+        from swf_epicprod.front import UNPLACED
+        entries = (state.get('backlog') or {}).get(site or UNPLACED) or []
+        entry = next((e for e in entries if e.get('task') == task.composed_name), None)
+        queued['problems'] = list((entry or {}).get('problems') or [])
     return {
         'queued': queued or None,
         'site': site, 'site_source': prodtask_site_source(task, cfg),
