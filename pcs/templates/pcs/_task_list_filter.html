@@ -605,6 +605,9 @@ Context expected:
     sort: initial.get('sort') || '',
     dir: initial.get('dir') === 'desc' ? 'desc' : (initial.get('dir') === 'asc' ? 'asc' : ''),
   };
+  // Every string facet reads from the URL, including any not listed above
+  // (pwg_priority was missing, so a bookmarked PWG filter was ignored).
+  STR.forEach(k => { if (!(k in state)) state[k] = initial.get(k) || ''; });
 
   function rowMatches(tr, skip) {
     if (skip !== 'q' && state.q) {
@@ -630,10 +633,7 @@ Context expected:
     // Faceted counts: for each str filter, count rows that match all OTHER
     // filters, bucketed by the row's own value of that filter. Boolean
     // filters count rows that would still match if that boolean were ON.
-    const strCounts = { status:{}, propagation:{}, requestor:{}, evgen:{}, submission_path:{},
-                        priority:{}, pwg_priority:{}, nevents:{},
-                        edition:{},
-                        detector:{}, beam:{}, physics:{}, q2:{}, species:{}, energy:{} };
+    const strCounts = Object.fromEntries(STR.map(k => [k, {}]));
     const boolCounts = { new_request:0, pre_tdr_use:0, early_science_use:0, other_use:0, background:0,
                          has_output:0, no_output:0, incomplete_output:0, has_simu:0, has_reco:0,
                          has_input:0, no_input:0, incomplete_input:0, ai_proposed:0, ai_executed:0 };
