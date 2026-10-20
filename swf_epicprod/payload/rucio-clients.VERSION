@@ -1,0 +1,1 @@
+rucio/rucio clients 40.2.0 (release-40, d3a6a955ddc2712f3999478a525528c46065d517), copied 2026-10-20 from eic_xl:26.07.3-stable (py-rucio-clients-40.2.0; the rucio package and its licence only); rucio-clients-token-upload.patch is eic-spack's token-upload-client-40.2.0.patch (eic/eic-spack#1072)

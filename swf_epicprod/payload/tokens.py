@@ -6,6 +6,10 @@ rucio:   python tokens.py rucio --out FILE --cfg FILE [--base-cfg FILE]
 storage: python tokens.py storage --door root://host:port --path /storage/path
          [--base-path /strip] [--verb storage.create]
          prints a storage token for that one path.
+patched-client: python tokens.py patched-client --dir DIR
+         prints the lib directory of the payload's patched Rucio client,
+         unpacked under DIR, when the image's client needs it; exit 4 when
+         the image's own client uploads with tokens.
 Exit 3 when there is no PanDA token in the environment (the caller keeps X.509).
 """
 
@@ -13,6 +17,8 @@ import argparse
 import configparser
 import os
 import posixpath
+import shutil
+import subprocess
 import sys
 from urllib.parse import urlparse
 
@@ -22,6 +28,16 @@ PANDA_URL = os.environ.get('EPICPROD_PANDA_URL', 'https://pandaserver01.sdcc.bnl
 RUCIO_CLIENT = os.environ.get('EPICPROD_RUCIO_TOKEN_CLIENT', 'rucio')
 STORAGE_CLIENT = os.environ.get('EPICPROD_STORAGE_TOKEN_CLIENT', 'storage')
 NO_PANDA_TOKEN = 3
+IMAGE_CLIENT_UPLOADS_WITH_TOKENS = 4
+
+# The July images carry the Rucio client 40.2.0 without the token upload
+# patch (eic/eic-spack#1072), so their upload client hands the Rucio session
+# token to the storage. The payload ships that client and the patch
+# (rucio-clients.VERSION), unpacked and patched in the job where needed.
+HERE = os.path.dirname(os.path.abspath(__file__))
+RUCIO_CLIENT_SOURCE = os.path.join(HERE, 'rucio-clients-40.2.0.tgz')
+RUCIO_CLIENT_PATCH = os.path.join(HERE, 'rucio-clients-token-upload.patch')
+RUCIO_CLIENT_VERSION = '40.2.0'
 
 
 class NoPandaToken(Exception):
@@ -136,6 +152,32 @@ def write_rucio_config(token_file, cfg_file, base_cfg=None):
         cfg.write(handle)
 
 
+def image_client():
+    """(version, uploads with tokens) of the image's Rucio client."""
+    from rucio import version
+    import rucio.client.uploadclient as uploadclient
+    with open(uploadclient.__file__) as handle:
+        return version.version_string(), 'get_upload_token' in handle.read()
+
+
+def patched_client(dest):
+    """The lib directory of the shipped Rucio client, unpacked and patched
+    under dest, once per job."""
+    lib = os.path.join(dest, 'lib')
+    done = os.path.join(dest, '.patched')
+    if os.path.exists(done):
+        return lib
+    shutil.rmtree(dest, ignore_errors=True)
+    os.makedirs(dest)
+    for cmd in (['tar', 'xzf', RUCIO_CLIENT_SOURCE, '-C', dest, '--strip-components=1'],
+                ['patch', '-p1', '-s', '-i', RUCIO_CLIENT_PATCH]):
+        step = subprocess.run(cmd, cwd=dest, capture_output=True, text=True)
+        if step.returncode != 0:
+            raise RuntimeError(f"{cmd[0]} failed: {(step.stderr or step.stdout).strip()[-300:]}")
+    open(done, 'w').close()
+    return lib
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='what', required=True)
@@ -148,9 +190,19 @@ def main():
     s.add_argument('--path', required=True)
     s.add_argument('--base-path', default='')
     s.add_argument('--verb', action='append', default=None)
+    p = sub.add_parser('patched-client')
+    p.add_argument('--dir', required=True)
     args = parser.parse_args()
     try:
-        if args.what == 'rucio':
+        if args.what == 'patched-client':
+            version, uploads_with_tokens = image_client()
+            if uploads_with_tokens:
+                sys.exit(IMAGE_CLIENT_UPLOADS_WITH_TOKENS)
+            if version != RUCIO_CLIENT_VERSION:
+                raise RuntimeError(f'the image has Rucio client {version} without the token '
+                                   f'upload patch, and the payload ships {RUCIO_CLIENT_VERSION}')
+            print(patched_client(os.path.abspath(args.dir)))
+        elif args.what == 'rucio':
             token = panda_token(RUCIO_CLIENT)
             fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, 'w') as handle:

@@ -667,10 +667,21 @@ In order, each a committed step on the clone:
       client. The upload client gets its own path-scoped storage token
       from the Rucio server for the copy (`get_upload_token`, on RSEs
       with `oidc_support`), and otherwise sends no bearer and writes with
-      the proxy. That is the campaign image's patched Rucio client
-      (the token-upload-client patch on 40.2.0); an unpatched client
-      hands its Rucio session token to the storage as the bearer, so
-      the token path needs the patched client.
+      the proxy. That is the Rucio client with the token upload patch
+      (eic/eic-spack#1072, on 40.2.0); an unpatched client hands its
+      Rucio session token to the storage as the bearer, so the token
+      path needs the patched client. The July images (26.07.1,
+      26.07.3) and 26.10.0 carry 40.2.0 without it, and their jobs
+      run after the `eicprod` certificate expires on 2026-10-28, so
+      the payload ships the client: `rucio-clients-40.2.0.tgz`, the
+      package and its licence as the 26.07.3 image has it, with the
+      patch as `rucio-clients-token-upload.patch`
+      (`rucio-clients.VERSION`). A token step uses the image's client
+      when it has the patch; where the image has 40.2.0 without it,
+      `tokens.py patched-client` unpacks and patches the shipped
+      client once in the job and `rucio_auth` puts it first on
+      `PYTHONPATH` for that step; any other client keeps the proxy
+      for the step. An X.509 step always runs the image's client.
     - Preserve: the copy home and its verification use a token from the
       `storage` client, audience the door's host, scope
       `storage.create` on that one path. It never overwrites.
