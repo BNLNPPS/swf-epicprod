@@ -879,7 +879,12 @@ reading as the content, the structured fields in `data`: serial (the
 permanent id, drawn once at creation and shown as f-8; the page lists
 findings newest first by it), date, frame,
 stage, signatures, sources, class, action, standing, fix, notes,
-model_reading), which versions every substantive change with the
+model_reading, and where in the detector the finding lies:
+detector_components, DD4hep top-level detector names from the epic
+compact files, each optionally with a volume path below it
+(`BeamPipeB0/v_pipe_7`); detector_point, a point in DD4hep global
+coordinates in millimetres, an unknown axis null; detector_geometry,
+the geometry those refer to), which versions every substantive change with the
 editor's name (`entry_version`). The production operator writes them
 after checking each claim against its source, through the MCP tool
 `panda_segfault_finding_set` or `POST /api/segfaults/findings/`; each
