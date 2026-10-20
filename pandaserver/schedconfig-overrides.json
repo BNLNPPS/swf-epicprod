@@ -2,5 +2,47 @@
   "UM_GREX_PanDA_1": {
     "workflow": "pull",
     "_why": "GREX runs pull pilots since 2026-10-19 (docs/OSG_SUBMISSION.md). Recorded as push, the queue fell under the server's meanRSS guard (meanrss 4000): with the eAu jobs running near 5.7 GB in its 8-job slots, the server dispatched only jobs under 4000 MB, and the 10,125 waiting retries ask for 5400."
+  },
+  "JLAB_PanDA_1": {
+    "_clone": "UM_GREX_PanDA_1",
+    "_why": "The JLab farm through its own HTCondor-CE, osg-ce-2.jlab.org (account pandas-eic), with pull pilots from pandaharvester01 as at GREX. CRIC has no such queue, and Torre would not wait for one (2026-10-20). JLab's glidein slots in the OSG pool run only CLAS12 (START requires projectName clas12), so this is ePIC's only route to the JLab farm. Starts brokeroff: only jobs we place run there.",
+    "name": "JLAB_PanDA_1",
+    "nickname": "JLAB_PanDA_1",
+    "panda_resource": "JLAB_PanDA_1",
+    "siteid": "JLAB_PanDA_1",
+    "id": 90001,
+    "site": "JLAB-PanDA",
+    "panda_site": "JLAB-PanDA",
+    "atlas_site": "JLAB",
+    "gocname": "JLAB",
+    "gstat": "JLAB",
+    "rc_site": "JLAB",
+    "rc": "JLab",
+    "cloud": "US",
+    "region": "US",
+    "country": "United States",
+    "rc_country": "United States",
+    "status": "brokeroff",
+    "corecount": 1,
+    "maxrss": 6000,
+    "maxtime": 86400,
+    "state_comment": "Defined by swf-epicprod pandaserver/schedconfig-overrides.json, not in CRIC",
+    "queues": [
+      {
+        "ce_endpoint": "osg-ce-2.jlab.org:9619",
+        "ce_flavour": "HTCONDOR-CE",
+        "ce_id": 90001,
+        "ce_jobmanager": "HTCondorCE",
+        "ce_name": "JLAB-CE-HTCONDOR-CE-osg-ce-2.jlab.org",
+        "ce_queue_id": 90001,
+        "ce_queue_maxcputime": 0,
+        "ce_queue_maxwctime": 0,
+        "ce_queue_name": "default",
+        "ce_queue_status": "production",
+        "ce_state": "ACTIVE",
+        "ce_status": null,
+        "ce_version": null
+      }
+    ]
   }
 }
