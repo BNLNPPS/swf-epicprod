@@ -13,11 +13,13 @@ NEED = {'walltime_h': 2.0, 'cores': 1, 'ram_mb_per_core': 4096,
         'memory_mb': 4096, 'rows': 100}
 
 
-def _decision(committed_h=0.0, not_started=0, p90=10.0, median=0.2, ceiling=1000):
+def _decision(committed_h=0.0, not_started=0, p90=10.0, median=0.2, ceiling=1000,
+              feed_switch=True):
     return {'committed_h': committed_h, 'h_low': 8.0, 'h_high': 24.0,
             'not_started': not_started, 'running': 0, 'ceiling': ceiling,
             'median_walltime_h': median, 'p90_start_latency_h': p90,
-            'breaker': 'closed', 'state': 'held', 'reason': 'queue_off'}
+            'breaker': 'closed', 'state': 'held', 'reason': 'queue_off',
+            'feed_switch': feed_switch}
 
 
 def _state(**queues):
@@ -72,6 +74,18 @@ class RecommendTest(unittest.TestCase):
         rows = {row['queue']: row for row in r['rows']}
         self.assertEqual(rows['A']['blockers'], ['downtime'])
         self.assertTrue(rows['B']['fit'])
+
+    def test_feed_off_not_recommended_but_marked(self):
+        # The Site control lets a person choose a queue whose only blocker
+        # is its feed switch, so the row says which blocker that is.
+        state = _state(A=(_decision(committed_h=0.0, feed_switch=False), GREEN, LIMITS),
+                       B=(_decision(committed_h=5.0), GREEN, LIMITS))
+        r = recommend(state, NEED, ['A', 'B'])
+        self.assertEqual(r['recommended'], 'B')
+        rows = {row['queue']: row for row in r['rows']}
+        self.assertEqual(rows['A']['blockers'], ['feed off'])
+        self.assertTrue(rows['A']['feed_off'])
+        self.assertFalse(rows['B']['feed_off'])
 
     def test_uncalibrated_empty_counts_as_empty_known_p90_breaks_tie(self):
         state = _state(A=(_decision(committed_h=None, p90=None), GREEN, LIMITS),

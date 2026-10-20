@@ -786,6 +786,7 @@ def recommend(state, need, queues=None, closed=None):
             'blockers': (gate_blockers(gates, {'breaker': d.get('breaker')})
                          + ([f'closed: {closed[queue]}'] if queue in closed else [])
                          + ([] if d.get('feed_switch') else ['feed off'])),
+            'feed_off': not d.get('feed_switch'),
             'front_state': d.get('state', ''), 'front_reason': d.get('reason', ''),
         }
         if limits is None:

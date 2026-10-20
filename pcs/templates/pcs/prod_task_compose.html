@@ -632,6 +632,10 @@
         const ordered = (d.rows || []).slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
         const rows = ordered.map(r => {
             const blocked = r.blockers.length > 0 || r.fit.length > 0;
+            // A queue whose feed switch is off is never recommended, but a
+            // person may still choose it: the switch governs only the
+            // front's own placements.
+            const unchoosable = r.blockers.length > (r.feed_off ? 1 : 0) || r.fit.length > 0;
             const why = r.blockers.concat(r.fit).join('; ');
             const depth = r.committed_h !== null && r.committed_h !== undefined
                 ? `${r.committed_h} h <span class="item-meta">(low ${r.h_low}, high ${r.h_high})</span>`
@@ -642,11 +646,11 @@
                 : (L ? 'fits' : '<span class="item-meta">not checked</span>');
             const gates = r.blockers.length ? `<span class="text-danger">${htmlEscape(r.blockers.join('; '))}</span>`
                 : `canary ${htmlEscape(r.canary)}`;
-            const checked = (r.queue === preselect && !blocked) ? ' checked' : '';
+            const checked = (r.queue === preselect && !unchoosable) ? ' checked' : '';
             const marks = (r.queue === d.recommended ? ' <span class="badge bg-success">recommended</span>' : '')
                 + (att && r.queue === att.site ? ' <span class="badge bg-info text-dark">PanDA task here</span>' : '');
             return `<tr${blocked ? ' class="text-muted"' : ''} title="${htmlEscape(why)}">
-                <td><input type="radio" name="pcs-site" value="${htmlEscape(r.queue)}"${checked}${(blocked || !currentUser) ? ' disabled' : ''}></td>
+                <td><input type="radio" name="pcs-site" value="${htmlEscape(r.queue)}"${checked}${(unchoosable || !currentUser) ? ' disabled' : ''}></td>
                 <td>${htmlEscape(r.queue)}${marks}</td>
                 <td>${depth}</td>
                 <td>${r.not_started} / ${r.running}</td>
