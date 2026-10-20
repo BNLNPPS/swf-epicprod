@@ -435,8 +435,10 @@ and shows:
   them, and its gates.
 
 The selected queue goes with Submit, Trial, Rerun Residual and Rerun
-Entire Task. Place records it on the task without submitting. Move
-remaining work here sends a running task's work there.
+Entire Task. Move remaining work here, on the left, sends the current
+PanDA task's work there. Place future tasks here, on the right, records
+it on the task without submitting, so the task's later PanDA tasks go
+there.
 
 **Move.** Move is PanDA's task reassign in mode `soft`. It runs as the
 `reassign` operation of swf-monitor `scripts/panda-task-operation.py`,
