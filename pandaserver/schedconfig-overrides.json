@@ -1,0 +1,6 @@
+{
+  "UM_GREX_PanDA_1": {
+    "workflow": "pull",
+    "_why": "GREX runs pull pilots since 2026-10-19 (docs/OSG_SUBMISSION.md). Recorded as push, the queue fell under the server's meanRSS guard (meanrss 4000): with the eAu jobs running near 5.7 GB in its 8-job slots, the server dispatched only jobs under 4000 MB, and the 10,125 waiting retries ask for 5400."
+  }
+}

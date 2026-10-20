@@ -159,6 +159,8 @@ Submission and execution:
   the OSG pool: hosts, harvester, submit description, container
   layering, levers; which pilot a queue runs, and our own canary pilot
   directory in CVMFS with the procedure for publishing to it.
+- [SCHEDCONFIG_OVERRIDES.md](docs/SCHEDCONFIG_OVERRIDES.md) — the PanDA
+  server's queue records: CRIC's, with our tracked overrides on top.
 - [PANDA_USER_JOBS.md](docs/PANDA_USER_JOBS.md) — user jobs and the
   analysis share.
 - [PANDA_CAPABILITIES.md](docs/PANDA_CAPABILITIES.md) — PanDA
