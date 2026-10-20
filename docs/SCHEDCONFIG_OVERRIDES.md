@@ -55,6 +55,38 @@ nonzero. A CRIC outage therefore no longer reaches the server.
   CRIC URL is kept beside it as a comment. The configurator daemons read
   the setting when `panda_daemon` starts.
 
+## On the submit host
+
+Harvester reads the same records: its queue cache (`panda_queues.json`
+in `[cacher]` of `panda_harvester.cfg`) supplies each queue's CEs to the
+submitter and its fields to the worker maker, so a queue CRIC does not
+have needs our file there too. Since 2026-10-20 on pandaharvester01:
+
+- The script and overrides, from the same commit, in
+  `/data/atlpan/harvester_common/schedconfig/` (owner `atlpan`, `COMMIT`
+  names the commit); `/etc/cron.d/harvester-schedconfig` rewrites
+  `schedconfig.json` there as `atlpan` every five minutes, log
+  `schedconfig.log` beside it.
+- `panda_harvester.cfg` reads `panda_queues.json` from
+  `file:/data/atlpan/harvester_common/schedconfig/schedconfig.json`, the
+  CRIC URL kept beside it as a comment (backup
+  `panda_harvester.cfg-backup-2026-10-20`). Harvester reads the setting
+  at start (`panda_harvester-uwsgi` restarted 20:50 UTC). Harvester
+  therefore also sees GREX as pull, as the server does.
+- JLAB_PanDA_1's harvester queue (`panda_queueconfig.json`, backups
+  `-backup-2026-10-20` and `-20b`): GREX's entry with
+  `submit_pilot3_pull_jlab.sdf`, 10 to 50 waiting workers, at most 200.
+  The description is GREX's single-pilot one (backup
+  `submit_pilot3_pull_umgrex.sdf-backup-2026-10-19b`) with one core,
+  6,000 MB and `+maxWallTime` 1440 (minutes; JLab's Slurm holds a pilot
+  without one), shipping `queuedata/JLAB_PanDA_1/queuedata.json`
+  (`scripts/pilot-queuedata.py`, timefloor 180, maxtime 86400). The CE
+  token is the one harvester's hourly `get-panda-tokens-for-ces.sh`
+  already mints for `osg-ce-2.jlab.org:9619` into
+  `/data/atlpan/tokens/ce/prod/`.
+
+An override change is installed on both hosts.
+
 A change to an override is a commit here, an install of that commit on
 the server, and an entry in the server's change log
 (distcomp-services `panda-server/CHANGES.md`). The server takes it at
