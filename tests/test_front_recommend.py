@@ -166,6 +166,21 @@ class PlaceUnplacedTest(unittest.TestCase):
         place_unplaced(backlog, decisions, self._placement(), ['A'])
         self.assertEqual(backlog['A'][0]['task'], 't1')
 
+    def test_queue_held_at_a_cap_is_passed_over(self):
+        # A ranks first on depth but was held at its task cap last cycle.
+        backlog = {'unplaced': [_entry('t1')]}
+        held = dict(_decision(committed_h=0.0), state='held', reason='task_cap')
+        decisions = {'A': held, 'B': _decision(committed_h=5.0)}
+        place_unplaced(backlog, decisions, self._placement(), ['A', 'B'])
+        self.assertEqual(backlog['B'][0]['task'], 't1')
+
+    def test_every_queue_at_a_cap_still_places(self):
+        backlog = {'unplaced': [_entry('t1')]}
+        held = dict(_decision(committed_h=0.0), state='held', reason='job_cap')
+        decisions = {'A': held, 'B': dict(held, committed_h=5.0)}
+        place_unplaced(backlog, decisions, self._placement(), ['A', 'B'])
+        self.assertEqual(backlog['A'][0]['task'], 't1')
+
     def test_not_ready_or_nothing_feedable_stays(self):
         backlog = {'unplaced': [_entry('t1', problems=['x']), _entry('t2')]}
         place_unplaced(backlog, {}, self._placement(), [])

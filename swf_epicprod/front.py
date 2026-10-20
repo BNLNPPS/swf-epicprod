@@ -426,6 +426,10 @@ def _stored_pilots():
     return ((row.value or {}).get('pilots') or {}) if row else {}
 
 
+# The holds that mean a queue takes no new task this cycle (decide).
+CAP_HOLDS = ('task_cap', 'job_cap')
+
+
 def place_unplaced(backlog, decisions, placement, feedable):
     """Move each unplaced ready task in ``backlog`` to the queue
     ``recommend`` names for it among ``feedable``, recording the
@@ -435,13 +439,20 @@ def place_unplaced(backlog, decisions, placement, feedable):
     entries = backlog.pop(UNPLACED, [])
     left = []
     state = {'queues': decisions, 'placement': placement}
+    # A queue the last cycle held at its task or job cap takes no new task
+    # now; while another fed queue can, the work goes there (2026-10-20:
+    # BNL_OSG_EPIC_PROD_1, held at its task cap by a task being moved off
+    # it, drew twelve ready tasks every cycle while BNL_OSG_PanDA_1 sat
+    # empty).
+    open_queues = [q for q in feedable
+                   if (decisions.get(q) or {}).get('reason') not in CAP_HOLDS] or list(feedable)
     for entry in entries:
         if entry.get('problems') or not feedable:
             entry['unplaced_reason'] = ('no queue the front feeds' if not feedable
                                         else 'not ready')
             left.append(entry)
             continue
-        result = recommend(state, entry.get('need'), feedable)
+        result = recommend(state, entry.get('need'), open_queues)
         if not result['recommended']:
             entry['unplaced_reason'] = result['reason']
             left.append(entry)

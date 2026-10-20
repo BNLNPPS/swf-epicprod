@@ -352,7 +352,8 @@ The submission kernel refuses a spec without a site.
 **The front's placement.** Each cycle, the front sends unplaced
 `ready` tasks to the queue the recommendation names, among the queues
 it feeds (feed switch on, and calibrated, since an uncalibrated queue
-holds with `no_calibration`). The feed places the task on that queue and
+holds with `no_calibration`). A queue the last cycle held at its task
+or job cap is passed over while another fed queue can take the work. The feed places the task on that queue and
 records the recommendation. A task no such queue is open to stays in
 the ready pool marked unplaced, with the reason.
 
