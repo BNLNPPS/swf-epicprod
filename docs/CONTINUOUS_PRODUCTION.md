@@ -246,6 +246,17 @@ nightly credential check (not ok, or older than 36 hours, is red), the
 breaker key, and the two fast detectors computed from the census's
 six-hour window (burn-through: at least 10 failures, half of them fast,
 none finished; failure window: at least 50 outcomes with 60% failed).
+A failure of a task that a crash or memory finding explains
+(SEGFAULT_DIAGNOSIS.md, Findings) is not counted against the queue it
+ran on: the census counts it apart as explained, with the findings, and
+the detectors read the rest. On 2026-10-20 the eAu memory kills (f-15)
+held both OSG queues at 1,109 of 1,109 and 260 of 263 failed while their
+canaries were healthy and twelve ready tasks waited for a queue. A queue
+whose failures are all from such tasks is then judged by its canary.
+An operator can also waive the fast detectors for a queue, for a stated
+time and reason, in `front.gate_waivers` ({queue: {until, reason, by}},
+`until` an ISO time); the gate then reads green with the waiver and the
+reading it set aside in its reason, and the other gates stand.
 Declared downtime is an input since 2026-09-15 (the `declared` hold
 below; the record and its other readers under Declared downtime). A
 ready task's declared job count comes from its manifest, which reads

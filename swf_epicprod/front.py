@@ -43,7 +43,7 @@ goes on. A failed read of a gate reads red.
 """
 import hashlib
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -173,22 +173,59 @@ def _credential_gate():
     return {'outcome': outcome, 'age_h': age_h, 'red': red, 'reason': reason}
 
 
-def fast_detectors(gate):
+def gate_waiver(queue, now=None):
+    """The queue's active entry in ``front.gate_waivers`` ({queue: {until,
+    reason, by}}, until an ISO time), or None. An operator's time-limited
+    word that the fast detectors' reading of this queue is known and not
+    the queue's health; it waives those detectors alone."""
+    value = setting('front.gate_waivers', {})
+    if not isinstance(value, dict):
+        logger.error('front.gate_waivers is not a {queue: {until, reason, by}} mapping: %r', value)
+        return None
+    w = value.get(queue)
+    if not isinstance(w, dict) or not w.get('until'):
+        return None
+    try:
+        until = datetime.fromisoformat(str(w['until']))
+    except ValueError:
+        logger.error('front.gate_waivers[%s].until is not an ISO time: %r', queue, w.get('until'))
+        return None
+    if until.tzinfo is None:
+        until = timezone.make_aware(until)
+    if until <= (now or timezone.now()):
+        return None
+    return {'until': until.isoformat(), 'reason': str(w.get('reason') or ''),
+            'by': str(w.get('by') or '')}
+
+
+def fast_detectors(gate, waiver=None):
     """Burn-through and the windowed failure rate from the census gate
-    window (CONTINUOUS_PRODUCTION.md, The tripwire). Pure."""
+    window (CONTINUOUS_PRODUCTION.md, The tripwire). Failures of tasks a
+    finding explains are counted apart by the census and are not among
+    the failed. ``waiver`` (gate_waiver) turns a red reading green with
+    the waiver stated beside it. Pure."""
     g = gate or {}
     finished, failed, fast = (int(g.get('finished') or 0), int(g.get('failed') or 0),
                               int(g.get('fast_failed') or 0))
     out = {'finished': finished, 'failed': failed, 'fast_failed': fast,
+           'explained': int(g.get('explained') or 0),
+           'explained_by': list(g.get('explained_by') or []),
            'red': False, 'reason': '', 'code': ''}
     if failed >= BURN_MIN_FAILED and fast / max(failed, 1) >= BURN_FAST_FRACTION and finished == 0:
         out.update(red=True, code='burn_through',
                    reason=f'burn-through: {fast} of {failed} failures fast, none finished')
-        return out
-    outcomes = finished + failed
-    if outcomes >= FAILURE_WINDOW_MIN_OUTCOMES and failed / outcomes >= FAILURE_WINDOW_RATE:
-        out.update(red=True, code='failure_window',
-                   reason=f'failure window: {failed} of {outcomes} outcomes failed')
+    else:
+        outcomes = finished + failed
+        if outcomes >= FAILURE_WINDOW_MIN_OUTCOMES and failed / outcomes >= FAILURE_WINDOW_RATE:
+            out.update(red=True, code='failure_window',
+                       reason=f'failure window: {failed} of {outcomes} outcomes failed')
+    if out['red'] and waiver:
+        out.update(red=False, waived=out['code'],
+                   reason=(f"waived until {waiver['until']}"
+                           + (f" by {waiver['by']}" if waiver.get('by') else '')
+                           + (f": {waiver['reason']}" if waiver.get('reason') else '')
+                           + f" ({out['reason']})"),
+                   code='waived')
     return out
 
 
@@ -459,7 +496,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     canary = gates.get('canary') or {}
     credential = gates.get('credential') or {}
     declared = gates.get('declared') or {}
-    fast = fast_detectors(q.get('gate'))
+    fast = fast_detectors(q.get('gate'), settings.get('gate_waiver'))
     eligible = [e for e in backlog if not e['problems']]
     h_low, h_high = float(qs['h_low']), float(qs['h_high'])
     j_max, t_max = int(qs['j_max'] or 0), int(qs['t_max'] or 0)
@@ -932,6 +969,9 @@ def run_cycle(*, dry_run=False, created_by='front'):
     for queue in queues:
         settings = _safe(f'{queue} settings', lambda: queue_settings(queue),
                          lambda exc: dict(QUEUE_DEFAULTS))
+        # An unreadable waiver reads as none: the fast detectors stand.
+        settings['gate_waiver'] = _safe(f'{queue} gate waiver', lambda: gate_waiver(queue),
+                                        lambda exc: None)
         settings_by_queue[queue] = settings
         canary = _safe(f'{queue} canary gate', lambda: _canary_gate(queue), lambda exc: {
             'status': 'unread', 'age_h': None, 'red': True,
@@ -947,7 +987,8 @@ def run_cycle(*, dry_run=False, created_by='front'):
         # the front's own switches decide, and the queue's limits.
         placement[queue] = {
             'gates': {'canary': canary, 'credential': credential, 'declared': declared,
-                      'fast': fast_detectors((census_q or {}).get('gate')),
+                      'fast': fast_detectors((census_q or {}).get('gate'),
+                                             settings.get('gate_waiver')),
                       'breaker': settings.get('breaker')},
             'limits': _safe(f'{queue} limits', lambda: queue_limits(queue), None),
         }
