@@ -38,8 +38,12 @@ def main(argv):
         record[field] = int(value)
     os.makedirs(outdir, exist_ok=True)
     handle, path = tempfile.mkstemp(dir=outdir, suffix=".json")
+    # One field per line, as the server writes it: the wrapper reads fields
+    # with grep (container_options, catchall, environ), and a one-line file
+    # fails its "grep -v null" and stops every pilot.
     with os.fdopen(handle, "w") as out:
-        json.dump(record, out)
+        json.dump(record, out, indent=4)
+        out.write("\n")
     os.chmod(path, 0o644)
     os.replace(path, os.path.join(outdir, "queuedata.json"))
     print(f"wrote {os.path.join(outdir, 'queuedata.json')}")
