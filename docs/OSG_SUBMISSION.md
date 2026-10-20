@@ -105,31 +105,42 @@ pandaharvester01: a `production.pull` template queue there (the
 `production.push` settings with `mapType` `NoJob` and no job-fetch limits) and
 `submit_pilot3_pull_umgrex.sdf`, the push description with
 `--harvester-submit-mode PULL`, without the job input transfer, and keeping
-the canary pilot URL. Waiting pilots are held at 500% of running, at least
-1,000 and at most 5,000. Backups: `panda_queueconfig.json-backup-2026-10-19`
+the canary pilot URL. Backups: `panda_queueconfig.json-backup-2026-10-19`
 and `submit_pilot3_pull_umgrex.sdf-backup-2026-10-19`.
 
-A pull pilot is sized from the queue and the PanDA resource type rather than
-from a job. SCORE (one core, no memory limit) gives one core and 6,000 MB, the
-192 GB of a 32-core GREX node per core. MCORE (two or more cores, no maximum)
-would take the whole node.
+A pull pilot's slot is sized by the submit description, not from a job. On
+its own, harvester sizes it from the queue and the PanDA resource type: SCORE
+(one core, no memory limit) gives one core and 6,000 MB, the 192 GB of a
+32-core GREX node per core, and MCORE (two or more cores, no maximum) would
+take the whole node.
 
-Each pilot ships a `queuedata.json` written by `scripts/pilot-queuedata.py`
+Since 2026-10-20 each GREX worker is an 8-pilot slot:
+`pilot/epicprod-multipilot.sh` is the executable, and the description asks for
+8 cores, 48,000 MB and 300 minutes (`+xcount`, `+maxMemory`, `+maxWallTime`).
+The launcher runs N standard pilot wrappers (default 8) in one allocation of N
+cores and N times the per-core memory, each in its own directory, so their
+single-core jobs share the allocation's memory. The wrappers start 15 s apart,
+since pilots asking the server for a job in the same instant contend for the
+same job rows and the losers get none. Harvester counts the slot as one
+worker, so waiting workers are held at 500% of running, at least 125 and at
+most 625: the 1,000 and 5,000 single-core pilots of the first pull week,
+divided by 8. Backups: `submit_pilot3_pull_umgrex.sdf-backup-2026-10-19b`
+(single pilots) and `panda_queueconfig.json-backup-2026-10-19c` (limits
+before the division).
+
+Each slot ships a `queuedata.json` written by `scripts/pilot-queuedata.py`
 (kept at `harvester_common/queuedata/UM_GREX_PanDA_1/`) with `timefloor` 180
-minutes and `maxtime` 18,000 s, and its slot is requested for 300 minutes
-(`+maxWallTime`). The pilot starts new jobs for 180 minutes, then finishes the
-one it is running and exits; the time floor never stops a running job, and the
-pilot starts no job with less than 30 minutes of `maxtime` left. GREX jobs ran
-a median of 14 minutes and at most 80 in the week to 2026-10-19, so the last
-job ends well inside the slot, and Slurm releases the slot when the pilot
-exits. The script is rerun when the queue's CRIC record changes.
-
-`pilot/epicprod-multipilot.sh` runs N standard pilot wrappers in one
-allocation of N cores and N times the per-core memory, each in its own
-directory, so their single-core jobs share the allocation's memory. With a
-time floor the pilots' jobs fall out of step after the first, which spreads
-both their memory peaks and the end of the allocation. It is in test at GREX
-in hand-submitted 8-pilot, 48 GB workers, not in the harvester configuration.
+minutes and `maxtime` 18,000 s, and the launcher copies it to every wrapper.
+The file keeps the server's layout, one field per line: the wrapper reads
+fields with `grep`, and a one-line file fails its `container_options` check
+and stops every pilot. Each pilot starts new jobs for 180 minutes, then
+finishes the one it is running and exits; the time floor never stops a running
+job, and the pilot starts no job with less than 30 minutes of `maxtime` left.
+GREX jobs ran a median of 14 minutes and at most 80 in the week to 2026-10-19,
+so the last job ends well inside the slot. The pilots' jobs fall out of step
+after the first, which spreads both their memory peaks and the end of the
+slot, and Slurm releases the slot when the last pilot exits. The script is
+rerun when the queue's CRIC record changes.
 
 ## The submit description
 
