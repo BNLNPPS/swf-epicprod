@@ -1,5 +1,6 @@
 # Sourced by run.sh and es/es_close.sh after RUCIO_CONFIG is set: Rucio with a
-# token from PanDA when the job has a PanDA token, else the X.509 proxy.
+# token from PanDA when the job can sign in to the PanDA server (tokens.py
+# panda_login), else the X.509 proxy.
 RUCIO_AUTH_PAYLOAD=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 RUCIO_X509_CONFIG=${RUCIO_X509_CONFIG:-${RUCIO_CONFIG}}
 RUCIO_AUTH_DIR=${RUCIO_AUTH_DIR:-${TMPDIR:-${PWD}}}

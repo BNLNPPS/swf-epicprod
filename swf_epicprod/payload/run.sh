@@ -188,6 +188,15 @@ setup_xrd_auth() {
   fi
 }
 
+# The pilot's own proxy, kept before the sandbox environment points
+# X509_USER_PROXY at the JLab proxy: tokens.py signs in to the PanDA server
+# with it when the pilot carries no PanDA token (EPICPROD_PAYLOAD.md item 22).
+PILOT_X509_USER_PROXY=${PILOT_X509_USER_PROXY:-${X509_USER_PROXY:-}}
+if [ -n "${PILOT_X509_USER_PROXY}" ] && [ "${PILOT_X509_USER_PROXY#/}" = "${PILOT_X509_USER_PROXY}" ]; then
+  PILOT_X509_USER_PROXY=${PWD}/${PILOT_X509_USER_PROXY}
+fi
+export PILOT_X509_USER_PROXY
+
 # Load job environment (mask secrets: any line naming a token, a secret,
 # a password or an access key stays out of the job's stdout)
 if ls environment*.sh ; then

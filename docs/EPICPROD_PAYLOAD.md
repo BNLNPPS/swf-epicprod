@@ -647,11 +647,17 @@ In order, each a committed step on the clone:
     exits not home, which `run.sh` stashes, with no upload-client
     fallback and no tombstone.
 22. **Tokens from PanDA, the proxy kept as fallback** (2026-10-19,
-    payload 0.24.14). A job whose pilot carries a PanDA token
-    (`OIDC_AUTH_TOKEN` or `PANDA_AUTH_TOKEN`, with its origin) asks the
-    PanDA server (`/api/v1/creds/get_access_token`) for the tokens it
-    writes with; one without, or one PanDA refuses, keeps the `eicprod`
-    proxy, as before. `payload/tokens.py` fetches them and
+    payload 0.24.14). A job asks the PanDA server
+    (`/api/v1/creds/get_access_token`) for the tokens it writes with,
+    signing in with its pilot's PanDA token (`OIDC_AUTH_TOKEN` or
+    `PANDA_AUTH_TOKEN`, with its origin) when the pilot carries one, and
+    otherwise with the pilot's own proxy, harvester's robot credential,
+    which `run.sh` keeps as `PILOT_X509_USER_PROXY` before the sandbox
+    environment points `X509_USER_PROXY` at the JLab proxy. The server
+    gives tokens to an identity with `p` in its `GRIDPREF` (the robot,
+    `iddssv1`, since 2026-10-20). A job that cannot sign in, or one PanDA
+    refuses, keeps the `eicprod` proxy, as before. `payload/tokens.py`
+    fetches them and
     `payload/rucio_auth.sh` applies them:
     - Rucio: before each Rucio step (`check_output.py`, and every
       `register_to_rucio.py` call in `run.sh` and `es/es_close.sh`)

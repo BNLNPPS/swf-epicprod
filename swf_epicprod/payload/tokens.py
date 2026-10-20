@@ -10,7 +10,8 @@ patched-client: python tokens.py patched-client --dir DIR
          prints the lib directory of the payload's patched Rucio client,
          unpacked under DIR, when the image's client needs it; exit 4 when
          the image's own client uploads with tokens.
-Exit 3 when there is no PanDA token in the environment (the caller keeps X.509).
+Exit 3 when the job has neither a PanDA token nor the pilot's proxy to sign
+in to the PanDA server with (the caller keeps the JLab X.509 proxy).
 """
 
 import argparse
@@ -63,16 +64,36 @@ def panda_auth():
         return handle.read().strip(), origin
 
 
+def panda_login():
+    """How the job signs in to the PanDA server, as requests arguments: the
+    pilot's PanDA token when it carries one, else the pilot's own proxy
+    (harvester's robot credential), which run.sh keeps as
+    PILOT_X509_USER_PROXY before the sandbox environment points
+    X509_USER_PROXY at the JLab proxy. The server gives tokens to an
+    identity with 'p' in its GRIDPREF."""
+    try:
+        token, origin = panda_auth()
+        return {'headers': {'Authorization': f'Bearer {token}', 'Origin': origin}}
+    except NoPandaToken:
+        proxy = os.environ.get('PILOT_X509_USER_PROXY', '')
+        if proxy and os.path.isfile(proxy):
+            return {'cert': proxy}
+        raise NoPandaToken('no PanDA token or pilot proxy in the environment')
+
+
 def panda_token(client_name, audience=None, scope=None, timeout=60):
-    token, origin = panda_auth()
+    login = panda_login()
+    # Without Accept: application/json the server answers with the Python
+    # repr of its reply, which is not JSON.
+    login['headers'] = dict(login.get('headers') or {}, Accept='application/json')
     params = {'client_name': client_name}
     if audience:
         params['audience'] = audience
     if scope:
         params['scope'] = scope
     reply = requests.get(f'{PANDA_URL}/api/v1/creds/get_access_token', params=params,
-                         headers={'Authorization': f'Bearer {token}', 'Origin': origin},
-                         verify=os.environ.get('X509_CERT_DIR', True), timeout=timeout)
+                         verify=os.environ.get('X509_CERT_DIR', True), timeout=timeout,
+                         **login)
     reply.raise_for_status()
     body = reply.json()
     if not body.get('success'):
