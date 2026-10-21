@@ -6,7 +6,9 @@
   "BNL_OSG_PanDA_1": {
     "workflow": "pull",
     "timefloor": 120,
-    "_why": "Harvester on osgsub01 runs this queue's pilots in pull mode since 2026-10-19 (docs/OSG_SUBMISSION.md); CRIC still recorded push, which put it under the server's meanRSS guard for push queues (the guard that starved GREX on 2026-10-20). timefloor 120 (2026-10-21): with 0 every pilot ran one job and left (994 jobs on 994 pilots in two hours at BNL_OSG_EPIC_PROD_1), so a queue ran only while a batch of its pilots was at the front of the pool's line; a pilot now takes jobs for 120 minutes."
+    "corecount": 1,
+    "maxrss": 4096,
+    "_why": "Harvester on osgsub01 runs this queue's pilots in pull mode since 2026-10-19 (docs/OSG_SUBMISSION.md); CRIC still recorded push, which put it under the server's meanRSS guard for push queues (the guard that starved GREX on 2026-10-20). timefloor 120 (2026-10-21): with 0 every pilot ran one job and left (994 jobs on 994 pilots in two hours at BNL_OSG_EPIC_PROD_1), so a queue ran only while a batch of its pilots was at the front of the pool's line; a pilot now takes jobs for 120 minutes. corecount 1, maxrss 4096 (2026-10-21): the pilots are single-core and ask the pool for 3,700 MB, while CRIC recorded 8 cores and 48,000 MB; the front's fit check and PCS readiness read the record, so the 5,400 MB eAu tasks 40856 and 40857 passed as fitting OSG and lost 55,824 jobs to memory kills on the two OSG queues in three days. 4096 is the default task declaration, which runs here."
   },
   "BNL_OSG_EPIC_PROD_1": {
     "workflow": "pull",

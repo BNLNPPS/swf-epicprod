@@ -112,7 +112,16 @@ about 3.7 GB per core: on 2026-10-19, of 4,515 slots admitting these pilots,
 exceeds its pilot's request is evicted by the slot (`memory usage exceeded
 request_memory`), which the pilot reports as error 1201, killed by SIGTERM.
 Jobs needing more than about 3.7 GB therefore cannot run in this pool on
-single-core pilots in either mode.
+single-core pilots in either mode. Since 2026-10-21 the server's record of
+`BNL_OSG_PanDA_1` says so, `corecount` 1 and `maxrss` 4096 in place of
+CRIC's 8 cores and 48,000 MB (SCHEDCONFIG_OVERRIDES.md): the front's fit
+check and PCS readiness pass no task declaring more than 4,096 MB per job.
+
+Since 2026-10-21 production runs on `BNL_OSG_PanDA_1` alone. The two queues
+draw the same pilots from the same pool, so a second queue only splits the
+pool's line in two. The front no longer feeds `BNL_OSG_EPIC_PROD_1` (its
+feed switch is off); the queue's record and harvester configuration are
+unchanged, for its other users.
 
 ### Pull mode, time floor and slot length on UM_GREX_PanDA_1
 
