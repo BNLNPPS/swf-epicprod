@@ -184,7 +184,10 @@ action-stream event with its editor:
   the measured peak running count until the Harvester fetch limits are
   reported.
 - `t_max`, the maximum number of tasks with unstarted work pinned to the
-  queue, a small integer.
+  queue, a small integer. A paused task does not count: it generates no
+  jobs until an operator resumes it (2026-10-21; three tasks paused since
+  2026-08-17 had held BNL_OSG_EPIC_PROD_1 at its cap with nothing
+  running).
 - `feed`, the per-queue switch; `front.enabled`, the global switch.
 
 In hours at capacity the queues differ mainly in scale: eight hours is
