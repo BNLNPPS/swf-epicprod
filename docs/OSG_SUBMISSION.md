@@ -90,6 +90,19 @@ pilots are not submitted ahead of work. Backups beside the files:
 `submit_pilot2_pull_bnl_osg.sdf-backup-2026-10-19b`. The first pull pilot
 took the queue's highest-priority activated job.
 
+Since 2026-10-21 each pilot takes jobs for 120 minutes (`timefloor` 120 in
+the queue records, SCHEDCONFIG_OVERRIDES.md), and harvester keeps waiting
+pilots at 30% of running, at least 100 and at most 300 per queue, with at
+most 100 new per cycle (`nQueueLimitWorkerRatio` 30, `nQueueLimitWorkerMin`
+100, `nQueueLimitWorkerMax` 300, `maxNewWorkersPerCycle` 100; backup
+`panda_queueconfig.json-backup-2026-10-21`). Before, with one job per pilot,
+the limits were 500% of running, at least 1,000 and at most 10,000 per
+queue, 2,000 new per cycle: on 2026-10-21 8,275 pilots waited for about
+1,000 running slots, the pool started them oldest first, and
+`BNL_OSG_EPIC_PROD_1` sat at 0 running with 8,998 jobs queued behind 3,729
+older `BNL_OSG_PanDA_1` pilots. The waiting pilots beyond the oldest 300
+of each queue (2,189 and 5,486) were removed that day.
+
 The memory request is fixed at the pool's slot size. Slots are provisioned at
 about 3.7 GB per core: on 2026-10-19, of 4,515 slots admitting these pilots,
 1,251 offered at least 3,700 MB and 21 offered 6,000 MB or more. A job that
