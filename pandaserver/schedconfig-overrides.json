@@ -3,6 +3,14 @@
     "workflow": "pull",
     "_why": "GREX runs pull pilots since 2026-10-19 (docs/OSG_SUBMISSION.md). Recorded as push, the queue fell under the server's meanRSS guard (meanrss 4000): with the eAu jobs running near 5.7 GB in its 8-job slots, the server dispatched only jobs under 4000 MB, and the 10,125 waiting retries ask for 5400."
   },
+  "BNL_OSG_PanDA_1": {
+    "workflow": "pull",
+    "_why": "Harvester on osgsub01 runs this queue's pilots in pull mode since 2026-10-19 (docs/OSG_SUBMISSION.md); CRIC still recorded push, which put it under the server's meanRSS guard for push queues (the guard that starved GREX on 2026-10-20)."
+  },
+  "BNL_OSG_EPIC_PROD_1": {
+    "workflow": "pull",
+    "_why": "Harvester on osgsub01 runs this queue's pilots in pull mode since 2026-10-19 (docs/OSG_SUBMISSION.md); CRIC still recorded push, which put it under the server's meanRSS guard for push queues (the guard that starved GREX on 2026-10-20)."
+  },
   "JLAB_PanDA_1": {
     "_clone": "UM_GREX_PanDA_1",
     "_why": "The JLab farm through its own HTCondor-CE, osg-ce-2.jlab.org (account pandas-eic), with pull pilots from pandaharvester01 as at GREX. CRIC has no such queue, and Torre would not wait for one (2026-10-20). JLab's glidein slots in the OSG pool run only CLAS12 (START requires projectName clas12), so this is ePIC's only route to the JLab farm. Starts brokeroff: only jobs we place run there.",

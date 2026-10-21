@@ -22,6 +22,7 @@ override says why.
 | Queue | Field | Value | Why |
 |---|---|---|---|
 | UM_GREX_PanDA_1 | `workflow` | `pull` | GREX runs pull pilots since 2026-10-19. Recorded as push, the queue fell under the server's meanRSS guard, which on a push queue whose running jobs average more memory than its `meanrss` (4000 MB) dispatches only jobs below it: on 2026-10-20 it held 10,125 eAu retries at 5,400 MB while GREX's 8-job slots ran the same jobs without a memory kill. |
+| BNL_OSG_PanDA_1, BNL_OSG_EPIC_PROD_1 | `workflow` | `pull` | Harvester on osgsub01 runs both queues' pilots in pull mode since 2026-10-19 (OSG_SUBMISSION.md); CRIC still recorded push, which left them under the server's meanRSS guard for push queues, the guard that starved GREX on 2026-10-20 (2026-10-21). |
 | JLAB_PanDA_1 | the whole record | GREX's, with JLab's names, CE `osg-ce-2.jlab.org:9619`, `status` `brokeroff`, `corecount` 1, `maxrss` 6000, `maxtime` 86400 | The JLab farm through its own HTCondor-CE (account `pandas-eic`), pull pilots from pandaharvester01 as at GREX (2026-10-20). CRIC has no such queue. JLab's glidein slots in the OSG pool run only CLAS12 (their START requires `projectName` clas12), so this is ePIC's only route to the JLab farm. `brokeroff`: only jobs we place run there. |
 
 A queue CRIC does not have is defined by `_clone`, the queue whose record
