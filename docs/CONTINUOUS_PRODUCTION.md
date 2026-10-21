@@ -478,6 +478,16 @@ throttled, paused). A finished, failed or exhausted task moves instead
 by a retry with a target queue or a rerun with a site. A Move places
 the task on the target too, so later submissions follow.
 
+A paused task is resumed before it is moved, so a Move leaves it active
+at the target. PanDA clears a paused task's previous state when a
+command reaches it, so a task moved while paused cannot return to that
+state: JEDI leaves it in `reassigning`. Only ATLAS's production watchdog
+releases a task from there, and the ePIC VOs run the generic one. 40856
+and 40857, moved while paused on 2026-10-20, sat there without jobs
+until released by hand. Resumed first, the task is moved as a running
+task is. The resume is verified before the Move is sent, and a resume
+that does not take stops the Move.
+
 **The stall signal.** The Site control marks a submitted task whose
 waiting work is stuck where it is (`swf_epicprod.front.stall_signal`,
 read from the PanDA task's unfinished and archived jobs). The bar is
