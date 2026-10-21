@@ -26,7 +26,7 @@ defaults on first read, so every knob is visible on the System page:
 - ``front.activation_window_s`` (600): a feed counts as committed depth
   for this long before the census is expected to show it.
 - ``front.queue.<queue>.feed`` (False), ``.h_low`` (8), ``.h_high``
-  (24), ``.j_max`` (0 = none), ``.t_max`` (3), ``.breaker`` ('closed').
+  (24), ``.j_max`` (0 = none), ``.t_max`` (0 = none), ``.breaker`` ('closed').
 
 Decision records: one ``front_decision`` per feed, one per queue when
 the queue's state or reason changed, and hourly as a heartbeat; one
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_QUEUES = ['BNL_OSG_EPIC_PROD_1', 'UM_GREX_PanDA_1',
                   'NERSC_Perlmutter_epic', 'BNL_ePIC_GOOGLE']
 QUEUE_DEFAULTS = {'feed': False, 'h_low': 8.0, 'h_high': 24.0,
-                  'j_max': 0, 't_max': 3, 'breaker': 'closed'}
+                  'j_max': 0, 't_max': 0, 'breaker': 'closed'}
 MODES = ('shadow', 'active')
 FEED_SOURCE = 'pcs_front_feed'
 HEARTBEAT_S = 3600

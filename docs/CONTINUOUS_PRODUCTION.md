@@ -184,10 +184,12 @@ action-stream event with its editor:
   the measured peak running count until the Harvester fetch limits are
   reported.
 - `t_max`, the maximum number of tasks with unstarted work pinned to the
-  queue, a small integer. A paused task does not count: it generates no
-  jobs until an operator resumes it (2026-10-21; three tasks paused since
+  queue; 0 is none. A paused task does not count: it generates no jobs
+  until an operator resumes it (2026-10-21; three tasks paused since
   2026-08-17 had held BNL_OSG_EPIC_PROD_1 at its cap with nothing
-  running).
+  running). Off on every queue since 2026-10-21, and off by default: the
+  job throttler bounds the activated pool and the high-water mark bounds
+  what is committed to a queue, in hours rather than tasks.
 - `feed`, the per-queue switch; `front.enabled`, the global switch.
 
 In hours at capacity the queues differ mainly in scale: eight hours is
@@ -280,9 +282,10 @@ an open attempt, an allocated `PandaTasks` row without a jediTaskID
 that is not marked `submit_failed`, is ineligible with the problem
 named on the page (a submission in flight, or an orphan the operator
 records), so the front never submits a task twice. Phase two is the key
-`front.jedi_throttled` (False): once the ePIC job throttler paces
-generation in JEDI, the operator sets it true and committed depth
-gains, per queue, the ungenerated rows of the queue's non-terminal
+`front.jedi_throttled` (False; true since 2026-10-21, the throttler
+having throttled production since 2026-10-20): once the ePIC job
+throttler paces generation in JEDI, the operator sets it true and
+committed depth gains, per queue, the ungenerated rows of the queue's non-terminal
 production tasks (`nFilesToBeUsed - nFilesUsed` over their input
 datasets, carried by the census as `ungenerated`); the job cap and the
 oversize hold then retire, as § Two regulators says, and the record
