@@ -5,11 +5,13 @@
   },
   "BNL_OSG_PanDA_1": {
     "workflow": "pull",
-    "_why": "Harvester on osgsub01 runs this queue's pilots in pull mode since 2026-10-19 (docs/OSG_SUBMISSION.md); CRIC still recorded push, which put it under the server's meanRSS guard for push queues (the guard that starved GREX on 2026-10-20)."
+    "timefloor": 120,
+    "_why": "Harvester on osgsub01 runs this queue's pilots in pull mode since 2026-10-19 (docs/OSG_SUBMISSION.md); CRIC still recorded push, which put it under the server's meanRSS guard for push queues (the guard that starved GREX on 2026-10-20). timefloor 120 (2026-10-21): with 0 every pilot ran one job and left (994 jobs on 994 pilots in two hours at BNL_OSG_EPIC_PROD_1), so a queue ran only while a batch of its pilots was at the front of the pool's line; a pilot now takes jobs for 120 minutes."
   },
   "BNL_OSG_EPIC_PROD_1": {
     "workflow": "pull",
-    "_why": "Harvester on osgsub01 runs this queue's pilots in pull mode since 2026-10-19 (docs/OSG_SUBMISSION.md); CRIC still recorded push, which put it under the server's meanRSS guard for push queues (the guard that starved GREX on 2026-10-20)."
+    "timefloor": 120,
+    "_why": "Harvester on osgsub01 runs this queue's pilots in pull mode since 2026-10-19 (docs/OSG_SUBMISSION.md); CRIC still recorded push, which put it under the server's meanRSS guard for push queues (the guard that starved GREX on 2026-10-20). timefloor 120 (2026-10-21): with 0 every pilot ran one job and left (994 jobs on 994 pilots in two hours at BNL_OSG_EPIC_PROD_1), so a queue ran only while a batch of its pilots was at the front of the pool's line; a pilot now takes jobs for 120 minutes."
   },
   "JLAB_PanDA_1": {
     "_clone": "UM_GREX_PanDA_1",
