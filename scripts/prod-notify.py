@@ -212,18 +212,24 @@ def queue_triggers(activity, workers, state):
             since = starved.get(site) or _now()
             starved[site] = since
             if _age_minutes(since) >= STARVED_MINUTES and not starved.get(f'{site}:told'):
-                nw = (workers.get('by_site') or {}).get(site, 0)
+                # The workers reading is {now: {by_site}, window: {by_site}}
+                # (panda_harvester_workers); reading a top-level by_site
+                # gave 0 every time.
+                window = ((workers.get('window') or {}).get('by_site') or {}).get(site) or {}
+                now = ((workers.get('now') or {}).get('by_site') or {}).get(site) or {}
                 notices.append(('queue.starved', site,
                                 f'Queue starved: {site} holds {activated} activated jobs '
                                 f'with none running for {int(_age_minutes(since))} min; '
-                                f'{nw} harvester workers in the last hour.',
-                                f'{FACE}/panda/queues/{site}/'))
+                                f'last hour {int(window.get("started") or 0)} pilots started, '
+                                f'{int(window.get("submitted") or 0)} submitted; '
+                                f'{int(now.get("submitted") or 0)} waiting for a slot.',
+                                f'{FACE}/panda/epic-queues/{site}/'))
                 starved[f'{site}:told'] = _now()
         else:
             if starved.get(f'{site}:told'):
                 notices.append(('queue.recovered', site,
                                 f'Queue running again: {site}, {running} running, '
-                                f'{activated} activated.', f'{FACE}/panda/queues/{site}/'))
+                                f'{activated} activated.', f'{FACE}/panda/epic-queues/{site}/'))
             starved.pop(site, None)
             starved.pop(f'{site}:told', None)
     return notices
