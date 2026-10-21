@@ -520,6 +520,41 @@ AWS throughout. The payload's landing check now declines such a node in
 seconds ([EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md), exit code 80);
 exclusion keeps the pilots away from it in the first place.
 
+**The node guard's clause.** Since 2026-10-20 the node guard's black
+holes (site-canary docs/NODE_GUARD.md) are kept off the pool's pilots by
+the same matchmaking, beside the operators' clause and without touching
+it. Both pull descriptions, `submit_pilot2_pull_bnl_osg.sdf` and
+`submit_pilot2_pull_bnl_osg_epicprod.sdf`, end their `Requirements` with
+`&& (MY.EpicprodNodeGuard =!= False)`, and after the marker line
+`# epicprod node guard: osg-node-guard-clause.py writes the next line`
+carry the attribute `+EpicprodNodeGuard`: an expression false on every
+node the guard's live exclusion names for a `BNL_OSG_` queue, by its full
+host name or by its bare name together with its glidein site, and `True`
+when it names none. `scripts/osg-node-guard-clause.py` rewrites those two
+lines every five minutes as `atlpan` from the document the landing check
+reads (`/etc/cron.d/osg-node-guard-clause`; the script, its `COMMIT` and
+its log `clause.log` in `harvester_common/node-guard/`). A document that
+is not live, or has expired, writes `True`; one that cannot be read
+keeps the clause until the validity it was written with has passed, so a
+publisher that stops leaves no exclusion standing. Harvester reads the
+description at every submission, so the next pilot submitted is never
+matched to the node; pilots already idle in the schedd keep the ads they
+were submitted with. A node excluded on either OSG queue is kept off
+both, since the pool and the payload are the same: on 2026-10-20 the CNAF
+node `cn-leo-070.cr.cnaf.infn.it`, excluded on `BNL_OSG_PanDA_1` at 05:19
+ET, went on taking jobs on both queues and declined 361 of them at the
+landing check in four hours, each at the cost of an attempt.
+
+Checked before it went live, on osgsub01 against the pool's own slot
+ads: with the clause naming two nodes then in the pool, one by full name
+(`nod48.phys.uconn.edu`) and one by bare name and site
+(`CRUSH-OSG-C7-10-5-211-62` at SU-ITS), the pilot's guard evaluated
+false on their 63 and 39 slots and true on a healthy node, and
+`condor_submit -dry-run` of the edited description carried the attribute
+and the reference. Backups: `submit_pilot2_pull_bnl_osg.sdf-backup-2026-10-20`
+and `submit_pilot2_pull_bnl_osg_epicprod.sdf-backup-2026-10-20`;
+reverting is restoring them and removing the cron entry.
+
 ### Targeting a site
 
 The submit description decides where a queue's pilots may land, so

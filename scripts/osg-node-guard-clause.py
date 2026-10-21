@@ -134,6 +134,7 @@ def main(argv):
     if not args:
         sys.exit(__doc__)
     now = datetime.datetime.now(datetime.timezone.utc)
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         with urllib.request.urlopen(url, timeout=30) as response:
             document = json.loads(response.read().decode())
@@ -150,21 +151,21 @@ def main(argv):
         if error is not None:
             written = written_validity(text)
             if written is not None and written > now:
-                print("%s: exclusion not read (%s); clause left as written, valid until %s"
-                      % (path, error, written.isoformat()))
+                print("%s %s: exclusion not read (%s); clause left as written, valid until %s"
+                      % (stamp, path, error, written.isoformat()))
                 status = 1
                 continue
-            print("%s: exclusion not read (%s); written True" % (path, error))
+            print("%s %s: exclusion not read (%s); written True" % (stamp, path, error))
             status = 1
         new = rewrite(text, expression, (valid_until or now).isoformat())
         if new != text:
             write(path, new)
     if error is None:
         named = ", ".join(host for host, _ in nodes) or "none"
-        print("mode %s, valid until %s; excluded on %s*: %s; written to %d descriptions"
-              % (document.get("mode"), valid_until.isoformat(), queues, named, len(args)))
+        print("%s mode %s, valid until %s; excluded on %s*: %s; written to %d descriptions"
+              % (stamp, document.get("mode"), valid_until.isoformat(), queues, named, len(args)))
     if skipped:
-        print("not named (bare host without a site, or not a host name): %s" % skipped)
+        print("%s not named (bare host without a site, or not a host name): %s" % (stamp, skipped))
         status = 1
     return status
 
