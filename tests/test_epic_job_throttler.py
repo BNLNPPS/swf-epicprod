@@ -64,6 +64,29 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(d.max_num_jobs, 150)  # GREX: max(200, 100) - 50
         self.assertEqual(d.granted_sites, ["GREX"])
 
+    def test_site_at_its_bound_is_excluded_like_a_saturated_one(self):
+        # 2026-10-21: GREX at room 0, not over its bound, was left off the
+        # list, and another site's room was spent on two GREX tasks
+        readings = [
+            site("UM_GREX_PanDA_1", running=1407, not_run=2814, nqueuelimit=2000),
+            site("BNL_OSG_EPIC_PROD_1", running=0, not_run=0, nqueuelimit=2000),
+        ]
+        d = decide(readings, exclusion_honored=True)
+        self.assertFalse(d.throttled)
+        self.assertEqual(d.excluded_sites, ["UM_GREX_PanDA_1"])
+        self.assertEqual(d.granted_sites, ["BNL_OSG_EPIC_PROD_1"])
+        self.assertEqual(d.max_num_jobs, min(2000, PASS_MAX_JOBS))
+
+    def test_full_and_saturated_sites_leave_only_the_quiet_sites(self):
+        r = readings_from_stats({
+            "UM_GREX_PanDA_1": {"SCORE": {"running": 1407, "activated": 2814}},
+            "BNL_OSG_PanDA_1": {"SCORE": {"running": 1414, "activated": 3869}},
+        }, "SCORE", {"BNL_OSG_PanDA_1": {"NQUEUELIMIT": 3123}})
+        d = decide(r, exclusion_honored=True)
+        self.assertFalse(d.throttled)
+        self.assertEqual(sorted(d.excluded_sites), ["BNL_OSG_PanDA_1", "UM_GREX_PanDA_1"])
+        self.assertEqual(d.granted_sites, [ejt.NO_SITE])
+
     def test_saturated_site_never_holds_the_others_without_exclusion(self):
         # 2026-10-05: the hold-all rule seized every production site for one sick site
         d = decide([

@@ -128,7 +128,7 @@ class EpicProdJobThrottler(JobThrottlerBase):
 
         self.excluded_sites = list(decision.excluded_sites)
         if decision.throttled:
-            tmp_log.info(f"{header} SKIP throttled: saturated {self.excluded_sites}")
+            tmp_log.info(f"{header} SKIP throttled: excluded {self.excluded_sites}")
             return self.retThrottled
         if decision.max_num_jobs is not None:
             self.setMaxNumJobs(decision.max_num_jobs)

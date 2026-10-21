@@ -84,8 +84,20 @@ site is saturated; otherwise unthrottled, with the pass cap set to the
 room of the unsaturated sites (the sum of
 `max(threshold × running, NQUEUELIMIT) - queued` over them, bounded by
 the ATLAS engine's per-pass maximum) and the saturated sites named, so
-that task selection serves the unsaturated sites only. A pass with no
-room is throttled, never uncapped.
+that task selection serves the unsaturated sites only. A site exactly at
+its bound, with no room but not over it, is named with the saturated
+ones: another site's room is never spent on its tasks. On 2026-10-21
+UM_GREX_PanDA_1 read room 0 (queued 2,814 of 2,814), was left off the
+list, and the generator made 4,999 jobs for each of two GREX tasks. A
+pass with no room is throttled, never uncapped.
+
+A throttled answer stops a pass only where JEDI locks its generation
+cycles: the generator skips a throttled work queue only when it holds
+the process lock, and takes the lock only for the VOs that
+`[jobgen] lockProcess` names in `panda_jedi.cfg`. Without that key the
+answer was ignored and the pass ran uncapped, with only the excluded
+sites kept out. The ePIC server sets `lockProcess = wlcg|epic:any:any:any`
+since 2026-10-21 (distcomp-services panda-server CHANGES.md).
 
 A saturated site never holds the whole work queue. When every site
 with jobs is saturated, the pass goes on for the sites with no jobs yet

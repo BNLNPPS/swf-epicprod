@@ -133,9 +133,16 @@ def decide(readings: list[SiteReading], exclusion_honored: bool = False) -> Deci
     sites (bounded by the ATLAS per-pass maximum) and the saturated
     sites named; a pass with no room is throttled, never uncapped. With
     no site at all, unthrottled and uncapped: nothing is queued anywhere.
+
+    A site exactly at its bound (room 0, not over it) is excluded with
+    the saturated ones: another site's room must never be spent on its
+    tasks. On 2026-10-21 GREX read room 0 (queued 2,814 of 2,814), was
+    left off the list, and the generator made 4,999 jobs for each of two
+    GREX tasks.
     """
     lines: list[str] = []
     saturated: list[str] = []
+    full: list[str] = []
     open_sites: list[str] = []
     room = 0
     # The NO_SITE reading beside real sites is the spare for the sites with
@@ -148,10 +155,14 @@ def decide(readings: list[SiteReading], exclusion_honored: bool = False) -> Deci
         if why:
             saturated.append(r.site)
             lines.append(f"{r.site}: SATURATED {why}; running={r.running} queued={r.queued} granted={r.granted}")
+        elif r.room <= 0:
+            full.append(r.site)
+            lines.append(f"{r.site}: FULL room 0 (bound {r.bound:.0f}, queued {r.queued}, granted {r.granted}, running {r.running})")
         else:
             open_sites.append(r.site)
             room += r.room
             lines.append(f"{r.site}: room {r.room} (bound {r.bound:.0f}, queued {r.queued}, granted {r.granted}, running {r.running})")
+    excluded = saturated + full
     if not readings:
         # Unreachable when the caller charges the no-site reading; kept as
         # the bounded answer for a caller that does not.
@@ -161,15 +172,15 @@ def decide(readings: list[SiteReading], exclusion_honored: bool = False) -> Deci
             return Decision(True, None, saturated, [], lines + ["every site saturated: THROTTLED"])
         if saturated and not exclusion_honored:
             return Decision(True, None, saturated, [], lines + [f"saturated {saturated} and the generator has no site exclusion: THROTTLED"])
-    elif saturated and room <= 0 and spare is not None and spare.room > 0:
+    elif excluded and room <= 0 and spare is not None and spare.room > 0:
         max_num_jobs = min(spare.room, PASS_MAX_JOBS)
-        lines.append(f"saturated {saturated}, no open site: unthrottled for sites with no jobs: max_num_jobs={max_num_jobs} (spare room {spare.room}, granted {spare.granted})")
-        return Decision(False, max_num_jobs, saturated, [NO_SITE], lines)
+        lines.append(f"excluded {excluded}, no open site: unthrottled for sites with no jobs: max_num_jobs={max_num_jobs} (spare room {spare.room}, granted {spare.granted})")
+        return Decision(False, max_num_jobs, excluded, [NO_SITE], lines)
     max_num_jobs = min(room, PASS_MAX_JOBS)
     if max_num_jobs <= 0:
-        return Decision(True, None, saturated, [], lines + ["no room at any open site: THROTTLED"])
-    lines.append(f"unthrottled: max_num_jobs={max_num_jobs} excluded={saturated or '[]'}")
-    return Decision(False, max_num_jobs, saturated, open_sites, lines)
+        return Decision(True, None, excluded, [], lines + ["no room at any open site: THROTTLED"])
+    lines.append(f"unthrottled: max_num_jobs={max_num_jobs} excluded={excluded or '[]'}")
+    return Decision(False, max_num_jobs, excluded, open_sites, lines)
 
 
 def readings_from_stats(
