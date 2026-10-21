@@ -92,10 +92,13 @@ took the queue's highest-priority activated job.
 
 Since 2026-10-21 each pilot takes jobs for 120 minutes (`timefloor` 120 in
 the queue records, SCHEDCONFIG_OVERRIDES.md), and harvester keeps waiting
-pilots at 30% of running, at least 100 and at most 300 per queue, with at
+pilots at 30% of running, at least 200 and at most 300 per queue, with at
 most 100 new per cycle (`nQueueLimitWorkerRatio` 30, `nQueueLimitWorkerMin`
-100, `nQueueLimitWorkerMax` 300, `maxNewWorkersPerCycle` 100; backup
-`panda_queueconfig.json-backup-2026-10-21`). Before, with one job per pilot,
+200, `nQueueLimitWorkerMax` 300, `maxNewWorkersPerCycle` 100; backup
+`panda_queueconfig.json-backup-2026-10-21`). The floor holds an empty
+queue's supply: the pool started about 31 of our pilots a minute on
+2026-10-21, so 200 waiting is six or seven minutes of starts, and the
+submitter refills every 20 seconds. Before, with one job per pilot,
 the limits were 500% of running, at least 1,000 and at most 10,000 per
 queue, 2,000 new per cycle: on 2026-10-21 8,275 pilots waited for about
 1,000 running slots, the pool started them oldest first, and
