@@ -21,7 +21,9 @@ Triggers:
                           doubles)
   queue.starved           a queue holds more than STARVED_ACTIVATED
                           activated jobs with nothing running for
-                          STARVED_MINUTES
+                          STARVED_MINUTES; it clears as queue.recovered
+                          when jobs run again, or queue.emptied when the
+                          queued work leaves without running
   platform.error          a production platform check turns error
   credential.expiry       a production credential has fewer than
                           CREDENTIAL_DAYS days left
@@ -226,10 +228,17 @@ def queue_triggers(activity, workers, state):
                                 f'{FACE}/panda/epic-queues/{site}/'))
                 starved[f'{site}:told'] = _now()
         else:
-            if starved.get(f'{site}:told'):
+            if starved.get(f'{site}:told') and running:
                 notices.append(('queue.recovered', site,
                                 f'Queue running again: {site}, {running} running, '
                                 f'{activated} activated.', f'{FACE}/panda/epic-queues/{site}/'))
+            elif starved.get(f'{site}:told'):
+                # the starved state also ends when the queued work leaves
+                # without running (closed by a reassign, cancelled)
+                notices.append(('queue.emptied', site,
+                                f'Queue no longer starved: {site}, its queued work left '
+                                f'without running; {activated} activated remain, none running.',
+                                f'{FACE}/panda/epic-queues/{site}/'))
             starved.pop(site, None)
             starved.pop(f'{site}:told', None)
     return notices
