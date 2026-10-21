@@ -22,17 +22,40 @@
 # the server for a job in the same instant contend for the same job rows,
 # and the losers get no job (getJobs InFailedSqlTransaction on the server).
 #
+#
+# Each slot draws its own time floor around the shipped one. With one floor
+# for every slot, slots started together drained together and were replaced
+# together, and GREX ran a third fewer jobs for an hour in every four
+# (2026-10-21: about 100 slots turned over at 07:00, 11:00, 15:00 and 18:30
+# UTC). A slot's floor is the shipped floor plus or minus the spread, the
+# same for its wrappers so that they end together and the slot is released;
+# each rotation draws again, so the slots fall further out of step.
+#
 # EPICPROD_PILOTS_PER_SLOT: wrappers to run (default 8).
 # EPICPROD_PILOT_STAGGER: seconds between wrapper starts (default 15).
 # EPICPROD_STANDARD_WRAPPER: the wrapper (default: the shipped copy, else CVMFS).
+# EPICPROD_TIMEFLOOR_SPREAD: minutes either side of the shipped time floor
+#   (default 30; 0 keeps it). The latest end, floor plus spread plus the
+#   longest job, must stay inside the slot's wall time.
 
 N=${EPICPROD_PILOTS_PER_SLOT:-8}
 STAGGER=${EPICPROD_PILOT_STAGGER:-15}
+SPREAD=${EPICPROD_TIMEFLOOR_SPREAD:-30}
 TOP=$(pwd)
 WRAPPER=${EPICPROD_STANDARD_WRAPPER:-${TOP}/bnlpanda.runpilot2-wrapper.sh}
 [[ -r ${WRAPPER} ]] || WRAPPER=/cvmfs/eic.opensciencegrid.org/panda/bnlpanda.runpilot2-wrapper.sh
 
 echo "$(date -u +%FT%TZ) epicprod-multipilot: ${N} wrappers (${WRAPPER}), $(nproc) cores on $(hostname)"
+
+if [[ -r ${TOP}/queuedata.json && ${SPREAD} -gt 0 ]]; then
+  base=$(sed -n 's/^ *"timefloor": *\([0-9][0-9]*\),*$/\1/p' "${TOP}/queuedata.json" | head -n 1)
+  if [[ -n ${base} ]]; then
+    floor=$(( base - SPREAD + RANDOM % (2 * SPREAD + 1) ))
+    [[ ${floor} -lt 30 ]] && floor=30
+    sed -i "s/^\( *\"timefloor\": *\)[0-9][0-9]*/\1${floor}/" "${TOP}/queuedata.json"
+    echo "$(date -u +%FT%TZ) epicprod-multipilot: time floor ${floor} min (shipped ${base}, spread ${SPREAD})"
+  fi
+fi
 
 pids=()
 for i in $(seq 1 "${N}"); do

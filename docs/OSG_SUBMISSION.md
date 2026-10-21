@@ -139,7 +139,16 @@ job, and the pilot starts no job with less than 30 minutes of `maxtime` left.
 GREX jobs ran a median of 14 minutes and at most 80 in the week to 2026-10-19,
 so the last job ends well inside the slot. The pilots' jobs fall out of step
 after the first, which spreads both their memory peaks and the end of the
-slot, and Slurm releases the slot when the last pilot exits. The script is
+slot, and Slurm releases the slot when the last pilot exits.
+
+Since 2026-10-21 each slot draws its own time floor, the shipped 180
+minutes plus or minus 30 (`EPICPROD_TIMEFLOOR_SPREAD`), the same for its
+eight wrappers. With one floor for every slot, the slots started together
+on 2026-10-20 drained and were replaced together: about 100 slots turned
+over at once every four hours, and GREX ran about 600 jobs instead of 930
+for an hour each time. Each rotation draws again, so the slots fall
+further out of step. The latest end, 210 minutes plus the longest job,
+stays inside the 300-minute slot. The script is
 rerun when the queue's CRIC record changes.
 
 ## The submit description
