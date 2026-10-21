@@ -41,7 +41,7 @@ from pandajedi.jedicore.JediTaskBuffer import JediTaskBuffer
 from pandajedi.jedicore.MsgWrapper import MsgWrapper
 from pandajedi.jedithrottle.JobThrottlerBase import JobThrottlerBase
 
-from swf_epicprod.jedi.epic_job_throttler import CONFIG_TAGS, LEDGER_TTL_S, GrantLedger, decide, ledger_path, readings_from_stats
+from swf_epicprod.jedi.epic_job_throttler import CONFIG_TAGS, LEDGER_TTL_S, GrantLedger, decide, ledger_path, parse_pools, readings_from_stats
 
 logger = PandaLogger().getLogger(__name__.split(".")[-1])
 
@@ -108,7 +108,11 @@ class EpicProdJobThrottler(JobThrottlerBase):
         # queue is one pool, and a pass of another resource type must see
         # it saturated too.
         sites = sorted(stats)
-        readings = readings_from_stats(stats, resource_name, self._site_config(vo, sites))
+        # Queues that feed one set of slots are read as one pool, held to
+        # the pool's limits (``POOLS``, ``<TAG>_<pool>``).
+        pools = parse_pools(self._config_value(vo, "POOLS"))
+        readings = readings_from_stats(
+            stats, resource_name, self._site_config(vo, sites + sorted(pools)), pools)
         try:
             self.ledger.charge(readings)
         except OSError as e:

@@ -63,8 +63,10 @@ finds no site with jobs at all is charged to a standing reading at the
 default floor, never uncapped.
 
 Configuration per site, from the `config` table (component
-`epic_job_throttler`, app `jedi`, VO `epic`), a work-queue-wide value
-as the fallback and the engine's built-in default last:
+`epic_job_throttler`, app `jedi`, one set of rows per VO, `wlcg` for
+production and `epic`), a work-queue-wide value as the fallback and the
+engine's built-in default last; `scripts/jedi-throttler-config.sh`
+reads and sets the rows:
 
 | Key | Meaning | Built-in default |
 |---|---|---|
@@ -72,7 +74,31 @@ as the fallback and the engine's built-in default last:
 | `NQUEUELIMIT_<site>` | the queued floor below which generation always continues, and the bound when nothing runs | the ATLAS default, four bunches of 500 to 600 jobs |
 | `NRUNNINGCAP_<site>` | stop generating when running exceeds it | none |
 | `NQUEUECAP_<site>` | stop generating when queued exceeds it | none |
+| `POOLS` | queues that feed one set of slots, read as one: `pool:queueA,queueB;pool2:...` | none |
 | `MODE` | `observe` (decide and log, never throttle) or `throttle` | `observe` |
+
+**Pools.** Queues that feed one set of slots are one reading: the
+summed counts of the pool's queues, held to the pool's own limits
+(`NQUEUELIMIT_<pool>` and the rest), with every queue of the pool
+excluded or granted together, whether it has jobs yet or not. The OSG
+pool is `osg:BNL_OSG_PanDA_1,BNL_OSG_EPIC_PROD_1` with
+`NQUEUELIMIT_osg` 3123 since 2026-10-21. Read per queue, each OSG queue
+had its own floor (3,123 and the default 2,000) and its own share of the
+running count, so the pool's allowance was the sum: on 2026-10-21 the
+pool held 20,030 queued jobs against 1,121 running. A pool member's own
+limit rows are not read.
+
+The counts are per JEDI work queue: production runs in `managed`, the
+canaries and test runs of both VOs in `test`, and each work queue is
+read and held on its own. A canary is therefore not held back by
+production saturation at its queue. Both VOs throttle since 2026-10-21;
+the `epic` row had been left at `observe` when `wlcg` was switched on
+2026-10-20.
+
+`running` counts `running` and `starting`: a pull pilot's job is
+`starting` for seconds before it runs. Jobs left `starting` with no
+pilot inflate it; on 2026-10-21 500 such jobs of task 40855, fetched in
+push mode on 2026-10-19 just before GREX went to pull, were killed.
 
 A site is saturated when
 `not_run + defined > max(threshold × running, NQUEUELIMIT_<site>)` or a

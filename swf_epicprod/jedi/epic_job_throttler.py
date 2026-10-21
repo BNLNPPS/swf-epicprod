@@ -83,6 +83,17 @@ class SiteReading:
     nqueuelimit: int = DEFAULT_NQUEUELIMIT
     nrunningcap: int | None = None
     nqueuecap: int | None = None
+    # the PanDA queues a pool reading stands for; empty for a single site
+    members: tuple[str, ...] = ()
+
+    @property
+    def sites(self) -> list[str]:
+        """The PanDA queues this reading excludes or grants together."""
+        return list(self.members) if self.members else [self.site]
+
+    @property
+    def label(self) -> str:
+        return f"{self.site} ({'+'.join(self.members)})" if self.members else self.site
 
     @property
     def queued(self) -> int:
@@ -153,15 +164,15 @@ def decide(readings: list[SiteReading], exclusion_honored: bool = False) -> Deci
     for r in sorted(readings, key=lambda x: x.site):
         why = r.saturation()
         if why:
-            saturated.append(r.site)
-            lines.append(f"{r.site}: SATURATED {why}; running={r.running} queued={r.queued} granted={r.granted}")
+            saturated.extend(r.sites)
+            lines.append(f"{r.label}: SATURATED {why}; running={r.running} queued={r.queued} granted={r.granted}")
         elif r.room <= 0:
-            full.append(r.site)
-            lines.append(f"{r.site}: FULL room 0 (bound {r.bound:.0f}, queued {r.queued}, granted {r.granted}, running {r.running})")
+            full.extend(r.sites)
+            lines.append(f"{r.label}: FULL room 0 (bound {r.bound:.0f}, queued {r.queued}, granted {r.granted}, running {r.running})")
         else:
             open_sites.append(r.site)
             room += r.room
-            lines.append(f"{r.site}: room {r.room} (bound {r.bound:.0f}, queued {r.queued}, granted {r.granted}, running {r.running})")
+            lines.append(f"{r.label}: room {r.room} (bound {r.bound:.0f}, queued {r.queued}, granted {r.granted}, running {r.running})")
     excluded = saturated + full
     if not readings:
         # Unreachable when the caller charges the no-site reading; kept as
@@ -183,10 +194,23 @@ def decide(readings: list[SiteReading], exclusion_honored: bool = False) -> Deci
     return Decision(False, max_num_jobs, excluded, open_sites, lines)
 
 
+def parse_pools(value: Any) -> dict[str, list[str]]:
+    """The ``POOLS`` configuration value, ``pool:queueA,queueB;pool2:...``,
+    as ``{pool: [queue, ...]}``; anything unreadable is no pool."""
+    pools: dict[str, list[str]] = {}
+    for item in str(value or "").split(";"):
+        name, _, members = item.partition(":")
+        queues = [m.strip() for m in members.split(",") if m.strip()]
+        if name.strip() and queues:
+            pools[name.strip()] = queues
+    return pools
+
+
 def readings_from_stats(
     stats: dict[str, dict[str, dict[str, int]]],
     resource_name: str,
     site_config: dict[str, dict[str, Any]],
+    pools: dict[str, list[str]] | None = None,
 ) -> list[SiteReading]:
     """Fold ``getJobStatisticsByResourceTypeSite`` output and per-site
     configuration into readings, one per site over every resource type.
@@ -198,27 +222,49 @@ def readings_from_stats(
     it saturated (``resource_name`` is kept for the caller's log line).
     With no site at all the reading is ``NO_SITE`` at the default floor,
     so the pass is charged like any other.
+
+    A pool (``pools``, from the ``POOLS`` configuration) is several PanDA
+    queues feeding one set of slots: the OSG pool behind BNL_OSG_PanDA_1
+    and BNL_OSG_EPIC_PROD_1. It is one reading over its queues' summed
+    counts, held to the pool's own limits (``<TAG>_<pool>``), and its
+    queues are excluded or granted together, whether or not they have
+    jobs yet. Read per queue, each queue had its own floor and its own
+    share of the running count, and the pool's allowance was the sum.
     """
-    readings: list[SiteReading] = []
-    for site in sorted(stats):
+    def counts(site):
         running = not_run = defined = 0
-        for by_status in (stats[site] or {}).values():
+        for by_status in (stats.get(site) or {}).values():
             running += sum(int(by_status.get(s, 0) or 0) for s in RUNNING_STATES)
             not_run += sum(int(by_status.get(s, 0) or 0) for s in NOT_RUN_STATES)
             defined += int(by_status.get("defined", 0) or 0)
-        cfg = site_config.get(site, {})
-        readings.append(
-            SiteReading(
-                site=site,
-                running=running,
-                not_run=not_run,
-                defined=defined,
-                threshold=float(cfg.get("THROTTLE_THRESHOLD", DEFAULT_THRESHOLD)),
-                nqueuelimit=int(cfg.get("NQUEUELIMIT", DEFAULT_NQUEUELIMIT)),
-                nrunningcap=cfg.get("NRUNNINGCAP"),
-                nqueuecap=cfg.get("NQUEUECAP"),
-            )
+        return running, not_run, defined
+
+    def reading(name, running, not_run, defined, members=()):
+        cfg = site_config.get(name, {})
+        return SiteReading(
+            site=name,
+            running=running,
+            not_run=not_run,
+            defined=defined,
+            threshold=float(cfg.get("THROTTLE_THRESHOLD", DEFAULT_THRESHOLD)),
+            nqueuelimit=int(cfg.get("NQUEUELIMIT", DEFAULT_NQUEUELIMIT)),
+            nrunningcap=cfg.get("NRUNNINGCAP"),
+            nqueuecap=cfg.get("NQUEUECAP"),
+            members=tuple(members),
         )
+
+    readings: list[SiteReading] = []
+    pooled: set[str] = set()
+    for pool, members in sorted((pools or {}).items()):
+        members = sorted(members)
+        pooled.update(members)
+        if not any(m in stats for m in members):
+            continue  # a quiet pool is served like any quiet site
+        totals = [sum(c) for c in zip(*(counts(m) for m in members))]
+        readings.append(reading(pool, *totals, members=members))
+    for site in sorted(stats):
+        if site not in pooled:
+            readings.append(reading(site, *counts(site)))
     # With no site at all it is the reading; beside sites it is the spare
     # for the sites with no jobs yet (HOLD_QUEUE_ON_SATURATED_SITE).
     readings.append(SiteReading(site=NO_SITE))

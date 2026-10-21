@@ -87,6 +87,38 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(sorted(d.excluded_sites), ["BNL_OSG_PanDA_1", "UM_GREX_PanDA_1"])
         self.assertEqual(d.granted_sites, [ejt.NO_SITE])
 
+    def test_pool_is_one_reading_held_to_one_floor(self):
+        # 2026-10-21: the two OSG queues each had a floor (3,123 and 2,000)
+        # and a share of running; the pool's allowance was the sum
+        stats = {
+            "BNL_OSG_PanDA_1": {"SCORE": {"running": 771, "activated": 2000}},
+            "BNL_OSG_EPIC_PROD_1": {"SCORE": {"running": 350, "activated": 1000}},
+            "UM_GREX_PanDA_1": {"SCORE": {"running": 900, "activated": 100}},
+        }
+        pools = ejt.parse_pools("osg:BNL_OSG_PanDA_1,BNL_OSG_EPIC_PROD_1")
+        r = readings_from_stats(stats, "SCORE", {"osg": {"NQUEUELIMIT": 3123}}, pools)
+        osg = next(x for x in r if x.site == "osg")
+        self.assertEqual((osg.running, osg.queued, osg.bound), (1121, 3000, 3123))
+        self.assertEqual(osg.sites, ["BNL_OSG_EPIC_PROD_1", "BNL_OSG_PanDA_1"])
+        self.assertNotIn("BNL_OSG_PanDA_1", [x.site for x in r])
+        d = decide(r, exclusion_honored=True)
+        self.assertEqual(d.max_num_jobs, min(123 + 1700, PASS_MAX_JOBS))
+        # over the pool's floor, both queues are excluded together
+        stats["BNL_OSG_EPIC_PROD_1"]["SCORE"]["activated"] = 1200
+        d = decide(readings_from_stats(stats, "SCORE", {"osg": {"NQUEUELIMIT": 3123}}, pools),
+                   exclusion_honored=True)
+        self.assertEqual(sorted(d.excluded_sites), ["BNL_OSG_EPIC_PROD_1", "BNL_OSG_PanDA_1"])
+
+    def test_pool_member_without_jobs_is_held_with_its_pool(self):
+        stats = {"BNL_OSG_PanDA_1": {"SCORE": {"running": 100, "activated": 4000}}}
+        pools = ejt.parse_pools("osg:BNL_OSG_PanDA_1,BNL_OSG_EPIC_PROD_1")
+        d = decide(readings_from_stats(stats, "SCORE", {}, pools), exclusion_honored=True)
+        self.assertEqual(sorted(d.excluded_sites), ["BNL_OSG_EPIC_PROD_1", "BNL_OSG_PanDA_1"])
+
+    def test_pools_parse_and_ignore_garbage(self):
+        self.assertEqual(ejt.parse_pools("a:x, y;b:;:z;c:w"), {"a": ["x", "y"], "c": ["w"]})
+        self.assertEqual(ejt.parse_pools(None), {})
+
     def test_saturated_site_never_holds_the_others_without_exclusion(self):
         # 2026-10-05: the hold-all rule seized every production site for one sick site
         d = decide([
