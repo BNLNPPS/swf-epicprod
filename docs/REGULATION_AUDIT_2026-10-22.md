@@ -294,3 +294,135 @@ successful revision and time in the provenance sidecar.
 No schema migration, production task move, task kill, queue reopening,
 operator-account change or curated-finding mutation was part of this work.
 The payload canary and credential warning-window behavior were preserved.
+
+## GREX follow-up: useful pilot lifetime and allocation drain
+
+The later running-count drop exposed a separate inefficiency in GREX's
+eight-pilot allocations. Once a pilot passes its intake timefloor, it finishes
+its current job and exits. The allocation remains occupied until the last of
+its eight pilots exits. Thus an allocation can hold eight cores while only
+one job remains. Timefloor enables successive jobs, but a short intake window
+still leaves a substantial final, partially occupied tail.
+
+At 06:11 UTC the schedd had 118 running eight-pilot allocations while PanDA
+reported 684 running jobs and about 2,000 activated jobs. A 06:13 allocation/job
+sample found 51 running jobs in 31 allocations older than 210 minutes, versus
+231 jobs in 29 allocations younger than 150 minutes. Some PanDA worker rows
+lagged the actual schedd, so these instantaneous counts must not be presented
+as measured lifetime utilization.
+
+The successful-job sample over the preceding six hours was:
+
+| Task | Jobs | Median minutes | p90 | p99 | Maximum |
+|---|---:|---:|---:|---:|---:|
+| 40857 | 2,155 | 68.83 | 96.03 | 120.70 | 157.82 |
+| 40856 | 1,979 | 68.25 | 92.39 | 117.69 | 164.42 |
+
+The old five-hour allocation and three-hour intake were sized for an earlier
+14-minute median and 80-minute maximum. That sizing no longer matched the
+workload. Inspected old-cohort logs explicitly stopped intake after
+`timefloor=10800` seconds. They did not contain the floor-spreading launcher's
+log message: queued workers retain the executable and data transferred when
+submitted, even after the source file is replaced.
+
+### Accepted correction
+
+Torre approved extending new GREX allocations to twelve hours, with an
+approximately eight-to-nine-hour intake window and a three-hour reserve for
+the final job. The current observed maximum leaves about sixteen minutes of
+headroom inside that reserve; future longer jobs are still possible. This is
+a workload-based operating choice, not a guarantee that every final job fits.
+
+| Control | Previous | New |
+|---|---|---|
+| Fixed allocation request | 300 minutes | 720 minutes |
+| Allocation cores / memory | 8 / 48000 MB | unchanged |
+| Shipped pilot `maxtime` | 18000 seconds | 43200 seconds |
+| Shipped `timefloor` | 180 minutes | 510 minutes |
+| Spread | up to ±30 minutes in newer launcher | retained, then bounded |
+| Final-job reserve | depended on floor and job duration | at least 180 minutes |
+| Startup allowance | no common deadline | 5 minutes |
+
+`deadline-v2` chooses an allocation intake floor of 480–535 minutes after
+applying the spread and reserve. All eight pilots receive time remaining to
+the same allocation deadline and intake deadline; staggered starts cannot
+reset either clock. The launcher bounds the budget by both the submit
+environment and shipped queue data, so mixed old/new files cannot extend a
+short allocation. Missing or invalid policy stops before starting wrappers.
+The longer useful phase should amortize the final tail; it does not eliminate
+it or establish an observed utilization improvement yet.
+
+JLab explicitly retains its previous 180-minute floor instead of inheriting
+GREX's new value through queue cloning. OSG's 120-minute floor is unchanged.
+The GREX front feed switch remains as it was: there was already ample job
+backlog, and automatic placement of additional tasks would not fix this drain.
+
+### Installation and rollout evidence
+
+- Launcher and repeatable installer: swf-epicprod `0072324`.
+- Queue policy and operating documentation: swf-epicprod `73495e3`.
+- WFMS operations guide: epic-wfms-docs `9749d11`.
+- On pandaharvester01, the installer replaced the launcher first and then
+  the submit template at **06:44:48.863440 UTC**. Backups beside both files
+  have suffix `.before-grex-lifetime-20261022T064448.863440Z`.
+- The revision-pinned writer synchronized GREX's shipped pilot data at
+  **06:52:42 UTC** from `73495e3`: `timefloor=510`, `maxtime=43200`.
+  JLab remained `timefloor=180`, `maxtime=86400`.
+- The ordinary **06:55 cron cycle** synchronized all three hosts to
+  `73495e3`, with identical overrides SHA256
+  `a108a058187d60785666fb8bbb34b178252c1ad629a188222a00b046712c861c`
+  and merged-output SHA256
+  `165e22e15be208304f62fb8d66d316551146def65b03c30faae2ea3a4de6c2a5`.
+  Both the server and OSG's local static records now carry GREX's updated
+  lifetime too; this verifies the normal GitHub synchronization path.
+- At 06:53, the installed launcher hash matched the committed file:
+  `78afad625c7a5343c44c3e680e956bd26dbc9a9fe55104687a6bba73b06b6794`.
+  The installed submit template requested 720 minutes, eight cores and
+  48000 MB. Harvester reads this template for each submission; no restart
+  was needed.
+- The first automatic app deployment of `0072324` refused because another
+  authorized session was editing PCS files. That session's `18820b3` UI
+  deployment succeeded at 06:45:54; the pilot files were separately installed
+  as described above. The `73495e3` deployment completed at 06:52:12 with
+  scope `none`, as intended for GitHub-polled configuration and documentation.
+- At 06:53, all 591 idle and 118 running GREX workers still requested
+  300 minutes. Installation alone therefore did not demonstrate acceptance
+  or execution of a twelve-hour worker. No queued workers were removed to
+  force the new policy to the front. At 06:55 there were 584 idle and 118
+  running, still all under the old request.
+
+The six focused launcher/installer tests passed, including actual subprocess
+execution, mixed-version budgets, staggered starts sharing one deadline,
+invalid-policy rejection, preserved unrelated submit settings and repeatable
+installation. Four regulation tests and shell syntax checks also passed.
+
+The actual GREX partition routing and maximum walltime for this eight-core
+request remain unverified. Peers reported Wouter's earlier four-day limit
+for a one-core partition; that does not establish the eight-core route's
+limit. A longer request can also reduce backfill opportunities. New-cohort
+CE acceptance, start latency and full-lifetime occupied-core efficiency must
+be distinguished from installed settings. Existing old workers drain naturally.
+
+The PanDA jobs inspected advertise `maxWalltime` of five hours or four days.
+Enabling remaining-time dispatch filtering would reject most of that existing
+backlog rather than select jobs using their measured durations. That option
+was therefore left disabled; job metadata was not rewritten to manufacture a
+fit.
+
+For rollback, restore the shorter GitHub queue policy and synchronize the
+shipped data, then restore the submit template from its dated backup. The
+guarded launcher can remain: its minimum-of-budgets rule also protects a
+shorter allocation. A local-only queue-data rollback would be overwritten
+by the next GitHub synchronization. Neither direction changes already-spooled
+workers.
+
+### Decline notification correction
+
+The notice reporting recovery at 684 running jobs after a 916-to-670 decline
+did not establish recovered capacity. The rolling one-hour peak could age
+out and clear the condition by moving its own reference downward. In
+`0072324`, the notifier retains the incident peak until the decline condition
+actually clears. Its regression test ages the original peak out while jobs
+remain at 433 of 1,000 and verifies that no recovery is emitted. The existing
+25-percent threshold and backlog condition are unchanged. The scheduled
+notifier reads this script directly; no service restart was required.
