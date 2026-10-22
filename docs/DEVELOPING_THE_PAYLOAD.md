@@ -42,7 +42,11 @@ task and the queue:
   production ships it; or `token`, which ships no proxy and ships the
   token file configured for canaries as `BEARER_TOKEN_FILE`, so a
   token path is proven on its own. A token canary is refused, with that
-  reason, while no token file is configured.
+  reason, while no token file is configured. Or `panda`, which ships no
+  credential and empties `X509_USER_PROXY`, so the job writes and
+  registers only with the tokens it gets from the PanDA server (item 22
+  of EPICPROD_PAYLOAD.md); a proxy fallback has nothing to fall back to,
+  and the canary fails where a token does not come.
 - **Threads** and **container image**, as for any payload canary.
 
 The run records the payload source, the commit it ran and who sent
