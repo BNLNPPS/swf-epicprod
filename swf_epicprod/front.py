@@ -156,6 +156,26 @@ def _declared_gate(queue, horizon_h):
     return gate_for_queue(queue, horizon_h)
 
 
+def credential_verdict(outcome, days_left, age_h):
+    """(red, reason) for the nightly credential check's record. Pure.
+
+    Red when the check is older than CREDENTIAL_STALE_H, or when a
+    credential is expired, missing or cannot be vouched for. A warning
+    whose every credential still has days left is a credential inside its
+    warning window: it still works, the ping the credential proposer
+    entered carries the date, and holding production for the week before
+    the expiry would stop it for nothing (the eicprod proxy's window
+    opened on 2026-10-22, a week before its 10-28 expiry)."""
+    if age_h > CREDENTIAL_STALE_H:
+        return True, f'credential check {age_h} h old'
+    if outcome == 'ok':
+        return False, ''
+    if (outcome == 'warning' and isinstance(days_left, dict) and days_left
+            and all(isinstance(d, (int, float)) and d > 0 for d in days_left.values())):
+        return False, ''
+    return True, f'credential check {outcome or "unrecorded"}'
+
+
 def _credential_gate():
     """The nightly credential check's latest outcome and age."""
     from monitor_app.models import AppLog
@@ -166,10 +186,9 @@ def _credential_gate():
         return {'outcome': 'none', 'age_h': None, 'red': True,
                 'reason': 'no credential check on record'}
     age_h = round((timezone.now() - row['timestamp']).total_seconds() / 3600.0, 1)
-    outcome = str((row['extra_data'] or {}).get('outcome') or '')
-    red = outcome != 'ok' or age_h > CREDENTIAL_STALE_H
-    reason = (f'credential check {outcome}' if outcome != 'ok'
-              else f'credential check {age_h} h old' if red else '')
+    extra = row['extra_data'] or {}
+    outcome = str(extra.get('outcome') or '')
+    red, reason = credential_verdict(outcome, extra.get('days_left'), age_h)
     return {'outcome': outcome, 'age_h': age_h, 'red': red, 'reason': reason}
 
 

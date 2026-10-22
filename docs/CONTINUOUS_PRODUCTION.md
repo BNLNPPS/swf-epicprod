@@ -247,7 +247,9 @@ failed census, gate, backlog or decision is recorded for the queue it
 concerns and the cycle continues; a gate that cannot be read reads
 red. The gates in place: the passive canary verdict with the age of its
 newest evidence window (failing, or older than 24 hours, is red), the
-nightly credential check (not ok, or older than 36 hours, is red), the
+nightly credential check (a credential expired, missing or unverifiable,
+or the check older than 36 hours, is red; a credential still valid
+inside its warning window is not, since its ping carries the date), the
 breaker key, and the two fast detectors computed from the census's
 six-hour window (burn-through: at least 10 failures, half of them fast,
 none finished; failure window: at least 50 outcomes with 60% failed).
