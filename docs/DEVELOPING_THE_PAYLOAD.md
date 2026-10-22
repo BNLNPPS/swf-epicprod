@@ -42,11 +42,14 @@ task and the queue:
   production ships it; or `token`, which ships no proxy and ships the
   token file configured for canaries as `BEARER_TOKEN_FILE`, so a
   token path is proven on its own. A token canary is refused, with that
-  reason, while no token file is configured. Or `panda`, which ships no
-  credential and empties `X509_USER_PROXY`, so the job writes and
-  registers only with the tokens it gets from the PanDA server (item 22
-  of EPICPROD_PAYLOAD.md); a proxy fallback has nothing to fall back to,
-  and the canary fails where a token does not come.
+  reason, while no token file is configured. Or `panda`, which ships an
+  expired self-signed certificate in the proxy's place: JLab's read door
+  ignores a client certificate, so the input streams, and nothing that
+  checks a credential takes it, so the job writes and registers only
+  with the tokens it gets from the PanDA server (item 22 of
+  EPICPROD_PAYLOAD.md). That is the job production runs once the eicprod
+  proxy has expired (2026-10-28). An empty `X509_USER_PROXY` would not
+  do: xrootd's login at the read door fails on it (canary 40980).
 - **Threads** and **container image**, as for any payload canary.
 
 The run records the payload source, the commit it ran and who sent
