@@ -590,3 +590,50 @@ class RepeatedPandaTaskNameTest(DjangoTestCase):
              for row in rows],
             [(1, self.raw_name, 1001), (2, self.raw_name, 1002)],
         )
+
+
+class BackgroundSourcesTest(TestCase):
+    """The sources JSON held in PCS (PCS_BACKGROUND_TAG.md, The sources JSON
+    is held in PCS) is read from the tag that names bg_files, and counts only
+    while it was stored for that file."""
+
+    SOURCES = [{'file': 'egas.hepmc3', 'freq': 3.2}]
+
+    def _task(self, background=None, evgen=None):
+        dataset = SimpleNamespace(
+            background_tag_id=1 if background is not None else None,
+            background_tag=(SimpleNamespace(tag_label='k1', parameters=background)
+                            if background is not None else None),
+            evgen_tag=SimpleNamespace(tag_label='e1', parameters=evgen or {}),
+        )
+        return SimpleNamespace(dataset=dataset)
+
+    def test_background_tag_sources(self):
+        from pcs.commands import bg_files_sources
+        task = self._task(background={
+            'bg_files': 'synrad_egas.json',
+            'bg_files_content': {'file': 'synrad_egas.json', 'sources': self.SOURCES}})
+        self.assertEqual(bg_files_sources(task), self.SOURCES)
+
+    def test_contents_of_another_file_do_not_count(self):
+        from pcs.commands import bg_files_sources
+        task = self._task(background={
+            'bg_files': 'synrad_other.json',
+            'bg_files_content': {'file': 'synrad_egas.json', 'sources': self.SOURCES}})
+        self.assertIsNone(bg_files_sources(task))
+
+    def test_background_tag_name_wins_over_evgen_contents(self):
+        from pcs.commands import bg_files_sources
+        task = self._task(
+            background={'bg_files': 'synrad_egas.json'},
+            evgen={'bg_files': 'legacy.json',
+                   'bg_files_content': {'file': 'legacy.json', 'sources': self.SOURCES}})
+        self.assertIsNone(bg_files_sources(task))
+
+    def test_legacy_evgen_tag_sources(self):
+        from pcs.commands import bg_files_sources
+        task = self._task(evgen={
+            'bg_files': 'legacy.json',
+            'bg_files_content': {'file': 'legacy.json', 'sources': self.SOURCES}})
+        self.assertEqual(bg_files_sources(task), self.SOURCES)
+        self.assertIsNone(bg_files_sources(self._task(evgen={'bg_files': 'legacy.json'})))

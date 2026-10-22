@@ -1545,7 +1545,11 @@ def tag_edit(request, tag_type, tag_number):
                 messages.error(request, 'Category is part of the permanent identity. Create a new tag.')
                 return redirect(selected_url)
             tag.description = form.cleaned_data['description']
-            tag.parameters = form.get_parameters()
+            # The stored background sources JSON is not a form field; it
+            # stays, and counts only while it matches the tag's bg_files.
+            from .background_files import CONTENT_KEY
+            kept = {k: v for k, v in (tag.parameters or {}).items() if k == CONTENT_KEY}
+            tag.parameters = {**kept, **form.get_parameters()}
             if tag_type == 'p':
                 tag.category = form.cleaned_data['category']
             from .permanence import identity_change

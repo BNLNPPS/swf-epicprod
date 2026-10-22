@@ -1587,6 +1587,13 @@ def prodtask_readiness_problems(task, plan=None, trial=False):
                     f'This dataset mixes background {ds.background_tag.tag_label}, '
                     f'whose tag has no {" or ".join(missing)}: set '
                     f'{"them" if len(missing) > 1 else "it"} on the tag.')
+        if bg_files:
+            from .commands import bg_files_sources
+            if bg_files_sources(task) is None:
+                problems.append(
+                    f'The background sources JSON {bg_files} is not stored in PCS: '
+                    'production ops loads it onto the tag '
+                    '(python -m pcs.background_files --apply).')
 
     csv_filters = (((task.overrides or {}).get('csv_import') or {})
                    .get('filters') or {})

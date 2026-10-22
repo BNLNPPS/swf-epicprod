@@ -10,9 +10,13 @@ Reference repos:
 - eic/simulation_campaign_datasets — CSV input files
 """
 
+import json
 import os
 import re
 import shlex
+
+from .background_files import stored as stored_bg_sources
+
 
 def _bg_param(task, key):
     """Background execution params prefer the k tag, with EvGen as fallback."""
@@ -46,6 +50,22 @@ def _add_background_env(env, task, *, defaults=False):
         env['TAG_PREFIX'] = bg_tag_prefix
     if bg_files:
         env['BG_FILES'] = bg_files
+
+
+def bg_files_sources(task):
+    """The sources JSON stored in PCS for the ``bg_files`` the task mixes,
+    read from the tag that names it (PCS_BACKGROUND_TAG.md, The sources JSON
+    is held in PCS); None when it is not stored."""
+    ds = task.dataset
+    tags = []
+    if getattr(ds, 'background_tag_id', None) or getattr(ds, 'background_tag', None):
+        tags.append(ds.background_tag)
+    tags.append(ds.evgen_tag)
+    for tag in tags:
+        params = getattr(tag, 'parameters', None) or {}
+        if params.get('bg_files') not in (None, ''):
+            return stored_bg_sources(params)
+    return None
 
 
 def _add_try_env(env, panda_tasks):
@@ -687,6 +707,11 @@ def _evgen_env(task):
         'DETECTOR_BEAMS': str(data.get('detector_beams') or ''),
     }
     _add_background_env(env, task)
+    # The doer writes these into the sandbox under the BG_FILES name and
+    # leaves them out of the environment file.
+    sources = bg_files_sources(task) if env.get('BG_FILES') else None
+    if sources is not None:
+        env['BG_FILES_CONTENT'] = json.dumps(sources)
     if str(data.get('workflow_mode') or 'external_evgen') == 'internal_evgen':
         env.update(_internal_evgen_env(task))
     return {k: v for k, v in env.items() if v != ''}

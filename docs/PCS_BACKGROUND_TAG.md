@@ -75,12 +75,30 @@ switch for older definitions that keep their background on the EvGen tag.
 When a task mixes, the submission environment uses the dataset's background tag
 parameters first: `signal_freq` and `signal_status` become `SIGNAL_FREQ` and
 `SIGNAL_STATUS`, `bg_tag_prefix` becomes `TAG_PREFIX`, and `bg_files` becomes
-`BG_FILES`, the JSON of background sources and frequencies the submit doer
-stages into the sandbox from the campaign `config_data`. The task is not ready
-until its background tag carries both `bg_files` and `bg_tag_prefix`: the files
-say what to mix, and the prefix keeps the mixed output out of the signal-only
-sample's paths. If the dataset has no usable `k` value, PCS falls back to the
-same parameters on the EvGen tag for older definitions.
+`BG_FILES`, the name of the JSON of background sources and frequencies the
+job mixes. The task is not ready until its background tag carries both
+`bg_files` and `bg_tag_prefix`: the files say what to mix, and the prefix keeps
+the mixed output out of the signal-only sample's paths. If the dataset has no
+usable `k` value, PCS falls back to the same parameters on the EvGen tag for
+older definitions.
+
+### The sources JSON is held in PCS
+
+The JSON's contents are stored on the tag beside its name, as
+`bg_files_content` (`{file, sources, loaded_from, loaded_at, loaded_by}`), so
+production does not depend on the campaign datasets repository
+(eic/simulation_campaign_datasets, to be archived; Sakib Rahman and Torre
+Wenaus, 2026-10-22). Submission passes the contents to the submit doer
+(`BG_FILES_CONTENT`), which writes them into the sandbox under the `BG_FILES`
+name. The contents count only while their `file` is the tag's current
+`bg_files`, so a tag pointed at another file needs its contents loaded again,
+and until then a task that mixes is not ready ("the background sources JSON
+… is not stored in PCS"). `pcs/background_files.py` loads them from the
+repository's `config_data` (the eicweb mirror, or a checkout given with
+`--source-dir`), once per file: `python -m pcs.background_files [--tag k26]
+[--apply]`. Editing a tag on its page keeps the stored contents. A submission
+prepared before the contents were stored arrives without them; the doer then
+still downloads the file from `config_data`, and its log says so.
 
 ## The no-signal physics tag
 
