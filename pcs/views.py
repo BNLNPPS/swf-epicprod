@@ -6131,11 +6131,13 @@ def _range_words(value, symbol):
     return f'{symbol} {text}' if text else ''
 
 
-def physics_description(dataset):
+def physics_description(dataset, concise=False):
     """One line a physicist reads for a composed configuration: the
     process, its state, mechanism or channel, the beams, the kinematic
     window, the beam configuration, and the generator with its version,
-    all from the physics and EvGen tags' parameters."""
+    all from the physics and EvGen tags' parameters. ``concise`` gives the
+    short form for a board line: beams without the unit, no beam
+    configuration, the generator without its version."""
     p = dataset.physics_tag.parameters or {}
     e = (dataset.evgen_tag.parameters or {}) if dataset.evgen_tag_id else {}
     process = str(p.get('process') or '')
@@ -6151,18 +6153,22 @@ def physics_description(dataset):
         words.append(str(p['particle']))
     beams = ''
     if p.get('beam_energy_electron') and p.get('beam_energy_hadron'):
-        beams = f"{p['beam_energy_electron']}x{p['beam_energy_hadron']} GeV"
+        beams = (f"{p['beam_energy_electron']}x{p['beam_energy_hadron']}"
+                 + ('' if concise else ' GeV'))
     words.append(' '.join(x for x in (str(p.get('beam_species') or ''), beams) if x))
     if p.get('x_range'):
         words.append(_range_words(p['x_range'], 'x'))
     if p.get('q2_range'):
         words.append(_range_words(p['q2_range'], 'Q2'))
-    if p.get('beam_config'):
+    if p.get('beam_config') and not concise:
         words.append(BEAM_CONFIG_WORDS.get(str(p['beam_config']).lower(), str(p['beam_config'])))
     if e.get('generator'):
-        gen = f"{e['generator']} {e.get('generator_version') or ''}".strip()
-        if str(e.get('radiative') or '').lower() == 'on':
-            gen += ', radiative corrections on'
+        if concise:
+            gen = str(e['generator'])
+        else:
+            gen = f"{e['generator']} {e.get('generator_version') or ''}".strip()
+            if str(e.get('radiative') or '').lower() == 'on':
+                gen += ', radiative corrections on'
         words.append(gen)
     return ', '.join(w for w in words if w)
 
