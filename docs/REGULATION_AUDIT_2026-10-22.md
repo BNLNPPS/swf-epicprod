@@ -204,6 +204,32 @@ GREX, reporting 919 running jobs and 2,334 queued (notification
 alert cleared through the scheduled path; it is not evidence of a change
 in GREX throughput.
 
+### Real slot burst at 06:54–07:01 UTC
+
+Torre reported a large FNAL arrival and OSG rising above 1,100 running jobs.
+The subsequent direct readings captured the buffer operating during that
+burst, rather than only its earlier warm refill:
+
+- At 07:01:28, the refreshed monitor snapshot had **1,313 running OSG jobs**,
+  13 starting and 3,094 queued. Its separately timed reporter readings showed
+  1,281 running pilots, 600 Harvester waiting and 526 schedd idle. Pilot-supply
+  health was green and the snapshot returned no errors.
+- At 07:01:47, a direct schedd query showed **1,357 running pilots and 599
+  idle**. Of those still-running pilots, 123 started in the 06:54 minute,
+  **295 in 06:55**, 215 in 06:56 and 67 in 06:57. These are lower bounds on
+  starts because workers already removed from the queue are absent.
+- The same query retained 569 ads submitted within the preceding five
+  minutes and 401 running pilots started within that interval. Thus the
+  waiting buffer was being replenished while the pool admitted pilots.
+
+This is live evidence of maintaining approximately 600 waiting pilots through
+a slot burst approaching the 300-starts/minute design rate. It is not an
+empty-production-queue cold-start measurement. The query did not populate
+its requested resource-name attribute, so FNAL attribution here remains
+Torre's observation rather than an independent site-level measurement.
+The scheduled notifier also cleared OSG's supply condition at 1,326 running
+plus starting, consistent with the snapshot's 1,313 + 13.
+
 ## Cold-start latency: an additional upstream clock
 
 Harvester's 30-second demand cache polls PanDA statistics endpoints. Those
