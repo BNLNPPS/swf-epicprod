@@ -88,15 +88,24 @@ def _beam_order(token):
 
 
 def split_path(path):
-    """(area, family, beam, q2) of an EVGEN path, or None for a path outside
-    the grids. The family is the path without its beam and Q² segments."""
+    """(area, family, beam, q2, sample) of an EVGEN path, or None for a path
+    outside the grids. A produced output mixed with backgrounds carries the
+    background chain ahead of the physics area (``Bkg_*/GoldCt/10um/DIS/...``):
+    the chain names the family's background and ``sample`` is the EVGEN path
+    of the signal, the one registration is read for. The family is the path
+    without its beam and Q² segments."""
+    from pcs.physics_match import _KNOWN_AREAS
     tokens = [t for t in path.split('/') if t][1:]  # drop 'EVGEN'
-    if not tokens or tokens[0] in SKIPPED_AREAS:
+    start = next((i for i, t in enumerate(tokens) if t in _KNOWN_AREAS), None)
+    if start is None or tokens[start] in SKIPPED_AREAS:
         return None
+    background, tokens = tokens[:start], tokens[start:]
     beam = next((t for t in tokens if BEAM_RE.match(t)), '')
     q2 = next((t for t in tokens if Q2_RANGE_RE.match(t) or Q2_FLOOR_RE.match(t)), '')
     family = '/'.join(t for t in tokens if t not in (beam, q2))
-    return tokens[0], family, beam, q2
+    if background:
+        family += ', with background ' + '/'.join(background)
+    return tokens[0], family, beam, q2, '/EVGEN/' + '/'.join(tokens)
 
 
 def events_label(n, unit=None):
@@ -193,8 +202,8 @@ def build_status_grids(campaign_name):
         in_campaign = [pc for pc in (pcs_by_path.get(path) or ()) if pc in edition_by_pc]
         pc = max(in_campaign, key=lambda p: ((completion.get(p) or {}).get('delivered_events') or 0,
                                              p), default=None)
-        is_registered = path in registered
-        if pc is None and not is_registered:
+        is_registered = parts[4] in registered
+        if pc is None and path not in registered:
             continue  # neither registered nor asked for by this campaign
         row = completion.get(pc) or {}
         if row.get('status') == 'complete':

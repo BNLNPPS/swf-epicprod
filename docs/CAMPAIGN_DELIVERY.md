@@ -363,7 +363,9 @@ by-priority table carrying the rest.
    through the EVGEN-stage record that matched it in Rucio, through the
    produced output (`/RECO/<v>/<config>/<tail>` is made from
    `/EVGEN/<tail>`: the EVGEN convention map, retry segments folded),
-   or through a request that names it; configurations reached by none
+   or through a request that names it; a production mixed with
+   backgrounds is a family of its own, named with its background chain,
+   and its registration is the signal sample's. Configurations reached by none
    of these are counted on the page. Delivery and targets are the
    campaign plan's own (the completion product). The grids are a
    cached product (`status_grids:v1:<campaign>`,
