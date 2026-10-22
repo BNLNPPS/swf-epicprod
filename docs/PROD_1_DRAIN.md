@@ -169,3 +169,35 @@ ended elsewhere. Three additional workers reported at about 18:47
 (26269.0, 26346.5 and 26338.37) likewise had their evictions at 16:26–17:24,
 with reason `Startd was shutdown`. These samples establish delayed
 reporting of earlier site evictions; they do not rule out future losses.
+
+
+### Remaining throughput loss at 23:10–23:14 UTC
+
+Throughput had not recovered: at 23:10:53 UTC, the active queue had
+826 running jobs, 3,289 activated jobs and 600 waiting pilots, while
+PROD_1 had 33 running and none queued. The watchdog now keeps an alert
+active while total running remains below 70% of Torre's reported 2,800
+baseline with substantial ungenerated work. A slow decline must not clear
+the incident simply because it misses the ten-minute rate threshold.
+
+Matchmaking must cover both the JLab collectors and the OSPool flocking
+collectors (see OSG_SUBMISSION.md). The JLab analysis of waiting pilot
+26428.0 found no willing slots; a separate saved OSPool snapshot found
+18. Read-only counterfactual analysis against the same OSPool ads found
+18 with a 3,700 MB request instead of 4,096 MB, and 19 with every site
+exclusion removed. Neither change restores the missing capacity; no
+production resource request or exclusion was altered. Saved analysis
+inputs are under `/tmp/osg-match-20261022/` on osgsub01.
+
+The live OSPool listing contained 528 idle FNAL_GPGrid partitionable
+slots satisfying the pilot's CPU, memory, CVMFS, OS and namespace checks
+but already past both retirement and the minimum remaining lifetime
+required by the pool. A sampled slot,
+`slot1@glidein_8_203653972@osg-10664544-0-fnpc17133.fnal.gov`,
+advertised `START = false`; reverse analysis rejected the pilot on both
+lifetime conditions despite 6 free CPUs and 15,360 MB free memory.
+Nominal idle resources are therefore not equivalent to available pilot
+capacity. Chicago remained represented in OSPool; many of its idle
+partitionable ads had less than the requested 4 GB remaining. These
+snapshots establish current allocation constraints, not a complete
+historical attribution of the fall from 2,800 running jobs.

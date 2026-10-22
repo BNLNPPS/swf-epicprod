@@ -45,19 +45,25 @@ it with `-e eic --pilot-user epic --harvester-submit-mode PUSH` against
 pandaserver01, BNL Rucio for traces off. Condor logs are served at
 `https://osgsub01.sdcc.bnl.gov/condor_logs/`.
 
-The schedd's collectors are `jlab-cm.osg.chtc.io` and
-`scicollector901.jlab.org`: the pool is the JLab glideinWMS pool with
-an OSG-hosted central manager. The slot classads name what provisions
+The schedd's primary collectors are `jlab-cm.osg.chtc.io` and
+`scicollector901.jlab.org`: these describe the JLab glideinWMS pool with
+an OSG-hosted central manager. A live configuration check on 22 October
+2026 also found `FLOCK_TO`, `FLOCK_COLLECTOR_HOSTS` and
+`FLOCK_NEGOTIATOR_HOSTS` pointing at `cm-1.ospool.osg-htc.org` and
+`cm-2.ospool.osg-htc.org`. The submit host therefore also acquires OSPool
+slots. A default `condor_status` or matchmaking analysis covers only the
+primary pool; use `-pool cm-1.ospool.osg-htc.org` to inspect OSPool as well.
+Do not infer a site's disappearance from its absence in the JLab listing. The slot classads name what provisions
 it: the OSG production factories (`GLIDEIN_Factory` NRP-Prod and
 Tiger-Prod) serving the JLab VO frontend (`GLIDECLIENT_Name`
 `JLabVO-1_0.clas12` and `JLabVO-1_0.gluex`), through entries created
 for the CLAS12 and GlueX experiments (`CLAS12_T3_UK_ScotGrid_GLA`,
 `CLAS12_T1_IT_CNAF_*`, `CMSHTPC_T2_US_MIT`, `OSG_US_UConn_gluskap`,
 `Glow_US_Syracuse`, `OSG_US_JLAB_ce-2`, `CMSHTPC_T2_US_UCSD`,
-`CMSHTPC_T2_FR_GRIF_LLR`). There is no EIC frontend group and no
-EIC entry: ePIC pilots run as passengers in the pool the JLab VO
-frontend requests for CLAS12 and GlueX, which is why the site mix is
-theirs. No glideinWMS component runs on the BNL hosts; the frontend is
+`CMSHTPC_T2_FR_GRIF_LLR`). Those JLab ads have no EIC frontend group or EIC entry: ePIC pilots
+run as passengers in the pool the JLab VO frontend requests for CLAS12
+and GlueX. This describes the primary pool, not the additional OSPool
+capacity reached through flocking. No glideinWMS component runs on the BNL hosts; the frontend is
 the JLab VO's, hosted with OSG, and its configuration is reachable only
 through JLab's OSG contacts.
 
