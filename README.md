@@ -90,6 +90,8 @@ Campaigns:
   queue, the dispatcher, and the tripwire.
 - [EPIC_JOB_THROTTLER.md](docs/EPIC_JOB_THROTTLER.md) — the queue-side
   regulator: a JEDI job throttler paced per PanDA queue.
+- [REGULATION_AUDIT_2026-10-22.md](docs/REGULATION_AUDIT_2026-10-22.md) —
+  the October regulation audit, corrective changes and deployment evidence.
 - [JEV.md](docs/JEV.md) — Jev, a decision model: the client, the
   measurement on PCS's request links, and configurations like this one.
 - [EPICPROD_NARRATIVES.md](docs/EPICPROD_NARRATIVES.md) — campaign
