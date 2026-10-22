@@ -116,6 +116,23 @@ def pc_targets(heads):
     return per
 
 
+def dataset_pc_target(dataset):
+    """(expected, source) for a dataset's PC in its campaign by the
+    pc_targets rule, or None: a configuration continued on a new edition
+    reads the target recorded on an earlier one."""
+    from pcs.models import Dataset
+
+    if not (dataset.physics_config_id and dataset.campaign_id):
+        return None
+    heads = (Dataset.objects
+             .filter(campaign_id=dataset.campaign_id,
+                     physics_config_id=dataset.physics_config_id)
+             .select_related('physics_config')
+             .order_by('composed_name', 'block_num', 'pk')
+             .distinct('composed_name'))
+    return pc_targets(heads).get(dataset.physics_config.label)
+
+
 def _pc_panda(campaign_name):
     """pc label -> {files, jobs, states} from the cached progress
     snapshot: output files delivered and PanDA jobs submitted, summed

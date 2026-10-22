@@ -1598,9 +1598,13 @@ def prodtask_readiness_problems(task, plan=None, trial=False):
                     'gives it.')
         if task.dataset_id and task.dataset.expected_events is None and not (
                 task.request_id and task.request.nevents):
-            problems.append(
-                "No event target: set the edition's target (the campaign plan) "
-                'or a request with an event count.')
+            # A configuration continued on a new edition keeps the target
+            # recorded on an earlier one (CAMPAIGN_DELIVERY.md, Surfaces).
+            from swf_epicprod.analytics.completion import dataset_pc_target
+            if dataset_pc_target(task.dataset) is None:
+                problems.append(
+                    "No event target: set the edition's target (the campaign "
+                    'plan) or a request with an event count.')
         level, _source = prodtask_priority_level(task, plan=plan)
         if level is None:
             problems.append(

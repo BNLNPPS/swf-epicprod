@@ -315,7 +315,8 @@ by-priority table carrying the rest.
    edition it is on. The row's target and delivery stay those of its
    representative edition, so a configuration continued on a patched
    release (lAger 3.6.1: delivered on 26.07.1, composed again on
-   26.07.3) shows the delivery and opens the new task.
+   26.07.3) shows the delivery and opens the new task. The new task's
+   readiness reads the same target, so its edition needs none of its own.
    The page carries the campaign's last-7-day arrivals quilt and
    accrued-files stack (the snapper embed), pruned to the active
    filters; its click-through opens the campaign view with the same
