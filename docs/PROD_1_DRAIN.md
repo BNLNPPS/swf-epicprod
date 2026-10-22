@@ -145,3 +145,26 @@ is supplied demand, not a promise of available execution slots: a Condor
 analysis of waiting pilot 26364.0 at 22:36 UTC found only one willing
 matching slot. Running-job recovery must therefore be watched separately
 from generated stock and pilot supply.
+
+## Overnight watch and worker-loss reports
+
+A read-only user service, `epic-osg-watch-20261022.service` on swf-testbed,
+samples the two queues every minute through 08:00 ET on 23 October. Its
+script and JSON snapshots are in
+`/data/wenauseic/swf-epicprod/osg-watch-20261022/`. It checks retired-queue
+admission and backlog, generated stock against ungenerated work, waiting
+pilots, running-count decline and ten-minute DDM/worker-loss outcomes.
+Changed conditions and ten-minute summaries notify the owning swf-3
+session through TeamComms; delivery into that session was verified at
+22:47 UTC. It changes no production records or controls.
+
+At 22:47 UTC, active OSG had 3,300 activated jobs and 600 waiting pilots;
+PROD_1 had no queued jobs. The last ten minutes recorded 389 finished
+jobs, no DDM failures and 121 worker-loss reports. Those loss reports
+must be dated from their batch events, not their later PanDA finalization:
+worker 26350.7 was evicted from `uct2-c507.mwt2.org` at 16:56 ET and its
+orphaned job was reported failed only at 18:42 after the restarted worker
+ended elsewhere. Three additional workers reported at about 18:47
+(26269.0, 26346.5 and 26338.37) likewise had their evictions at 16:26–17:24,
+with reason `Startd was shutdown`. These samples establish delayed
+reporting of earlier site evictions; they do not rule out future losses.
