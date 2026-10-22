@@ -40,6 +40,8 @@ import sys
 import time
 
 WARN_DAYS = float(os.environ.get('CREDENTIAL_EXPIRY_WARN_DAYS', '7'))
+# Each of the token request and the Rucio client's calls, seconds.
+JLAB_TOKEN_TIMEOUT_S = 10
 
 
 def _days_left(expiry_epoch):
@@ -112,6 +114,20 @@ def check_credentials():
     return results
 
 
+def gate_days(results):
+    """The days map the front's credential gate reads (front.credential_verdict):
+    the credentials that expire and count. A token has no expiry, and a
+    superseded proxy no longer counts, so neither is in it."""
+    return {r['credential']: r.get('days_left') for r in results
+            if r.get('kind') != 'token' and r.get('status') != 'superseded'}
+
+
+def superseded_days(results):
+    """The superseded credentials' days left, kept on the record apart."""
+    return {r['credential']: r.get('days_left') for r in results
+            if r.get('status') == 'superseded'}
+
+
 def _jlab_token():
     """The JLab token's entry: ok when JLab Rucio takes the PanDA server's
     rucio token as the production account, unavailable with the reason
@@ -120,7 +136,9 @@ def _jlab_token():
     entry = {'credential': 'jlab_token', 'kind': 'token', 'path': ''}
     try:
         from .jlab_auth import rucio_client
-        client = rucio_client(proxy=None, timeout=60)
+        # Bounded well inside the agent's 60 s for the whole check, so a
+        # token service that hangs leaves the proxies still checked.
+        client = rucio_client(proxy=None, timeout=JLAB_TOKEN_TIMEOUT_S)
         entry.update(status='ok', account=client.whoami().get('account'))
     except Exception as e:                                    # noqa: BLE001
         entry.update(status='unavailable', reason=str(e)[:300])

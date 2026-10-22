@@ -112,9 +112,10 @@ def panda_token(client_name, audience=None, scope=None, timeout=60):
 def _token_client(host, account, timeout):
     """A Rucio client authenticated by the rucio token. The client takes the
     first token WLCG discovery finds when it is made, so BEARER_TOKEN names
-    ours for that moment only, and a stray token never stands in."""
+    ours for that moment only, and a stray token never stands in. A
+    ``timeout`` bounds the token request as well as the client."""
     from rucio.client import Client
-    token = panda_token(RUCIO_TOKEN_CLIENT)
+    token = panda_token(RUCIO_TOKEN_CLIENT, timeout=timeout or 60)
     saved = {k: os.environ.get(k) for k in ('BEARER_TOKEN', 'BEARER_TOKEN_FILE')}
     with _lock:
         try:
