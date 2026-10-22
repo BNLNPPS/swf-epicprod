@@ -95,16 +95,42 @@ the queue records, SCHEDCONFIG_OVERRIDES.md), and harvester keeps waiting
 pilots at 30% of running, at least 200 and at most 300 per queue, with at
 most 100 new per cycle (`nQueueLimitWorkerRatio` 30, `nQueueLimitWorkerMin`
 200, `nQueueLimitWorkerMax` 300, `maxNewWorkersPerCycle` 100; backup
-`panda_queueconfig.json-backup-2026-10-21`). The floor holds an empty
-queue's supply: the pool started about 31 of our pilots a minute on
-2026-10-21, so 200 waiting is six or seven minutes of starts, and the
-submitter refills every 20 seconds. Before, with one job per pilot,
+`panda_queueconfig.json-backup-2026-10-21`). Before, with one job per pilot,
 the limits were 500% of running, at least 1,000 and at most 10,000 per
 queue, 2,000 new per cycle: on 2026-10-21 8,275 pilots waited for about
 1,000 running slots, the pool started them oldest first, and
 `BNL_OSG_EPIC_PROD_1` sat at 0 running with 8,998 jobs queued behind 3,729
 older `BNL_OSG_PanDA_1` pilots. The waiting pilots beyond the oldest 300
 of each queue (2,189 and 5,486) were removed that day.
+
+Harvester counts a pilot as waiting until its monitor next checks it, so
+it learns that the pool has started its waiting pilots only at that
+check. The monitor rechecks each worker every `fifoCheckInterval`: 1,800
+s on osgsub01 (`panda_harvester.cfg` `[monitor]`) unless the queue's own
+monitor section sets it (`monCore.fifoCheckInterval` in
+`harvesterbody/monitor.py`). With the waiting limit at 200 and a
+30-minute check, the pool started the 200 within minutes and harvester
+then counted them as waiting for the rest of the half hour and submitted
+none: from 19:30 to 23:30 ET on 2026-10-21 it submitted 744 pilots, 186
+an hour, and with pilots living about 2.3 hours `BNL_OSG_PanDA_1` fell
+from 1,137 running at 18:00 to 433 at 23:00. The limit of 200 had been
+set on the guess that the submitter's 20-second cycle refills the queue;
+its count is refreshed only by the monitor. Since 2026-10-21 23:35 ET
+`BNL_OSG_PanDA_1`'s monitor section sets `fifoCheckInterval` 300, the
+refresh interval of the monitor's condor_q cache
+(`pluginCacheRefreshInterval`), so the added checks are served from that
+cache (backup `panda_queueconfig.json-backup-2026-10-21b`).
+`BNL_OSG_EPIC_PROD_1` keeps the default.
+
+Harvester looks a pilot up in condor's history, once it has left the
+queue, only if it was submitted or started within the last two hours
+(`useCondorHistoryMaxAge` 7200 in `harvestermisc/htcondor_utils.py`, not
+settable from the queue configuration). A pilot with a 120-minute time
+floor ends after that window, so harvester finds no record of it,
+counts it as running until the check timeout (3,600 s) and then marks
+it cancelled: in the hour to 23:30 ET on 2026-10-21 all 184 OSG pilots
+that ended were recorded as cancelled, and harvester counted 494 running
+against 371 in the schedd.
 
 The memory request is fixed at the pool's slot size. Slots are provisioned at
 about 3.7 GB per core: on 2026-10-19, of 4,515 slots admitting these pilots,
