@@ -1,7 +1,7 @@
 """run.sh's input refusal: a simulation that dies on a signal after ROOT
-reports the door's refusal of its input exits 88 under
-EPICPROD_SWITCH_INPUT_REFUSAL=1, and with the signal's status otherwise
-(EPICPROD_PAYLOAD.md, Exit codes). The function and the ERR trap are
+reports the door's refusal of its input exits 88, unless
+EPICPROD_SWITCH_INPUT_REFUSAL=0 turns it off, when it keeps the signal's
+status (EPICPROD_PAYLOAD.md, Exit codes). The function and the ERR trap are
 taken from run.sh itself and run in bash with a stand-in stage."""
 import os
 import re
@@ -23,7 +23,7 @@ def _parts():
     return regex, func, trap
 
 
-def run(log_text, switch, stage='simulation', status=139):
+def run(log_text, switch=None, stage='simulation', status=139):
     regex, func, trap = _parts()
     with tempfile.TemporaryDirectory() as tmp:
         with open(os.path.join(tmp, 'T.npsim.log'), 'w') as f:
@@ -39,30 +39,33 @@ def run(log_text, switch, stage='simulation', status=139):
         ])
         env = dict(os.environ)
         env.pop('EPICPROD_SWITCH_INPUT_REFUSAL', None)
-        if switch:
-            env['EPICPROD_SWITCH_INPUT_REFUSAL'] = '1'
+        if switch is not None:
+            env['EPICPROD_SWITCH_INPUT_REFUSAL'] = switch
         p = subprocess.run(['bash', '-c', script], capture_output=True, text=True, env=env)
         return p.returncode, p.stdout
 
 
 class InputRefusalTest(unittest.TestCase):
-    def test_refusal_with_the_switch_is_88(self):
-        code, out = run('geometry...\n' + REFUSAL + '\n[FATAL] (SignalHandler) Handle signal: 11\n', True)
+    def test_refusal_is_88_by_default(self):
+        code, out = run('geometry...\n' + REFUSAL + '\n[FATAL] (SignalHandler) Handle signal: 11\n')
         self.assertEqual(code, 88)
         self.assertIn('exiting 88', out)
         self.assertNotIn('unreachable', out)
 
-    def test_refusal_without_the_switch_keeps_the_signal(self):
-        self.assertEqual(run(REFUSAL + '\n', False)[0], 139)
+    def test_refusal_with_the_switch_set_is_88(self):
+        self.assertEqual(run(REFUSAL + '\n', '1')[0], 88)
+
+    def test_the_switch_at_zero_keeps_the_signal(self):
+        self.assertEqual(run(REFUSAL + '\n', '0')[0], 139)
 
     def test_a_crash_without_the_refusal_keeps_the_signal(self):
-        self.assertEqual(run('[FATAL] (SignalHandler) Handle signal: 11\n', True)[0], 139)
+        self.assertEqual(run('[FATAL] (SignalHandler) Handle signal: 11\n')[0], 139)
 
     def test_only_the_simulation_stage(self):
-        self.assertEqual(run(REFUSAL + '\n', True, stage='reconstruction')[0], 139)
+        self.assertEqual(run(REFUSAL + '\n', stage='reconstruction')[0], 139)
 
     def test_a_plain_failure_is_untouched(self):
-        self.assertEqual(run(REFUSAL + '\n', True, status=1)[0], 1)
+        self.assertEqual(run(REFUSAL + '\n', status=1)[0], 1)
 
 
 if __name__ == '__main__':

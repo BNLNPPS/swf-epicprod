@@ -81,14 +81,15 @@ crash_capture() {
 # open ... no such device") and npsim's reader dereferences the file it
 # failed to open (segfault findings f-13, f-16, f-17: bursts of one to
 # four minutes at the JLab read door). That is the door's outage, not a
-# crash of the row. Behind EPICPROD_SWITCH_INPUT_REFUSAL=1
-# (DEVELOPING_THE_PAYLOAD.md) such an exit is 88 rather than the
-# signal's status, with the door's line in the report's note, so it is
-# counted as the door's and stays out of the crash catalog.
+# crash of the row. Such an exit is 88 rather than the signal's status,
+# with the door's line in the report's note, so it is counted as the
+# door's and stays out of the crash catalog. On since payload 0.24.17
+# (canary 40982 with the switch); EPICPROD_SWITCH_INPUT_REFUSAL=0 turns
+# it off (DEVELOPING_THE_PAYLOAD.md).
 INPUT_REFUSED_RE='Error in <TNetXNGFile::Open>: \[ERROR\] Server responded with an error: \[30[0-9][0-9]\]'
 input_refusal() {
   INPUT_REFUSAL_STATUS=$1
-  [ "${EPICPROD_SWITCH_INPUT_REFUSAL:-}" = "1" ] || return 0
+  [ "${EPICPROD_SWITCH_INPUT_REFUSAL:-1}" = "1" ] || return 0
   [ "${CURRENT_STAGE}" = "simulation" ] || return 0
   local line
   line=$(grep -m1 -E "${INPUT_REFUSED_RE}" "${LOG_TEMP:-}/${TASKNAME:-}.npsim.log" 2>/dev/null | cut -c1-300) || return 0
