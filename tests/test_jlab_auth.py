@@ -35,10 +35,20 @@ class DoorAccessTest(unittest.TestCase):
         self.assertEqual((url, how), ('root://epicxrd1.sdcc.bnl.gov:1095', 'none'))
         self.assertNotIn('X509_USER_PROXY', env)
 
+    def test_jlab_scope_is_the_path_less_the_rse_oidc_base_path(self):
+        for path, scope in (('//volatile/eic/EPIC//RECO/f.root', '/eic/EPIC/RECO/f.root'),
+                            ('/work/eic3/EPIC/eic/LOG/t/log.tgz', '/eic/LOG/t/log.tgz'),
+                            ('/other/f', '/other/f')):
+            with mock.patch.object(jlab_auth, 'panda_token', return_value='tok') as token:
+                url, _env, how = jlab_auth.door_access('root://dtn-rucio.jlab.org:1094', path)
+            self.assertEqual((url, how), ('roots://dtn-rucio.jlab.org:1094', 'token'))
+            token.assert_called_once_with('storage', audience='dtn-rucio.jlab.org',
+                                          scope=f'storage.read:{scope}')
+
     def test_other_door_gets_the_proxy(self):
-        url, env, how = jlab_auth.door_access('root://dtn-rucio.jlab.org:1094', '/volatile/x',
+        url, env, how = jlab_auth.door_access('root://xgate.hec.lancs.ac.uk:1094', '/cephfs/x',
                                               proxy='/eicprod')
-        self.assertEqual((url, how), ('root://dtn-rucio.jlab.org:1094', 'x509'))
+        self.assertEqual((url, how), ('root://xgate.hec.lancs.ac.uk:1094', 'x509'))
         self.assertEqual(env['X509_USER_PROXY'], '/eicprod')
         self.assertNotIn('BEARER_TOKEN', env)
 

@@ -14,11 +14,13 @@ fallback when no token comes.
   token, else by the proxy when one is given and present.
 - ``door_access``: the URL and environment for an xrootd command at a
   storage door: a path-scoped storage token over TLS for a door that
-  takes PanDA's storage tokens (``EPICPROD_TOKEN_DOORS``, host:port,
-  BNL-XRD's write door epicxrd1:1094 by default), else the proxy when one
-  is given, else no credential. BNL-XRD's read door (1095) speaks no TLS
-  and reads without a credential. JLab's doors take no PanDA token: the
-  server's storage client mints none for dtn-rucio (2026-10-22).
+  takes PanDA's storage tokens (``EPICPROD_TOKEN_DOORS``, host:port:
+  BNL-XRD's write door epicxrd1:1094 and JLab's dtn-rucio:1094 by
+  default), else the proxy when one is given, else no credential.
+  BNL-XRD's read door (1095) speaks no TLS and reads without a
+  credential. The token's scope path is the door path less the RSE's
+  ``oidc_base_path`` (``OIDC_BASE_PATHS``; Anil Panta, 2026-10-22): the
+  server mints no token for a scope that keeps it.
 
 Every client made records how it authenticated (``client.jlab_auth``,
 ``token`` or ``x509``), so a pass can report which credential it ran on.
@@ -38,7 +40,13 @@ STORAGE_TOKEN_CLIENT = os.environ.get('EPICPROD_STORAGE_TOKEN_CLIENT', 'storage'
 JLAB_RUCIO_URL = os.environ.get('JLAB_RUCIO_URL', 'https://rucio-server.jlab.org:443')
 JLAB_RUCIO_ACCOUNT = os.environ.get('EVGEN_RUCIO_ACCOUNT', 'eicprod')
 TOKEN_DOORS = {h.strip() for h in os.environ.get(
-    'EPICPROD_TOKEN_DOORS', 'epicxrd1.sdcc.bnl.gov:1094').split(',') if h.strip()}
+    'EPICPROD_TOKEN_DOORS', 'epicxrd1.sdcc.bnl.gov:1094,dtn-rucio.jlab.org:1094').split(',')
+    if h.strip()}
+# Each door host's RSE oidc_base_path values, removed from the door path to
+# form a storage token's scope path. dtn-rucio serves EIC-XRD
+# (/volatile/eic/EPIC) and EIC-XRD-LOG (/work/eic3/EPIC/eic); BNL-XRD
+# strips nothing.
+OIDC_BASE_PATHS = {'dtn-rucio.jlab.org': ('/volatile', '/work/eic3/EPIC')}
 # A cached token is used while it has this long left.
 TOKEN_MARGIN_S = 600
 
@@ -162,6 +170,17 @@ def rucio_client(account=None, host=None, proxy=None, timeout=None):
     return client
 
 
+def scope_path(host, path):
+    """The storage token scope path for ``path`` at a door on ``host``: the
+    plain path less the longest of the host's oidc_base_path values that
+    holds it. Catalogued PFNs carry doubled slashes (//eic/EPIC//TEST/...)."""
+    path = posixpath.normpath('/' + path.lstrip('/'))
+    for base in sorted(OIDC_BASE_PATHS.get(host, ()), key=len, reverse=True):
+        if path == base or path.startswith(base + '/'):
+            return '/' + path[len(base):].lstrip('/')
+    return path
+
+
 def door_access(door_url, path, verbs=('storage.read',), proxy=None):
     """(door URL, environment, how) for an xrootd command on ``path`` at a
     door. A door in TOKEN_DOORS gets a storage token for that path over TLS
@@ -174,12 +193,10 @@ def door_access(door_url, path, verbs=('storage.read',), proxy=None):
     env = dict(os.environ)
     env.pop('BEARER_TOKEN_FILE', None)
     if f'{host}:{parsed.port}' in TOKEN_DOORS:
-        # Catalogued PFNs carry doubled slashes (//eic/EPIC//TEST/...); the
-        # token's scope is the plain path.
-        scope_path = posixpath.normpath('/' + path.lstrip('/'))
+        scope = scope_path(host, path)
         try:
             token = panda_token(STORAGE_TOKEN_CLIENT, audience=host,
-                                scope=' '.join(f'{v}:{scope_path}' for v in verbs))
+                                scope=' '.join(f'{v}:{scope}' for v in verbs))
             env.pop('X509_USER_PROXY', None)
             env.update(XrdSecPROTOCOL='ztn', BEARER_TOKEN=token)
             env.setdefault('X509_CERT_DIR', '/etc/grid-security/certificates')
