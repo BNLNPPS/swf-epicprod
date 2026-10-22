@@ -47,11 +47,11 @@ from datetime import datetime, timedelta
 
 from django.core.cache import cache
 from django.utils import timezone
-from swf_epicprod.regulation import CAPACITY_POOLS, throttler_verdict
+from swf_epicprod.regulation import CAPACITY_POOLS, RETIRED_QUEUES, throttler_verdict
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_QUEUES = ['BNL_OSG_EPIC_PROD_1', 'UM_GREX_PanDA_1',
+DEFAULT_QUEUES = ['BNL_OSG_PanDA_1', 'UM_GREX_PanDA_1',
                   'NERSC_Perlmutter_epic', 'BNL_ePIC_GOOGLE']
 QUEUE_DEFAULTS = {'feed': False, 'h_low': 8.0, 'h_high': 24.0,
                   'j_max': 0, 't_max': 0, 'breaker': 'closed'}
@@ -100,7 +100,7 @@ def regulated_queues():
     the defaults with an error logged."""
     value = setting('front.queues', DEFAULT_QUEUES)
     if isinstance(value, (list, tuple)) and all(isinstance(v, str) for v in value):
-        return [v for v in value if v]
+        return [v for v in value if v and v not in RETIRED_QUEUES]
     logger.error('front.queues is not a list of queue names: %r; using the defaults', value)
     return list(DEFAULT_QUEUES)
 
@@ -112,10 +112,13 @@ def closed_queues():
     and PCS refuses to place, submit, rerun, trial or move work there.
     Canary probes do not pass through PCS submission and still run."""
     value = setting('front.closed_queues', {})
-    if isinstance(value, dict):
-        return {str(k): str(v or 'closed by the operator') for k, v in value.items() if k}
-    logger.error('front.closed_queues is not a {queue: reason} mapping: %r; none closed', value)
-    return {}
+    if not isinstance(value, dict):
+        logger.error('front.closed_queues is not a {queue: reason} mapping: %r', value)
+        value = {}
+    closed = {str(k): str(v or 'closed by the operator') for k, v in value.items() if k}
+    # A stale/restored SysConfig must not reopen a retired destination.
+    closed.update(RETIRED_QUEUES)
+    return closed
 
 
 # Gates
@@ -832,7 +835,8 @@ def recommend(state, need, queues=None, closed=None):
     decisions = state.get('queues') or {}
     placement = state.get('placement') or {}
     queues = list(queues or decisions.keys())
-    closed = closed_queues() if closed is None else closed
+    closed = dict(closed_queues() if closed is None else closed)
+    closed.update(RETIRED_QUEUES)
     rows = []
     for queue in queues:
         d = decisions.get(queue) or {}

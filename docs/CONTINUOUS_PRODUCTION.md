@@ -424,6 +424,14 @@ healthy and nothing queued, while the m3763 allocation was exhausted;
 both Perlmutter queues were closed "no allocation" until the balance is
 read automatically.
 
+Permanent retirements are also recorded in `regulation.RETIRED_QUEUES`.
+They are excluded even from a restored front list, remain closed if the
+SysConfig closure is lost, and are refused again by the submission doer
+after resolving the final destination. Site probes honor the same
+retirement policy. Existing tasks keep generating jobs, retrying and
+running: closing admission is not a task pause or pilot shutdown.
+See [PROD_1_DRAIN.md](PROD_1_DRAIN.md) for the 22 October OSG drain.
+
 **The NERSC balance.** The production-operations agent reads the
 node-hours left in each NERSC project production charges
 (`nersc.projects`, m3763) hourly from the NERSC IRI API

@@ -133,11 +133,13 @@ pilots. GREX separately allocates eight cores and 48000 MB to eight pilots,
 with each job admitted against one core and 6000 MB.
 
 
-Since 2026-10-21 production runs on `BNL_OSG_PanDA_1` alone. The two queues
-draw the same pilots from the same pool, so a second queue only splits the
-pool's line in two. The front no longer feeds `BNL_OSG_EPIC_PROD_1` (its
-feed switch is off); the queue's record and harvester configuration are
-unchanged, for its other users.
+New production goes to `BNL_OSG_PanDA_1`. `BNL_OSG_EPIC_PROD_1` is
+closed to new tasks and drains existing tasks in place, by Torre Wenaus's
+instruction on 22 October. Its admission closure, disabled probes and
+`brokeroff` record are separate from its pilot supply: existing tasks keep
+generating and running, and Harvester stops replenishing when activated
+demand reaches zero. Both queues remain in the shared OSG accounting
+while the drain runs. See [PROD_1_DRAIN.md](PROD_1_DRAIN.md).
 
 ### Pull mode, time floor and slot length on UM_GREX_PanDA_1
 

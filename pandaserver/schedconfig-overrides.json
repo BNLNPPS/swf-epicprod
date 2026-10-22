@@ -17,6 +17,8 @@
     "_why": "Harvester on osgsub01 runs this queue's pilots in pull mode since 2026-10-19 (docs/OSG_SUBMISSION.md); CRIC still recorded push, which put it under the server's meanRSS guard for push queues (the guard that starved GREX on 2026-10-20). timefloor 120 (2026-10-21): with 0 every pilot ran one job and left (994 jobs on 994 pilots in two hours at BNL_OSG_EPIC_PROD_1), so a queue ran only while a batch of its pilots was at the front of the pool's line; a pilot now takes jobs for 120 minutes. corecount 1, maxrss 4096 (2026-10-21): the pilots are single-core and request 4096 MB since the 22 October regulation correction, while CRIC recorded 8 cores and 48,000 MB; the front's fit check and PCS readiness read the record, so the 5,400 MB eAu tasks 40856 and 40857 passed as fitting OSG and lost 55,824 jobs to memory kills on the two OSG queues in three days. 4096 is the default task declaration, which runs here."
   },
   "BNL_OSG_EPIC_PROD_1": {
+    "status": "brokeroff",
+    "_drain": "2026-10-22, Torre Wenaus: no new tasks. Existing tasks, including 41039 and 41040, keep generating, retrying and running here until complete. brokeroff excludes unassigned brokerage but preserves preassigned tasks and pilot supply. Keep OSG pool accounting and node exclusions during the drain. Harvester noPilotsWhenNoActiveJobs stops replenishment when demand empties; do not set offline or remove pilots while tasks remain.",
     "workflow": "pull",
     "timefloor": 120,
     "corecount": 1,

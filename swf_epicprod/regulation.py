@@ -1,9 +1,24 @@
 """Shared identities and evidence checks for production regulation."""
 from datetime import datetime, timezone
 
+# Admission and accounting are separate. PROD_1's existing tasks drain in
+# place; their jobs must still share OSG's generation and capacity budget.
+RETIRED_QUEUES = {
+    'BNL_OSG_EPIC_PROD_1': (
+        'closed to new tasks; existing tasks drain in place. '
+        'Use BNL_OSG_PanDA_1 for new work (Torre Wenaus, 2026-10-22)'
+    ),
+}
 CAPACITY_POOLS = {'osg': ('BNL_OSG_PanDA_1', 'BNL_OSG_EPIC_PROD_1')}
 PILOTS_PER_WORKER = {'UM_GREX_PanDA_1': 8}
 THROTTLER_EVIDENCE_MAX_AGE_S = 600
+
+
+def require_task_destination(queue):
+    """Guard new task creation only; never job generation or task retries."""
+    reason = RETIRED_QUEUES.get(str(queue or '').strip())
+    if reason:
+        raise ValueError(f'{queue}: {reason}')
 
 
 def throttler_verdict(report, modes, *, now=None):
