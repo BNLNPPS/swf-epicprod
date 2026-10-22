@@ -869,6 +869,60 @@ removal and the request. A run by hand leaves `payload-report.json` and
 each stage's prmon series in its working directory, which is the
 measurement.
 
+## Bad input
+
+A job whose simulation or reconstruction program stops on an error it
+reports does not crash and is not killed: the program exits 1, the
+payload exits 1, and the pilot labels the job with a stale container
+line (pilot error 1305, "unknown groupid" at GREX, "bind mounting /srv"
+at OSG). When the program's FATAL line names the event record, the
+fault is the input's, and it recurs on every attempt of the row, so the
+row's file is lost after retries: DDSim's "Stable particle (PDG: 2212)
+with daughters! check your MC record" and "Cannot Simmulate this MC
+Record" lost about a fifth of the files of the 26.07.3 eAu BeAGLE tasks
+40856 and 40857 (production finding, 2026-10-22). These failures are
+catalogued beside crashes and memory kills as a class of their own
+(Torre Wenaus, 2026-10-22).
+
+**Selection.** A failed job of a production task is a bad-input
+failure when its payload exited 1 (`transexitcode` 1) and its digest
+names the simulation or reconstruction stage as the stage that failed
+(`payloadStage`, `payloadStageStatus=fail` in the job metrics). The
+record does not carry the program's message, so the selection holds
+every reported stop of those stages; the reading below separates an
+input fault from a configuration error, which fails every row of its
+task at once.
+
+**Signature.** One per task and stage, key `input:task40856:simu`,
+class `input`, exit code 1 and no signal, split by stage under the rule
+of the memory signatures. The rest of the row is the record across the
+task's whole life from aggregate queries: failures, the rate over
+finished plus failed, time to failure, and per site the failures and
+hosts.
+
+**Representatives.** Three jobs per signature as `EpicProdJob` rows
+with `phase = 'payload_input'`, chosen as the memory representatives
+are: the shortest, median and longest time to failure among the
+failures whose manifest row resolves, kept once chosen.
+
+**The reading.** The program's FATAL line, read from a representative's
+payload log, is the signature's reading, recorded on the signature
+(`data['input']['fatal']`, with the job it was read from) and shown on
+its page. Signatures whose representatives stop on the same line are
+one cause.
+
+**The nightly pass.** The inventory's input pass
+(`scripts/segfault-inventory.py`, after the memory pass) finds the
+tasks with such a failure in its window, recomputes their signatures
+over their life, and picks representatives where a signature has none.
+
+**Pages.** The catalog's and the reproduction runs page's Kind facet
+gains Bad input (`?kind=badinput`) beside Segfault and Himem.
+
+**Reproduction.** Not yet built: the representative's row run on the
+reference queue reproduces the signature when it stops on the same
+FATAL line, as an input fault is deterministic.
+
 ## Findings
 
 The catalog is the record; what a study concludes is a reading of it,
