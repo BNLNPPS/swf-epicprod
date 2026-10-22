@@ -1,9 +1,11 @@
 # Orderly drain of BNL_OSG_EPIC_PROD_1
 
 On 22 October 2026 Torre Wenaus directed that PROD_1 be retired from new
-work everywhere, while its existing tasks keep running and drain in place.
-No task is moved, paused or killed by this change. New OSG work belongs
-on BNL_OSG_PanDA_1.
+work everywhere. The initial in-place drain was superseded that evening
+by an instruction to move its remaining work to BNL_OSG_PanDA_1, preserving
+already-running jobs. Both task moves were verified by 22:38 UTC. No
+unstarted production backlog remains on PROD_1; its running jobs finish
+there naturally. New OSG work belongs on BNL_OSG_PanDA_1.
 
 ## Why it returned
 
@@ -43,25 +45,30 @@ jobs and Harvester correctly supplied pilots for them.
 
 ## References that remain deliberately
 
-The JEDI `POOLS` configuration and `regulation.CAPACITY_POOLS` continue to
-count both OSG queues. Dropping the draining queue would hide real demand
-and give each queue a separate generation allowance. Node exclusions and
-the installed regulation settings still protect its remaining jobs.
+`regulation.CAPACITY_POOLS` continues to count both OSG queues for actual
+resource use. Production JEDI generation now separates them:
+`osg:BNL_OSG_PanDA_1;osg_drain:BNL_OSG_EPIC_PROD_1`. The shared generation
+reading let PROD_1's backlog suppress refill of the active queue. The
+22:16 UTC configuration change restored refill while the moves completed;
+with both production tasks moved, the retired queue has no production
+task to generate new work. Node exclusions and the installed regulation
+settings still protect its remaining running jobs.
 Historical Snapper series and failure records retain the queue identity.
 The room's production-site list remains as requested; its in-flight task
 board still lists the draining tasks. Queue-description seeds now distinguish
 the draining queue from the active production queue.
 
-At the audit, only the two draining PCS tasks retained PROD_1 overrides;
-no ProdConfig template named it. PanDA also held three older paused
+At the initial audit, only the two draining PCS tasks retained PROD_1
+overrides; their soft moves also changed those overrides to the active
+queue. No ProdConfig template named PROD_1. PanDA also held three older paused
 background tasks (38970–38972). Those remain paused and are not resumed
 or otherwise changed by the drain.
 
 ## Completion and the separate log collision
 
-The drain is not complete while either existing production task has
-remaining work, while jobs are active or finalizing, or while pilots are
-still serving them. A temporary zero queued count is not task completion.
+The queue drain is not complete while its jobs are active or finalizing,
+or while pilots are still serving them. The moved tasks complete on the
+active queue; a temporary zero queued count is not task completion.
 No automation in this change sets the queue offline or removes its pilots.
 After demand empties, the existing Harvester demand gate stops new pilots;
 admission and probes remain closed, so routine automation cannot refill it.
@@ -71,17 +78,21 @@ reported successful RECO registration. The pilot log registration collided
 with logs from task 40443 because the new task reused its physical name.
 Task 41040 similarly reused task 40440's name. This is a distinct attempt-name
 collision, not proof that physics failed or that pilot supply should stop.
-It needs separate repair and prevents calling the drain healthy merely
-because jobs are running. Historical logs and completed physics must be
-preserved.
+The [ePIC adder](EPIC_ADDER.md), installed at 22:34 UTC, now omits absent
+and failed files from Rucio registration. Fresh job 5805903 finished with
+`logHeld=s3` and DDM error 0 after the restart. Historical logs and completed
+physics are preserved. The reused task names are repaired separately in
+PCS allocation; no existing task is renamed.
 
 ## Validation
 
-The retirement, pressure-front and JEDI throttler tests pass (79 tests),
+For the initial retirement deployment, the retirement, pressure-front
+and JEDI throttler tests passed (79 tests),
 including restoration of an old front list, missing/malformed closure
 settings, and refusal of probes before submission. The site-canary test
-suite and swf-monitor pre-commit checks pass. The drain's two PanDA tasks
-and the three older paused tasks were read, not mutated.
+suite and swf-monitor pre-commit checks passed. The drain's two PanDA tasks
+and the three older paused tasks were read only at that stage; the later
+authorized moves are recorded below.
 
 ## Deployment and observed state
 
@@ -116,3 +127,21 @@ registration failure separately from physics delivery. A normal log lookup
 can return the old October 2 tarball because of the collision; such a tarball
 is not evidence for the new job. No log, task, job, or pilot record was
 rewritten to hide or bypass the failure.
+
+## Remaining work moved to active OSG
+
+At 22:17 UTC, authenticated PCS soft moves were requested for tasks 41039
+and 41040. PanDA accepted both. JEDI closed their unstarted jobs before
+changing the task destinations; it left running jobs to finish. The
+operations agent then verified the new sites and settled the attempts
+consumed by those closures. Both operations were `verified` by 22:38 UTC:
+41039 `running`, 41040 `ready`, both at BNL_OSG_PanDA_1. PROD_1 had zero
+activated jobs, 808 running and one holding; active OSG had 3,395 activated
+jobs. The operation IDs are `8d16c648-ec83-440d-b036-61ed384f03b0` and
+`2fcdafe7-09c2-4d93-ad87-81fc3474140c`.
+
+The pool split restored Harvester's configured 600 waiting pilots. This
+is supplied demand, not a promise of available execution slots: a Condor
+analysis of waiting pilot 26364.0 at 22:36 UTC found only one willing
+matching slot. Running-job recovery must therefore be watched separately
+from generated stock and pilot supply.

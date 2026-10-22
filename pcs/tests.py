@@ -24,8 +24,10 @@ from pcs.models import (
 )
 from pcs.services import (
     intake_direct_panda_task,
+    prodtask_allocate_panda_tasks,
     prodtask_record_submission,
     reconcile_panda_task_association,
+    ServiceError,
 )
 
 
@@ -507,6 +509,38 @@ class RepeatedPandaTaskNameTest(DjangoTestCase):
             out_ds=self.raw_name,
             log_ds=f'{self.raw_name}.log',
         )
+
+    @patch('pcs.services._panda_task_name_exists', return_value=False)
+    def test_allocator_skips_rehomed_attempt(self, panda_exists):
+        other = ProdTask.objects.create(
+            name=self.raw_name + '.rehomed', dataset=self.task.dataset,
+            prod_config=self.task.prod_config, created_by='test')
+        occupied = self.task.composed_name + '.try2'
+        PandaTasks.objects.create(
+            prod_task=other, try_number=1, jedi_task_id=1002,
+            task_name=occupied)
+        row = prodtask_allocate_panda_tasks(task=self.task)
+        self.assertEqual(row.try_number, 3)
+        self.assertEqual(row.task_name, self.task.composed_name + '.try3')
+        self.assertEqual(row.out_ds, row.task_name)
+        self.assertEqual(row.log_ds, row.task_name + '_log/')
+        self.assertEqual(PandaTasks.objects.filter(task_name=occupied).count(), 1)
+
+    @patch('pcs.services._panda_task_name_exists', side_effect=[True, False])
+    def test_allocator_skips_name_known_only_to_panda(self, panda_exists):
+        row = prodtask_allocate_panda_tasks(task=self.task)
+        self.assertEqual(row.try_number, 3)
+        self.assertEqual(row.task_name, self.task.composed_name + '.try3')
+        self.assertEqual([c.args[0] for c in panda_exists.call_args_list],
+                         [self.task.composed_name + '.try2', row.task_name])
+
+    @patch('pcs.services._panda_task_name_exists',
+           side_effect=ServiceError('PanDA name lookup failed'))
+    def test_allocator_cannot_reserve_without_panda_lookup(self, panda_exists):
+        before = PandaTasks.objects.count()
+        with self.assertRaisesRegex(ServiceError, 'name lookup failed'):
+            prodtask_allocate_panda_tasks(task=self.task)
+        self.assertEqual(PandaTasks.objects.count(), before)
 
     @patch('pcs.services._panda_executed_identity', return_value={})
     def test_reconcile_records_reused_name_as_next_attempt(self, _executed):

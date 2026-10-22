@@ -240,10 +240,33 @@ def panda_tasks_summary(task, *, include_live=False):
     return summaries
 
 
+def _panda_task_name_exists(task_name):
+    """Consult PanDA before reserving a name; an unavailable lookup blocks it."""
+    from monitor_app.panda.constants import PANDA_SCHEMA
+
+    try:
+        with connections['panda'].cursor() as cursor:
+            cursor.execute(
+                f'SELECT 1 FROM "{PANDA_SCHEMA}"."jedi_tasks" '
+                'WHERE "taskname" = %s LIMIT 1', [task_name])
+            return cursor.fetchone() is not None
+    except Exception as exc:
+        raise ServiceError(
+            'Cannot allocate a PanDA attempt name: PanDA name lookup failed.') from exc
+
+
 def prodtask_allocate_panda_tasks(*, task, source='pcs_submit_request'):
     """Create the next PandaTasks association row before submission."""
     with transaction.atomic():
         locked = ProdTask.objects.select_for_update().get(pk=task.pk)
+        # Different PCS records can share a composed identity. Serialize their
+        # reservations as well as repeat submissions of this one task.
+        if connections['default'].vendor == 'postgresql':
+            name_lock = int.from_bytes(
+                _hashlib.sha256(locked.composed_name.encode()).digest()[:8],
+                'big', signed=True)
+            with connections['default'].cursor() as cursor:
+                cursor.execute('SELECT pg_advisory_xact_lock(%s)', [name_lock])
         last_try = (
             PandaTasks.objects
             .filter(prod_task=locked)
@@ -253,6 +276,12 @@ def prodtask_allocate_panda_tasks(*, task, source='pcs_submit_request'):
         )
         try_number = (last_try or 0) + 1
         task_name = panda_tasks_physical_name(locked, try_number)
+        # Rehoming an old attempt must not free its physical output namespace.
+        # Also cover tasks submitted outside PCS and not yet associated here.
+        while (PandaTasks.objects.filter(task_name=task_name).exists()
+               or _panda_task_name_exists(task_name)):
+            try_number += 1
+            task_name = panda_tasks_physical_name(locked, try_number)
         row = PandaTasks.objects.create(
             prod_task=locked,
             try_number=try_number,

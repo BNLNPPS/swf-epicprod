@@ -95,7 +95,7 @@ Campaigns:
 - [REGULATION_AUDIT_2026-10-22.md](docs/REGULATION_AUDIT_2026-10-22.md) —
   the October regulation audit, corrective changes and deployment evidence.
 - [PROD_1_DRAIN.md](docs/PROD_1_DRAIN.md) — closing the retired OSG queue
-  to new work while its existing tasks finish in place.
+  and moving remaining work while its running jobs finish in place.
 - [JEV.md](docs/JEV.md) — Jev, a decision model: the client, the
   measurement on PCS's request links, and configurations like this one.
 - [EPICPROD_NARRATIVES.md](docs/EPICPROD_NARRATIVES.md) — campaign

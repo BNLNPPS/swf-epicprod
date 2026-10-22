@@ -72,6 +72,15 @@ submission appends `.tryN`, allocated by PCS and recorded in
 delivery accounting unions across attempts at the physics
 configuration, so a rerun needs no accounting change.
 
+The allocator checks each candidate physical name against every PCS
+`PandaTasks` row, regardless of its current owner, and PanDA's
+`jedi_tasks.taskname`. It skips occupied names, including attempts that
+have been rehomed to another PCS task or submitted outside PCS. A failed
+PanDA lookup blocks allocation. Reservations for the same composed
+identity are serialized in the PCS database. The local attempt history
+alone is insufficient: rehomed attempts caused tasks 41039 and 41040 to
+reuse older `.try2` names on 22 October 2026.
+
 Science output is named by the payload from the work unit, not by
 JEDI:
 
