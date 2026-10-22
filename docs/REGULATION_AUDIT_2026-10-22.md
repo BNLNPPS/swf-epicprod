@@ -175,6 +175,35 @@ and a full zero-to-busy production injection, have not been demonstrated
 under a newly available slot burst. The verified result is rapid submission
 and accurate replenishment at the current demand and availability.
 
+### Independent watch through 05:24 UTC
+
+swf-1 supplied a separate five-minute watch covering 03:40–05:24 UTC,
+using the Harvester adjuster log and public snapshot (TeamComms message
+`7c2e4b91-d8a3-4f56-a0e7-3b9f1c6d2e85`). These are peer observations,
+not a second measurement made by this session:
+
+- Before the coordinated change, the queue-level 300-second monitor
+  override alone showed no effect. Harvester's running count held at
+  567 during 03:38–03:59, then 414 during 04:02–04:25, with updates at
+  04:02 and 04:31. The watch did not isolate why that override failed.
+- After approximately 04:49, Harvester waiting stayed at 597–600 and
+  schedd idle at 596–600. Harvester's running count changed between
+  samples: 338, 326, 322, 316, 308 and 310.
+- Pool starts remained around two per minute throughout, with
+  `opened_1h` between 75 and 148. Reported running declined from 365
+  at 04:14 to 319 at 05:23 despite roughly 600 pilots idle in the schedd.
+
+This corroborates repaired accounting and a maintained waiting buffer.
+It does **not** demonstrate increased pool delivery: the binding constraint
+during this watch remained slot acquisition. Increasing the waiting cap
+again is not justified by these observations alone.
+
+The scheduled notifier subsequently emitted `regulation.recovered` for
+GREX, reporting 919 running jobs and 2,334 queued (notification
+`5a04819b-73f7-462a-9f95-4b2c5d027f87`). That confirms the false missing-limit
+alert cleared through the scheduled path; it is not evidence of a change
+in GREX throughput.
+
 ## Cold-start latency: an additional upstream clock
 
 Harvester's 30-second demand cache polls PanDA statistics endpoints. Those
