@@ -149,7 +149,7 @@ class PendingOnlyWhenHomeTest(unittest.TestCase):
         with open(reg.__file__) as fh:
             src = fh.read()
         homed = src.index('if len(homed) == len(upload_items):')
-        fallback = src.index('upload_client = UploadClient(logger=logger)')
+        fallback = src.index('upload_client = UploadClient(_client=client, logger=logger)')
         before, inside, after = src[:homed], src[homed:fallback], src[fallback:]
         self.assertNotIn('sys.exit(PENDING_EXIT)', before)
         self.assertIn('sys.exit(PENDING_EXIT)', inside)

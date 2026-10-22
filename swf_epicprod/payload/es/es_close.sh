@@ -28,6 +28,7 @@ export DETECTOR_VERSION_REQUESTED=${DETECTOR_VERSION:-main}
 source /opt/detector/epic-${DETECTOR_VERSION_REQUESTED}/bin/thisepic.sh >/dev/null 2>&1 || true
 source ${PAYLOAD}/grid_env.sh
 export RUCIO_CONFIG=${PAYLOAD}/rucio.cfg RUCIO_ACCOUNT=eicprod
+source ${PAYLOAD}/rucio_auth.sh
 source ${PAYLOAD}/test_jlab_unreachable.sh
 
 record() {
@@ -83,6 +84,7 @@ ARGS=(-f "${MERGED}" -d "${DID}" -s epic -r "${RSE}" --metadata-json "${META}" -
 [ "${PRESERVE}" == "yes" ] && ARGS+=(--preserve-door "${PDOOR}" --preserve-prefix "${PPREFIX}" --preserve-timeout "${PTIMEOUT}")
 echo "register: ${DID} (${EVENTS} events, $(stat -c %s "${MERGED}") bytes) at ${RSE}"
 export REGISTRATION_STAGGER_MAX_S=0
+rucio_auth
 python "${PAYLOAD}/register_to_rucio.py" "${ARGS[@]}"; RC=$?
 if [ ${RC} -eq 0 ]; then
   record registered "$DID" "$EVENTS" 0 ""
