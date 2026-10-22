@@ -310,6 +310,12 @@ by-priority table carrying the rest.
    path. A per-configuration view (`view=pc`) rolls the list up to one
    row per PC — the campaign completion table the home panel's counts
    link into; the edition view remains the target-curation surface.
+   A row's link opens the configuration's current work: its newest
+   task in the campaign that is not a past-output record, whichever
+   edition it is on. The row's target and delivery stay those of its
+   representative edition, so a configuration continued on a patched
+   release (lAger 3.6.1: delivered on 26.07.1, composed again on
+   26.07.3) shows the delivery and opens the new task.
    The page carries the campaign's last-7-day arrivals quilt and
    accrued-files stack (the snapper embed), pruned to the active
    filters; its click-through opens the campaign view with the same

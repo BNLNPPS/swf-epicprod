@@ -1459,7 +1459,19 @@
             const pathNote = entries.length > 1 ? ` <span class="text-muted small">${htmlEscape(e.path)}</span>` : '';
             return `<div>${buttons}${pathNote}</div>`;
         });
-        return `<div class="mb-2"><strong>PWG priority</strong> <span class="text-muted">— the production priority from requestors (<a href="${EVGEN_INPUTS_URL}">EVGEN inputs</a>)</span>${lines.join('')}</div>`;
+        // With no mark on the EVGEN input, the configuration's production
+        // request carries the priority (the campaign plan's Priority
+        // column, the best among its requests); the buttons still set the
+        // EVGEN mark (docs/EPICPROD_EVGEN_INPUTS.md, PWG marks).
+        let fromRequest = '';
+        if (!entries.some(e => e.priority)) {
+            const ranked = (Array.isArray(t.pc_requests) ? t.pc_requests : [])
+                .filter(r => r.priority > 0).sort((a, b) => a.priority - b.priority);
+            if (ranked.length) {
+                fromRequest = `<div><strong>${ranked[0].priority}</strong> <span class="text-muted">from the configuration's request req#${ranked[0].id}; no mark on the EVGEN input</span></div>`;
+            }
+        }
+        return `<div class="mb-2"><strong>PWG priority</strong> <span class="text-muted">— the production priority from requestors (<a href="${EVGEN_INPUTS_URL}">EVGEN inputs</a>)</span>${fromRequest}${lines.join('')}</div>`;
     }
     document.addEventListener('click', async function (e) {
         const b = e.target.closest ? e.target.closest('button.evgen-prio') : null;

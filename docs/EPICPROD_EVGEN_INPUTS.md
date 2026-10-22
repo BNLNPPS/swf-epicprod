@@ -143,9 +143,16 @@ registered before counting), last Rucio update,
 RSEs, completeness, and the PCS edition that represents it, newest update
 first; a dataset no request claims shows as unmatched. The match is
 written against the EVGEN-stage record (s0.r0, request material); the
-column shows the production edition composed beside it, the same
-configuration on a release pair, with its task; a matched sample with
-no production edition reads "matched, no production edition". The
+column shows a production edition of the same physics configuration,
+with its task: the edition with a task first, then the newest release.
+It is found through the configuration, since later campaigns' editions
+sit on other releases than the record (the lAger 3.6.1 samples: record
+on 26.02.0, production on 26.07.1 and 26.07.3; until 2026-10-22 the
+column looked only on the record's own release and read "matched, no
+production edition" for them). A record bound to no configuration
+falls back to the edition composed beside it on its own release. A
+matched sample with no production edition reads "matched, no
+production edition". The
 s0.r0 record is never shown (the 9/14 rule that no default sits on
 s0.r0; a matched sample reported as its s0.r0 record on 9/16 was this
 column). The page reads the recorded snapshot and matched references only —
@@ -183,7 +190,11 @@ event; setting a mark requires a signed-in user):
     column sorts and filters.
   - Task catalog: a PWG column and filter.
   - Task compose detail and the dataset page: the level as a button row,
-    settable there.
+    settable there. When the EVGEN input carries no mark, the compose
+    detail shows above the buttons the priority of the configuration's
+    production request (the best among its requests, the campaign
+    plan's Priority column), naming the request; the buttons still set
+    the EVGEN mark.
   - Find data: a PWG priority column, read-only.
   - REST task record and the MCP task and dataset records: `pwg_priority`
     (0 unset; the MCP dataset record gives null when no input resolves).

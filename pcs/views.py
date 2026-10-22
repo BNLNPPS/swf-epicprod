@@ -1751,33 +1751,48 @@ def evgen_inputs(request):
                 matched[did] = ds
     # The edition a matched sample is represented by: the EVGEN-stage
     # record is what the match is written against (s0.r0, request
-    # material), and the production edition composed beside it, the same
-    # configuration on a release pair, is what carries the request and the
-    # task (ingest._production_edition; "no default sits on s0.r0"). The
-    # page shows the production edition with its task when one exists and
-    # the record otherwise. Read only: nothing is composed here.
+    # material), and a production edition of the same physics
+    # configuration is what carries the request and the task. Editions
+    # of later campaigns sit on other releases than the record (lAger
+    # 3.6.1: record on 26.02.0, production on 26.07.1 and 26.07.3), so
+    # they are found through the configuration; a record bound to none
+    # falls back to the edition composed beside it on its own release
+    # (ingest._production_edition; "no default sits on s0.r0"). The
+    # edition with a task wins, then the newest release. Read only:
+    # nothing is composed here.
     production = {}
     evgen_records = list({ds.pk: ds for ds in matched.values()}.values())
     if evgen_records:
         def _identity(d):
             return (d.scope, d.detector_version, d.detector_config, d.physics_tag_id,
                     d.evgen_tag_id, d.background_tag_id, d.sample_name)
-        by_identity = {}
+
+        def _release(d):
+            parts = str(d.detector_version or '').split('.')
+            return tuple(int(p) for p in parts) if all(p.isdigit() for p in parts) else ()
+        by_pc, by_identity = {}, {}
         for d in evgen_records:
-            by_identity.setdefault(_identity(d), []).append(d)
+            if d.physics_config_id:
+                by_pc.setdefault(d.physics_config_id, []).append(d)
+            else:
+                by_identity.setdefault(_identity(d), []).append(d)
+        from django.db.models import Q
         siblings = (Dataset.objects
-                    .filter(physics_tag_id__in={d.physics_tag_id for d in evgen_records},
-                            evgen_tag_id__in={d.evgen_tag_id for d in evgen_records})
+                    .filter(Q(physics_config_id__in=list(by_pc))
+                            | Q(physics_tag_id__in={d.physics_tag_id for d in evgen_records},
+                                evgen_tag_id__in={d.evgen_tag_id for d in evgen_records}))
                     .exclude(pk__in=[d.pk for d in evgen_records])
                     .exclude(metadata__contains={'stage': 'evgen'})
                     .prefetch_related('prod_tasks').order_by('pk'))
         for sib in siblings:
-            for rec in by_identity.get(_identity(sib), ()):
-                tasks = list(sib.prod_tasks.all())
+            recs = by_pc.get(sib.physics_config_id) or by_identity.get(_identity(sib), ())
+            tasks = list(sib.prod_tasks.all())
+            rank = (bool(tasks), _release(sib), sib.pk)
+            for rec in recs:
                 held = production.get(rec.pk)
-                # the edition with a task wins, then the newest
-                if held is None or (tasks and not held[1]) or (bool(tasks) == bool(held[1])):
-                    production[rec.pk] = (sib, tasks[-1] if tasks else None)
+                if held is None or rank > held[2]:
+                    production[rec.pk] = (sib, tasks[-1] if tasks else None, rank)
+        production = {pk: held[:2] for pk, held in production.items()}
 
     from datetime import datetime as _dt
 
@@ -3580,6 +3595,15 @@ def _campaign_plan_state(campaign, query, pc_view):
                         and r['expected_events'] is not None)):
                 by_pc[label] = r
         rows = list(by_pc.values())
+        # The row opens the configuration's current work, its newest task
+        # that is not a past-output record, wherever its edition sits; the
+        # representative edition above carries the target and the
+        # delivery. Without this a configuration continued on a patched
+        # release (lAger 3.6.1, 26.07.1 delivered, 26.07.3 composed) opened
+        # the delivered task and the new one was unreachable from the plan.
+        live = _campaign_live_task_by_pc(campaign)
+        for r in rows:
+            r['task'] = live.get(r['pc_label']) or r['task']
 
     # Default order: the physics configuration's number, the table's
     # first column, so the page opens sorted by what it lists and the
@@ -3658,6 +3682,23 @@ def _campaign_task_by_pc(campaign):
             .order_by('pk'))
     for t in rows:
         out.setdefault(t.dataset.physics_config.label, t.composed_name)
+    return out
+
+
+def _campaign_live_task_by_pc(campaign):
+    """The campaign's newest task per physics configuration that is not a
+    past-output record, by composed name: the configuration's current
+    work, which the plan row opens."""
+    out = {}
+    if campaign is None:
+        return out
+    rows = (ProdTask.objects.filter(campaign=campaign,
+                                    dataset__physics_config__isnull=False)
+            .exclude(status='past_output')
+            .select_related('dataset', 'dataset__physics_config')
+            .order_by('pk'))
+    for t in rows:
+        out[t.dataset.physics_config.label] = t.composed_name
     return out
 
 
@@ -5710,6 +5751,9 @@ def prod_task_compose(request):
                     'nevents': req.nevents,
                     'description': req.description,
                     'issue_url': req.source_url,
+                    # the request's priority, which the PWG priority row
+                    # shows when the EVGEN input carries no mark
+                    'priority': req.priority or 0,
                 }
                 for req in getattr(t, 'pc_requests', [])
             ],
