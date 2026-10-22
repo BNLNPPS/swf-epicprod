@@ -419,27 +419,21 @@ def thresholds():
 
 def account_usage_by_rse(catalog):
     """The production account's used bytes and file count per RSE, read as
-    the eicprod account through the JLab x509 proxy the agent holds
-    (EVGEN_X509_PROXY). The pass's other reads are the public ``eicread``
-    userpass, which JLab refuses account usage; only this figure needs the
-    account credential. Sakib's `rucio account limit list eicprod` reports
-    the same numbers. Returns {rse: {'bytes', 'files'}}; on a missing or
-    unusable proxy it records the reason as a failed source and returns {}
-    so the pass carries on with the RSE-wide usage."""
-    proxy = os.environ.get('EVGEN_X509_PROXY', '')
-    if not proxy or not os.path.exists(proxy):
-        catalog._fail('account usage',
-                      RuntimeError('eicprod proxy (EVGEN_X509_PROXY) not available'))
-        return {}
+    the eicprod account by a token from the PanDA server, else through the
+    JLab x509 proxy the agent holds (EVGEN_X509_PROXY;
+    swf_epicprod.jlab_auth). The pass's other reads are the public
+    ``eicread`` userpass, which JLab refuses account usage; only this
+    figure needs the account credential. Sakib's `rucio account limit list
+    eicprod` reports the same numbers. Returns {rse: {'bytes', 'files'}};
+    when neither credential works it records the reason as a failed source
+    and returns {} so the pass carries on with the RSE-wide usage."""
     from pcs.services import JLAB_RUCIO_URL
     account = os.environ.get('EVGEN_RUCIO_ACCOUNT', 'eicprod')
     host = os.environ.get('JLAB_RUCIO_URL', JLAB_RUCIO_URL)
     try:
-        from rucio.client import Client
-        # The proxy authenticates through the creds dict; the account read
-        # needs no other credential, and the pass's own env is left alone.
-        client = Client(rucio_host=host, auth_host=host, account=account,
-                        auth_type='x509_proxy', creds={'client_proxy': proxy})
+        from swf_epicprod.jlab_auth import rucio_client
+        client = rucio_client(account=account, host=host,
+                              proxy=os.environ.get('EVGEN_X509_PROXY') or None)
         out = {}
         for row in client.get_local_account_usage(account=account):
             rse = row.get('rse')

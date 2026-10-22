@@ -117,11 +117,12 @@ interruption loses nothing observed.
 total, file count) read as the public `eicread` account; the production account's limits per RSE,
 readable by any account; and the production account's own used bytes and
 files per RSE, which JLab serves only to the account itself, read as
-`eicprod` through the x509 proxy the agent holds (EVGEN_X509_PROXY), the
+`eicprod` by a token from the PanDA server, else through the x509 proxy
+the agent holds (EVGEN_X509_PROXY; `swf_epicprod/jlab_auth.py`), the
 same numbers `rucio account limit list eicprod` reports. The RSE-wide
 usage counts every account; the account usage is what the account is
-charged against its limit. A missing or unusable proxy leaves the
-account usage unset and is recorded as a failed source; the pass carries
+charged against its limit. When neither credential works the account
+usage is left unset and recorded as a failed source; the pass carries
 on with the RSE-wide usage.
 
 The pass keeps its own store, a SQLite database beside the file-events

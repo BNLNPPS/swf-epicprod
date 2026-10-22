@@ -80,7 +80,11 @@ client needs gfal2, which the ops-agent host does not have, so the
 catalog work is done with `add_replicas` against a file the storage
 already holds. xrootd refuses a credential whose file permissions are
 wider than 0600, so the drain keeps a private-mode copy of the proxy and
-refreshes it from the source, as the EVGEN doer does. An RSE's read door
+refreshes it from the source, as the EVGEN doer does. Since 2026-10-22
+the catalog work goes by a token from the PanDA server and the storage
+check by a storage token at BNL-XRD's write door, or with no credential
+at its read door; the proxy is the fallback (`swf_epicprod/jlab_auth.py`),
+and the drain runs without it once it is gone. An RSE's read door
 can be a port with no write at all (BNL-XRD reads on 1095 and writes on
 1094), so the payload writes to the write door and the registrar reads
 back through the RSE's own protocol entry.

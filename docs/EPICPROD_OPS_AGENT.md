@@ -61,6 +61,8 @@ tier:
 |---|---|---|
 | PanDA OIDC token (cached, `EIC.production`) | `prun` submission to JEDI | agent |
 | Rucio x509 proxy (`longproxy-for-rucio`) | replica resolution, DID queries | agent |
+| JLab tokens from the PanDA server, asked for with `longproxy-for-rucio` (`swf_epicprod/jlab_auth.py`) | JLab Rucio as `eicprod` (output datasets at submission, the registrar, the stash drain, EVGEN registration, the catalog and replica reads); storage tokens at BNL-XRD's write door | agent |
+| JLab `eicprod` x509 proxy (`EVGEN_X509_PROXY`) | fallback for the above where no token comes; JLab's doors, which take no PanDA token; expires 2026-10-28 and cannot be renewed | agent |
 | xrootd (`xrdcp`/`xrdfs`) | fetching log/output bytes | agent |
 
 The web tier's only interaction with privileged results is to **read a

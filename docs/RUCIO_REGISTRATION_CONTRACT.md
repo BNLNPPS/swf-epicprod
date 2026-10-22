@@ -74,9 +74,10 @@ EVGEN sample of an internal-EVGEN task):
 
 The spec carries the datasets and their metadata as `outputs`, composed
 by PCS beside the job environment (`pcs/commands.py`). The client and
-credential are the EVGEN registration doer's (`rucio_client(proxy)`,
-the `eicprod` proxy), so the three writers into the JLab catalog share
-one identity.
+credential are the EVGEN registration doer's (`rucio_client(proxy)`:
+the `eicprod` account by a token from the PanDA server, the `eicprod`
+proxy as fallback; `swf_epicprod/jlab_auth.py`), so the three writers
+into the JLab catalog share one identity.
 
 A dataset that already exists is accepted: its rule is added if it has
 none, and its metadata is set where absent. Metadata that differs from
