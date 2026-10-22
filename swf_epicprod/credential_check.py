@@ -8,7 +8,19 @@ and reports how many days each has left:
 - the BNL Rucio x509 proxy (``$X509_USER_PROXY``) — payload-log
   retrieval and Rucio metadata access;
 - the EVGEN output x509 proxy (``$EVGEN_X509_PROXY``) — shipped in the
-  submission sandbox for JLab Rucio output registration.
+  submission sandbox for JLab Rucio output registration;
+- the JLab token (``jlab_token``) — whether the PanDA server gives the
+  agent a rucio token that JLab Rucio takes as eicprod
+  (``swf_epicprod.jlab_auth``), the credential the payload and the agent
+  write with since 2026-10-22. It has no expiry to report: each token is
+  minted for hours, so it is ok or unavailable.
+
+The eicprod proxy is the fallback where no token comes, and it cannot be
+renewed past 2026-10-28. While the token is ok the proxy is reported as
+superseded, with its days left, and does not count toward the exit code;
+when the token is unavailable the proxy counts as before, and the token's
+own state does not, since the proxy carries the work. So the check stops
+production only when neither credential works.
 
 Run as a module (``python -m swf_epicprod.credential_check``), normally
 as a nightly catalog-sync chain step on the production operations
@@ -70,7 +82,8 @@ def check_credentials():
         ('bnl_rucio_proxy', 'x509', os.environ.get('X509_USER_PROXY', '')),
         ('evgen_output_proxy', 'x509', os.environ.get('EVGEN_X509_PROXY', '')),
     ]
-    results = []
+    token = _jlab_token()
+    results = [token]
     for name, kind, path in creds:
         entry = {'credential': name, 'path': path}
         if not path:
@@ -91,14 +104,35 @@ def check_credentials():
                     entry['status'] = 'ok'
             except Exception as e:
                 entry.update(status='unreadable', reason=str(e))
+        if name == 'evgen_output_proxy' and token['status'] == 'ok' \
+                and entry['status'] != 'ok':
+            entry['superseded_by'] = entry['status']
+            entry['status'] = 'superseded'
         results.append(entry)
     return results
+
+
+def _jlab_token():
+    """The JLab token's entry: ok when JLab Rucio takes the PanDA server's
+    rucio token as the production account, unavailable with the reason
+    otherwise. No days_left: a token lives hours, and its expiry is no
+    renewal anyone must make."""
+    entry = {'credential': 'jlab_token', 'kind': 'token', 'path': ''}
+    try:
+        from .jlab_auth import rucio_client
+        client = rucio_client(proxy=None, timeout=60)
+        entry.update(status='ok', account=client.whoami().get('account'))
+    except Exception as e:                                    # noqa: BLE001
+        entry.update(status='unavailable', reason=str(e)[:300])
+    return entry
 
 
 def main():
     results = check_credentials()
     worst = 0
     for r in results:
+        if r['status'] in ('superseded', 'unavailable', 'ok'):
+            continue
         if r['status'] in ('expired', 'missing', 'unreadable'):
             worst = max(worst, 4)
         elif r['status'] in ('expiring', 'unset'):

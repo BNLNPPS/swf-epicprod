@@ -635,6 +635,17 @@ is the reminder. Standalone run:
 `python -m swf_epicprod.credential_check` (exit 0 healthy, 3 warning,
 4 expired/missing/unreadable).
 
+Since 2026-10-22 the check also asks whether the PanDA server gives the
+agent a rucio token that JLab Rucio takes as `eicprod`
+(`jlab_token`, ok or unavailable, no expiry: a token lives hours), the
+credential the payload and the agent write with
+([EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md) item 22,
+`swf_epicprod/jlab_auth.py`). The EVGEN output proxy is their fallback
+and cannot be renewed past 2026-10-28: while the token is ok the proxy is
+reported as superseded, with its days left, and does not count; while
+the token is unavailable the proxy counts as before. The check, and the
+front's credential gate that reads it, go red only when neither works.
+
 ### Expiry ping proposers
 
 The two steps after the check turn the same expiries into dated
