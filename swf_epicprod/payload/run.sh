@@ -75,7 +75,29 @@ crash_capture() {
     upload_logs || true
   fi
 }
-trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; if [ -n "$CURRENT_STAGE" ]; then stage "$CURRENT_STAGE" fail "line $LINENO: $BASH_COMMAND"; fi; if [ "$s" -ge 128 ] && [ "$s" -le 159 ]; then crash_capture "$s" || true; fi; exit $s' ERR
+# A streamed input the door refuses when npsim opens it, minutes after
+# the input stage found it there, kills npsim on SIGSEGV: ROOT reports
+# the door's answer ("Server responded with an error: [3005] Unable to
+# open ... no such device") and npsim's reader dereferences the file it
+# failed to open (segfault findings f-13, f-16, f-17: bursts of one to
+# four minutes at the JLab read door). That is the door's outage, not a
+# crash of the row. Behind EPICPROD_SWITCH_INPUT_REFUSAL=1
+# (DEVELOPING_THE_PAYLOAD.md) such an exit is 88 rather than the
+# signal's status, with the door's line in the report's note, so it is
+# counted as the door's and stays out of the crash catalog.
+INPUT_REFUSED_RE='Error in <TNetXNGFile::Open>: \[ERROR\] Server responded with an error: \[30[0-9][0-9]\]'
+input_refusal() {
+  INPUT_REFUSAL_STATUS=$1
+  [ "${EPICPROD_SWITCH_INPUT_REFUSAL:-}" = "1" ] || return 0
+  [ "${CURRENT_STAGE}" = "simulation" ] || return 0
+  local line
+  line=$(grep -m1 -E "${INPUT_REFUSED_RE}" "${LOG_TEMP:-}/${TASKNAME:-}.npsim.log" 2>/dev/null | cut -c1-300) || return 0
+  [ -n "${line}" ] || return 0
+  REPORT_NOTE="input refused at the door when npsim opened it (npsim exited $1): ${line}"$'\n'"${REPORT_NOTE}"
+  echo "input refused at the door when npsim opened it; exiting 88: ${line}"
+  INPUT_REFUSAL_STATUS=88
+}
+trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; if [ -n "$CURRENT_STAGE" ]; then stage "$CURRENT_STAGE" fail "line $LINENO: $BASH_COMMAND"; fi; if [ "$s" -ge 128 ] && [ "$s" -le 159 ]; then crash_capture "$s" || true; input_refusal "$s" || true; s=${INPUT_REFUSAL_STATUS:-$s}; fi; exit $s' ERR
 # Payload report (PAYLOAD_REPORT, payload-report.json in the working
 # directory): written on every exit path from what the run left behind,
 # by payload_report.py, and carried into jobReport.json by the epicprod

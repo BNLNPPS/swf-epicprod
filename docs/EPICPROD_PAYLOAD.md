@@ -250,6 +250,7 @@ path adds one rather than exiting 1.
 | 86 | The write door this job's outputs must pass serves a certificate that has already expired, so the door will refuse every session the production client opens and the job has nowhere to deliver. Read in the payload's first seconds, so no work was started. Unlike 80, no other worker escapes this: PanDA's retry runs the job again, in seconds, until the door's certificate is replaced. Also: the background merger `BG_MERGER` names is unknown or its program is not in the image, so no merge ran; the background stage's reason and the report's note name which. |
 | 87 | The background merge exited without error but the merged file does not hold the frames the job asked for, or cannot be read, so simulation was not started. The stage reason gives the count found. |
 | 85 | The input is not at the door: `xrdfs stat` of the streamed `hepmc3.tree.root` input was answered "no such file or directory" twice, ten seconds apart, so no work was started. The door's answer is in the stage log and the report; PanDA's retry runs the job again. A stat that gets no answer (a timeout, an unreachable door) proceeds. |
+| 88 | The door refused the streamed input when npsim opened it, after the input stage had found it there, and npsim died on the failed open (ROOT's `TNetXNGFile::Open` server error in the simulation log, then a signal). The door's line is in the report's note; PanDA's retry runs the job again. Behind `EPICPROD_SWITCH_INPUT_REFUSAL=1`; without the switch such a job exits with the signal's status (139), as before, and lands in the crash catalog (SEGFAULT_DIAGNOSIS.md, findings f-13, f-16, f-17). |
 
 Codes 65, 78 and 79 also appear in the run script's stage log and in
 the payload report, so a job that dies before its report is sent is
@@ -705,6 +706,14 @@ In order, each a committed step on the clone:
     to the proxy. Validated by hand: token writes at BNL-XRD
     (`epicxrd1.sdcc.bnl.gov:1094`) and LANCASTER-XRD, and a Rucio
     upload with a scoped storage token.
+23. **The door's refusal of the input is the door's** (2026-10-22,
+    payload 0.24.15, behind `EPICPROD_SWITCH_INPUT_REFUSAL=1`). The
+    input stage finds the streamed input at the door, and minutes
+    later the door can still refuse npsim's open of it; npsim then
+    dies on SIGSEGV, and the job was counted as a crash (findings f-13,
+    f-16, f-17). With the switch, a simulation that dies on a signal
+    after ROOT's `TNetXNGFile::Open` server error exits 88 with the
+    door's line in the report's note (Exit codes).
 
 ## Multithreading
 
