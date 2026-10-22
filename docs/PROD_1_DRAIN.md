@@ -82,3 +82,37 @@ including restoration of an old front list, missing/malformed closure
 settings, and refusal of probes before submission. The site-canary test
 suite and swf-monitor pre-commit checks pass. The drain's two PanDA tasks
 and the three older paused tasks were read, not mutated.
+
+## Deployment and observed state
+
+The normal full deploy completed at 20:55:09 UTC on 22 October, release
+`branch-infra-baseline-v46-20261022-165232`: swf-epicprod `96f902f`,
+swf-monitor `1a6f34c`, and site-canary `ab037f8`.
+[Deployment run](https://github.com/BNLNPPS/swf-epicprod/actions/runs/39852567850)
+finished successfully, verified the shipped files, and returned health HTTP 200.
+Deployed imports confirmed the permanent closure, disabled probe policy,
+active OSG admission, and both queues retained in the capacity pool.
+
+The existing writers on pandaserver01 and osgsub01 installed the `brokeroff`
+override at 20:55:02 UTC from GitHub revision `96f902f`; their provenance
+records identify that revision. No PanDA server or Harvester service was
+restarted. At 20:56 UTC the mirrored PanDA schedconfig still read `online`
+pending its normal configurator refresh; the admission guards were already
+live independently of that refresh.
+
+The live descriptions of PROD_1, active OSG, and the earlier direct BNL
+queue were corrected through the authenticated queue-description endpoint.
+That endpoint first returned HTTP 500 because its existing implementation
+omitted the Django `timezone` import. The one-line fix, swf-monitor
+`72b0485`, passed pre-commit checks and went live through a lightweight UI
+deploy at 20:55:36 UTC. All three description updates then returned HTTP 200.
+
+The post-deploy task read still showed 41039 running and 41040 ready; the
+three old background tasks remained paused. At 20:56 UTC, 41039 had 1,141
+running jobs and 5,975 activated jobs. At 20:57 UTC, all 485 archived failed
+jobs inspected for 41039 had payload exit 0, `payloadRegistration=registered`,
+`logHeld=s3`, and DDM error 200. These current job records establish the log
+registration failure separately from physics delivery. A normal log lookup
+can return the old October 2 tarball because of the collision; such a tarball
+is not evidence for the new job. No log, task, job, or pilot record was
+rewritten to hide or bypass the failure.
