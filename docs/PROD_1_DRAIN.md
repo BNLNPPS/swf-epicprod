@@ -96,9 +96,9 @@ active OSG admission, and both queues retained in the capacity pool.
 The existing writers on pandaserver01 and osgsub01 installed the `brokeroff`
 override at 20:55:02 UTC from GitHub revision `96f902f`; their provenance
 records identify that revision. No PanDA server or Harvester service was
-restarted. At 20:56 UTC the mirrored PanDA schedconfig still read `online`
-pending its normal configurator refresh; the admission guards were already
-live independently of that refresh.
+restarted. The mirrored PanDA schedconfig was confirmed `brokeroff` at
+20:57:35 UTC after its normal configurator refresh; the admission guards
+were already live independently of that refresh.
 
 The live descriptions of PROD_1, active OSG, and the earlier direct BNL
 queue were corrected through the authenticated queue-description endpoint.
