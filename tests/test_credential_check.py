@@ -81,8 +81,21 @@ class GateDaysTest(unittest.TestCase):
         ]
         self.assertEqual(credential_verdict('warning', cc.gate_days(results), 1.0), (False, ''))
 
-    def test_token_probe_is_bounded_inside_the_agents_minute(self):
-        self.assertLessEqual(cc.JLAB_TOKEN_TIMEOUT_S * 3, 60)
+    def test_a_stalled_token_probe_is_unavailable_at_its_deadline(self):
+        # The probe's child process sleeps past the deadline: the entry is
+        # unavailable in about the deadline, and the check carries on.
+        with mock.patch.object(cc, '_PROBE', 'import time\ntime.sleep(30)  # %d\n'), \
+                mock.patch.object(cc, 'JLAB_TOKEN_DEADLINE_S', 1):
+            started = cc.time.monotonic()
+            entry = cc._jlab_token()
+            took = cc.time.monotonic() - started
+        self.assertEqual(entry['status'], 'unavailable')
+        self.assertIn('no answer in 1 s', entry['reason'])
+        self.assertLess(took, 5)
+
+    def test_the_deadline_leaves_the_proxies_their_time(self):
+        # Two openssl reads at 15 s at most, inside the agent's 60 s.
+        self.assertLessEqual(cc.JLAB_TOKEN_DEADLINE_S + 2 * 15, 55)
 
 
 if __name__ == '__main__':

@@ -42,6 +42,17 @@ import time
 WARN_DAYS = float(os.environ.get('CREDENTIAL_EXPIRY_WARN_DAYS', '7'))
 # Each of the token request and the Rucio client's calls, seconds.
 JLAB_TOKEN_TIMEOUT_S = 10
+# The whole token probe, a child process killed at this many seconds: the
+# Rucio client retries and backs off inside its calls, so per-call
+# timeouts bound no total. With the two proxies' openssl reads (15 s
+# each at most) the check stays inside the agent's 60 s.
+JLAB_TOKEN_DEADLINE_S = 20
+_PROBE = (
+    "import json\n"
+    "from swf_epicprod.jlab_auth import rucio_client\n"
+    "c = rucio_client(proxy=None, timeout=%d)\n"
+    "print(json.dumps({'account': c.whoami().get('account')}))\n"
+)
 
 
 def _days_left(expiry_epoch):
@@ -134,14 +145,24 @@ def _jlab_token():
     otherwise. No days_left: a token lives hours, and its expiry is no
     renewal anyone must make."""
     entry = {'credential': 'jlab_token', 'kind': 'token', 'path': ''}
+    # In a child process with a hard deadline, so a token service or a
+    # catalog that stalls or retries leaves the proxies still checked.
     try:
-        from .jlab_auth import rucio_client
-        # Bounded well inside the agent's 60 s for the whole check, so a
-        # token service that hangs leaves the proxies still checked.
-        client = rucio_client(proxy=None, timeout=JLAB_TOKEN_TIMEOUT_S)
-        entry.update(status='ok', account=client.whoami().get('account'))
-    except Exception as e:                                    # noqa: BLE001
-        entry.update(status='unavailable', reason=str(e)[:300])
+        out = subprocess.run([sys.executable, '-c', _PROBE % JLAB_TOKEN_TIMEOUT_S],
+                             capture_output=True, text=True,
+                             timeout=JLAB_TOKEN_DEADLINE_S)
+    except subprocess.TimeoutExpired:
+        entry.update(status='unavailable',
+                     reason=f'no answer in {JLAB_TOKEN_DEADLINE_S} s')
+        return entry
+    try:
+        account = json.loads((out.stdout or '').strip().splitlines()[-1])['account']
+    except Exception:                                         # noqa: BLE001
+        lines = (out.stderr or out.stdout or '').strip().splitlines()
+        entry.update(status='unavailable',
+                     reason=(lines[-1] if lines else f'probe exited {out.returncode}')[:300])
+        return entry
+    entry.update(status='ok', account=account)
     return entry
 
 
