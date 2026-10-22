@@ -75,7 +75,7 @@ reads and sets the rows:
 | `NRUNNINGCAP_<site>` | stop generating when running exceeds it | none |
 | `NQUEUECAP_<site>` | stop generating when queued exceeds it | none |
 | `POOLS` | queues that feed one set of slots, read as one: `pool:queueA,queueB;pool2:...` | none |
-| `MODE` | `observe` (decide and log, never throttle) or `throttle` | `observe` |
+| `MODE` | `observe` (decide and log, never throttle) or `throttle` | required explicitly; absent/invalid holds generation |
 
 **Pools.** Queues that feed one set of slots are one reading: the
 summed counts of the pool's queues, held to the pool's own limits
@@ -182,11 +182,16 @@ work-queue-wide `<TAG>`, then the built-in default), and applies the
 rule above. It logs every site's reading and its answer to
 `panda-EpicProdJobThrottler.log`.
 
-`MODE` is `observe` unless the row says `throttle`. In `observe` the
-engine logs what it would do and answers unthrottled, which is the
-answer the server gives today; in `throttle` it returns the decision,
-sets the pass cap the generator reads, charges it to the ledger, and
-exposes the saturated sites as `excluded_sites`.
+`MODE` must explicitly be `observe` or `throttle`; missing or invalid values
+return a temporary error and hold generation. Throttle mode also requires
+the actual JEDI generation-lock configuration and site-exclusion support.
+The ledger reserves under one lock across reading, decision and durable
+write, using atomic replacement. Malformed or unwritable ledgers hold
+generation. Keys include VO and work-queue ID; resource types share grants.
+Successful enforced decisions emit `REGULATION_OK` runtime evidence. The
+server reporter supplies that evidence to the front, which requires fresh
+successful decisions for both VOs as well as their current throttle modes
+before trusting `front.jedi_throttled`.
 
 Registration in `panda_jedi.cfg`, section `[jobthrottle]`:
 

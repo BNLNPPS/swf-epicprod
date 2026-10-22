@@ -21,6 +21,17 @@ QUEUES = ('BNL_OSG_PanDA_1', 'BNL_OSG_EPIC_PROD_1')
 # Small compatibility patches to the installed Harvester. The reference
 # checkout stays untouched. Exact contexts make an incompatible upgrade fail.
 PATCHES = {
+    'harvesterbody/worker_adjuster.py': (
+        '            # get panda queues dict from CRIC\n',
+        '            # ePIC: absent or stale demand must not launch empty pilots.\n'
+        '            demand_max_age = getattr(harvester_config.submitter, "jobStatsMaxAge", 0)\n'
+        '            if demand_max_age > 0:\n'
+        '                demand_at = self.dbProxy.get_cache_last_update_time("job_statistics.json", None)\n'
+        '                if demand_at is None or (core_utils.naive_utcnow() - demand_at).total_seconds() > demand_max_age:\n'
+        '                    tmp_log.error("REGULATION_HOLD: job demand missing or stale")\n'
+        '                    job_stats = {}\n'
+        '                    job_stats_new_df = self._job_stats_to_df(None)\n'
+        '            # get panda queues dict from CRIC\n'),
     'harvesterbody/cacher.py': (
         '                lastUpdateTime = self.dbProxy.get_cache_last_update_time(mainKey, subKey)\n'
         '                if (not force_update) and lastUpdateTime is not None and lastUpdateTime > timeLimit:',
@@ -51,7 +62,7 @@ def set_ini(text, section, key, value):
     if not match:
         raise ValueError(f'missing [{section}]')
     body = match.group(1)
-    assignment = re.compile(r'(?m)^' + re.escape(key) + r'\s*=.*$')
+    assignment = re.compile(r'(?m)^' + re.escape(key) + r'[ \t]*=[^\n]*(?:\n[ \t]+[^\n]*)*')
     if len(assignment.findall(body)) > 1:
         raise ValueError(f'duplicate [{section}] {key}')
     line = f'{key} = {value}'
@@ -64,11 +75,11 @@ def prepare(root):
     queues = root / 'etc/panda/panda_queueconfig.json'
     text = cfg.read_text()
     settings = {
-        'submitter': {'lookupTime': 20},
+        'submitter': {'lookupTime': 20, 'jobStatsMaxAge': 90},
         'monitor': {'fifoCheckInterval': 30, 'fifoMaxCheckInterval': 30,
                     'pluginCacheRefreshInterval': 30, 'historyMaxAgeFloor': 86400},
         'cacher': {'sleepTime': 5,
-                   'refreshSecondsByKey': json.dumps({'job_statistics.json': 30,
+                   'refreshSecondsByKey': '\n ' + json.dumps({'job_statistics.json': 30,
                                                       'job_statistics_new.json': 30})},
     }
     for section, values in settings.items():
@@ -87,6 +98,12 @@ def prepare(root):
         entry.setdefault('monitor', {}).update(fifoCheckInterval=30, useCondorHistoryMaxAge=86400)
         entry.setdefault('submitter', {})['noPilotsWhenNoActiveJobs'] = True
     changes = {cfg: text, queues: json.dumps(data, indent=2) + '\n'}
+    for queue in QUEUES:
+        path = Path(data[queue]['submitter']['templateFile'])
+        source = path.read_text()
+        if 'request_memory = 3700' not in source and 'request_memory = 4096' not in source:
+            raise ValueError(f'unexpected memory request in {path}')
+        changes[path] = source.replace('request_memory = 3700', 'request_memory = 4096')
     packages = list(root.glob('lib/python*/site-packages/pandaharvester'))
     if len(packages) != 1:
         raise ValueError(f'expected one installed Harvester package, found {packages}')

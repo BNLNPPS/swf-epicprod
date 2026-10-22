@@ -6442,7 +6442,8 @@ def _pilot_rows(pilots):
         in_force = p.get('in_force') or {}
         would = p.get('would_set') or {}
         limits = [{'in_force': in_force.get(k), 'would': would.get(k)}
-                  for k in ('maxWorkers', 'nQueueLimitWorkerMax', 'nQueueLimitJobMax')]
+                  for k in ('maxWorkers', 'nQueueLimitWorker', 'nQueueLimitWorkerMax',
+                            'nQueueLimitWorkerMin', 'nQueueLimitWorkerRatio')]
         limits.append({'in_force': None, 'would': would.get('maxNewWorkersPerCycle')})
         rows.append(dict(p, queue=queue, limits=limits))
     return rows

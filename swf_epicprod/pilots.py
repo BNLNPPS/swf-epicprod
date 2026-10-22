@@ -24,8 +24,9 @@ Settings in SysConfig, seeded at their defaults on first read:
 
 The limits, per queue (harvester keys in the queue's entry of
 ``panda_queueconfig.json``): ``maxWorkers`` = T + Q;
-``nQueueLimitWorkerMax`` = Q; ``nQueueLimitJobMax`` =
-``nQueueLimitJobMin`` = Q plus one cycle's new pilots, ratio unset;
+``nQueueLimitWorker``, its minimum and maximum = Q, ratio = 0.
+All decisions use worker allocations; the configured pilot target is divided
+by the queue's pilots per worker. Starts are observed starts, not endings.
 ``maxNewWorkersPerCycle`` = enough to refill Q in ``REFILL_CYCLES``
 cycles. T is the running target; Q, the queued-pilot target, is one
 hour of pilot starts at the measured rate, between ``QUEUED_FLOOR``
@@ -50,11 +51,13 @@ DEGRADED_FRACTION = 0.5
 SATURATED_HOLD_H = 1.0
 # The harvester keys the regulator sets, and the pq_table reading of
 # each where the harvester records it.
-LIMIT_KEYS = ('maxWorkers', 'nQueueLimitWorkerMax', 'nQueueLimitJobMax',
-              'nQueueLimitJobMin', 'maxNewWorkersPerCycle')
+LIMIT_KEYS = ('maxWorkers', 'nQueueLimitWorker', 'nQueueLimitWorkerMax',
+              'nQueueLimitWorkerMin', 'nQueueLimitWorkerRatio', 'maxNewWorkersPerCycle')
 IN_FORCE_FIELDS = {'maxWorkers': 'max_workers',
-                   'nQueueLimitWorkerMax': 'n_queue_limit_worker',
-                   'nQueueLimitJobMax': 'n_queue_limit_job'}
+                   'nQueueLimitWorker': 'n_queue_limit_worker',
+                   'nQueueLimitWorkerMax': 'n_queue_limit_worker_max',
+                   'nQueueLimitWorkerMin': 'n_queue_limit_worker_min',
+                   'nQueueLimitWorkerRatio': 'n_queue_limit_worker_ratio'}
 
 
 def _int(value):
@@ -88,6 +91,7 @@ def harvester_reading(queue, reports):
             'running': _int(now.get('running')) or 0,
             'queued': (_int(now.get('submitted')) or 0) + (_int(now.get('ready')) or 0),
             'ended': n_ended,
+            'started': (db.get('workers_started') or {}).get(queue),
             'ended_unfinished': n_ended - (_int(by_status.get('finished')) or 0),
             'in_force': {key: _int(limits.get(field))
                          for key, field in IN_FORCE_FIELDS.items()},
@@ -100,31 +104,30 @@ def target_limits(target, queued_target):
     """The harvester limits for running target T and queued target Q."""
     new = max(1, math.ceil(queued_target / REFILL_CYCLES))
     return {'maxWorkers': target + queued_target,
+            'nQueueLimitWorker': queued_target,
             'nQueueLimitWorkerMax': queued_target,
-            'nQueueLimitJobMax': queued_target + new,
-            'nQueueLimitJobMin': queued_target + new,
+            'nQueueLimitWorkerMin': queued_target,
+            'nQueueLimitWorkerRatio': 0,
             'maxNewWorkersPerCycle': new}
 
 
-def floor_limits():
-    return target_limits(0, QUEUED_FLOOR) | {'maxWorkers': QUEUED_FLOOR}
+def floor_limits(floor=QUEUED_FLOOR):
+    return target_limits(0, floor) | {'maxWorkers': floor}
 
 
-def _bounded(desired, in_force, *, raise_allowed):
+def _bounded(desired, in_force, *, raise_allowed, floor=QUEUED_FLOOR):
     """Each limit moved toward its desired value: lowered at once, raised
     by at most ``STEP_UP`` of the value in force, not raised at all when
     raising is held. A limit with no reading in force moves freely."""
     out = {}
     for key, want in desired.items():
         have = in_force.get(key)
-        if key == 'nQueueLimitJobMin':
-            have = in_force.get('nQueueLimitJobMax')
         if have is None or want <= have:
             out[key] = want
         elif not raise_allowed:
             out[key] = have
         else:
-            out[key] = min(want, max(int(have * (1 + STEP_UP)), have + QUEUED_FLOOR))
+            out[key] = min(want, max(int(have * (1 + STEP_UP)), have + floor))
     return out
 
 
@@ -136,8 +139,13 @@ def decide(queue, reading, census_q, blockers, settings, *, mode, now, last=None
     queue, without the credential gate (pilots carry no operator
     credential); ``last`` the previous cycle's record for the queue;
     ``now`` an aware datetime."""
-    target = _int(settings.get('target_running')) or 0
+    from swf_epicprod.regulation import PILOTS_PER_WORKER
+    per_worker = PILOTS_PER_WORKER.get(queue, 1)
+    target_pilots = _int(settings.get('target_running')) or 0
+    target = math.ceil(target_pilots / per_worker)
+    floor = math.ceil(QUEUED_FLOOR / per_worker)
     record = {'queue': queue, 'mode': mode, 'target_running': target,
+              'unit': 'workers', 'pilots_per_worker': per_worker, 'target_pilots': target_pilots,
               'decided_at': now.isoformat()}
     if reading is None:
         return 'held', 'no_report', record
@@ -156,10 +164,10 @@ def decide(queue, reading, census_q, blockers, settings, *, mode, now, last=None
     census_q = census_q or {}
     activated = int(((census_q.get('by_status') or {}).get('activated') or {}).get('jobs') or 0)
     p90_h = (census_q.get('calibration') or {}).get('p90_start_latency_h')
-    # Pilots started per hour, read as pilots ended: the two balance while
-    # the running count holds.
-    start_rate_h = round(reading['ended'] * 3600.0 / interval_s, 1)
-    queued_target = int(min(max(round(start_rate_h * QUEUED_HORIZON_H), QUEUED_FLOOR), target))
+    if reading.get('started') is None:
+        return 'held', 'starts_unreported', record
+    start_rate_h = round(reading['started'] * 3600.0 / interval_s, 1)
+    queued_target = int(min(max(round(start_rate_h * QUEUED_HORIZON_H), floor), target))
     record.update({'activated': activated, 'p90_start_h': p90_h,
                    'start_rate_h': start_rate_h, 'queued_target': queued_target})
     in_force = reading['in_force']
@@ -169,7 +177,7 @@ def decide(queue, reading, census_q, blockers, settings, *, mode, now, last=None
     if blockers or failing:
         record['gate_reason'] = '; '.join(blockers) if blockers else (
             f'{unfinished} of {ended} pilots ended unfinished in the interval')
-        record['would_set'] = floor_limits()
+        record['would_set'] = floor_limits(floor)
         return _settled(record, in_force, mode, 'degraded')
 
     desired = target_limits(target, queued_target)
@@ -187,9 +195,9 @@ def decide(queue, reading, census_q, blockers, settings, *, mode, now, last=None
     reason = None
     if saturated and _hours_since(since, now) >= SATURATED_HOLD_H:
         reason = 'site_not_starting'
-    elif activated < queued_target:
+    elif activated < queued_target * per_worker:
         reason = 'no_work'
-    record['would_set'] = _bounded(desired, in_force, raise_allowed=reason is None)
+    record['would_set'] = _bounded(desired, in_force, raise_allowed=reason is None, floor=floor)
     return _settled(record, in_force, mode, reason)
 
 

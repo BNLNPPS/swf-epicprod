@@ -985,3 +985,21 @@ pressure front can reach.
   credential is in place; the action has not yet run for real).
 - corePower for the GREX queue; the pull-mode trial (PanDA operations).
 - Later: a non-interactive service credential for the dispatcher.
+
+## Regulation corrections, 22 October 2026
+
+The [audit implementation record](REGULATION_AUDIT_2026-10-22.md) specifies
+the coordinated clocks and OSG waiting buffer. The front requires fresh
+JEDI enforcement evidence, excludes paused input from committed depth,
+and counts the two OSG queues as one capacity pool with combined workload.
+A 15-minute delivery grace replaces backlog-inflated historical start waits;
+a deep buffer does not suppress the delivery warning. Oversize candidates
+no longer block smaller eligible tasks behind them. Failure findings exempt
+only their matching mechanism or exit code and payload stage.
+
+Pilot decisions remain shadow-only. They use actual worker starts, convert
+GREX's pilot target to eight-pilot worker allocations, and propose pull-mode
+worker limits. Production notices independently evaluate supply health and
+a sustained 25 percent running-count fall against the trailing hour while
+work waits. Zero-running starvation has a five-minute grace. Google pilot
+launching respects the front's explicit closure policy.

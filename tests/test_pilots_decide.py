@@ -6,12 +6,12 @@ from datetime import datetime, timedelta, timezone
 from swf_epicprod.pilots import decide, harvester_reading
 
 NOW = datetime(2026, 10, 7, 7, 0, tzinfo=timezone.utc)
-IN_FORCE = {'maxWorkers': 5000, 'nQueueLimitWorkerMax': 5000, 'nQueueLimitJobMax': 2000}
+IN_FORCE = {'maxWorkers': 5000, 'nQueueLimitWorkerMax': 5000, 'nQueueLimitWorker': 5000, 'nQueueLimitWorkerMin': 200, 'nQueueLimitWorkerRatio': 30}
 
 
 def reading(running=540, queued=1295, ended=200, unfinished=0, age=60, in_force=None):
     return {'host': 'pandaharvester01', 'report_age_s': age, 'interval_s': 300,
-            'running': running, 'queued': queued, 'ended': ended,
+            'running': running, 'queued': queued, 'ended': ended, 'started': 200,
             'ended_unfinished': unfinished, 'in_force': dict(in_force or IN_FORCE),
             'db_error': None}
 
@@ -34,11 +34,24 @@ class PilotDecide(unittest.TestCase):
         self.assertEqual(rec['queued_target'], 1000)
         self.assertEqual(rec['would_set']['maxWorkers'], 2000)
         self.assertEqual(rec['would_set']['nQueueLimitWorkerMax'], 1000)
-        self.assertEqual(rec['would_set']['nQueueLimitJobMax'], 1100)
+        self.assertNotIn('nQueueLimitJobMax', rec['would_set'])
+        self.assertEqual(rec['would_set']['nQueueLimitWorkerRatio'], 0)
         self.assertEqual(rec['would_set']['maxNewWorkersPerCycle'], 100)
 
+    def test_grex_target_is_pilots_but_limits_are_workers(self):
+        _, _, rec = decide('UM_GREX_PanDA_1', reading(), census(), [], TARGET, mode='shadow', now=NOW)
+        self.assertEqual(rec['target_running'], 125)
+        self.assertEqual(rec['target_pilots'], 1000)
+        self.assertEqual(rec['would_set']['maxWorkers'], 250)
+
+    def test_starts_are_not_estimated_from_endings(self):
+        r = reading(ended=900)
+        r['started'] = 0
+        _, _, rec = decide('Q', r, census(), [], TARGET, mode='shadow', now=NOW)
+        self.assertEqual(rec['start_rate_h'], 0)
+
     def test_raise_is_bounded(self):
-        low = {'maxWorkers': 200, 'nQueueLimitWorkerMax': 100, 'nQueueLimitJobMax': 100}
+        low = {'maxWorkers': 200, 'nQueueLimitWorkerMax': 100, 'nQueueLimitWorker': 100}
         _, _, rec = decide('Q', reading(queued=50, in_force=low), census(), [], TARGET,
                            mode='shadow', now=NOW)
         self.assertEqual(rec['would_set']['maxWorkers'], 300)
@@ -71,7 +84,7 @@ class PilotDecide(unittest.TestCase):
         self.assertIn('30 of 40', rec['gate_reason'])
 
     def test_no_work_never_raises(self):
-        low = {'maxWorkers': 200, 'nQueueLimitWorkerMax': 100, 'nQueueLimitJobMax': 100}
+        low = {'maxWorkers': 200, 'nQueueLimitWorkerMax': 100, 'nQueueLimitWorker': 100}
         _, reason, rec = decide('Q', reading(in_force=low), census(activated=10), [], TARGET,
                                 mode='shadow', now=NOW)
         self.assertEqual(reason, 'no_work')
@@ -92,7 +105,8 @@ class PilotDecide(unittest.TestCase):
             'interval': {'seconds': 300},
             'harvester_db': {
                 'launch_limits': [{'queue': 'Q', 'max_workers': '5000',
-                                   'n_queue_limit_worker': '5000', 'n_queue_limit_job': '2000'}],
+                                   'n_queue_limit_worker': '5000', 'n_queue_limit_worker_max': '5000',
+                                   'n_queue_limit_worker_min': '200', 'n_queue_limit_worker_ratio': '30'}],
                 'workers_now': {'Q': {'running': 540, 'submitted': 1295}},
                 'workers_ended': {'sites': {'Q': {'ended': 202,
                                                   'by_status': {'finished': 200, 'failed': 2}}}}}}}

@@ -214,10 +214,22 @@ class LedgerTest(unittest.TestCase):
         with open(self.path, "w") as fh:
             fh.write("{not json")
         readings = [site("OSG", running=0, not_run=748, nqueuelimit=3123)]
-        self.ledger.charge(readings)
-        self.ledger.grant(readings, ["OSG"], 300)
-        self.ledger.charge(readings)
-        self.assertEqual(readings[0].granted, 300)
+        with self.assertRaises(ValueError):
+            self.ledger.reserve(readings, scope='wlcg:1', exclusion_honored=True)
+
+    def test_concurrent_reservations_cannot_spend_the_same_room(self):
+        from concurrent.futures import ThreadPoolExecutor
+        import os
+        os.unlink(self.path)
+        def reserve(_):
+            r = [site('OSG', nqueuelimit=600)]
+            return self.ledger.reserve(r, scope='wlcg:1', exclusion_honored=True).max_num_jobs or 0
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            granted = list(pool.map(reserve, range(16)))
+        self.assertEqual(sum(granted), 600)
+        other = self.ledger.reserve([site('OSG', nqueuelimit=600)],
+                                    scope='epic:2', exclusion_honored=True)
+        self.assertEqual(other.max_num_jobs, 300)
 
 
 class ReadingsTest(unittest.TestCase):

@@ -221,6 +221,10 @@ def run_cycle(*, dry_run=False, created_by='gke_pilots'):
     # comments, which name it.
     import yaml
     stop = blockers(cfg, yaml.safe_dump(template))
+    from swf_epicprod.front import closed_queues
+    closed = closed_queues()
+    if cfg['queue'] in closed:
+        stop.append(f"queue closed: {closed[cfg['queue']]}")
     if stop:
         summary.update(outcome='held', reason='; '.join(stop))
     else:

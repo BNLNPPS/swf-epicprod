@@ -174,12 +174,12 @@
     </table>
 
     <h2 id="pilots" class="front-section">Pilot supply</h2>
-    <p class="mb-1">The harvester limits each regulated queue would carry, from the harvester's report and the queue census against the queue's running target (mode: {{ pilot_mode }}; the regulator changes nothing on the harvester in shadow mode).</p>
+    <p class="mb-1">Worker allocations and proposed Harvester limits (mode: {{ pilot_mode }}). GREX runs eight pilots per worker; its configured pilot target is converted to workers below. Shadow mode records proposals only.</p>
     <table class="table table-striped table-bordered table-sm align-middle w-auto mb-2 swf-sortable">
         <thead><tr>
             <th>Queue</th><th>State</th><th>Reason</th>
-            <th>Running pilots</th><th>Target</th><th>Queued pilots</th><th>Queued target</th><th>Pilots ended per hour</th><th>Activated jobs</th>
-            <th>Total pilots (maxWorkers)</th><th>Queued pilots (nQueueLimitWorkerMax)</th><th>Fetched jobs (nQueueLimitJobMax)</th><th>New per cycle</th>
+            <th>Running workers</th><th>Target workers</th><th>Queued workers</th><th>Queued target</th><th>Workers started per hour</th><th>Activated jobs</th>
+            <th>Total workers</th><th>Waiting limit</th><th>Waiting maximum</th><th>Waiting minimum</th><th>Waiting ratio</th><th>New per cycle</th>
         </tr></thead>
         <tbody>
         {% for p in pilot_rows %}
@@ -196,7 +196,7 @@
                 {% for l in p.limits %}<td>{{ l.in_force|default_if_none:'unread' }}{% if l.would != None and l.would != l.in_force %} &rarr; <strong>{{ l.would }}</strong>{% endif %}</td>{% endfor %}
             </tr>
         {% empty %}
-            <tr><td colspan="13">No pilot decision is recorded yet.</td></tr>
+            <tr><td colspan="15">No pilot decision is recorded yet.</td></tr>
         {% endfor %}
         </tbody>
     </table>

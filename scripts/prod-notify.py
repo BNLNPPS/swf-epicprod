@@ -71,7 +71,7 @@ SOURCE = 'swf-epicprod:prod-notify'
 FAIL_FRACTION = 0.10
 FAIL_MIN_JOBS = 200
 STARVED_ACTIVATED = 100
-STARVED_MINUTES = 30
+STARVED_MINUTES = 5
 CREDENTIAL_DAYS = 14
 ARRIVALS_HOURS = 2
 ARRIVALS_RECHECK_MINUTES = 60
@@ -241,6 +241,41 @@ def queue_triggers(activity, workers, state):
                                 f'{FACE}/panda/epic-queues/{site}/'))
             starved.pop(site, None)
             starved.pop(f'{site}:told', None)
+    return notices
+
+
+def regulation_triggers(snapshot, state):
+    """Scheduled supply health and declining delivery, independent of browsers."""
+    notices = []
+    saved = state.setdefault('regulation', {})
+    now = dt.datetime.now(dt.timezone.utc)
+    for site in snapshot.get('sites', []):
+        for queue in site.get('queues', []):
+            key = queue['id']
+            rec = saved.setdefault(key, {})
+            running = int(queue.get('running') or 0) + int(queue.get('starting') or 0)
+            queued = int(queue.get('queued') or 0)
+            history = [x for x in rec.get('history', []) if now.timestamp() - x[0] <= 3600]
+            history.append([now.timestamp(), running])
+            rec['history'] = history
+            peak = max(x[1] for x in history)
+            falling = queued > STARVED_ACTIVATED and peak >= 100 and running < peak * .75
+            if falling:
+                rec.setdefault('falling_since', now.timestamp())
+            else:
+                rec.pop('falling_since', None)
+            supply = ((queue.get('health') or {}).get('parts') or {}).get('pilot_supply') or {}
+            reasons = []
+            if queued and supply.get('level') in ('red', 'amber'):
+                reasons.append(supply.get('note') or 'pilot supply unverified')
+            if falling and now.timestamp() - rec['falling_since'] >= 900:
+                reasons.append(f'running fell from {peak} to {running}; {queued} jobs wait')
+            bad = bool(reasons)
+            if bad != bool(rec.get('told')):
+                trigger = 'regulation.degraded' if bad else 'regulation.recovered'
+                message = '; '.join(reasons) if bad else f'{running} running, {queued} queued; supply condition cleared'
+                notices.append((trigger, key, f'{key}: {message}', f'{FACE}/panda/epic-queues/{key}/'))
+            rec['told'] = bad
     return notices
 
 
@@ -441,6 +476,10 @@ def main(argv):
 
     failures = []
     notices = []
+    try:
+        notices += regulation_triggers(monitor('swf_comp_snapshot'), state)
+    except Exception as exc:
+        failures.append(f'regulation snapshot: {exc}')
     notices += task_triggers(tasks, state)
     notices += queue_triggers(activity, workers, state)
     notices += platform_triggers(campaign, state)

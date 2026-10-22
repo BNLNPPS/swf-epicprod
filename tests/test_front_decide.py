@@ -153,9 +153,12 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(out[0][:2], ('awaiting_observation', 'awaiting_observation'))
         self.assertEqual(out[0][2]['committed_h'], 4.0)
 
-    def test_idle_capacity_needs_the_start_latency_to_pass(self):
+    def test_idle_capacity_uses_short_grace_despite_long_historical_wait(self):
         idle = census(not_started=1000, running=10, p90_start_h=2.0)
-        self.assertEqual(run(idle, [entry('t')], last_feed_age_h=1.0)[0][0], 'would_feed')
+        self.assertEqual(run(idle, [entry('t')], last_feed_age_h=0.1)[0][0], 'would_feed')
+        self.assertEqual(run(idle, [entry('t')], last_feed_age_h=1.0)[0][:2], ('idle_capacity', 'not_pulling'))
+        deep = census(not_started=20000, running=10, p90_start_h=40)
+        self.assertEqual(run(deep, [entry('t')], last_feed_age_h=1.0)[0][:2], ('idle_capacity', 'not_pulling'))
         self.assertEqual(run(idle, [entry('t')], last_feed_age_h=3.0)[0][:2], ('idle_capacity', 'not_pulling'))
         self.assertEqual(run(idle, [entry('t')], last_feed_age_h=None)[0][0], 'would_feed')
 
@@ -183,7 +186,7 @@ class HoursSummaryTest(unittest.TestCase):
         self.assertEqual(out['ready']['total'], 4000.0)
         self.assertEqual(out['ready']['unsized_tasks'], 1)
         # Capacity is the ceiling: Q supplies 1000 job-hours per hour, R five.
-        self.assertEqual(out['capacity'], {'by_queue': {'Q': 1000, 'R': 5}, 'total': 1005})
+        self.assertEqual(out['capacity'], {'by_queue': {'Q': 1000, 'R': 5}, 'by_pool': {'Q': 1000, 'R': 5}, 'total': 1005})
         # 4000 job-hours over 1005 per hour: about four hours of clock to drain.
         self.assertEqual(out['drain_h'], 3.98)
 

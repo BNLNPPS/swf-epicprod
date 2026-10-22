@@ -88,9 +88,25 @@ have needs our file there too. Since 2026-10-20 on pandaharvester01:
   already mints for `osg-ce-2.jlab.org:9619` into
   `/data/atlpan/tokens/ce/prod/`.
 
-An override change is installed on both hosts.
+## Synchronization (22 October 2026)
 
-A change to an override is a commit here, an install of that commit on
-the server, and an entry in the server's change log
-(distcomp-services `panda-server/CHANGES.md`). The server takes it at
-its next refresh, within 200 s of the writer's next run.
+All three consumers, pandaserver01, pandaharvester01 and osgsub01, run
+`panda-schedconfig.py --sync-from-github` every five minutes. The writer
+resolves this repository's `main` commit, fetches the overrides at that
+immutable revision, validates and merges them with CRIC, and atomically
+replaces the local output. GitHub or CRIC failure retains the previous
+output and exits nonzero. A `.provenance.json` sidecar records the commit,
+overrides SHA256, output SHA256 and write time. The hashes distinguish
+content synchronization from a newer unrelated repository commit.
+
+OSG Harvester reads `file:/var/data/atlpan/harvester_common/schedconfig/schedconfig.json`.
+Its hot job statistics still come directly from PanDA and have their own
+30-second refresh; this writer supplies static resource and endpoint data.
+On pandaharvester01, `--pilot-dir` also refreshes the shipped GREX and JLab
+queue files from the same merged records, retaining their timefloor policy.
+
+GREX's job unit is one core, 6000 MB and at most five hours; its fixed submit
+template separately requests eight cores and 48000 MB for eight concurrent
+pilots. Both OSG queue records describe single-core pilots. Resource
+requests and deployment measurements are recorded in
+[the regulation implementation report](REGULATION_AUDIT_2026-10-22.md).

@@ -292,16 +292,59 @@ class GrantLedger:
         raw = fh.read()
         if not raw.strip():
             return {}
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            return {}
-        return data if isinstance(data, dict) else {}
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError('grant ledger is not an object')
+        if any(not isinstance(entry, dict) for entry in data.values()):
+            raise ValueError('grant ledger has an invalid entry')
+        return data
 
     def _open(self):
         fh = open(self.path, "a+")
         fcntl.flock(fh, fcntl.LOCK_EX)
         return fh
+
+    def reserve(self, readings, *, scope, exclusion_honored):
+        """Read, decide and reserve under one lock across generator processes.
+
+        Statistics are work-queue scoped; resource types share that scope.
+        A corrupt or unwritable ledger raises rather than losing reservations.
+        """
+        now = time.time()
+        # Lock a stable separate inode, so the ledger itself can be replaced
+        # atomically. A crash must not leave an empty file that resets grants.
+        with open(self.path + '.lock', 'a+') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                with open(self.path) as fh:
+                    if not fh.read(1):
+                        raise ValueError('grant ledger is empty')
+                    data = self._load(fh)
+            except FileNotFoundError:
+                data = {}
+            for r in readings:
+                entry = data.get(f'{scope}/{r.site}', {})
+                if (entry.get('sig') == [r.running, r.queued]
+                        and now - float(entry.get('at', 0)) < LEDGER_TTL_S):
+                    r.granted = int(entry.get('granted', 0))
+            decision = decide(readings, exclusion_honored=exclusion_honored)
+            if not decision.throttled and decision.max_num_jobs:
+                for r in readings:
+                    if r.site in decision.granted_sites:
+                        data[f'{scope}/{r.site}'] = {
+                            'sig': [r.running, r.queued],
+                            'granted': r.granted + decision.max_num_jobs, 'at': now}
+                fd, temporary = tempfile.mkstemp(dir=os.path.dirname(self.path) or '.')
+                try:
+                    with os.fdopen(fd, 'w') as fh:
+                        fh.write(json.dumps(data))
+                        fh.flush()
+                        os.fsync(fh.fileno())
+                    os.replace(temporary, self.path)
+                finally:
+                    if os.path.exists(temporary):
+                        os.unlink(temporary)
+            return decision
 
     def charge(self, readings: list[SiteReading]) -> None:
         """Set each reading's ``granted`` from the ledger: the grants made

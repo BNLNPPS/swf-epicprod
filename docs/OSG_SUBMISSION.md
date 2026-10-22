@@ -75,7 +75,7 @@ On osgsub01 both queues use the template queue `production.pull` in
 descriptions, `submit_pilot2_pull_bnl_osg.sdf` and
 `submit_pilot2_pull_bnl_osg_epicprod.sdf` (the latter keeping the canary pilot
 URL), are the push descriptions with `--harvester-submit-mode PULL`, without
-the job input transfer, with fixed requests `request_memory = 3700` and
+the job input transfer, with fixed requests `request_memory = 4096` (since 22 October; formerly 3700) and
 `request_disk = 4500000` (KiB), and with `priority = 1`, so that within the
 shared submitting account pull pilots are matched ahead of any remaining push
 pilots. A push
@@ -103,45 +103,35 @@ queue, 2,000 new per cycle: on 2026-10-21 8,275 pilots waited for about
 older `BNL_OSG_PanDA_1` pilots. The waiting pilots beyond the oldest 300
 of each queue (2,189 and 5,486) were removed that day.
 
-Harvester counts a pilot as waiting until its monitor next checks it, so
-it learns that the pool has started its waiting pilots only at that
-check. The monitor rechecks each worker every `fifoCheckInterval`: 1,800
-s on osgsub01 (`panda_harvester.cfg` `[monitor]`) unless the queue's own
-monitor section sets it (`monCore.fifoCheckInterval` in
-`harvesterbody/monitor.py`). With the waiting limit at 200 and a
-30-minute check, the pool started the 200 within minutes and harvester
-then counted them as waiting for the rest of the half hour and submitted
-none: from 19:30 to 23:30 ET on 2026-10-21 it submitted 744 pilots, 186
-an hour, and with pilots living about 2.3 hours `BNL_OSG_PanDA_1` fell
-from 1,137 running at 18:00 to 433 at 23:00. The limit of 200 had been
-set on the guess that the submitter's 20-second cycle refills the queue;
-its count is refreshed only by the monitor. Since 2026-10-21 23:35 ET
-`BNL_OSG_PanDA_1`'s monitor section sets `fifoCheckInterval` 300, the
-refresh interval of the monitor's condor_q cache
-(`pluginCacheRefreshInterval`), so the added checks are served from that
-cache (backup `panda_queueconfig.json-backup-2026-10-21b`).
-`BNL_OSG_EPIC_PROD_1` keeps the default.
+The 22 October regulation correction sets both queues to 600 waiting
+pilots, limited by activated demand, with 300 new workers per cycle,
+20-second submission lookup, 30-second worker checks and Condor cache,
+and 30-second job statistics. Static CRIC-derived records retain their
+10-minute Harvester refresh. The earlier 200/300 limit combined with a
+30-minute monitor left the pool empty while Harvester still counted
+started pilots as waiting. Historical worker configuration IDs also kept
+old check intervals alive; the installed operational ceiling applies to
+those workers. See [the audit and implementation record](REGULATION_AUDIT_2026-10-22.md).
 
-Harvester looks a pilot up in condor's history, once it has left the
-queue, only if it was submitted or started within the last two hours
-(`useCondorHistoryMaxAge` 7200 in `harvestermisc/htcondor_utils.py`, not
-settable from the queue configuration). A pilot with a 120-minute time
-floor ends after that window, so harvester finds no record of it,
-counts it as running until the check timeout (3,600 s) and then marks
-it cancelled: in the hour to 23:30 ET on 2026-10-21 all 184 OSG pilots
-that ended were recorded as cancelled, and harvester counted 494 running
-against 371 in the schedd.
+`HTCondorMonitor` accepts `useCondorHistoryMaxAge` from the queue's monitor
+configuration and passes it to the history query. The previous statement
+that this was not configurable was wrong. Both queues now use 86400 seconds;
+a global compatibility floor applies the same eligibility to historical
+worker configurations. A two-hour eligibility window was shorter than a
+120-minute timefloor plus the final job, so completed pilots disappeared
+from the query and were eventually misclassified as cancelled.
 
-The memory request is fixed at the pool's slot size. Slots are provisioned at
-about 3.7 GB per core: on 2026-10-19, of 4,515 slots admitting these pilots,
-1,251 offered at least 3,700 MB and 21 offered 6,000 MB or more. A job that
-exceeds its pilot's request is evicted by the slot (`memory usage exceeded
-request_memory`), which the pilot reports as error 1201, killed by SIGTERM.
-Jobs needing more than about 3.7 GB therefore cannot run in this pool on
-single-core pilots in either mode. Since 2026-10-21 the server's record of
-`BNL_OSG_PanDA_1` says so, `corecount` 1 and `maxrss` 4096 in place of
-CRIC's 8 cores and 48,000 MB (SCHEDCONFIG_OVERRIDES.md): the front's fit
-check and PCS readiness pass no task declaring more than 4,096 MB per job.
+The memory request is 4096 MB on both queues, matching the job limit
+advertised to the front and server. The old request was 3700 MB while the
+front admitted 4096 MB. This truthfulness has a matching cost: on 22 October,
+the pool's raw advertisements included 1542 slots at 3700 MB/core and 1355
+at 4096 MB/core, before policy and availability filters. The change excludes
+187 smaller slots in that sample; it does not promise those 1355 slots are
+available. Existing submitted pilots retain their old request and drain
+naturally. Tasks asking 5400 MB remain ineligible for these single-core
+pilots. GREX separately allocates eight cores and 48000 MB to eight pilots,
+with each job admitted against one core and 6000 MB.
+
 
 Since 2026-10-21 production runs on `BNL_OSG_PanDA_1` alone. The two queues
 draw the same pilots from the same pool, so a second queue only splits the

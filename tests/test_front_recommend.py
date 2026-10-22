@@ -1,6 +1,17 @@
 """The placement recommender (swf_epicprod.front.recommend and its parts),
 pure over the front's stored state (CONTINUOUS_PRODUCTION.md, Placement)."""
 import unittest
+from unittest.mock import patch
+
+_closed = patch('swf_epicprod.front.closed_queues', return_value={})
+
+
+def setUpModule():
+    _closed.start()
+
+
+def tearDownModule():
+    _closed.stop()
 
 from swf_epicprod.front import (fit_problems, gate_blockers, place_unplaced, recommend,
                                  stall_signal)
@@ -120,23 +131,23 @@ class StallTest(unittest.TestCase):
 
     def test_recent_start_is_not_stalled(self):
         s = stall_signal({'queued': 50, 'running': 0, 'oldest_wait_h': 20.0,
-                          'last_start_h': 2.0}, 15.0)
+                          'last_start_h': 0.1}, 15.0)
         self.assertEqual(s['state'], 'slow')
 
     def test_within_bar_is_quiet(self):
-        s = stall_signal({'queued': 50, 'running': 0, 'oldest_wait_h': 10.0,
+        s = stall_signal({'queued': 50, 'running': 0, 'oldest_wait_h': 0.1,
                           'last_start_h': None}, 15.0)
         self.assertEqual(s['state'], '')
 
     def test_uncalibrated_default_bar(self):
         s = stall_signal({'queued': 5, 'running': 0, 'oldest_wait_h': 7.0,
                           'last_start_h': None}, None)
-        self.assertEqual((s['state'], s['bar_h']), ('stalled', 6.0))
+        self.assertEqual((s['state'], s['bar_h']), ('stalled', 0.25))
 
     def test_floor_on_tiny_p90(self):
         s = stall_signal({'queued': 5, 'running': 0, 'oldest_wait_h': 0.5,
                           'last_start_h': None}, 0.04)
-        self.assertEqual((s['state'], s['bar_h']), ('', 1.0))
+        self.assertEqual((s['state'], s['bar_h']), ('stalled', 0.25))
 
     def test_nothing_waiting(self):
         self.assertEqual(stall_signal({'queued': 0, 'running': 4}, 15.0)['state'], '')

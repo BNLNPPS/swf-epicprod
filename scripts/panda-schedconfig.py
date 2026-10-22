@@ -21,15 +21,50 @@ CRIC's certificate is verified against the grid CA directory (default
 """
 
 import copy
+import datetime
+import hashlib
 import json
 import os
 import ssl
+import subprocess
 import sys
 import tempfile
 import urllib.request
 
 CRIC = "https://datalake-cric.cern.ch/api/atlas/pandaqueue/query/?json"
 CAPATH = "/etc/grid-security/certificates"
+REPOSITORY = 'https://github.com/BNLNPPS/swf-epicprod.git'
+
+
+def atomic_write(path, text):
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=directory)
+    try:
+        with os.fdopen(fd, 'w') as out:
+            out.write(text)
+            out.flush()
+            os.fsync(out.fileno())
+        os.chmod(temporary, 0o644)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def repository_overrides():
+    """Resolve main once, then fetch that immutable revision with TLS."""
+    result = subprocess.run(['git', 'ls-remote', REPOSITORY, 'refs/heads/main'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            universal_newlines=True, timeout=45, check=True)
+    revision = result.stdout.split()[0]
+    if len(revision) != 40 or any(c not in '0123456789abcdef' for c in revision):
+        raise ValueError('invalid repository revision')
+    url = ('https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/' + revision
+           + '/pandaserver/schedconfig-overrides.json')
+    with urllib.request.urlopen(url, timeout=45) as response:
+        raw = response.read().decode('utf-8')
+    return json.loads(raw), raw, revision
 
 
 def _option(args, name, default):
@@ -45,11 +80,24 @@ def main(argv):
     args = argv[1:]
     cric = _option(args, "--cric", CRIC)
     capath = _option(args, "--capath", CAPATH)
+    pilot_dir = _option(args, '--pilot-dir', None)
+    sync = '--sync-from-github' in args
+    if sync:
+        args.remove('--sync-from-github')
     if len(args) != 2:
         sys.exit(__doc__)
     overrides_path, outfile = args
-    with open(overrides_path) as f:
-        overrides = json.load(f)
+    try:
+        if sync:
+            overrides, raw_overrides, revision = repository_overrides()
+        else:
+            with open(overrides_path) as f:
+                raw_overrides = f.read()
+            overrides, revision = json.loads(raw_overrides), None
+        if not isinstance(overrides, dict) or not overrides:
+            raise ValueError('no overrides')
+    except Exception as exc:
+        sys.exit(f'panda-schedconfig: overrides not read ({exc}); {outfile} left as it is')
     try:
         context = ssl.create_default_context(capath=capath)
         with urllib.request.urlopen(cric, timeout=120, context=context) as response:
@@ -78,13 +126,20 @@ def main(argv):
             if record[field] != value and "_clone" not in fields:
                 changes.append(f"{queue} {field}: {record[field]!r} -> {value!r}")
             record[field] = value
-    outdir = os.path.dirname(os.path.abspath(outfile))
-    os.makedirs(outdir, exist_ok=True)
-    handle, path = tempfile.mkstemp(dir=outdir, suffix=".json")
-    with os.fdopen(handle, "w") as out:
-        json.dump(records, out)
-    os.chmod(path, 0o644)
-    os.replace(path, outfile)
+    output = json.dumps(records)
+    atomic_write(outfile, output)
+    if sync:
+        atomic_write(overrides_path, raw_overrides)
+    atomic_write(outfile + '.provenance.json', json.dumps({
+        'repository': REPOSITORY, 'revision': revision,
+        'overrides_sha256': hashlib.sha256(raw_overrides.encode()).hexdigest(),
+        'output_sha256': hashlib.sha256(output.encode()).hexdigest(),
+        'written_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }) + '\n')
+    if pilot_dir:
+        for queue in ('UM_GREX_PanDA_1', 'JLAB_PanDA_1'):
+            atomic_write(os.path.join(pilot_dir, queue, 'queuedata.json'),
+                         json.dumps(records[queue], indent=4) + '\n')
     print(f"wrote {outfile}: {len(records)} queues; " + ("; ".join(changes) or "no override differs from CRIC"))
 
 

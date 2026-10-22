@@ -4,9 +4,9 @@ The JEDI-facing engine: a ``JobThrottlerBase`` subclass that reads the
 per-site job statistics and the site-keyed limits through the task
 buffer, takes the decision of ``epic_job_throttler.decide``, logs it,
 and in ``throttle`` mode returns it to the job generator. In
-``observe`` mode, the default, it logs what it would do and answers
-unthrottled, so the server behaves as it did before the engine was
-registered.
+explicit ``observe`` mode, it logs what it would do and answers
+unthrottled. Missing or invalid modes and absent enforcement prerequisites
+hold generation with a temporary error.
 
 Registration, in ``panda_jedi.cfg`` ``[jobthrottle]``::
 
@@ -38,6 +38,7 @@ from typing import Any
 
 from pandacommon.pandalogger.PandaLogger import PandaLogger
 from pandajedi.jedicore.JediTaskBuffer import JediTaskBuffer
+from pandajedi.jediconfig import jedi_config
 from pandajedi.jedicore.MsgWrapper import MsgWrapper
 from pandajedi.jedithrottle.JobThrottlerBase import JobThrottlerBase
 
@@ -74,7 +75,17 @@ class EpicProdJobThrottler(JobThrottlerBase):
 
     def _mode(self, vo: str) -> str:
         mode = self._config_value(vo, "MODE")
-        return MODE_THROTTLE if str(mode or "").strip().lower() == MODE_THROTTLE else MODE_OBSERVE
+        return str(mode or '').strip().lower()
+
+    @staticmethod
+    def _lock_enabled(vo, label, queue, cloud):
+        for rule in str(getattr(jedi_config.jobgen, 'lockProcess', '')).split(','):
+            fields = rule.split(':')
+            if len(fields) == 4 and all(
+                    wanted in ('', 'any') or str(actual) in wanted.split('|')
+                    for wanted, actual in zip(fields, (vo, label, queue, cloud))):
+                return True
+        return False
 
     def _site_config(self, vo: str, sites: list[str]) -> dict[str, dict[str, Any]]:
         """Per-site limits: ``<TAG>_<site>``, else the work-queue-wide
@@ -113,12 +124,22 @@ class EpicProdJobThrottler(JobThrottlerBase):
         pools = parse_pools(self._config_value(vo, "POOLS"))
         readings = readings_from_stats(
             stats, resource_name, self._site_config(vo, sites + sorted(pools)), pools)
-        try:
-            self.ledger.charge(readings)
-        except OSError as e:
-            tmp_log.error(f"{header} ledger read failed ({self.ledger.path}): {e}; deciding on the reading alone")
-        decision = decide(readings, exclusion_honored=EXCLUSION_HONORED)
         mode = self._mode(vo)
+        if mode not in (MODE_OBSERVE, MODE_THROTTLE):
+            tmp_log.error(f'{header} invalid or missing MODE; holding generation')
+            return self.retTmpError
+        if mode == MODE_THROTTLE:
+            if not EXCLUSION_HONORED or not self._lock_enabled(vo, prodSourceLabel, workQueue.queue_name, cloudName):
+                tmp_log.error(f'{header} regulation prerequisites absent; holding generation')
+                return self.retTmpError
+            try:
+                decision = self.ledger.reserve(readings, scope=f'{vo}:{workQueue.queue_id}',
+                                               exclusion_honored=EXCLUSION_HONORED)
+            except (OSError, ValueError, TypeError) as e:
+                tmp_log.error(f'{header} grant ledger unavailable; holding generation: {e}')
+                return self.retTmpError
+        else:
+            decision = decide(readings, exclusion_honored=EXCLUSION_HONORED)
 
         for line in decision.lines:
             tmp_log.info(f"{header} {line}")
@@ -131,14 +152,12 @@ class EpicProdJobThrottler(JobThrottlerBase):
             return self.retUnThrottled
 
         self.excluded_sites = list(decision.excluded_sites)
+        tmp_log.info(f'REGULATION_OK vo={vo} mode=throttle lock=true exclusions=true '
+                     f'decision={"SKIP" if decision.throttled else "PASS"}')
         if decision.throttled:
             tmp_log.info(f"{header} SKIP throttled: excluded {self.excluded_sites}")
             return self.retThrottled
         if decision.max_num_jobs is not None:
             self.setMaxNumJobs(decision.max_num_jobs)
-            try:
-                self.ledger.grant(readings, decision.granted_sites, decision.max_num_jobs)
-            except OSError as e:
-                tmp_log.error(f"{header} ledger write failed ({self.ledger.path}): {e}")
         tmp_log.info(f"{header} PASS max_num_jobs={self.maxNumJobs} excluded={self.excluded_sites} charged={decision.granted_sites}")
         return self.retUnThrottled

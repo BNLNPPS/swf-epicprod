@@ -47,6 +47,7 @@ from datetime import datetime, timedelta
 
 from django.core.cache import cache
 from django.utils import timezone
+from swf_epicprod.regulation import CAPACITY_POOLS, throttler_verdict
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ IDLE_FRACTION = 0.3
 ROWS_CACHE_TTL_S = 24 * 3600
 STATE_KEY = 'front_state'
 STATE_TTL_S = 24 * 3600
+STALL_GRACE_H = 0.25
 FEED_STATES = ('fed', 'would_feed')
 
 
@@ -513,12 +515,14 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     running = int(q.get('running') or 0)
     tasks_active = int(q.get('tasks_active') or 0)
     ungenerated = int(q.get('ungenerated') or 0)
-    runnable_h = q.get('hours_at_capacity')
+    runnable_h = q.get('pool_runnable_h', q.get('hours_at_capacity'))
     inflight_rows = sum(int(f.get('candidate_rows') or 0) for f in feeds)
     inflight_h = (round(inflight_rows * median_h / ceiling, 2)
                   if median_h and ceiling > 0 else 0.0)
     ungenerated_h = (round(ungenerated * median_h / ceiling, 2)
                      if median_h and ceiling > 0 else 0.0)
+    if q.get('pool_ungenerated_h') is not None:
+        ungenerated_h = q['pool_ungenerated_h']
     phase = 'throttled' if jedi_throttled else 'unthrottled'
     committed_h = (round((runnable_h or 0.0) + inflight_h
                          + (ungenerated_h if jedi_throttled else 0.0), 2)
@@ -526,6 +530,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     canary = gates.get('canary') or {}
     credential = gates.get('credential') or {}
     declared = gates.get('declared') or {}
+    regulator = gates.get('regulator') or {}
     fast = fast_detectors(q.get('gate'), settings.get('gate_waiver'))
     eligible = [e for e in backlog if not e['problems']]
     h_low, h_high = float(qs['h_low']), float(qs['h_high'])
@@ -550,6 +555,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         'gate_fast_failed': fast['fast_failed'],
         'ready_total': len(backlog), 'ready_eligible': len(eligible),
         'last_feed_age_h': last_feed_age_h,
+        'capacity_pool': q.get('capacity_pool'),
     }
 
     def rec(candidate=None, **more):
@@ -583,6 +589,8 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         return [('held', 'declared', rec(gate_reason=declared.get('reason', '')))]
     if credential.get('red'):
         return [('degraded', 'credential', rec(gate_reason=credential.get('reason', '')))]
+    if regulator.get('red'):
+        return [('degraded', 'regulator_unverified', rec(gate_reason=regulator.get('reason', '')))]
     if canary.get('red'):
         return [('degraded', 'canary', rec(gate_reason=canary.get('reason', '')))]
     if fast['red']:
@@ -591,12 +599,11 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         return [('awaiting_observation', 'awaiting_observation', rec())]
     if committed_h is None:
         return [('held', 'no_calibration', rec())]
+    if (ceiling > 0 and not_started > 0 and running < IDLE_FRACTION * ceiling
+            and last_feed_age_h is not None and last_feed_age_h > STALL_GRACE_H):
+        return [('idle_capacity', 'not_pulling', rec())]
     if committed_h >= h_low:
         return [('supplied', 'supplied', rec())]
-    if (ceiling > 0 and not_started > 0 and running < IDLE_FRACTION * ceiling
-            and p90_start_h is not None and last_feed_age_h is not None
-            and last_feed_age_h > p90_start_h):
-        return [('idle_capacity', 'not_pulling', rec())]
     if not eligible:
         return [('no_work', 'no_eligible_task', rec())]
 
@@ -608,7 +615,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         rows = candidate['rows']
         if not rows:
             out.append(('held', 'unsized_task', rec(candidate)))
-            break
+            continue
         candidate_h = round(rows * median_h / ceiling, 2)
         # Phase one: everything a task declares is activated at once, so
         # one task past the high-water mark is the operator's call and
@@ -617,12 +624,12 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         # task cap remain.
         if not jedi_throttled and candidate_h > h_high:
             out.append(('oversize', 'oversize_task', rec(candidate, candidate_h=candidate_h)))
-            break
+            continue
         if committed + candidate_h > h_high:
             out.append(('held', 'would_exceed_high',
                         rec(candidate, candidate_h=candidate_h,
                             committed_after=round(committed + candidate_h, 2))))
-            break
+            continue
         if t_max and tasks_active + fed + 1 > t_max:
             out.append(('held', 'task_cap', rec(candidate, candidate_h=candidate_h)))
             break
@@ -666,11 +673,13 @@ def hours_summary(backlog, latest):
             ready['by_priority'][key] += jh
             ready['by_queue'][queue] = ready['by_queue'].get(queue, 0.0) + jh
             ready['total'] += jh
-    capacity = {'by_queue': {}, 'total': 0}
+    capacity = {'by_queue': {}, 'by_pool': {}, 'total': 0}
     for queue, d in latest.items():
         ceiling = int(d.get('ceiling') or 0)
         capacity['by_queue'][queue] = ceiling
-        capacity['total'] += ceiling
+        pool = d.get('capacity_pool') or queue
+        capacity['by_pool'][pool] = max(capacity['by_pool'].get(pool, 0), ceiling)
+    capacity['total'] = sum(capacity['by_pool'].values())
     for k in list(ready['by_priority']):
         ready['by_priority'][k] = round(ready['by_priority'][k], 1)
     ready['by_queue'] = {q: round(v, 1) for q, v in ready['by_queue'].items()}
@@ -749,7 +758,7 @@ def gate_blockers(gates, settings=None):
     breaker = str((settings or {}).get('breaker') or gates.get('breaker') or 'closed')
     if breaker != 'closed':
         out.append(f'breaker {breaker}')
-    for key in ('declared', 'credential', 'canary', 'fast'):
+    for key in ('declared', 'credential', 'canary', 'fast', 'regulator'):
         g = gates.get(key) or {}
         if g.get('red'):
             out.append(g.get('reason') or f'{key} gate red')
@@ -776,13 +785,8 @@ def stall_signal(activity, p90_start_h):
     a = activity or {}
     queued, running = int(a.get('queued') or 0), int(a.get('running') or 0)
     wait, last = a.get('oldest_wait_h'), a.get('last_start_h')
-    if p90_start_h:
-        bar = max(float(p90_start_h), STALL_MIN_H)
-        basis = (f"the queue's p90 start latency, {bar} h" if bar == float(p90_start_h)
-                 else f"{bar} h (the queue's p90 start latency, {p90_start_h} h, is below the floor)")
-    else:
-        bar = STALL_DEFAULT_H
-        basis = f'{bar} h (the queue has no start-latency calibration)'
+    bar = STALL_GRACE_H
+    basis = f'{bar} h delivery grace'
     out = {'state': '', 'reason': '', 'bar_h': bar}
     if queued <= 0 or wait is None or wait <= bar:
         return out
@@ -975,6 +979,18 @@ def run_cycle(*, dry_run=False, created_by='front'):
         errors.append(f'front.mode {mode_requested!r} is not one of {MODES}; decided as shadow')
         mode = 'shadow'
     jedi_throttled = bool(setting('front.jedi_throttled', False))
+    regulator = {'red': False}
+    if jedi_throttled:
+        def check_regulator():
+            from django.db import connections
+            from monitor_app.host_reports import latest
+            with connections['panda'].cursor() as cursor:
+                cursor.execute("SELECT vo, value FROM doma_panda.config WHERE component=%s "
+                               "AND app=%s AND key=%s", ['epic_job_throttler', 'jedi', 'MODE'])
+                modes = dict(cursor.fetchall())
+            return throttler_verdict(latest('pandaserver01'), modes, now=t0)
+        regulator = _safe('job regulator', check_regulator, lambda exc: {
+            'red': True, 'reason': f'job regulator unreadable: {exc}'})
     queues = regulated_queues()
     max_per_cycle = max(1, int(setting('front.max_per_cycle', 2) or 1))
     activation_window_s = int(setting('front.activation_window_s', 600))
@@ -1017,6 +1033,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
         # the front's own switches decide, and the queue's limits.
         placement[queue] = {
             'gates': {'canary': canary, 'credential': credential, 'declared': declared,
+                      'regulator': regulator,
                       'fast': fast_detectors((census_q or {}).get('gate'),
                                              settings.get('gate_waiver')),
                       'breaker': settings.get('breaker')},
@@ -1039,7 +1056,9 @@ def run_cycle(*, dry_run=False, created_by='front'):
         settings = settings_by_queue[queue]
         gates = placement[queue]['gates']
         canary, declared = gates['canary'], gates['declared']
-        feeds = _safe(f'{queue} feeds', lambda: _recent_feeds(queue, activation_window_s), [])
+        pool_members = next((members for members in CAPACITY_POOLS.values() if queue in members), (queue,))
+        feeds = _safe(f'{queue} feeds', lambda: [f for member in pool_members
+                       for f in _recent_feeds(member, activation_window_s)], [])
         last_feed_age_h = _safe(f'{queue} last feed', lambda: _last_feed_age_h(queue), None)
         census_q = (census or {}).get('queues', {}).get(queue) if census else None
         if census is None:
@@ -1051,7 +1070,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
                 f'{queue} decision',
                 lambda: decide(queue, census_q, backlog.get(queue, []), settings,
                                {'canary': canary, 'credential': credential,
-                                'declared': declared}, feeds,
+                                'declared': declared, 'regulator': regulator}, feeds,
                                enabled=enabled, mode=mode, max_per_cycle=max_per_cycle,
                                last_feed_age_h=last_feed_age_h,
                                jedi_throttled=jedi_throttled),
