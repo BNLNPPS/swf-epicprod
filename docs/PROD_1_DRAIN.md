@@ -148,7 +148,8 @@ from generated stock and pilot supply.
 
 ## Overnight watch and worker-loss reports
 
-A read-only user service, `epic-osg-watch-20261022.service` on swf-testbed,
+A read-only system service running as `wenauseic`,
+`epic-osg-watch-20261022.service` on swf-testbed,
 samples the two queues every minute through 08:00 ET on 23 October. Its
 script and JSON snapshots are in
 `/data/wenauseic/swf-epicprod/osg-watch-20261022/`. It checks retired-queue
@@ -156,7 +157,7 @@ admission and backlog, generated stock against ungenerated work, waiting
 pilots, running-count decline and ten-minute DDM/worker-loss outcomes.
 Changed conditions and ten-minute summaries notify the owning swf-3
 session through TeamComms; delivery into that session was verified at
-22:47 UTC. It changes no production records or controls.
+22:47 UTC. It survives logout and changes no production records or controls.
 
 At 22:47 UTC, active OSG had 3,300 activated jobs and 600 waiting pilots;
 PROD_1 had no queued jobs. The last ten minutes recorded 389 finished
