@@ -513,3 +513,73 @@ mutate queue data or alter the snapshot's raw queues, totals, `report.text`,
 front decisions, JEDI or Harvester behavior. Scheduled regulation notices
 read `sites[].queues[].health`, not `report.items`, and are unaffected.
 The audit made no changes to production controls.
+
+## Fresh OSG work: ramp, queue regulation and pilot reuse, 12:13–12:41 UTC
+
+After OSG had emptied, Torre asked for a watch of the new injection. The
+front admitted tasks 40985–40988 to `BNL_OSG_PanDA_1`. A bounded watch
+sampled the computing snapshot once a minute, with independent PanDA and
+host-reporter reads when the snapshot stopped advancing. Selected fresh
+readings follow; completed and failed counts cover the preceding hour.
+
+| Snapshot time, UTC | Running jobs | Queued jobs | Ungenerated jobs | Harvester waiting | Schedd idle | Finished | Failed |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 12:17:22 | 187 | 3118 | 2231 | 589 | 547 | 0 | 0 |
+| 12:21:27 | 623 | 3062 | 1847 | 585 | 504 | 0 | 0 |
+| 12:23:27 | 742 | 3154 | 1619 | 600 | 560 | 19 | 0 |
+| 12:33:27 | 859 | 2956 | 2755 | 600 | 600 | 797 | 0 |
+| 12:40:27 | 902 | 3127 | 1943 | 600 | 600 | 1397 | 1 |
+
+Later task admissions account for the increase in ungenerated work between
+the early and later samples. The front reported four releases and no
+remaining ready tasks by 12:37. Pilot-supply health was green in every
+fresh sample. These counters have separate observation clocks; the table
+does not establish an exact per-pilot start latency.
+
+The live JEDI configuration had `MODE=throttle` for both VOs and
+`NQUEUELIMIT_osg=3123`, with the two OSG queues grouped into one pool.
+With the default threshold of two, its generation bound is
+`max(3123, 2 * running)`, counting starting jobs with running jobs. At
+roughly 900 running, a queue population around 3100 is the intended
+regulated level. The front admits tasks and committed work; JEDI meters
+generation from those tasks. The observed population is consistent with
+that division of responsibility. It is not a requirement to generate all
+admitted work immediately or to keep the generated queue empty.
+
+Timefloor reuse was directly visible at 12:33:18. Among 862 still-running,
+single-core OSG workers started since 12:10, the PanDA worker/job relation
+contained one distinct job for 203 workers, two for 538, and three for
+121. Thus 659 workers had already received multiple jobs. This establishes
+actual reuse during the ramp, not merely the presence of a timefloor
+setting. It does not yet measure full-lifetime utilization.
+
+The one failed job was PanDA 5767629 in task 40985, ending at 12:37:59.
+Its diagnostic was pilot error 1152: the log archive's stage-out to
+`BNL_PROD_DISK_1` timed out. The recorded payload exit code was zero.
+One such failure does not establish a recurring transfer problem or a
+regulation fault.
+
+### Snapshot freshness interruption during the watch
+
+The 12:24 refresh disconnected. Calls with `refresh=True` at 12:25–12:28
+returned the unchanged 12:23:27 snapshot; fresh snapshots resumed with
+`observed_at=12:29:34`. At 12:29:42, a direct PanDA query found 811 running
+jobs and 3072 activated jobs. The separate host report was 37 seconds old
+and showed 814 running pilots, 593 idle and zero held. Production continued
+while the aggregate display was stale.
+
+The MCP service journal confirms worker 3648050 died at 12:24:50. A service
+restart began at 12:25:01; six requests exceeded the 15-second graceful
+shutdown window, and replacement workers started at 12:25:22. The deployed
+`cached_product.py` stores its rebuild lock as `building_since` in the
+database, with a 600-second expiry and no worker ownership check. An
+explicit refresh that encounters that lock waits at most 15 seconds,
+then returns the existing product with its freshness metadata.
+
+An interrupted rebuild leaving that lock behind is consistent with the
+observed stale responses. The available journal does not record the lock's
+history, why the first worker died, or what cleared the condition before
+the 12:29 build. Those causal details remain unverified. Recovering promptly
+from a dead builder and recording lock ownership/recovery would address
+the identified cache weakness; this watch made no cache or production
+configuration changes.
