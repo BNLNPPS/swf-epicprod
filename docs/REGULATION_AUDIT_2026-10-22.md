@@ -417,6 +417,29 @@ backlog, and automatic placement of additional tasks would not fix this drain.
   force the new policy to the front. At 06:55 there were 584 idle and 118
   running, still all under the old request.
 
+#### Follow-up at 10:53–10:55 UTC: new requests queued, old allocations draining
+
+The direct schedd sample at 10:53:58 found 118 running allocations, all with
+the old 300-minute request. Another 456 old requests and **147 new 720-minute
+requests** were idle. All 147 new requests had remote CE job IDs; none was
+held or running. The oldest new request had waited 3.89 hours, while the
+oldest idle old request had waited 19.56 hours. This establishes submission
+of the new policy to the CE, but still does not establish execution or the
+eight-core partition's walltime acceptance. The sample does not isolate a
+walltime-dependent scheduling penalty.
+
+The 10:53 monitor snapshot had 774 running GREX jobs and 2,051 queued. The
+scheduled notifier's samples had fallen to 679 at 10:37, then risen to 748
+at 10:52. A separate 10:55 PanDA allocation/job join showed the old drain
+mechanism still clearly: 84 allocations younger than three hours carried
+668 running jobs out of 672 nominal slots, while 40 older allocations carried
+86 jobs out of 320 slots. Those PanDA worker records and the direct schedd
+sample were taken at different times and differed in their running-worker
+totals; these are age-group occupancy readings, not a matched whole-system
+or lifetime efficiency measurement. The new twelve-hour cohort had not yet
+started, so this dip cannot be used to judge its effect. No workers were
+cancelled or reordered to accelerate the rollout.
+
 The six focused launcher/installer tests passed, including actual subprocess
 execution, mixed-version budgets, staggered starts sharing one deadline,
 invalid-policy rejection, preserved unrelated submit settings and repeatable
