@@ -437,7 +437,8 @@ chosen row instead of row 1:
 Each reproduction is two runs: the production queue where the crash
 happened and a second queue. Since 2026-09-13 the second queue is by
 default a second production-class queue (`UM_GREX_PanDA_1`, or
-`BNL_OSG_EPIC_PROD_1` for a crash at GREX; `elsewhere_queue` in
+`BNL_OSG_PanDA_1` for a crash at GREX, since 2026-10-22 when
+`BNL_OSG_EPIC_PROD_1` left production; `elsewhere_queue` in
 `monitor_app/segfaults.py`), because the crash-or-not verdict and the
 trace come from any queue once the payload carries the crash capture
 (§ 8), and the many slots of a production queue return the verdict in
