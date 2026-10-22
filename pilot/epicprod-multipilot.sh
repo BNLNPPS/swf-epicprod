@@ -23,48 +23,93 @@
 # and the losers get no job (getJobs InFailedSqlTransaction on the server).
 #
 #
-# Each slot draws its own time floor around the shipped one. With one floor
+# Each allocation draws its own time floor around the shipped one. With one floor
 # for every slot, slots started together drained together and were replaced
 # together, and GREX ran a third fewer jobs for an hour in every four
 # (2026-10-21: about 100 slots turned over at 07:00, 11:00, 15:00 and 18:30
 # UTC). A slot's floor is the shipped floor plus or minus the spread, the
 # same for its wrappers so that they end together and the slot is released;
-# each rotation draws again, so the slots fall further out of step.
+# each rotation draws again, so the slots fall further out of step. This
+# spreads retirements; it does not remove the final partially occupied tail.
+# The useful lifetime must be sized for the current job durations.
 #
 # EPICPROD_PILOTS_PER_SLOT: wrappers to run (default 8).
 # EPICPROD_PILOT_STAGGER: seconds between wrapper starts (default 15).
 # EPICPROD_STANDARD_WRAPPER: the wrapper (default: the shipped copy, else CVMFS).
 # EPICPROD_TIMEFLOOR_SPREAD: minutes either side of the shipped time floor
-#   (default 30; 0 keeps it). The latest end, floor plus spread plus the
-#   longest job, must stay inside the slot's wall time.
+#   (default 30; 0 keeps it).
+# EPICPROD_ALLOCATION_SECONDS: actual batch walltime (legacy default 18000).
+# EPICPROD_DRAIN_RESERVE_SECONDS: time kept for the last job (default 7200).
+# EPICPROD_STARTUP_MARGIN_SECONDS: allowance for wrapper setup (default 300).
+# The submit description supplies the allocation and reserve together.
+# Every child receives the remaining budget to ONE allocation deadline;
+# starting later must not reset the clock. Missing queue data is an error.
 
 N=${EPICPROD_PILOTS_PER_SLOT:-8}
 STAGGER=${EPICPROD_PILOT_STAGGER:-15}
 SPREAD=${EPICPROD_TIMEFLOOR_SPREAD:-30}
+ALLOCATION=${EPICPROD_ALLOCATION_SECONDS:-18000}
+RESERVE=${EPICPROD_DRAIN_RESERVE_SECONDS:-7200}
+MARGIN=${EPICPROD_STARTUP_MARGIN_SECONDS:-300}
 TOP=$(pwd)
 WRAPPER=${EPICPROD_STANDARD_WRAPPER:-${TOP}/bnlpanda.runpilot2-wrapper.sh}
 [[ -r ${WRAPPER} ]] || WRAPPER=/cvmfs/eic.opensciencegrid.org/panda/bnlpanda.runpilot2-wrapper.sh
 
-echo "$(date -u +%FT%TZ) epicprod-multipilot: ${N} wrappers (${WRAPPER}), $(nproc) cores on $(hostname)"
-
-if [[ -r ${TOP}/queuedata.json && ${SPREAD} -gt 0 ]]; then
-  base=$(sed -n 's/^ *"timefloor": *\([0-9][0-9]*\),*$/\1/p' "${TOP}/queuedata.json" | head -n 1)
-  if [[ -n ${base} ]]; then
-    floor=$(( base - SPREAD + RANDOM % (2 * SPREAD + 1) ))
-    [[ ${floor} -lt 30 ]] && floor=30
-    sed -i "s/^\( *\"timefloor\": *\)[0-9][0-9]*/\1${floor}/" "${TOP}/queuedata.json"
-    echo "$(date -u +%FT%TZ) epicprod-multipilot: time floor ${floor} min (shipped ${base}, spread ${SPREAD})"
+for value in "$N" "$STAGGER" "$SPREAD" "$ALLOCATION" "$RESERVE" "$MARGIN"; do
+  if [[ ! $value =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "epicprod-multipilot: invalid integer policy value: $value" >&2
+    exit 64
   fi
+done
+if (( N < 1 || ALLOCATION <= RESERVE + MARGIN || RESERVE < 1 )); then
+  echo "epicprod-multipilot: allocation has no useful job-intake window" >&2
+  exit 64
 fi
+if [[ ! -r ${TOP}/queuedata.json || ! -r $WRAPPER ]]; then
+  echo "epicprod-multipilot: missing queuedata.json or standard wrapper" >&2
+  exit 64
+fi
+base=$(sed -n 's/^ *"timefloor": *\([0-9][0-9]*\),*$/\1/p' "${TOP}/queuedata.json")
+shipped_max=$(sed -n 's/^ *"maxtime": *\([0-9][0-9]*\),*$/\1/p' "${TOP}/queuedata.json")
+if [[ ! $base =~ ^[1-9][0-9]*$ || ! $shipped_max =~ ^[1-9][0-9]*$ ]]; then
+  echo "epicprod-multipilot: queuedata requires positive integer timefloor and maxtime, one field per line" >&2
+  exit 64
+fi
+(( shipped_max < ALLOCATION )) && ALLOCATION=$shipped_max
+if (( ALLOCATION <= RESERVE + MARGIN + (N - 1) * STAGGER + 60 )); then
+  echo "epicprod-multipilot: queue/batch budget is too short to start all pilots safely" >&2
+  exit 64
+fi
+floor=$(( base - SPREAD + RANDOM % (2 * SPREAD + 1) ))
+(( floor < 1 )) && floor=1
+max_floor=$(( (ALLOCATION - RESERVE - MARGIN) / 60 ))
+(( floor > max_floor )) && floor=$max_floor
+started=$(date +%s)
+deadline=$(( started + ALLOCATION - MARGIN ))
+intake_deadline=$(( started + floor * 60 ))
+
+echo "$(date -u +%FT%TZ) epicprod-multipilot: launcher=deadline-v2 policy=${EPICPROD_LIFETIME_POLICY:-legacy} ${N} wrappers (${WRAPPER}), $(nproc) cores on $(hostname)"
+echo "$(date -u +%FT%TZ) epicprod-multipilot: time floor ${floor} min (shipped ${base}, spread ${SPREAD}); allocation=${ALLOCATION}s reserve=${RESERVE}s startup_margin=${MARGIN}s deadline=${deadline} intake_deadline=${intake_deadline}"
 
 pids=()
+launch_rc=0
 for i in $(seq 1 "${N}"); do
   mkdir -p "${TOP}/pilot-${i}"
   # A shipped queuedata.json reaches every wrapper, which reads it from its
   # working directory before the CRIC cache (OSG_SUBMISSION.md, Queue
   # behavior without a CRIC edit); a time floor there lets each pilot run
   # jobs one after another as well as side by side.
-  [[ -r ${TOP}/queuedata.json ]] && cp "${TOP}/queuedata.json" "${TOP}/pilot-${i}/"
+  now=$(date +%s)
+  remaining=$(( deadline - now ))
+  child_floor=$(( (intake_deadline - now) / 60 ))
+  if (( child_floor < 1 || remaining <= RESERVE )); then
+    echo "epicprod-multipilot: no time left to start pilot-${i}" >&2
+    launch_rc=1
+    break
+  fi
+  sed -e "s/^\( *\"timefloor\": *\)[0-9][0-9]*/\1${child_floor}/" \
+      -e "s/^\( *\"maxtime\": *\)[0-9][0-9]*/\1${remaining}/" \
+      "${TOP}/queuedata.json" > "${TOP}/pilot-${i}/queuedata.json"
   ( cd "${TOP}/pilot-${i}" && exec bash "${WRAPPER}" "$@" ) \
     > "${TOP}/pilot-${i}.out" 2> "${TOP}/pilot-${i}.err" &
   pids+=($!)
@@ -79,7 +124,7 @@ for sig in TERM INT QUIT USR1 USR2 XCPU; do
   trap "pass_signal ${sig}" "${sig}"
 done
 
-rc=0
+rc=$launch_rc
 for i in "${!pids[@]}"; do
   pid=${pids[$i]}
   # A trapped signal interrupts wait while the wrapper still runs; wait again.

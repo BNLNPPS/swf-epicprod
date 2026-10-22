@@ -41,7 +41,7 @@ while IFS= read -r p; do
             raise 3 ;;
         docs/*|*.md|LICENSE|.github/*|tests/*|*.ipynb|*.svg)
             ;;
-        scripts/*|tools/*|pilot/*|perlmutter/*|gke/*)
+        scripts/*|tools/*|pilot/*|perlmutter/*|gke/*|pandaserver/schedconfig-overrides.json)
             not_shipped+=("$p") ;;
         *)
             raise 3 ;;

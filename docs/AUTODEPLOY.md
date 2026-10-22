@@ -44,6 +44,7 @@ lock file.
 |---|---|
 | `docs/`, `*.md`, `tests/`, `.github/` | none |
 | `scripts/`, `tools/`, `pilot/`, `perlmutter/`, top-level `gke/` | none: run from the dev tree or deployed by their own procedure; the run lists them |
+| `pandaserver/schedconfig-overrides.json` | none: the server and Harvester writers synchronize this file from GitHub every five minutes; no monitor/ops restart |
 | `pcs/` (templates, views, forms, urls and the rest) | lightweight `--ui` |
 | `swf_epicprod/analytics/`, `swf_epicprod/assessment/` | lightweight `--ui` |
 | `swf_epicprod/mcp_tools/` | lightweight `--ui --mcp` |

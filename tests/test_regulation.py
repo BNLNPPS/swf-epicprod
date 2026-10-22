@@ -40,5 +40,10 @@ class NoticeTests(unittest.TestCase):
         notices = module.regulation_triggers(snapshot, state)
         self.assertEqual(notices[0][0], 'regulation.degraded')
         self.assertEqual(module.regulation_triggers(snapshot, state), [])
+        # Aging the original high sample out must not announce recovery.
+        state['regulation']['Q']['history'][0][0] = now - 4000
+        self.assertEqual(module.regulation_triggers(snapshot, state), [])
+        self.assertEqual(state['regulation']['Q']['falling_peak'], 1000)
         snapshot['sites'][0]['queues'][0]['running'] = 1000
         self.assertEqual(module.regulation_triggers(snapshot, state)[0][0], 'regulation.recovered')
+        self.assertNotIn('falling_peak', state['regulation']['Q'])

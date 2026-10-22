@@ -258,12 +258,16 @@ def regulation_triggers(snapshot, state):
             history = [x for x in rec.get('history', []) if now.timestamp() - x[0] <= 3600]
             history.append([now.timestamp(), running])
             rec['history'] = history
-            peak = max(x[1] for x in history)
+            # Keep an active incident's reference until recovery. Otherwise
+            # the high sample ages out and an unchanged low count "recovers".
+            peak = max(max(x[1] for x in history), int(rec.get('falling_peak') or 0))
             falling = queued > STARVED_ACTIVATED and peak >= 100 and running < peak * .75
             if falling:
                 rec.setdefault('falling_since', now.timestamp())
+                rec['falling_peak'] = peak
             else:
                 rec.pop('falling_since', None)
+                rec.pop('falling_peak', None)
             supply = ((queue.get('health') or {}).get('parts') or {}).get('pilot_supply') or {}
             reasons = []
             if queued and supply.get('level') in ('red', 'amber'):
