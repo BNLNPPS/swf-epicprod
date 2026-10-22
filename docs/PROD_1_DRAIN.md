@@ -201,3 +201,17 @@ capacity. Chicago remained represented in OSPool; many of its idle
 partitionable ads had less than the requested 4 GB remaining. These
 snapshots establish current allocation constraints, not a complete
 historical attribution of the fall from 2,800 running jobs.
+
+
+### Payload drain complete at 23:43 UTC
+
+The 23:43:53 UTC watch snapshot showed no running or queued PanDA jobs
+on PROD_1. A direct schedd check at about 23:44 UTC independently found
+no running PROD_1 pilots. Its 478 previously submitted idle pilots remain
+in the schedd; no pilot withdrawal was performed. Both moved tasks
+remain assigned to BNL_OSG_PanDA_1 (41039 running, 41040 ready).
+
+This completes the payload drain, not the throughput incident. The active
+queue had 654 running jobs, 3,205 activated and 600 waiting pilots; the
+preceding ten minutes recorded 30 finished jobs and no failed jobs. The
+low-throughput alert and the overnight watch remain active.
