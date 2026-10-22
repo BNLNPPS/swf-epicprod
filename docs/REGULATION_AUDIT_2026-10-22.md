@@ -440,17 +440,31 @@ or lifetime efficiency measurement. The new twelve-hour cohort had not yet
 started, so this dip cannot be used to judge its effect. No workers were
 cancelled or reordered to accelerate the rollout.
 
+At 11:03, recently started five-hour workers had been submitted about twenty
+hours earlier; the oldest twelve-hour request had waited only four hours.
+At 11:06, a read-only query of GREX's CE traced local worker `26910.0` to
+CE source job `1492834.0`, routed job `1492840.0`, and **Slurm job 8117059**.
+The routed job requests eight CPUs, 48000 MB and `BatchRuntime=43200`, and
+its `BatchQueue` is `genoacpu-b,skylake,largemem`. It was idle with fresh remote
+status updates and no current hold. Its earlier input-spooling hold had been
+released after the files arrived. This verifies the submission path through
+Slurm and the requested twelve-hour runtime. The wait is consistent with
+the older backlog; Slurm's pending reason and predicted start time were not
+exposed in the CE record, so a walltime-related scheduling penalty is not
+ruled out. No twelve-hour allocation was yet observed running.
+
 The six focused launcher/installer tests passed, including actual subprocess
 execution, mixed-version budgets, staggered starts sharing one deadline,
 invalid-policy rejection, preserved unrelated submit settings and repeatable
 installation. Four regulation tests and shell syntax checks also passed.
 
-The actual GREX partition routing and maximum walltime for this eight-core
-request remain unverified. Peers reported Wouter's earlier four-day limit
-for a one-core partition; that does not establish the eight-core route's
-limit. A longer request can also reduce backfill opportunities. New-cohort
-CE acceptance, start latency and full-lifetime occupied-core efficiency must
-be distinguished from installed settings. Existing old workers drain naturally.
+The initial uncertainty about GREX's eight-core partition routing is resolved
+for the sampled request by the 11:06 CE trace above. Its effective partition
+walltime limits remain unverified. Peers reported Wouter's earlier four-day
+limit for a one-core partition; that does not establish this route's limit.
+A longer request can also reduce backfill opportunities. Submission acceptance,
+start latency and full-lifetime occupied-core efficiency are separate evidence.
+Existing old workers drain naturally.
 
 The PanDA jobs inspected advertise `maxWalltime` of five hours or four days.
 Enabling remaining-time dispatch filtering would reject most of that existing
@@ -475,3 +489,27 @@ actually clears. Its regression test ages the original peak out while jobs
 remain at 433 of 1,000 and verifies that no recovery is emitted. The existing
 25-percent threshold and backlog condition are unchanged. The scheduled
 notifier reads this script directly; no service restart was required.
+
+## Audit of the retired OSG queue's summary exclusion
+
+Torre asked for `BNL_OSG_EPIC_PROD_1`, which production no longer uses, to
+be absent from production summaries. swf-monitor `033ded4` exceeded that
+scope: `_report_items` skipped every live queue whose feed was off and whose
+running and queued counts were zero. The early `continue` removed both its
+front-status line and every canary, pilot-supply and other health warning.
+It also ignored starting jobs. A temporarily disabled GREX or primary OSG
+queue could therefore lose its warnings from `report.items`.
+
+swf-1 confirmed deployment at 11:07:37 UTC, then narrowed the filter and
+deployed **`20a0885` at 11:12:35 UTC**. The correction names only
+`BNL_OSG_EPIC_PROD_1` in `NOT_IN_PRODUCTION`. Comparing the original, overly
+broad and corrected functions reproduced the suppression for empty GREX,
+empty primary OSG and GREX with starting jobs; the correction preserves the
+pre-change output for all three. The deployed file was byte-identical to
+`20a0885`. The retired queue stays excluded even if its counts change.
+
+Both changes are confined to the `report.items` presentation. They do not
+mutate queue data or alter the snapshot's raw queues, totals, `report.text`,
+front decisions, JEDI or Harvester behavior. Scheduled regulation notices
+read `sites[].queues[].health`, not `report.items`, and are unaffected.
+The audit made no changes to production controls.
