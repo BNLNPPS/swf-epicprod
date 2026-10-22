@@ -155,6 +155,11 @@ script and JSON snapshots are in
 `/data/wenauseic/swf-epicprod/osg-watch-20261022/`. It checks retired-queue
 admission and backlog, generated stock against ungenerated work, waiting
 pilots, running-count decline and ten-minute DDM/worker-loss outcomes.
+Since 23:56 UTC it also alerts when no active-queue pilot starts have
+been recorded for ten minutes despite stocked demand, and when at least
+20 jobs labelled running have not updated for over an hour. The first
+sample found zero starts and 147 such jobs out of 624 labelled running;
+these are unconfirmed activity, not an instruction to terminate jobs.
 Changed conditions and ten-minute summaries notify the owning swf-3
 session through TeamComms; delivery into that session was verified at
 22:47 UTC. It survives logout and changes no production records or controls.
