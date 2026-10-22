@@ -669,3 +669,35 @@ probe.
 - [PANDA_CAPABILITIES.md](PANDA_CAPABILITIES.md): worker provisioning
   on the other queue classes.
 - site-canary `docs/PLAN.md`: the probe used to measure each step.
+
+## JLab startup repair, 22 October 2026
+
+JLAB_PanDA_1 was routing and starting workers while our monitoring claimed
+it was waiting for CE routing. Worker 993277 (Condor 26976.0, CE 1194528.0,
+Slurm 13384333) started on farm180226 at 14:00:33 UTC, 38 seconds after
+submission, with **2000 MB**. Our wrapper then exited 64 because it tried
+to source ATLAS Local Root Base, absent on that worker. The ePIC pilot
+archive itself was readable. Harvester's later discovery timestamps must
+not be interpreted as actual Slurm start times.
+
+`pilot/jlab-native-pilot.sh` uses the standard wrapper's `--localpy`
+option and native middleware. It resolves the transferred pilot proxy
+before the standard wrapper changes directory. The JLab-only installer
+`scripts/configure-jlab-native-pilot.py` changes its submit template to
+transfer that proxy and the standard wrapper as inputs and disables GSI
+proxy delegation. The CE still authenticates with its existing SciToken.
+The proxy is for pilot-to-PanDA authentication and is not printed. This
+leaves all other queues and their wrappers unchanged. Apply as atlpan on
+pandaharvester01, with `--wrapper <shipped jlab-native-pilot.sh> --apply`;
+restore the dated `before-native` template backup to roll back. Harvester
+reads the template at submission; no shared service restart is needed.
+
+A separate bounded diagnostic, `pilot/jlab-startup-probe.sh`, was submitted
+as Condor 26993 / CE 1194817 on a 2000 MB allocation. Slurm 13405132 ran
+on farm180118 at 16:02:55 UTC. It confirmed Python 3.9.25, psutil, requests,
+xrdcp, Apptainer, ePIC CVMFS and readable valid proxy delivery without GSI
+delegation. ATLAS CVMFS was absent. Native Python has neither Rucio nor
+XRootD modules; payload/copytool requirements still need an actual canary.
+IPv4 BNL Rucio and JLab Rucio returned HTTP 200; PanDA TCP 25443 timed out
+and TCP 443 refused the connection. IPv6 was unusable. Locating the
+25443 block and proving a complete canary remain part of commissioning.
