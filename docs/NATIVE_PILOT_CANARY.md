@@ -5,6 +5,13 @@ authorized building and testing the replacement on operating queues, with
 enough priority to be picked up. Production promotion and removal of
 production exclusions remain his decision.
 
+The corrected candidate finished successfully on both GREX and OSG's
+SU-ITS site. It starts through the ePIC image's Python, reuses that image
+for the payload, preserves PanDA token exchange, and delivers the pilot
+log through the queue's declared protocol. The failures encountered and
+their corrections are recorded below; no production pilot, exclusion,
+queue configuration, or server was changed by these tests.
+
 ## What changes
 
 `pilot/native-canary/epic-native-canary.sh` starts the pilot using Python
@@ -40,6 +47,14 @@ The OSG archive is under `/cvmfs/eic.opensciencegrid.org/panda/pilot/`;
 the epic5 archive is under its `canary/` directory. That directory's
 `pilot3.tar.gz` pointer is consumed by production. **Its name does not
 make it a safe place to substitute an experimental archive.**
+
+The corrected candidates submitted as tasks 41025 and 41033 have these
+archive hashes (the common launcher is transferred separately):
+
+| Candidate | SHA-256 |
+|---|---|
+| OSG | `6a38d453b014fb24c9d9b2dd8a42ad844887d6d530a50dbd98ae73f00a34c283` |
+| GREX epic5 | `eface4ae08bd551d0ec12da4d7ab2ca683f9908dbf28f3080b0c18fdd212214f` |
 
 The builder verifies the input hash, requires a new output directory,
 records each changed file, and emits a deterministic archive. Example:
@@ -106,14 +121,15 @@ priority 100, compared with the ordinary pilots' priority 1.
 |---|---|---|
 | Ordinary-pilot GREX control | task 41013, job 5782463 | Finished; canary collector healthy, all checks passed |
 | Ordinary-pilot OSG control | task 41014, job 5782464 | Finished; canary collector healthy, all checks passed |
+| OSG environment, unrestricted eligible site | Condor 26052.0 | Exit 0; requested ePIC image and Python dependencies verified |
 | OSG SU-ITS environment | Condor 26053.0 | Exit 0 at 17:13:52 UTC; requested ePIC image, Python 3.13.12, pilot dependencies imported |
 | GREX environment, first attempt | Condor 27001.0 | Exit 1 before diagnostics; not a pass |
 | GREX environment, explicit runtime | Condor 27002.0 | Runtime started; entry script outside the mounted work directory, exit 127 |
 | GREX environment, script bind corrected | Condor 27004.0 | Exit 0 at 17:40:24 UTC; requested image and dependencies verified |
 | OSG SU-ITS full candidate, first attempt | task 41016, job 5782775, Condor 26086.0 | 99/99 events simulated and reconstructed; token exchange and output registration passed. Pilot finished at 17:55 UTC; PanDA failed log registration with DDM error 200 (DAVS PFN) |
 | GREX full candidate, first attempt | task 41017, job 5782776, Condor 27007.0 | 99/99 events simulated and reconstructed. Registration, log upload, and status updates failed because the CE-spool proxy path was unreadable. Payload exit 78; pilot error 1137 |
-| GREX candidate, proxy and log-protocol corrections | task 41025, job 5785644, Condor 27016.0 | Submitted 18:08 UTC; result pending |
-| OSG SU-ITS candidate, log-protocol correction | task 41033, job 5787917, Condor 26160.0 | Submitted 18:13 UTC; result pending |
+| GREX candidate, proxy and log-protocol corrections | task 41025, job 5785644, Condor 27016.0 | PanDA finished at 18:17:48 UTC; pilot and DDM errors zero. Collector: healthy, 99/99 events, all eight checks true including output availability |
+| OSG SU-ITS candidate, log-protocol correction | task 41033, job 5787917, Condor 26160.0 | PanDA finished at 18:37:46 UTC; payload, pilot, and DDM errors zero. Collector: healthy, 99/99 events, all eight checks true including output availability |
 
 Intermediate test tasks 41015 and 41030 were picked up by ordinary production
 pilots and are not candidate evidence. Full candidate jobs are now reserved
@@ -132,8 +148,8 @@ The full candidate submissions are one core, 3700 MB, and bounded in
 runtime and queue residence. They preserve the production undesired-site
 list and node exclusions. Only the new OSG test submissions omit the
 ATLAS CVMFS, host RHEL9, and unprivileged-user-namespace requirements.
-Their full payload results are required before calling the replacement
-successful.
+Both corrected full payloads finished and passed all eight collector
+checks, including output availability.
 
 Local checks in the actual image, with ATLAS CVMFS hidden, passed pilot
 imports/help for both baselines, matching-image reuse, rejection of a
@@ -141,14 +157,30 @@ different campaign image, production multistep substitution, and visibility
 after atomic credential replacement. Three focused repository tests pass.
 The review build's modified source files match the submitted candidates.
 
+Both queues' returned pilot stdout confirms matching-image reuse, the payload's
+`rucio auth: token from PanDA` message, `force_scheme: root` for the pilot
+log, and pilot exit 0. The private returned stdout hashes are:
+
+| Job | SHA-256 |
+|---|---|
+| GREX 5785644 | `5c573bc40bebd80edf7b6dded1406ee7c35f44bc01f7a5bd8a264fc8c88a6906` |
+| OSG 5787917 | `2f592926ab4c5f0120957bae3c9b8fabc44979ee1091d841776beb316362b39b` |
+
+Full worker logs are not committed because they can carry environment credentials.
+
+The final records are [GREX job 5785644](https://epic-devcloud.org/prod/panda/jobs/5785644/)
+and [OSG job 5787917](https://epic-devcloud.org/prod/panda/jobs/5787917/).
+The [canary runs page](https://epic-devcloud.org/prod/canary/probes/)
+records their collected payload checks.
+
 ## What this establishes and what remains
 
 SU-ITS advertised unavailable unprivileged user namespaces and was
 rejected by the production requirement. Its environment probe demonstrates
 that requesting the ePIC image directly can reach such resources. The
-full test also completed physics and registered its output. A clean
-PanDA final state is still required after the log-protocol correction;
-these tests do not quantify additional pool capacity.
+corrected full test completed physics, registered its output and pilot
+log, and reached PanDA's finished state. These tests do not quantify
+additional pool capacity.
 
 Not every exclusion is caused by nesting. The six named undesired sites,
 static host exclusions, and live node guard have mixed reasons. They
@@ -162,6 +194,12 @@ jobs for another image. The candidate refuses that mismatch; it does not
 yet implement the production policy for servicing multiple campaign
 images while retaining timefloor and repeated jobs. The pilot's current
 acquisition API has a task selector but no container-image selector.
+These were single-job canaries; they do not establish repeated-job or
+long-lifetime behavior. A rollout must choose the campaign image before
+batch placement and keep subsequent dispatch within that image, or use
+a native-host pilot where the facility permits it. It must not blindly
+pin a general pull pilot to one campaign: task 41024, announced during
+these tests, uses 26.07.1 while these canaries use 26.07.3.
 
 Other operating paths, including Perlmutter, multipilot allocation
 lifetimes, and Event Service, need their own bounded checks before this
