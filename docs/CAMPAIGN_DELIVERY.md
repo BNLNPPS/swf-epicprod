@@ -66,6 +66,12 @@ consequences:
   that instant, each linking to its PCS dataset page. Deep per-RSE and
   rule detail stays live in PCS and Rucio pages, outside the record.
 
+A production that mixes a background into a real signal is a physics
+configuration of its own: the background tag is part of the
+configuration's identity (PCS.md, Datasets), so its leaf, target and
+completion are its own (26.07: pc6703, p4258 mixed with k26, beside
+the unmixed pc6581).
+
 ## The daily record
 
 The record is reconstructible at any time: JLab Rucio file DIDs carry
@@ -310,6 +316,11 @@ by-priority table carrying the rest.
    path. A per-configuration view (`view=pc`) rolls the list up to one
    row per PC — the campaign completion table the home panel's counts
    link into; the edition view remains the target-curation surface.
+   A background-mixed configuration's row names its background tag in
+   the configuration cell (Torre Wenaus, 2026-10-22, on Sakib Rahman's
+   report that the plan did not tell the two apart): its physics,
+   process, beam, Q² and generator columns read as its unmixed
+   sibling's.
    A row's link opens the configuration's current work: its newest
    task in the campaign that is not a past-output record, whichever
    edition it is on. The row's target and delivery stay those of its

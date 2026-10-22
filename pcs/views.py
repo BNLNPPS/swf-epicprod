@@ -3535,6 +3535,13 @@ def _campaign_plan_state(campaign, query, pc_view):
             'sample': head.sample_name,
             'pc_label': (head.physics_config.label
                          if head.physics_config_id else ''),
+            # A background tag is part of the configuration's identity
+            # (PCS.md, Datasets): the row names it, so a background-mixed
+            # sample reads apart from its unmixed sibling.
+            'background': (head.background_tag.tag_label
+                           if head.background_tag_id else ''),
+            'background_title': (head.background_tag.description
+                                  if head.background_tag_id else ''),
             'task': (task_by_edition.get(head.composed_name)
                      or (task_by_pc.get(head.physics_config.label)
                          if head.physics_config_id else None)),

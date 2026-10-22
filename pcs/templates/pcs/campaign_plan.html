@@ -500,7 +500,7 @@
         {% for r in rows %}
             <tr data-name="{{ r.name }}" data-pc="{{ r.pc_label }}" data-if="{{ r.if_attr }}"{% if r.if_hidden %} class="swf-if-hidden"{% endif %}>
                 <td><input type="checkbox" class="form-check-input plan-tick"></td>
-                <td data-order="{{ r.pc_label|slice:'2:' }}">{% if r.pc_label %}{% if r.task %}<a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ r.task|urlencode }}" title="This configuration's task in the campaign, on the compose page">{{ r.pc_label }}</a>{% else %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc_label %}" title="No task in this campaign yet; the physics configuration page: identity, associations, editions, requests">{{ r.pc_label }}</a>{% endif %}{% endif %}</td>
+                <td data-order="{{ r.pc_label|slice:'2:' }}">{% if r.pc_label %}{% if r.task %}<a href="{% url 'pcs:prod_task_compose' %}?tab=tasks&amp;selected={{ r.task|urlencode }}" title="This configuration's task in the campaign, on the compose page">{{ r.pc_label }}</a>{% else %}<a href="{% url 'pcs:pcs_config_detail' label=r.pc_label %}" title="No task in this campaign yet; the physics configuration page: identity, associations, editions, requests">{{ r.pc_label }}</a>{% endif %}{% if r.background %} <span class="text-nowrap" title="Mixed with background {{ r.background }}: {{ r.background_title }}. A configuration of its own, with its own target and delivery.">+ {{ r.background }}</span>{% endif %}{% endif %}</td>
                 <td><a href="{% url 'pcs:pcs_catalog' %}?q={{ r.name|urlencode }}" title="{{ r.name }}">{{ r.physics }}</a></td>
                 <td>{{ r.process }}</td>
                 <td>{{ r.beam }}</td>
