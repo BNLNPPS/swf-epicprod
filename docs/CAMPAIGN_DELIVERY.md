@@ -348,6 +348,28 @@ by-priority table carrying the rest.
    the campaign plan list carrying the matching priority and status
    filters.
 
+5. **Production status grids** (PCS, `pcs/status-grids/`, under Data):
+   the campaign's samples as grids, one per generator family (an EVGEN
+   path without its beam and Q² segments), beam energy against Q²
+   range, after the production team's registration-and-production
+   report for 26.07 (2026-10-20). A cell is one EVGEN sample and reads
+   delivered / target events, coloured complete, below target or
+   without one, registered and not produced, or missing (a
+   configuration of the campaign with nothing delivered and its EVGEN
+   sample not registered); a combination no sample or configuration
+   names is grey. Registration is a second fact on the cell: a sample
+   delivered from an input never registered says so. The cell opens
+   the configuration's data page. A sample reaches its configuration
+   through the EVGEN-stage record that matched it in Rucio, through the
+   produced output (`/RECO/<v>/<config>/<tail>` is made from
+   `/EVGEN/<tail>`: the EVGEN convention map, retry segments folded),
+   or through a request that names it; configurations reached by none
+   of these are counted on the page. Delivery and targets are the
+   campaign plan's own (the completion product). The grids are a
+   cached product (`status_grids:v1:<campaign>`,
+   `swf_epicprod.analytics.status_grids`) rebuilt behind the page
+   hourly; its inputs refresh nightly. The page prints as a report.
+
 Candidates not committed in this plan: delivered-dataset arcs as
 episodic lanes (a tile per dataset from first arrival to fully
 placed), and the disk/tape/capacity presentation.

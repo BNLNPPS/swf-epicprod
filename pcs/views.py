@@ -6493,6 +6493,68 @@ def _pilot_rows(pilots):
     return rows
 
 
+STATUS_GRID_SHOW = {
+    'all': 'all families',
+    'incomplete': 'families not complete',
+    'missing': 'families with missing samples',
+}
+
+
+def status_grids(request):
+    """Production status grids (docs/CAMPAIGN_DELIVERY.md, Surfaces): per
+    generator family, beam energy against Q² range, each cell a sample's
+    delivery and registration in one campaign. Serves the stored product
+    (swf_epicprod.analytics.status_grids), which rebuilds behind the page;
+    it builds in the request only on its first fill or the Update link.
+    Read-open."""
+    from monitor_app.models import CachedProduct
+    from swf_epicprod.analytics.status_grids import status_grids_product
+
+    # The campaigns the completion record covers: current or producing.
+    completion = CachedProduct.objects.filter(key='prod_hub_campaign_completion').first()
+    campaigns = sorted({e.get('campaign') for e in ((completion.value if completion else None) or [])
+                        if e.get('campaign')}, reverse=True)
+    current = Campaign.objects.filter(lifecycle='current').values_list('name', flat=True).first()
+    name = (request.GET.get('campaign') or '').strip()
+    if name not in campaigns:
+        name = current if current in campaigns else (campaigns[0] if campaigns else '')
+    show = request.GET.get('show') if request.GET.get('show') in STATUS_GRID_SHOW else 'all'
+
+    grids, value, built_at, error = [], {}, None, ''
+    if name:
+        try:
+            product = status_grids_product(name, refresh=request.GET.get('refresh') == '1')
+            value = product.get('value') or {}
+            built_at = product.get('built_at')
+        except Exception as exc:  # the inputs it reads are not recorded
+            logging.getLogger(__name__).exception('status grids for %s', name)
+            error = f'The grids could not be built: {exc}'
+    for grid in value.get('grids') or []:
+        counts = grid.get('counts') or {}
+        if show == 'missing' and not counts.get('missing'):
+            continue
+        if show == 'incomplete' and counts.get('complete') == counts.get('samples'):
+            continue
+        grids.append(grid)
+    areas = []
+    for grid in grids:
+        if not areas or areas[-1]['area'] != grid['area']:
+            areas.append({'area': grid['area'], 'grids': []})
+        areas[-1]['grids'].append(grid)
+    return render(request, 'pcs/status_grids.html', {
+        'campaigns': campaigns,
+        'campaign': name,
+        'show': show,
+        'show_choices': STATUS_GRID_SHOW,
+        'areas': areas,
+        'shown': len(grids),
+        'value': value,
+        'counts': value.get('counts') or {},
+        'built_at': built_at.isoformat() if built_at else '',
+        'error': error,
+    })
+
+
 def request_size_plot(request):
     """How large the production requests are: the distribution of the
     event counts they state, and what those counts cost

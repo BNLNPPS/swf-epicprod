@@ -74,6 +74,7 @@ urlpatterns = [
          name='find_brains_conversation'),
     path('evgen/', views.evgen_inputs, name='evgen_inputs'),
     path('evgen/update/', views.evgen_inputs_update, name='evgen_inputs_update'),
+    path('status-grids/', views.status_grids, name='status_grids'),
     # Trials (docs/PCS.md, Trials): read-open pages, because a trial is
     # offered to the physics group whose configuration it proves and the
     # offer is a link they can open.
