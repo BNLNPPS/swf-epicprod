@@ -89,13 +89,15 @@ def harvester_reading(queue, reports):
             'report_age_s': report.get('age_seconds'),
             'interval_s': _int((record.get('interval') or {}).get('seconds')),
             'running': _int(now.get('running')) or 0,
-            'queued': (_int(now.get('submitted')) or 0) + (_int(now.get('ready')) or 0),
+            'queued': sum(_int(now.get(s)) or 0 for s in ('submitted', 'ready', 'idle')),
             'ended': n_ended,
             'started': (db.get('workers_started') or {}).get(queue),
             'ended_unfinished': n_ended - (_int(by_status.get('finished')) or 0),
             'in_force': {key: _int(limits.get(field))
                          for key, field in IN_FORCE_FIELDS.items()},
-            'db_error': db.get('error'),
+            'db_error': db.get('error') or (db.get('workers_now') or {}).get('error')
+                        or (db.get('workers_started') or {}).get('error')
+                        or (db.get('workers_ended') or {}).get('error'),
         }
     return None
 
