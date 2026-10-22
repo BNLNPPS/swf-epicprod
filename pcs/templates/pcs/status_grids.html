@@ -18,7 +18,10 @@
   .sg-grid td.sg-cell a:hover { text-decoration: underline; }
   .sg-num { text-align: right; }
   .sg-sub { display: block; font-size: 0.95rem; color: #333; }
-  .sg-places { min-width: 22rem; white-space: nowrap; }
+  /* The summary's list: a long family name wraps, the samples get the room. */
+  .sg-attn td.sg-name { white-space: normal; }
+  .sg-attn td.sg-name a { display: inline-block; max-width: 22rem; overflow-wrap: anywhere; }
+  .sg-places div { min-width: 26rem; }
   /* The state colours, Sakib's three plus partial and missing; set with
      !important because the house table paints cell backgrounds. */
   .sg-complete { background-color: #b9eab9 !important; }
@@ -109,7 +112,7 @@
     family's grid, one line per beam. A family opens its grid.
   </p>
   {% if attention %}
-  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
+  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable sg-attn">
     <thead>
       <tr>
         <th>Area</th><th>Family</th>
@@ -126,8 +129,8 @@
         <td class="sg-name"><a href="?campaign={{ campaign }}&family={{ a.family|urlencode }}">{{ a.family }}</a></td>
         <td class="sg-num">{{ a.counts.missing }}</td>
         <td class="sg-num">{{ a.counts.registered }}</td>
-        <td class="sg-places">{% for line in a.missing %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
-        <td class="sg-places">{% for line in a.registered %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+        <td class="sg-places">{% for line in a.missing %}<div>{{ line }}</div>{% endfor %}</td>
+        <td class="sg-places">{% for line in a.registered %}<div>{{ line }}</div>{% endfor %}</td>
       </tr>
       {% endfor %}
     </tbody>
