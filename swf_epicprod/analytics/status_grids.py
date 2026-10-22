@@ -279,9 +279,6 @@ def build_status_grids(campaign_name):
         beams = sorted({c['beam'] for c in members}, key=_row_order)
         q2s = sorted({c['q2'] for c in members}, key=_column_order)
         by_key = {(c['beam'], c['q2']): c for c in members}
-        for c in members:
-            # where the sample sits in its grid, for the summary's lists
-            c['where'] = f"{c['beam'] or 'all'}, {column_label(c['q2'])}"
         rows = [{'beam': b or 'all',
                  'cells': [by_key.get((b, q)) for q in q2s]} for b in beams]
         axes = AXES['single' if area == SINGLE_AREA else 'beam']
@@ -301,6 +298,23 @@ def build_status_grids(campaign_name):
         'completion_built_at': (product['built_at'].isoformat()
                                 if product.get('built_at') else None),
     }
+
+
+def places(cells):
+    """Where cells sit in their family's grid, one line per row:
+    '10x100: Q² 1 to 10, 10 to 100 GeV²', '100MeV: 45 to 135°'."""
+    by_row = {}
+    for c in cells:
+        by_row.setdefault(c['beam'], []).append(c['q2'])
+    lines = []
+    for beam in sorted(by_row, key=_row_order):
+        columns = sorted(by_row[beam], key=_column_order)
+        if all(Q2_RANGE_RE.match(t or '') or Q2_FLOOR_RE.match(t or '') for t in columns):
+            text = 'Q² ' + ', '.join(q2_label(t) for t in columns) + ' GeV²'
+        else:
+            text = ', '.join(column_label(t) for t in columns)
+        lines.append(f"{beam or 'all'}: {text}")
+    return lines
 
 
 def _counts(cells):

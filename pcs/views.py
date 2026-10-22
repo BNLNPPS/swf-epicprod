@@ -6526,7 +6526,7 @@ def status_grids(request):
     rebuilds behind the page; it builds in the request only on its first
     fill or the Update link. Read-open."""
     from monitor_app.models import CachedProduct
-    from swf_epicprod.analytics.status_grids import events_label, status_grids_product
+    from swf_epicprod.analytics.status_grids import events_label, places, status_grids_product
 
     # The campaigns the completion record covers: current or producing.
     completion = CachedProduct.objects.filter(key='prod_hub_campaign_completion').first()
@@ -6600,8 +6600,8 @@ def status_grids(request):
             cells = [c for row in g['rows'] for c in row['cells'] if c]
             attention.append({
                 'area': g['area'], 'family': g['family'], 'counts': counts,
-                'missing': [c.get('where', '') for c in cells if c['state'] == 'missing'],
-                'registered': [c.get('where', '') for c in cells if c['state'] == 'registered'],
+                'missing': places([c for c in cells if c['state'] == 'missing']),
+                'registered': places([c for c in cells if c['state'] == 'registered']),
             })
     return render(request, 'pcs/status_grids.html', {
         'campaigns': campaigns,
