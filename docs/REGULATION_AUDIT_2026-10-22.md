@@ -3,8 +3,10 @@
 Torre approved the recommendations following the audit of 21 October's
 production dialogue, regulation code and installed configuration. The work
 covers task admission, JEDI job generation, pilot supply and the evidence
-used to judge those controls. Implementation is in progress; the completed
-record below will distinguish deployed changes from remaining work.
+used to judge those controls. The code and configuration corrections are
+implemented and deployed. This record separates verified controller behavior
+from performance targets that remain unproven, including cold-start latency
+and capacity the external pool has not offered.
 
 ## OSG policy
 
@@ -23,8 +25,10 @@ an empty queue. This is a design objective, not a measured pool guarantee.
 | Pilot timefloor | 120 minutes | retained |
 | History eligibility | 7200 seconds | 86400 seconds |
 
-At 300 starts per minute, an 80-second nominal observation and submission
-budget consumes 400 waiting pilots. A buffer of 600 adds 200 reserve.
+For replenishing an already busy queue, the nominal observation and
+submission budget is 30 seconds of Condor cache, 30 seconds of monitor
+latency and 20 seconds of submission eligibility. At 300 starts per minute,
+that 80-second budget consumes 400 waiting pilots. A buffer of 600 adds 200 reserve.
 The controller cannot guarantee pool slots or a start rate. With 15-minute
 jobs, the two-hour timefloor reduces steady pilot replacement demand by
 roughly a factor of eight, while cold starts still need new pilots.
@@ -45,7 +49,7 @@ are separate verification steps.
 
 ## Implementation record
 
-Deployment verification is underway. Changes implemented:
+The following changes are live:
 
 - JEDI reserves grants atomically under a shared lock, scopes them by VO and
   work queue, and holds generation on corrupt ledgers, invalid modes or
@@ -79,3 +83,185 @@ holds do not pause running tasks or suppress all their retries. Automatic
 storage-outage task pausing needs its own defined action policy; no new
 pause/kill/reassign operation is introduced here.
 
+
+## Deployment and evidence
+
+All times below are UTC on 22 October (subtract four hours for ET).
+
+| Component | Repository revision / activation |
+|---|---|
+| Initial OSG policy and compatibility installer | swf-epicprod `0e19863`; first activation 04:35 |
+| Front, JEDI, pilot decisions, synchronization and notices | swf-epicprod `ffd9fdf` |
+| Census, failure matching, reporters and pilot health | swf-monitor `f198e07` on `infra/baseline-v46` |
+| Missing-count and stale-demand health protection | swf-monitor `9ed3656`; swf-epicprod `e761885` |
+| First full monitor/ops deployment | `branch-infra-baseline-v46-20261022-005428`, healthy 04:56:46 |
+| Final full monitor/ops deployment | `branch-infra-baseline-v46-20261022-010609`, healthy 05:08:27 |
+| GREX sparse-log health correction | swf-monitor `fdb6afd`; lightweight UI/MCP deployment completed 05:18:45 |
+| JEDI package on pandaserver01 | wheel built from `ffd9fdf`; service active 04:56:27; `pip check` clean |
+| All three static record writers | installed 04:56; synchronized input revision `6671257` |
+| PanDA installation change log | distcomp-services `2726180` |
+| WFMS operations guide | epic-wfms-docs `19eb931` |
+
+The full deployment returned a fresh snapshot with no errors; OSG demand
+evidence was 59 seconds old and both independent waiting counts remained
+600. After the subsequent health correction, the fresh snapshot again had
+no errors: OSG had 597 Harvester waiting versus 596 schedd idle under the
+600 limit, and GREX had 590 waiting with its last applied limit of 590.
+
+The first activation exposed a real configuration parsing error: Harvester
+parsed the one-line per-key refresh map as text. The installer now writes
+the multiline JSON its parser requires and is tested for repeatability.
+This was corrected at 04:45:41 before claiming the cache cadence worked.
+
+Measured results:
+
+- **Refill:** 415 OSG pilots were submitted from 04:45:52 to 04:46:06,
+  a 14-second span. This replenished the former roughly 200-pilot buffer.
+  It measures submission, not slot acquisition, and is not a cold-start
+  injection benchmark.
+- **Actual supply:** the 04:58 snapshot read 600 waiting in Harvester,
+  an effective limit of 600, and 600 idle in the schedd. The empty
+  EPIC_PROD queue had zero waiting pilots and zero activated demand;
+  its adjuster applied `min(0, 600)` and submitted none.
+- **Worker observation:** 9,861 repeated worker checks after the 04:56
+  activation had a median gap of 24.327 seconds, 95th percentile 31.762,
+  and maximum 43.261. Checks can occur sooner through other monitor paths.
+  These are observed timings, not a hard real-time guarantee.
+- **Demand:** both job-statistics caches advanced every approximately
+  30 seconds in the live log (04:46:44, 04:47:15, 04:47:45, 04:48:15).
+  Static records remained on their separate cadence. Newly activated work
+  is therefore no longer hidden for a ten-minute Harvester cache period.
+- **History:** 18 OSG workers ended as `finished` in the ten-minute
+  observation window, replacing the earlier all-cancelled observation.
+  No existing worker or task was killed to obtain this result.
+- **JEDI:** both VOs emitted fresh successful enforced decisions after
+  restart. The reporter delivered them, and the front evaluated its
+  regulator gate green. The front cycle at 05:03:04 completed in 8.2
+  seconds with no errors.
+- **Shared pressure:** the front used one OSG ceiling of 4,268, counted
+  once in total capacity, and one combined committed depth for both
+  member queues. PanDA_1 showed `not_pulling`; EPIC_PROD retained its
+  existing feed-off setting. A full buffer no longer hides the delivery
+  warning.
+- **Failure scoping:** the live census counted 953 GREX failures and
+  separately exempted four matching f-15 failures in the sampled gate
+  window; task identity alone no longer exempted the other failures.
+- **Pilot units:** the live GREX shadow record converted the configured
+  1,000-pilot target to 125 workers. It read 118 running workers and
+  used one actual worker start in 300 seconds, or 12 starts/hour.
+- **Synchronization:** manual installs and the normal 05:00 cron runs
+  on pandaserver01, pandaharvester01 and osgsub01 produced identical
+  overrides and output hashes. Overrides SHA256:
+  `66f1b7d324781f107aecdeade6155a5649acb90e6a52f3d0ac83e0964dad9980`.
+  Output SHA256:
+  `bb9c18603ade662612ce4189eaecd7a5c4ef2b8d8169c2d53365b1c93d830027`.
+- **Independent evaluation:** the normal production-notifier cron ran
+  at 05:02:18 and maintained supply/decline state for all nine queues.
+  The focused decline test covers 1,000 to 433 running while 5,000 jobs
+  wait, including deduplication and recovery notification.
+- **Sparse-log correction:** at about 05:10, the notifier exposed a defect
+  in my first health change: it expired GREX's last applied limit after
+  15 minutes even though the report was fresh. swf-1 identified that
+  Harvester omits this log line while the waiting queue is full. The fix
+  retains the event value and timestamp, labels it "last applied limit,"
+  and checks report freshness and log-read success separately. The deployed
+  snapshot now reports 590 correctly from the 04:52:18 event. A limit never
+  observed is still unknown; a stale report still shows degraded protection.
+
+The pool still limits delivery: at 04:59:50 the idle analysis found zero
+willing slots among 3,527 considered. The recent observed starts were
+roughly one to six per minute. The 300-starts/minute design objective,
+and a full zero-to-busy production injection, have not been demonstrated
+under a newly available slot burst. The verified result is rapid submission
+and accurate replenishment at the current demand and availability.
+
+## Cold-start latency: an additional upstream clock
+
+Harvester's 30-second demand cache polls PanDA statistics endpoints. Those
+endpoints read `doma_panda.mv_jobsactive4_stats`, an ordinary summary table
+populated by `doma_panda.update_jobsactive_stats()`, rather than querying
+newly activated jobs directly. Read-only samples at 05:10:09 and 05:17:29
+found source timestamps at the corresponding minute boundaries. Those
+naive timestamps are Eastern time, not four-hour-old UTC values.
+
+This minute-scale upstream refresh is additional to Harvester's cache.
+At that observed cadence, allow roughly 90 seconds for newly activated
+work to become visible (60 upstream + 30 cache), and roughly 110 seconds
+through submission eligibility (+20), before service and scheduling delays.
+These are nominal phase budgets, not hard deadlines or measured cold starts.
+Task admission and JEDI job generation occur before this interval.
+
+The audit's approximately 60-second new-demand objective is therefore
+**not established as an upper bound**. The source scheduler was not changed;
+its administrative configuration on pandadb01 was not accessible with the
+available OS privileges. The new 90-second stale-demand guard measures
+Harvester's fetch age, not the age of the underlying summary rows. A tighter
+end-to-end bound needs an upstream refresh change or a direct-demand API,
+followed by an empty-queue activation measurement. The 14-second warm
+refill above must not be used as evidence for that cold-start objective.
+
+## Validation and operational boundaries
+
+Focused front, credential, atomic-ledger concurrency/corruption, GREX-unit,
+GKE, finding-scope, stale-telemetry and notification tests passed. The
+installer validated all patch contexts and Python syntax, preserved unrelated
+settings and produced no changes on its second run. The static writer
+retained its last-good output when an invalid override was supplied.
+Django checks and the front table's template compilation passed. Full
+deploys verify imported package files against the repository and require
+HTTP 200; the production operations and canary agents reached READY.
+
+The 120-minute timefloor is retained. At 15 minutes/job, it permits roughly
+eight sequential jobs per pilot; the final job can extend beyond two hours,
+which is why the old two-hour history eligibility was wrong. It reduces
+steady replacement demand but does not provide pilots for a cold queue.
+
+OSG reporters now run every minute with a lock to prevent overlap. The
+scheduled notifier still runs every five minutes: its five-minute starvation
+grace and fifteen-minute decline grace can each take one additional poll
+to notify. OSG reports older than three minutes, missing counts, and demand
+cache evidence older than 90 seconds show missing protection when work
+waits. Other Harvester reports keep their existing five-minute cadence.
+
+The GitHub synchronization updates **overrides**, not Python programs or
+Harvester compatibility patches. Each writer polls every five minutes;
+the server then reloads within its 200-second cycle, and Harvester's static
+cache within ten minutes. Existing pilots retain the data shipped when they
+started. The scripts keep last-good data on a source outage, with the last
+successful revision and time in the provenance sidecar.
+
+## Files, maintenance and rollback
+
+- `scripts/configure-osg-regulation.py`: repeatable OSG policy and exact-context
+  patch installer; `--apply` required to write. It touches installed Harvester,
+  its configuration and the two pull submit templates. Reference checkouts
+  remain unchanged.
+- `scripts/install-schedconfig-sync.py HOST`: the retained installation
+  procedure for the server and two Harvester hosts. Run as root from a
+  checkout; on OSG it also activates the Harvester policy. The recurring
+  writer is `scripts/panda-schedconfig.py --sync-from-github`.
+- Static directories: `/opt/panda/etc/panda/schedconfig` on pandaserver01;
+  `/data/atlpan/harvester_common/schedconfig` on pandaharvester01;
+  `/var/data/atlpan/harvester_common/schedconfig` on osgsub01. Each has
+  `schedconfig.json.provenance.json`. Cron files are `/etc/cron.d/panda-schedconfig`
+  and `/etc/cron.d/harvester-schedconfig`.
+- OSG original policy/module backups carry suffix
+  `.before-regulation-20261022T043225Z`; the later adjuster and submit-template
+  backups carry `.before-regulation-20261022T045633Z`. Restore the coherent
+  original set with Harvester stopped, refresh queue configuration and
+  repopulate its monitor FIFO with the native admin command, then start
+  `panda_harvester-uwsgi`. Running payloads are separate from that daemon.
+- JEDI backup: `/opt/panda/swf_epicprod.before-regulation-20261022`.
+  To restore the old throttler, stop `panda_jedi`, restore its `jedi`
+  subdirectory from that backup, then restart. The new ledger keys are
+  scoped separately; do not reinterpret them as old per-site keys.
+- Reporter backups are beside the shared `~/.local/bin` scripts with
+  `.before-regulation-20261022`; the previous OSG crontab is
+  `~/.crontab.before-regulation-20261022`.
+- Revert overrides in GitHub to roll them back. A local-file-only rollback
+  is overwritten at the next synchronization unless that cron is stopped.
+  Revert front/monitor source through the normal coordinated deployment.
+
+No schema migration, production task move, task kill, queue reopening,
+operator-account change or curated-finding mutation was part of this work.
+The payload canary and credential warning-window behavior were preserved.
