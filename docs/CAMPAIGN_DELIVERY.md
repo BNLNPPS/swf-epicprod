@@ -361,13 +361,23 @@ by-priority table carrying the rest.
    filters.
 
 5. **Production status grids** (PCS, `pcs/status-grids/`, under Data):
-   the campaign's samples as grids, one per generator family (an EVGEN
-   path without its beam and Q² segments), beam energy against Q²
-   range, after the production team's registration-and-production
-   report for 26.07 (2026-10-20). A cell is one EVGEN sample and reads
-   delivered / target events, coloured complete, below target or
-   without one, registered and not produced, or missing (a
-   configuration of the campaign with nothing delivered and its EVGEN
+   Sakib Rahman's request (epic-prod-ops, 2026-10-20) for a summary
+   report with grid views that identify missing configurations, showing
+   whether each input is registered and how much output exists, after
+   his registration-and-production report for 26.07. The page has three
+   levels, each in the URL. The summary (the default) gives the
+   campaign's counts, a table of the physics areas, the families with
+   samples missing or registered and not produced, each with the
+   samples named, and the configurations no EVGEN path reaches. An area
+   (`area=`) lists its families, one line each with its grid's shape,
+   its counts and its delivered and target events, the families with
+   something missing first. A family (`family=`) shows its grid, as in
+   the report. A family is an EVGEN path without its beam and Q²
+   segments, its grid beam energy against Q² range; a single-particle
+   family is the particle, its grid energy against angle. A cell is one
+   EVGEN sample and reads delivered / target events, coloured complete,
+   below target or without one, registered and not produced, or missing
+   (a configuration of the campaign with nothing delivered and its EVGEN
    sample not registered); a combination no sample or configuration
    names is grey. Registration is a second fact on the cell: a sample
    delivered from an input never registered says so. The cell opens
@@ -377,12 +387,12 @@ by-priority table carrying the rest.
    `/EVGEN/<tail>`: the EVGEN convention map, retry segments folded),
    or through a request that names it; a production mixed with
    backgrounds is a family of its own, named with its background chain,
-   and its registration is the signal sample's. Configurations reached by none
-   of these are counted on the page. Delivery and targets are the
+   and its registration is the signal sample's. Configurations reached by
+   none of these are listed on the summary. Delivery and targets are the
    campaign plan's own (the completion product). The grids are a
-   cached product (`status_grids:v1:<campaign>`,
+   cached product (`status_grids:v2:<campaign>`,
    `swf_epicprod.analytics.status_grids`) rebuilt behind the page
-   hourly; its inputs refresh nightly. The page prints as a report.
+   hourly; its inputs refresh nightly. The summary prints as a report.
 
 Candidates not committed in this plan: delivered-dataset arcs as
 episodic lanes (a tile per dataset from first arrival to fully

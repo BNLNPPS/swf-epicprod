@@ -6518,14 +6518,15 @@ STATUS_GRID_SHOW = {
 
 
 def status_grids(request):
-    """Production status grids (docs/CAMPAIGN_DELIVERY.md, Surfaces): per
-    generator family, beam energy against Q² range, each cell a sample's
-    delivery and registration in one campaign. Serves the stored product
-    (swf_epicprod.analytics.status_grids), which rebuilds behind the page;
-    it builds in the request only on its first fill or the Update link.
-    Read-open."""
+    """Production status grids (docs/CAMPAIGN_DELIVERY.md, Surfaces): a
+    campaign's EVGEN samples by generator family, each sample's delivery
+    and registration. Three levels in the URL: the summary (the default),
+    an area's families (``area=``) and a family's grid (``family=``).
+    Serves the stored product (swf_epicprod.analytics.status_grids), which
+    rebuilds behind the page; it builds in the request only on its first
+    fill or the Update link. Read-open."""
     from monitor_app.models import CachedProduct
-    from swf_epicprod.analytics.status_grids import status_grids_product
+    from swf_epicprod.analytics.status_grids import events_label, status_grids_product
 
     # The campaigns the completion record covers: current or producing.
     completion = CachedProduct.objects.filter(key='prod_hub_campaign_completion').first()
@@ -6537,7 +6538,7 @@ def status_grids(request):
         name = current if current in campaigns else (campaigns[0] if campaigns else '')
     show = request.GET.get('show') if request.GET.get('show') in STATUS_GRID_SHOW else 'all'
 
-    grids, value, built_at, error = [], {}, None, ''
+    value, built_at, error = {}, None, ''
     if name:
         try:
             product = status_grids_product(name, refresh=request.GET.get('refresh') == '1')
@@ -6546,27 +6547,75 @@ def status_grids(request):
         except Exception as exc:  # the inputs it reads are not recorded
             logging.getLogger(__name__).exception('status grids for %s', name)
             error = f'The grids could not be built: {exc}'
-    for grid in value.get('grids') or []:
-        counts = grid.get('counts') or {}
-        if show == 'missing' and not counts.get('missing'):
-            continue
-        if show == 'incomplete' and counts.get('complete') == counts.get('samples'):
-            continue
-        grids.append(grid)
-    areas = []
+    grids = value.get('grids') or []
+
+    def labelled(counts):
+        counts = dict(counts or {})
+        counts['delivered_label'] = events_label(counts.get('delivered') or 0)
+        counts['target_label'] = events_label(counts.get('target')) if counts.get('target') else ''
+        return counts
+
+    def attention_first(grid):
+        c = grid.get('counts') or {}
+        return (-(c.get('missing') or 0), -(c.get('registered') or 0),
+                -(c.get('partial') or 0), grid['family'])
+
+    # The physics areas, each with its families' counts summed.
+    areas = {}
     for grid in grids:
-        if not areas or areas[-1]['area'] != grid['area']:
-            areas.append({'area': grid['area'], 'grids': []})
-        areas[-1]['grids'].append(grid)
+        total = areas.setdefault(grid['area'], {'area': grid['area'], 'families': 0})
+        total['families'] += 1
+        for key, n in (grid.get('counts') or {}).items():
+            total[key] = total.get(key, 0) + (n or 0)
+    areas = [labelled(a) for a in sorted(areas.values(), key=lambda a: a['area'])]
+
+    family = (request.GET.get('family') or '').strip()
+    grid = next((g for g in grids if g['family'] == family), None)
+    area = grid['area'] if grid else (request.GET.get('area') or '').strip()
+    if area not in {a['area'] for a in areas}:
+        area = ''
+
+    families, attention = [], []
+    if grid:
+        level = 'family'
+        grid = dict(grid, counts=labelled(grid.get('counts')))
+    elif area:
+        level = 'area'
+        for g in sorted((g for g in grids if g['area'] == area), key=attention_first):
+            counts = g.get('counts') or {}
+            if show == 'missing' and not counts.get('missing'):
+                continue
+            if show == 'incomplete' and counts.get('complete') == counts.get('samples'):
+                continue
+            families.append(dict(g, counts=labelled(counts),
+                                 shape=f"{len(g['rows'])} × {len(g['columns'])}"))
+    else:
+        level = 'summary'
+        # The families with samples to register or to produce, each with
+        # the samples named by their place in its grid.
+        for g in sorted(grids, key=attention_first):
+            counts = g.get('counts') or {}
+            if not (counts.get('missing') or counts.get('registered')):
+                continue
+            cells = [c for row in g['rows'] for c in row['cells'] if c]
+            attention.append({
+                'area': g['area'], 'family': g['family'], 'counts': counts,
+                'missing': [c.get('where', '') for c in cells if c['state'] == 'missing'],
+                'registered': [c.get('where', '') for c in cells if c['state'] == 'registered'],
+            })
     return render(request, 'pcs/status_grids.html', {
         'campaigns': campaigns,
         'campaign': name,
+        'level': level,
+        'area': area,
+        'areas': areas,
+        'grid': grid,
+        'families': families,
+        'attention': attention,
         'show': show,
         'show_choices': STATUS_GRID_SHOW,
-        'areas': areas,
-        'shown': len(grids),
         'value': value,
-        'counts': value.get('counts') or {},
+        'counts': labelled(value.get('counts')),
         'built_at': built_at.isoformat() if built_at else '',
         'error': error,
     })

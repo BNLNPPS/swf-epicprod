@@ -3,18 +3,22 @@
 {% block content %}
 <style>
   /* Sizes named once with a floor (Torre, 2026-09-22). */
-  .sg-page p, .sg-page .sg-bar { font-size: 1.15rem; }
+  .sg-page p, .sg-page .sg-bar, .sg-page li, .sg-page summary { font-size: 1.15rem; }
   .sg-page h1 { font-size: 2.3rem; }
   .sg-page h2 { font-size: 1.7rem; }
+  .sg-page table th, .sg-page table td { font-size: 1.05rem; }
   .sg-section { background-color: #e7f1fb; padding: 0.4rem 0.6rem;
                 border-radius: 0.25rem; margin-top: 1.6rem; margin-bottom: 0.8rem; }
-  .sg-family { font-size: 1.15rem; font-weight: 600; margin: 1.1rem 0 0.4rem 0;
+  .sg-family { font-size: 1.3rem; font-weight: 600; margin: 1.1rem 0 0.6rem 0;
                font-family: var(--bs-font-monospace, monospace); }
-  .sg-grid th, .sg-grid td { font-size: 1.05rem; text-align: center; min-width: 9.5rem; }
+  .sg-name { font-family: var(--bs-font-monospace, monospace); }
+  .sg-grid th, .sg-grid td { text-align: center; min-width: 9.5rem; }
   .sg-grid th.sg-beam, .sg-grid td.sg-beam { min-width: 6rem; font-weight: 600; }
   .sg-grid td.sg-cell a { color: #111; text-decoration: none; display: block; }
   .sg-grid td.sg-cell a:hover { text-decoration: underline; }
+  .sg-num { text-align: right; }
   .sg-sub { display: block; font-size: 0.95rem; color: #333; }
+  .sg-places { max-width: 42rem; }
   /* The state colours, Sakib's three plus partial and missing; set with
      !important because the house table paints cell backgrounds. */
   .sg-complete { background-color: #b9eab9 !important; }
@@ -28,7 +32,7 @@
   .sg-bar a.sg-active { font-weight: bold; text-decoration: underline; }
   @media print {
     nav, .navbar, .sg-noprint { display: none !important; }
-    .sg-grid-wrap { page-break-inside: avoid; }
+    .sg-grid-wrap, tr { page-break-inside: avoid; }
   }
 </style>
 <div class="container-fluid sg-page">
@@ -36,59 +40,199 @@
 
   <div class="swf-page-tabs sg-noprint">
     {% for c in campaigns %}
-    <a href="?campaign={{ c }}&show={{ show }}" {% if c == campaign %}class="active"{% endif %}>Campaign {{ c }}</a>
+    <a href="?campaign={{ c }}" {% if c == campaign %}class="active"{% endif %}>Campaign {{ c }}</a>
     {% endfor %}
   </div>
 
   {% if error %}<p><strong>{{ error }}</strong></p>{% endif %}
 
   {% if value %}
+  <div class="swf-page-tabs sg-noprint">
+    <a href="?campaign={{ campaign }}" {% if level == 'summary' %}class="active"{% endif %}>Summary</a>
+    {% for a in areas %}
+    <a href="?campaign={{ campaign }}&area={{ a.area|urlencode }}" {% if a.area == area %}class="active"{% endif %}>{{ a.area }}</a>
+    {% endfor %}
+  </div>
+
+  {% if level == 'summary' %}
   <p>
-    Each grid is one generator family; a cell is one EVGEN sample in campaign
-    <strong>{{ campaign }}</strong>, showing events delivered against the
-    configuration's target. {{ counts.samples }} samples:
+    Campaign <strong>{{ campaign }}</strong>: {{ counts.samples }} EVGEN samples in
+    {{ value.grids|length }} generator families.
     <strong>{{ counts.complete }}</strong> complete,
     <strong>{{ counts.partial }}</strong> delivered below target or without one,
     <strong>{{ counts.registered }}</strong> registered and not produced,
-    <strong>{{ counts.missing }}</strong> missing.
-    {% if value.no_evgen_path %}{{ value.no_evgen_path }} of the campaign's
-    {{ value.configurations }} configurations reach no EVGEN path and are in no grid.{% endif %}
+    <strong>{{ counts.missing }}</strong> missing: asked for, input not registered.
+    {{ counts.delivered_label }} events delivered{% if counts.target_label %} against {{ counts.target_label }} targeted{% endif %}.
     Built <span data-relative-time="{{ built_at }}">{{ built_at }}</span>
-    <a href="?campaign={{ campaign }}&show={{ show }}&refresh=1" class="swf-update-btn sg-noprint">Update</a>
+    <a href="?campaign={{ campaign }}&refresh=1" class="swf-update-btn sg-noprint">Update</a>
   </p>
-
   <p class="sg-legend">
     <span class="sg-complete">complete</span>
     <span class="sg-partial">below target or no target</span>
     <span class="sg-registered">registered, not produced</span>
     <span class="sg-missing">missing: asked for, not registered, nothing delivered</span>
-    <span class="sg-empty">not asked for</span>
-  </p>
-  <p>
-    Cells read delivered / target events. "Input not registered" marks a sample
-    delivered from an EVGEN input that is not in JLab Rucio. A cell opens the
-    configuration's data page, or the sample on the EVGEN inputs page when the
-    campaign has no configuration for it.
   </p>
 
+  <h2 class="sg-section">Physics areas</h2>
+  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
+    <thead>
+      <tr>
+        <th>Area</th><th>Families</th><th>Samples</th>
+        <th class="sg-complete">Complete</th>
+        <th class="sg-partial">Below target or no target</th>
+        <th class="sg-registered">Registered, not produced</th>
+        <th class="sg-missing">Missing</th>
+        <th>Events delivered</th><th>Events targeted</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in areas %}
+      <tr>
+        <td><a href="?campaign={{ campaign }}&area={{ a.area|urlencode }}">{{ a.area }}</a></td>
+        <td class="sg-num">{{ a.families }}</td>
+        <td class="sg-num">{{ a.samples }}</td>
+        <td class="sg-num">{{ a.complete }}</td>
+        <td class="sg-num">{{ a.partial }}</td>
+        <td class="sg-num">{{ a.registered }}</td>
+        <td class="sg-num">{{ a.missing }}</td>
+        <td class="sg-num" data-order="{{ a.delivered|default:0 }}">{{ a.delivered_label }}</td>
+        <td class="sg-num" data-order="{{ a.target|default:0 }}">{{ a.target_label }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2 class="sg-section">Missing, or registered and not produced</h2>
+  <p>
+    The families with samples the campaign asks for that are not registered, or
+    registered and not yet produced, each sample named by its place in the
+    family's grid. A family opens its grid.
+  </p>
+  {% if attention %}
+  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
+    <thead>
+      <tr>
+        <th>Area</th><th>Family</th>
+        <th class="sg-missing">Missing</th>
+        <th class="sg-registered">Registered, not produced</th>
+        <th>Missing samples</th>
+        <th>Samples registered, not produced</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in attention %}
+      <tr>
+        <td>{{ a.area }}</td>
+        <td class="sg-name"><a href="?campaign={{ campaign }}&family={{ a.family|urlencode }}">{{ a.family }}</a></td>
+        <td class="sg-num">{{ a.counts.missing }}</td>
+        <td class="sg-num">{{ a.counts.registered }}</td>
+        <td class="sg-places">{{ a.missing|join:"; " }}</td>
+        <td class="sg-places">{{ a.registered|join:"; " }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>None: every sample the campaign asks for is registered and produced.</p>
+  {% endif %}
+
+  {% if value.unplaced %}
+  <h2 class="sg-section">Configurations in no grid</h2>
+  <details>
+    <summary>{{ value.no_evgen_path }} of the campaign's {{ value.configurations }} configurations
+      reach no EVGEN path: no EVGEN-stage record, produced output or request names one.</summary>
+    <ul>
+      {% for u in value.unplaced %}
+      <li><a href="{% url 'pcs:pcs_edition_data' name=u.edition %}">{{ u.pc }}: {{ u.edition }}</a></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% elif level == 'area' %}
+  {% for a in areas %}{% if a.area == area %}
+  <p>
+    <strong>{{ area }}</strong> in campaign <strong>{{ campaign }}</strong>:
+    {{ a.families }} families, {{ a.samples }} samples.
+    <strong>{{ a.complete }}</strong> complete,
+    <strong>{{ a.partial }}</strong> below target or without one,
+    <strong>{{ a.registered }}</strong> registered and not produced,
+    <strong>{{ a.missing }}</strong> missing.
+    The families with samples missing come first; a family opens its grid.
+  </p>
+  {% endif %}{% endfor %}
   <p class="sg-bar sg-noprint">
     <strong>Show:</strong>
     {% for key, label in show_choices.items %}
-    <a href="?campaign={{ campaign }}&show={{ key }}" {% if key == show %}class="sg-active"{% endif %}>{{ label }}</a>
+    <a href="?campaign={{ campaign }}&area={{ area|urlencode }}&show={{ key }}" {% if key == show %}class="sg-active"{% endif %}>{{ label }}</a>
     {% endfor %}
-    ({{ shown }} shown)
+    ({{ families|length }} shown)
   </p>
+  {% if families %}
+  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
+    <thead>
+      <tr>
+        <th>Family</th><th>Grid</th><th>Samples</th>
+        <th class="sg-complete">Complete</th>
+        <th class="sg-partial">Below target or no target</th>
+        <th class="sg-registered">Registered, not produced</th>
+        <th class="sg-missing">Missing</th>
+        <th>Events delivered</th><th>Events targeted</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in families %}
+      <tr>
+        <td class="sg-name"><a href="?campaign={{ campaign }}&family={{ f.family|urlencode }}">{{ f.family }}</a></td>
+        <td class="sg-num" title="{{ f.row_axis }} by {{ f.column_axis }}">{{ f.shape }}</td>
+        <td class="sg-num">{{ f.counts.samples }}</td>
+        <td class="sg-num">{{ f.counts.complete }}</td>
+        <td class="sg-num">{{ f.counts.partial }}</td>
+        <td class="sg-num">{{ f.counts.registered }}</td>
+        <td class="sg-num">{{ f.counts.missing }}</td>
+        <td class="sg-num" data-order="{{ f.counts.delivered|default:0 }}">{{ f.counts.delivered_label }}</td>
+        <td class="sg-num" data-order="{{ f.counts.target|default:0 }}">{{ f.counts.target_label }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No family matches this selection.</p>
+  {% endif %}
 
-  {% for area in areas %}
-  <h2 class="sg-section">{{ area.area }}</h2>
-  {% for grid in area.grids %}
+  {% else %}
+  <p class="sg-noprint">
+    <a href="?campaign={{ campaign }}">Summary</a> ·
+    <a href="?campaign={{ campaign }}&area={{ area|urlencode }}">All {{ area }} families</a>
+  </p>
   <div class="sg-grid-wrap">
     <div class="sg-family">{{ grid.family }}</div>
+    <p>
+      Campaign <strong>{{ campaign }}</strong>: {{ grid.counts.samples }} samples.
+      <strong>{{ grid.counts.complete }}</strong> complete,
+      <strong>{{ grid.counts.partial }}</strong> below target or without one,
+      <strong>{{ grid.counts.registered }}</strong> registered and not produced,
+      <strong>{{ grid.counts.missing }}</strong> missing.
+      {{ grid.counts.delivered_label }} events delivered{% if grid.counts.target_label %} against {{ grid.counts.target_label }} targeted{% endif %}.
+    </p>
+    <p class="sg-legend">
+      <span class="sg-complete">complete</span>
+      <span class="sg-partial">below target or no target</span>
+      <span class="sg-registered">registered, not produced</span>
+      <span class="sg-missing">missing: asked for, not registered, nothing delivered</span>
+      <span class="sg-empty">not asked for</span>
+    </p>
+    <p>
+      Cells read delivered / target events. "Input not registered" marks a sample
+      delivered from an EVGEN input that is not in JLab Rucio. A cell opens the
+      configuration's data page, or the sample on the EVGEN inputs page when the
+      campaign has no configuration for it.
+    </p>
     <table class="table table-bordered table-sm align-middle w-auto sg-grid swf-sortable">
       <thead>
         <tr>
-          <th class="sg-beam">Beam (GeV)</th>
-          {% for col in grid.columns %}<th>Q² {{ col.label }}{% if col.label != 'all' %} GeV²{% endif %}</th>{% endfor %}
+          <th class="sg-beam">{{ grid.row_axis }}</th>
+          {% for col in grid.columns %}<th>{{ col.label }}</th>{% endfor %}
         </tr>
       </thead>
       <tbody>
@@ -110,10 +254,7 @@
       </tbody>
     </table>
   </div>
-  {% endfor %}
-  {% empty %}
-  {% if value %}<p>No family matches this selection.</p>{% endif %}
-  {% endfor %}
+  {% endif %}
   {% elif not error %}
   <p>No campaign has a completion record yet.</p>
   {% endif %}

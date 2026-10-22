@@ -1,6 +1,6 @@
 """Production status grids: per generator family, beam energy against Q²
-range, each cell a sample's state in one campaign (docs/CAMPAIGN_DELIVERY.md,
-Surfaces, the status grids).
+range (a single particle: energy against angle), each cell a sample's state
+in one campaign (docs/CAMPAIGN_DELIVERY.md, Surfaces, the status grids).
 
 A cell is an EVGEN sample. Its state joins three records the system already
 keeps, so the build makes no Rucio or PanDA call:
@@ -26,7 +26,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-PRODUCT_KEY = 'status_grids:v1:{campaign}'
+PRODUCT_KEY = 'status_grids:v2:{campaign}'
 PRODUCT_TTL_SECONDS = 3600
 
 # A beam token: electron x hadron energy, e.g. 10x100, 18x137.5.
@@ -34,6 +34,13 @@ BEAM_RE = re.compile(r'^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$')
 # A Q² token: q2_1to10, q2_1000toINF, q2_10_20, q2_0to0.01, minQ2=10.
 Q2_RANGE_RE = re.compile(r'^q2_([\d.]+)(?:to|_)([\d.]+|INF)$', re.IGNORECASE)
 Q2_FLOOR_RE = re.compile(r'^(?:minQ2=|q2_)([\d.]+)$', re.IGNORECASE)
+# A single particle's energy and angular range: 100MeV, 10GeV; 3to50deg.
+SINGLE_AREA = 'SINGLE'
+ENERGY_RE = re.compile(r'^([\d.]+)(keV|MeV|GeV|TeV)$')
+ANGLE_RE = re.compile(r'^([\d.]+)to([\d.]+)deg$')
+ENERGY_MEV = {'keV': 1e-3, 'MeV': 1.0, 'GeV': 1e3, 'TeV': 1e6}
+# The axes of a grid: rows, then columns.
+AXES = {'beam': ('Beam (GeV)', 'Q² (GeV²)'), 'single': ('Energy', 'Angle')}
 # A retry segment of a produced output's path (/RECO/<v>/<config>/try2/...),
 # which names the same sample as the base path.
 TRY_RE = re.compile(r'^try\d+$')
@@ -71,6 +78,31 @@ def q2_label(token):
     return f'≥ {hit.group(1)}' if hit else token
 
 
+def column_label(token):
+    """A column's heading: a Q² range in GeV², or a single particle's
+    angular range in degrees."""
+    hit = ANGLE_RE.match(token or '')
+    if hit:
+        return f'{hit.group(1)} to {hit.group(2)}°'
+    if Q2_RANGE_RE.match(token or '') or Q2_FLOOR_RE.match(token or ''):
+        return f'Q² {q2_label(token)} GeV²'
+    return token or 'all'
+
+
+def _column_order(token):
+    hit = ANGLE_RE.match(token or '')
+    if hit:
+        return (float(hit.group(1)), float(hit.group(2)))
+    return _q2_order(token)
+
+
+def _row_order(token):
+    hit = ENERGY_RE.match(token or '')
+    if hit:
+        return (float(hit.group(1)) * ENERGY_MEV[hit.group(2)], 0.0)
+    return _beam_order(token)
+
+
 def _q2_order(token):
     hit = Q2_RANGE_RE.match(token or '')
     if hit:
@@ -88,20 +120,28 @@ def _beam_order(token):
 
 
 def split_path(path):
-    """(area, family, beam, q2, sample) of an EVGEN path, or None for a path
-    outside the grids. A produced output mixed with backgrounds carries the
-    background chain ahead of the physics area (``Bkg_*/GoldCt/10um/DIS/...``):
+    """(area, family, row, column, sample) of an EVGEN path, or None for a
+    path outside the grids. A produced output mixed with backgrounds carries
+    the background chain ahead of the physics area (``Bkg_*/GoldCt/10um/DIS/...``):
     the chain names the family's background and ``sample`` is the EVGEN path
     of the signal, the one registration is read for. The family is the path
-    without its beam and Q² segments."""
+    without its beam and Q² segments, the row its beam and the column its Q²
+    range; a single particle's (``SINGLE/e+/100MeV/3to50deg``) is the path
+    without its energy and angle, the row its energy and the column its
+    angular range, or the segment after the energy (``etaScan``)."""
     from pcs.physics_match import _KNOWN_AREAS
     tokens = [t for t in path.split('/') if t][1:]  # drop 'EVGEN'
     start = next((i for i, t in enumerate(tokens) if t in _KNOWN_AREAS), None)
     if start is None or tokens[start] in SKIPPED_AREAS:
         return None
     background, tokens = tokens[:start], tokens[start:]
-    beam = next((t for t in tokens if BEAM_RE.match(t)), '')
-    q2 = next((t for t in tokens if Q2_RANGE_RE.match(t) or Q2_FLOOR_RE.match(t)), '')
+    if tokens[0] == SINGLE_AREA:
+        beam = next((t for t in tokens if ENERGY_RE.match(t)), '')
+        after = tokens[tokens.index(beam) + 1:] if beam else []
+        q2 = next((t for t in after if ANGLE_RE.match(t)), after[0] if after else '')
+    else:
+        beam = next((t for t in tokens if BEAM_RE.match(t)), '')
+        q2 = next((t for t in tokens if Q2_RANGE_RE.match(t) or Q2_FLOOR_RE.match(t)), '')
     family = '/'.join(t for t in tokens if t not in (beam, q2))
     if background:
         family += ', with background ' + '/'.join(background)
@@ -227,7 +267,8 @@ def build_status_grids(campaign_name):
             'in_flight': bool(row.get('in_flight')),
         }
     placed = {c['pc'] for c in cells.values() if c['pc']}
-    no_evgen_path = len(set(edition_by_pc) - placed)
+    unplaced = [{'pc': pc, 'edition': edition_by_pc[pc]}
+                for pc in sorted(set(edition_by_pc) - placed)]
 
     # Families, each a grid over the beams and Q² ranges its samples name.
     families = {}
@@ -235,13 +276,18 @@ def build_status_grids(campaign_name):
         families.setdefault((cell['area'], cell['family']), []).append(cell)
     grids = []
     for (area, family), members in sorted(families.items()):
-        beams = sorted({c['beam'] for c in members}, key=_beam_order)
-        q2s = sorted({c['q2'] for c in members}, key=_q2_order)
+        beams = sorted({c['beam'] for c in members}, key=_row_order)
+        q2s = sorted({c['q2'] for c in members}, key=_column_order)
         by_key = {(c['beam'], c['q2']): c for c in members}
+        for c in members:
+            # where the sample sits in its grid, for the summary's lists
+            c['where'] = f"{c['beam'] or 'all'}, {column_label(c['q2'])}"
         rows = [{'beam': b or 'all',
                  'cells': [by_key.get((b, q)) for q in q2s]} for b in beams]
+        axes = AXES['single' if area == SINGLE_AREA else 'beam']
         grids.append({'area': area, 'family': family,
-                      'columns': [{'token': q, 'label': q2_label(q)} for q in q2s],
+                      'row_axis': axes[0], 'column_axis': axes[1],
+                      'columns': [{'token': q, 'label': column_label(q)} for q in q2s],
                       'rows': rows,
                       'counts': _counts(members)})
     return {
@@ -250,17 +296,21 @@ def build_status_grids(campaign_name):
         'counts': _counts(list(cells.values())),
         # campaign configurations no EVGEN path reaches, so in no grid
         'configurations': len(edition_by_pc),
-        'no_evgen_path': no_evgen_path,
+        'no_evgen_path': len(unplaced),
+        'unplaced': unplaced,
         'completion_built_at': (product['built_at'].isoformat()
                                 if product.get('built_at') else None),
     }
 
 
 def _counts(cells):
+    """States counted, with the events delivered and the targets set."""
     out = {'complete': 0, 'partial': 0, 'registered': 0, 'missing': 0}
     for c in cells:
         out[c['state']] += 1
     out['samples'] = len(cells)
+    out['delivered'] = sum(c.get('delivered') or 0 for c in cells)
+    out['target'] = sum(c.get('target') or 0 for c in cells)
     return out
 
 
