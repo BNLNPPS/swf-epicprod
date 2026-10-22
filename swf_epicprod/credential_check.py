@@ -156,6 +156,8 @@ def _jlab_token():
                      reason=f'no answer in {JLAB_TOKEN_DEADLINE_S} s')
         return entry
     try:
+        if out.returncode != 0:
+            raise RuntimeError(f'probe exited {out.returncode}')
         account = json.loads((out.stdout or '').strip().splitlines()[-1])['account']
     except Exception:                                         # noqa: BLE001
         lines = (out.stderr or out.stdout or '').strip().splitlines()

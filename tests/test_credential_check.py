@@ -93,6 +93,19 @@ class GateDaysTest(unittest.TestCase):
         self.assertIn('no answer in 1 s', entry['reason'])
         self.assertLess(took, 5)
 
+    def test_a_probe_that_exits_nonzero_is_unavailable_even_with_an_answer(self):
+        probe = ("import json, sys\nprint(json.dumps({'account': 'eicprod'}))  # %d\n"
+                 "sys.exit(1)\n")
+        with mock.patch.object(cc, '_PROBE', probe):
+            entry = cc._jlab_token()
+        self.assertEqual(entry['status'], 'unavailable')
+
+    def test_a_probe_that_answers_and_exits_zero_is_ok(self):
+        probe = "import json\nprint(json.dumps({'account': 'eicprod'}))  # %d\n"
+        with mock.patch.object(cc, '_PROBE', probe):
+            entry = cc._jlab_token()
+        self.assertEqual((entry['status'], entry['account']), ('ok', 'eicprod'))
+
     def test_the_deadline_leaves_the_proxies_their_time(self):
         # Two openssl reads at 15 s at most, inside the agent's 60 s.
         self.assertLessEqual(cc.JLAB_TOKEN_DEADLINE_S + 2 * 15, 55)
