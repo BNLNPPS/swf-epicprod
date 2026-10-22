@@ -11,7 +11,13 @@ from rucio.client.uploadclient import UploadClient
 from rucio.common.exception import InputValidationError, RSEWriteBlocked, NoFilesUploaded, NotAllFilesUploaded
 from jsonschema import validate as json_validate, ValidationError
 
-import tokens
+# The payload's own token module: beside this script in the job, and a
+# sibling module when the submission imports this one from the package
+# (validate_metadata).
+if __package__:
+    from . import tokens
+else:
+    import tokens
 
 # The catalog could not be reached to register the output, and could not be
 # reached to say whether the output is there. The run script reads this as a
