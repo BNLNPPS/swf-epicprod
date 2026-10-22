@@ -3,9 +3,10 @@
     "workflow": "pull",
     "corecount": 1,
     "maxrss": 6000,
-    "maxtime": 18000,
-    "timefloor": 180,
-    "_execution_unit": "One single-core pilot per job. The separate fixed submit template allocates 8 cores, 48000 MB and 300 minutes to eight concurrent pilots; those allocation resources are not the per-job fit limits.",
+    "maxtime": 43200,
+    "timefloor": 510,
+    "_execution_unit": "One single-core pilot per job. The separate fixed submit template allocates 8 cores, 48000 MB and 720 minutes to eight concurrent pilots; those allocation resources are not the per-job fit limits.",
+    "_lifetime": "2026-10-22: current jobs median 68 minutes, p99 about 120, observed max 164. A 12-hour allocation, 510-minute intake window with +/-30-minute spread, at least 180-minute final-job reserve and 5-minute startup allowance replace the old 5-hour allocation/180-minute floor. The deadline-v2 launcher clamps every child's maxtime and timefloor to the actual batch budget. Existing spooled workers retain their old executable and data; see REGULATION_AUDIT_2026-10-22.md.",
     "_why": "GREX runs pull pilots since 2026-10-19 (docs/OSG_SUBMISSION.md). Recorded as push, the queue fell under the server's meanRSS guard (meanrss 4000): with the eAu jobs running near 5.7 GB in its 8-job slots, the server dispatched only jobs under 4000 MB, and the 10,125 waiting retries ask for 5400."
   },
   "BNL_OSG_PanDA_1": {
@@ -45,6 +46,7 @@
     "corecount": 1,
     "maxrss": 6000,
     "maxtime": 86400,
+    "timefloor": 180,
     "state_comment": "Defined by swf-epicprod pandaserver/schedconfig-overrides.json, not in CRIC",
     "queues": [
       {

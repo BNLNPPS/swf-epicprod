@@ -157,7 +157,7 @@ take the whole node.
 
 Since 2026-10-20 each GREX worker is an 8-pilot slot:
 `pilot/epicprod-multipilot.sh` is the executable, and the description asks for
-8 cores, 48,000 MB and 300 minutes (`+xcount`, `+maxMemory`, `+maxWallTime`).
+8 cores, 48,000 MB and initially 300 minutes (`+xcount`, `+maxMemory`, `+maxWallTime`).
 The launcher runs N standard pilot wrappers (default 8) in one allocation of N
 cores and N times the per-core memory, each in its own directory, so their
 single-core jobs share the allocation's memory. The wrappers start 15 s apart,
@@ -169,7 +169,7 @@ divided by 8. Backups: `submit_pilot3_pull_umgrex.sdf-backup-2026-10-19b`
 (single pilots) and `panda_queueconfig.json-backup-2026-10-19c` (limits
 before the division).
 
-Each slot ships a `queuedata.json` written by `scripts/pilot-queuedata.py`
+The initial policy shipped a `queuedata.json` written by `scripts/pilot-queuedata.py`
 (kept at `harvester_common/queuedata/UM_GREX_PanDA_1/`) with `timefloor` 180
 minutes and `maxtime` 18,000 s, and the launcher copies it to every wrapper.
 The file keeps the server's layout, one field per line: the wrapper reads
@@ -191,6 +191,39 @@ for an hour each time. Each rotation draws again, so the slots fall
 further out of step. The latest end, 210 minutes plus the longest job,
 stays inside the 300-minute slot. The script is
 rerun when the queue's CRIC record changes.
+
+On 22 October the current job mix was measured at a 68-minute median,
+roughly 120-minute p99 and 164-minute maximum, so the preceding 14/80-minute
+sizing was no longer suitable. The policy for newly submitted allocations
+is now 720 minutes, with `maxtime` 43200 and `timefloor` 510 in the GitHub
+overrides. JLab explicitly retains its separate 180-minute floor.
+
+The `deadline-v2` multi-pilot launcher draws the intake window around 510
+minutes with a 30-minute spread, capped to leave at least 180 minutes for
+the last job and five minutes for wrapper setup. Effective intake is about
+480–535 minutes. The submit template passes the actual allocation budget;
+each child gets time remaining to one common deadline, including the time
+spent staggering starts. A newer queue record cannot extend an older batch
+budget. Missing or invalid budget data stops the launcher before payloads
+start. Logs identify the launcher and policy versions, selected floor and
+absolute deadlines.
+
+`scripts/configure-grex-lifetime.py --apply` installs the launcher and GREX
+submit-template changes with backups; the launcher is installed first,
+before publishing the longer GitHub overrides. Harvester reads the template
+for each submission, so this needs no daemon restart. Existing submitted
+workers carry their original transferred executable and queue data and
+retain their original lifetime; installing a file does not update that cohort.
+No existing workers are removed to force turnover.
+
+The longer intake is intended to run roughly seven or eight current jobs
+per pilot and amortize the final partially occupied tail. The tail remains;
+the recent observed maximum is not a guarantee about future job duration.
+CE acceptance, start latency and full-allocation utilization must be measured
+for the new cohort before claiming a performance improvement. The decline
+alarm latches its reference peak until the incident clears, so expiration
+of an old sample alone cannot announce recovery. Evidence and operational
+limits are in [the implementation report](REGULATION_AUDIT_2026-10-22.md).
 
 ## The submit description
 
