@@ -243,25 +243,30 @@ What runs:
   a job for another image nested in that image instead of refusing; that
   needs unprivileged user namespaces, which the requirements keep.
 - Nesting from inside the image, found by swf-3's probes on swf-testbed and
-  pandaserver02 (`/data/swf-tmp/epic-native-verify-20261023/`) and reproduced
-  end to end on osgsub01 at 01:37 ET: the
-  OSG pool's Apptainer on CVMFS must be invoked through its wrapper,
-  `/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer`, which
-  supplies the libraries its binary needs (`libsubid.so.3` and others absent
-  from the image); and inside the outer container the relocatable runtime
-  loses its own path after entering its namespace and falls back to
-  `/var/lib/apptainer/mnt/session`, so the outer container must carry that
-  directory. The submit description binds it in from CVMFS,
-  `.../1.4.5/x86_64/var/lib/apptainer:/var/lib/apptainer:ro`, both as
-  `+SingularityBind` and in `APPTAINER_BINDPATH` and `SINGULARITY_BINDPATH`,
-  which glideinWMS's `singularity_lib.sh` honors. A local copy of the runtime
-  tree, the 1.3.6 build and shipped host libraries do not solve it. The
-  launcher takes no job unless the session directory is present and a
-  trivial nested execution in the other campaign image succeeds within two
-  minutes (`EPICPROD_NATIVE_PREFLIGHT_IMAGE`; exits 70 and 71 otherwise), and
-  logs the archive's checksum before extracting it, so a site that ignores
-  the bind costs no physics and every pilot's log names its archive. One
-  stage 2 pilot proves the bind on its own worker and site, not both pools.
+  pandaserver02 (`/data/swf-tmp/epic-native-verify-20261023/`) and
+  reproduced on osgsub01: the OSG pool's Apptainer on CVMFS must be invoked
+  through its wrapper, `/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer`,
+  which supplies the libraries its binary needs (`libsubid.so.3` and others
+  absent from the image); and inside the outer container the relocatable
+  runtime loses its own path after entering its namespace and falls back to
+  `/var/lib/apptainer/mnt/session`, which the image does not have. No glidein
+  binds a job's directory there: upstream `singularity_lib.sh` takes binds
+  from the glidein configuration only and passes the job's environment
+  inside, and the first workers proved it (PSU-LIGO, exit 70; MWT2, effective
+  binds `/srv,/etc/hosts,/etc/localtime,/cvmfs,/etc/OpenCL/vendors`). So the
+  nested launch makes the directory itself: it runs in a private user and
+  mount namespace (`unshare --user --map-current-user --keep-caps --mount
+  --propagation private`) with a tmpfs over `/var/lib` holding the
+  directory, visible to that launch alone; the runtime's wrapper then nests
+  the job's image as usual. Both image directions pass on osgsub01, with the
+  pilot's uid kept and writes through the work-directory bind. A local copy
+  of the runtime tree, the 1.3.6 build and shipped host libraries do not
+  solve it. The launcher takes no job unless a trivial nested execution in
+  the other campaign image succeeds through the same construct within two
+  minutes (`EPICPROD_NATIVE_PREFLIGHT_IMAGE`; exit 71 with the worker's
+  evidence otherwise), and logs the archive's checksum before extracting
+  it, so every pilot's log names its archive. A `+SingularityBind` of the
+  CVMFS session directory stays in the description as a harmless extra.
 - The node guard from inside the pilot: the archive carries the payload's
   `landing_check.py` as `pilot/user/epic/landing_check.py`, unchanged, and
   the baseline hook `pilot.user.epic.common.allow_timefloor`, which the pilot
@@ -294,19 +299,13 @@ code and site; each pilot's stdout for its sequence of "processing PanDA job"
 lines, "nested preflight ... ok", "reuse matching image" or "launching the
 job image nested", and the pilot's final exit; a Condor exit code of 70 or 71
 is the launcher refusing to take a job because the bind was not honored or
-the preflight failed. Stage 1 is Condor cluster 26759.0 and stage 2 is
-26760.0, submitted 01:39 ET. Earlier submissions: 26746.0 and 26748.0
-(stage 1, superseded builds, removed while idle); 26754.0 and 26755.0
-(01:34 ET), which matched Missouri-Hellbender and Duke-NCShare and were held
-by the worker's image-preparation hook, "Unable to download or build
-singularity image": those nodes advertise `HasSingularity` but no CVMFS at
-all. The production requirement on ATLAS CVMFS had been hiding this, so
-the cohort now requires the three repositories the pilot uses,
-`HAS_CVMFS_singularity_opensciencegrid_org` (the image),
-`HAS_CVMFS_oasis_opensciencegrid_org` (the runtime wrapper and the
-certificate roots) and `HAS_CVMFS_eic_opensciencegrid_org` (`rucio.cfg`).
-At 01:38 ET a 2,000-slot sample advertised all three on 1,084 OSPool and
-1,991 JLab-pool slots; 564 of the JLab ones lack ATLAS CVMFS, the capacity
-this pilot opens there. Rollback is `condor_rm` of the cohort's idle pilots only;
-nothing in Harvester or the production template changed.
+the preflight failed. Stage 1 is Condor cluster 26802.0 and stage 2 is 26804.0, submitted
+02:08 and 02:11 ET with archive
+`4790501d2f9cb4e2e3ebc942095cbd3d0d138e8da12b9d11d8393878b63fa500`.
+Earlier submissions that night: 26746.0 and 26748.0 (stage 1, superseded
+builds, removed while idle); 26754.0 and 26755.0, held by the worker's
+image-preparation hook on nodes without CVMFS (above); 26759.0, which ran
+at PSU-LIGO and exited 70 when the bind it relied on was not there; 26760.0,
+26792.0 and 26796.0, replaced while idle; 26797.0, which ran at MWT2 with
+the intermediate launcher and recorded the worker's bind evidence.
 
