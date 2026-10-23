@@ -424,4 +424,15 @@ build now casts it; the upstream pilot bug is to be reported.
   the pilot-side node guard at work on a real worker: the launcher's landing
   check ("not excluded, 5 nodes listed, live mode") and the pilot's own
   check before the next job ("this node is not excluded; next job allowed").
+- 07:14 ET: eighteen native jobs finished tonight, every one with 1,132
+  events and zero error codes, none failed: nine from the cohort (UNL-PATH
+  four, Rhodes two, OU, UWM and one more), the site probes at UNL-PATH
+  (5816629) and IRISHEP-SSL-UCHICAGO (5816636), and the earlier pilots'
+  jobs. Five cohort pilots have left by the timefloor after one job, the
+  rest run on. The SU-ITS probe's job 5816448 is the slow one: on a 2.3 GHz
+  Xeon E5-2698 v3 it has used 12,560 CPU seconds in three and a half hours
+  at 99 percent of a core with a steady 2.5 GB, heartbeat current, so it is
+  slow, not stuck; the same job takes 80 to 120 minutes on the 8480 and
+  EPYC cores. The job's 21,600 s walltime limit is the bound to watch on
+  the oldest OSPool slots; a job killed at that limit would cost an attempt.
 
