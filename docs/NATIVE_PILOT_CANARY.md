@@ -415,4 +415,13 @@ build now casts it; the upstream pilot bug is to be reported.
   finished with its outputs registered, and the pilot took its second job,
   5817072 (swf-3's read). No cohort payload has failed; 26957.18 stays held.
   Native jobs finished tonight: seven, each 1,132 events, zero errors.
+- 06:36 ET: five cohort completions (OU one, Rhodes two, UNL-PATH two), no
+  payload failure. The first cohort pilot to leave, 26957.3 at UNL-PATH,
+  left by design: its job ended 123 minutes after the pilot started, past
+  the queue's 120-minute timefloor, so the pilot wrapped up normally (exit
+  0) instead of asking for more; a pilot whose first job ends inside the
+  floor, as 26957.8's did at 94 minutes, takes a second. Its log also shows
+  the pilot-side node guard at work on a real worker: the launcher's landing
+  check ("not excluded, 5 nodes listed, live mode") and the pilot's own
+  check before the next job ("this node is not excluded; next job allowed").
 
