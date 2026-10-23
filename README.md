@@ -167,6 +167,8 @@ Submission and execution:
   directory in CVMFS with the procedure for publishing to it.
 - [SCHEDCONFIG_OVERRIDES.md](docs/SCHEDCONFIG_OVERRIDES.md) — the PanDA
   server's queue records: CRIC's, with our tracked overrides on top.
+- [NATIVE_PILOT_CANARY.md](docs/NATIVE_PILOT_CANARY.md) — isolated tests
+  of an ePIC bootstrap and one container, their evidence and promotion limits.
 - [PANDA_USER_JOBS.md](docs/PANDA_USER_JOBS.md) — user jobs and the
   analysis share.
 - [PANDA_CAPABILITIES.md](docs/PANDA_CAPABILITIES.md) — PanDA
