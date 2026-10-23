@@ -39,8 +39,20 @@ print(json.dumps({'epic_native_pilot': '20261023', 'python': sys.version.split()
 PY
 echo "ePIC native pilot: image $IMAGE, host $(hostname), $(date -u +%FT%TZ)"
 OSG_APPTAINER=/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer
-[[ -d /var/lib/apptainer/mnt/session ]] || {
-    echo "no /var/lib/apptainer/mnt/session in the outer container: the +SingularityBind was not honored here; no job taken" >&2; exit 70; }
+if [[ ! -d /var/lib/apptainer/mnt/session ]]; then
+    # The bind was not applied. A writable outer root (overlay or tmpfs) still allows the directory.
+    mkdir -p /var/lib/apptainer/mnt/session 2>/dev/null && echo "ePIC native pilot: created /var/lib/apptainer/mnt/session in the outer container" || {
+        echo "no /var/lib/apptainer/mnt/session in the outer container and it cannot be created; no job taken" >&2
+        echo "=== bind evidence ==="
+        env | grep -iE "bindpath|singularity|apptainer" | grep -v "^EPICPROD_" | sort
+        echo "--- /var/lib:"; ls -ld /var/lib /var/lib/apptainer 2>&1
+        echo "--- writable root? $(touch /var/lib/.epicprod-probe 2>/dev/null && echo yes && rm -f /var/lib/.epicprod-probe || echo no)"
+        echo "--- mounts (cvmfs, var, overlay):"; grep -E " /cvmfs| /var|overlay|underlay" /proc/mounts | cut -c1-160 | head -12
+        echo "--- machine ad singularity settings:"; grep -iE "singularity|apptainer|bindpath|underlay" "${_CONDOR_MACHINE_AD:-/nonexistent}" 2>/dev/null | cut -c1-200 | head -20
+        echo "--- job ad binds:"; grep -iE "bind" "${_CONDOR_JOB_AD:-/nonexistent}" 2>/dev/null | cut -c1-200 | head -6
+        echo "=== end bind evidence ==="
+        exit 70; }
+fi
 PREFLIGHT=${EPICPROD_NATIVE_PREFLIGHT_IMAGE:-}
 if [[ -n $PREFLIGHT ]]; then
     timeout 120 "$OSG_APPTAINER" exec --no-home --bind /cvmfs:/cvmfs "$PREFLIGHT" /bin/true || {
