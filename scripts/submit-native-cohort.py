@@ -79,6 +79,14 @@ def describe(template, args):
                 raise ValueError('expected one clause to drop for direct mode: ' + clause)
             requirements = requirements.replace(clause, '')
     undesired = line(text, '+UNDESIRED_Sites')
+    if args.allow_site:
+        # A canary at a site the production list excludes: that name alone leaves the list.
+        sites = [s.strip() for s in undesired.strip('"').split(',')]
+        for name in args.allow_site:
+            if name not in sites:
+                raise ValueError(f'{name} is not in the production UNDESIRED_Sites list {sites}')
+            sites.remove(name)
+        undesired = '"' + ', '.join(sites) + '"'
     guard = line(text, '+EpicprodNodeGuard')
     memory = line(text, 'request_memory')
     disk = line(text, 'request_disk')
@@ -127,6 +135,7 @@ priority = {args.priority}
 +EpicprodNative = "{args.tag}"
 +EpicprodNativeImage = "{args.image}"
 +EpicprodNativeMode = "{'direct' if args.direct else 'nested'}"
++EpicprodNativeAllowedSites = "{', '.join(args.allow_site)}"
 periodic_remove = {periodic_remove} || (JobStatus == 1 && (CurrentTime - QDate) > 43200)
 queue {args.count}
 '''
@@ -151,6 +160,8 @@ def main():
     parser.add_argument('--direct', action='store_true',
                         help='serve this image only: no nested launch, no preflight, no user-namespace '
                              'requirement; --task is then required')
+    parser.add_argument('--allow-site', action='append', default=[],
+                        help='a site the production UNDESIRED_Sites list excludes, admitted for this canary (repeatable)')
     parser.add_argument('--out', help='write the description here instead of under --dir (review off the host)')
     args = parser.parse_args()
     if args.direct and not args.task:
