@@ -78,6 +78,9 @@ def describe(template, args):
             if requirements.count(clause) != 1:
                 raise ValueError('expected one clause to drop for direct mode: ' + clause)
             requirements = requirements.replace(clause, '')
+    if args.target_site:
+        # A probe pinned to one glidein site, as the SU-ITS canary was.
+        requirements += f' && (GLIDEIN_Site =?= "{args.target_site}")'
     undesired = line(text, '+UNDESIRED_Sites')
     if args.allow_site:
         # A canary at a site the production list excludes: that name alone leaves the list.
@@ -136,6 +139,7 @@ priority = {args.priority}
 +EpicprodNativeImage = "{args.image}"
 +EpicprodNativeMode = "{'direct' if args.direct else 'nested'}"
 +EpicprodNativeAllowedSites = "{', '.join(args.allow_site)}"
++EpicprodNativeTargetSite = "{args.target_site or ''}"
 periodic_remove = {periodic_remove} || (JobStatus == 1 && (CurrentTime - QDate) > 43200)
 queue {args.count}
 '''
@@ -162,6 +166,7 @@ def main():
                              'requirement; --task is then required')
     parser.add_argument('--allow-site', action='append', default=[],
                         help='a site the production UNDESIRED_Sites list excludes, admitted for this canary (repeatable)')
+    parser.add_argument('--target-site', help='pin the probe to this GLIDEIN_Site')
     parser.add_argument('--out', help='write the description here instead of under --dir (review off the host)')
     args = parser.parse_args()
     if args.direct and not args.task:
