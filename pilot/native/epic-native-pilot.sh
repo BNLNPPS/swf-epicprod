@@ -73,21 +73,15 @@ fi
 echo "ePIC native pilot: archive $(sha256sum "$ARCHIVE")"
 tar xzf "$ARCHIVE"
 export PILOT_HOME=$HERE
-# The glidein's own death time, from this execution's machine ad, as the HEPiX
-# MachineFeatures shutdowntime the pilot reads before every further job
-# (min of proxy, maxtime and shutdowntime against EPICPROD_MIN_TIME_FOR_NEW_JOB,
-# two hours in our archive) and that its monitor honours ten minutes before.
-# The first job is the launcher's decision: none with under that much life left.
-MIN_LIFE=${EPICPROD_MIN_TIME_FOR_NEW_JOB:-7200}
-TODIE=$(grep -m1 "^GLIDEIN_ToDie = " "${_CONDOR_MACHINE_AD:-/nonexistent}" 2>/dev/null | awk "{print \$3}")
-if [[ $TODIE =~ ^[0-9]+$ ]]; then
-    LEFT=$(( TODIE - $(date +%s) ))
-    mkdir -p "$HERE/machinefeatures" && echo "$TODIE" > "$HERE/machinefeatures/shutdowntime" && export MACHINEFEATURES=$HERE/machinefeatures
-    echo "ePIC native pilot: glidein dies at $(date -u -d @"$TODIE" +%FT%TZ), $LEFT s from now; MachineFeatures shutdowntime set"
-    (( LEFT >= MIN_LIFE )) || { echo "glidein life $LEFT s is under the $MIN_LIFE s a job needs; no job taken" >&2; exit 73; }
-else
-    echo "ePIC native pilot: no GLIDEIN_ToDie in the machine ad; the pilot's own clocks apply"
-fi
+# The glidein's death time, from this execution's machine ad, as the HEPiX
+# MachineFeatures shutdowntime the pilot plans against before every further job
+# (glidein-deadline.sh, transferred with the pilot). The first job is decided here.
+source "$HERE/glidein-deadline.sh"
+case $DEADLINE_VERDICT in
+    ok)    echo "ePIC native pilot: deadline $(date -u -d @"$DEADLINE_AT" +%FT%TZ), $DEADLINE_LEFT s left, minimum for a job $EPICPROD_MIN_TIME_FOR_NEW_JOB s" ;;
+    short) echo "glidein life $DEADLINE_LEFT s is under the $EPICPROD_MIN_TIME_FOR_NEW_JOB s a job needs; no job taken" >&2; exit 73 ;;
+    *)     echo "ePIC native pilot: no usable deadline in the machine ad or MachineFeatures; the pilot's own clocks apply" ;;
+esac
 # The node guard, before the first job: the pilot's own check covers every
 # further one (allow_timefloor). The queue is pilot.py's -q argument.
 QUEUE=""; prev=""; for a in "$@"; do [[ $prev == -q ]] && QUEUE=$a; prev=$a; done

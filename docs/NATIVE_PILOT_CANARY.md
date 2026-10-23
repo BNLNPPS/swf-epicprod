@@ -367,14 +367,27 @@ build now casts it; the upstream pilot bug is to be reported.
   and 04:22 ET; fc30311 alone shed twelve); Condor restarted the pilots
   elsewhere and the PanDA jobs they held became orphans for the heartbeat
   timeout. A pilot does not know its glidein's death time, so it starts jobs
-  it cannot finish; the baseline refuses a new job only below a fixed 1,800 s
-  of remaining time by the smallest of its clocks (proxy, queue maxtime,
-  MachineFeatures shutdowntime), and takes its first job regardless. From
-  archive `f7222cb706b402033bea25a631118a3f06d51d41a98d4a37e369928aed0ccdfd`
-  the minimum is two hours, the job's p99, set by
-  `EPICPROD_MIN_TIME_FOR_NEW_JOB`, and the launcher writes the glidein's
-  `GLIDEIN_ToDie` from this execution's machine ad as the HEPiX
-  `MACHINEFEATURES/shutdowntime` the pilot reads, declining to start at all
-  (exit 73) with less than that left. The cohort of twenty runs the earlier
-  archive; later submissions carry this.
+  it cannot finish: the baseline refuses a further job only below a fixed
+  1,800 s by the smallest of its clocks (proxy, queue maxtime, HEPiX
+  MachineFeatures shutdowntime, the last read from the directory named by
+  `MACHINEFEATURES`), takes its first job regardless, and its monitor stops
+  the payload 600 s before a known shutdowntime. From archive
+  `f7222cb7` onward, `pilot/native/glidein-deadline.sh`, sourced by the
+  launcher at every execution (a Condor restart brings a new machine ad),
+  reads `GLIDEIN_ToDie` from this execution's machine ad, takes the earlier
+  of it and a site's own shutdowntime, writes it as the pilot's
+  MachineFeatures shutdowntime beside the site's other feature files, and
+  the launcher declines to start (exit 73) with less than the minimum left;
+  no usable deadline leaves the pilot's own clocks in force. The minimum,
+  applied by the launcher before the first job and by the pilot before each
+  further one, is 9,000 s: the job's p99 of 7,200 s plus the monitor's 600 s
+  grace, 900 s for stage-out and registration and 300 s of setup; a positive
+  integer `EPICPROD_MIN_TIME_FOR_NEW_JOB` in the submission overrides it,
+  anything else falls back. swf-3's review found the first cut's three
+  defects (a failing grep under pipefail, the site's deadline overwritten,
+  a two-hour floor with no room for the stop and the delivery); the tests
+  in `tests/test_native_launcher_deadline.py` cover absent and invalid ads,
+  an earlier site shutdown, a stale generated deadline after a restart, the
+  threshold boundary and the override. The cohort of twenty runs the
+  earlier archive; later submissions carry this.
 

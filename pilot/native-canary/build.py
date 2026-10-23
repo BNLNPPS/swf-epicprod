@@ -119,15 +119,21 @@ def build(baseline, expected_sha256, output, production=False):
     # The baseline's 1800 s is far short of an ePIC job (median 82 min, p99 120
     # min on 23 October 2026): a job started with 35 minutes of glidein life
     # dies with it. The launcher supplies the glidein's death time as
-    # shutdowntime; the minimum becomes two hours unless the submission sets
+    # shutdowntime; the minimum becomes 9000 s (p99 job 7200 + 600 monitor grace
+    # + 900 delivery + 300 setup) unless the submission sets a positive
     # EPICPROD_MIN_TIME_FOR_NEW_JOB.
     relative = 'pilot/control/job.py'
     content = (tree / relative).read_text()
     original = 'MIN_TIME_FOR_NEW_JOB = 1800\n'
     if content.count(original) != 1:
         raise ValueError('Unexpected MIN_TIME_FOR_NEW_JOB baseline in job.py')
-    content = content.replace(original,
-                              "MIN_TIME_FOR_NEW_JOB = int(os.environ.get('EPICPROD_MIN_TIME_FOR_NEW_JOB', 7200))\n")
+    content = content.replace(original, """try:
+    MIN_TIME_FOR_NEW_JOB = int(os.environ.get('EPICPROD_MIN_TIME_FOR_NEW_JOB', '9000'))
+    if MIN_TIME_FOR_NEW_JOB <= 0:
+        raise ValueError(MIN_TIME_FOR_NEW_JOB)
+except ValueError:
+    MIN_TIME_FOR_NEW_JOB = 9000
+""")
     write(relative, content)
 
     if not production:
