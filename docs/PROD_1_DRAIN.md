@@ -220,3 +220,23 @@ This completes the payload drain, not the throughput incident. The active
 queue had 654 running jobs, 3,205 activated and 600 waiting pilots; the
 preceding ten minutes recorded 30 finished jobs and no failed jobs. The
 low-throughput alert and the overnight watch remain active.
+
+
+### Scheduler investigation at 00:07–00:11 UTC, 23 October
+
+The active queue still had zero recorded pilot starts over successive
+ten-minute windows, despite 600 waiting pilots and over 3,100 activated
+jobs. osgsub01 SchedLog at 20:07:42 ET stated that negotiation could
+offer up to 9,554 jobs within its running limits. Both the primary and
+OSPool cycles offered the queued autoclusters and completed with zero
+matches, with explicit `no match found` rejections. This rules out a
+binding local running-job ceiling in that sample.
+
+The same log repeatedly reports incoming IDTOKENS authentication failures
+from 128.105.82.113, present back to the earliest retained rotated log
+at 18:30 ET. Its service identity and relevance remain unknown. This
+is not evidence that all OSPool negotiation is failing authentication:
+the 20:07:43 ET OSPool cycle communicated successfully on its existing
+negotiator socket from 128.105.82.27 and returned explicit rejections.
+The local schedd had no pending token requests. No authentication or
+trust configuration was changed.
