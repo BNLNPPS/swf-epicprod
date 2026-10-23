@@ -242,8 +242,9 @@ What runs:
   another Python differs only in tar header format). `native_container` runs
   a job for another image nested in that image instead of refusing; that
   needs unprivileged user namespaces, which the requirements keep.
-- Nesting from inside the image, found and proven on osgsub01 that night
-  (swf-3's probes under `/data/swf-tmp/epic-native-verify-20261023/`): the
+- Nesting from inside the image, found by swf-3's probes on swf-testbed and
+  pandaserver02 (`/data/swf-tmp/epic-native-verify-20261023/`) and reproduced
+  end to end on osgsub01 at 01:37 ET: the
   OSG pool's Apptainer on CVMFS must be invoked through its wrapper,
   `/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer`, which
   supplies the libraries its binary needs (`libsubid.so.3` and others absent
@@ -256,10 +257,11 @@ What runs:
   which glideinWMS's `singularity_lib.sh` honors. A local copy of the runtime
   tree, the 1.3.6 build and shipped host libraries do not solve it. The
   launcher takes no job unless the session directory is present and a
-  trivial nested execution in the other campaign image succeeds
-  (`EPICPROD_NATIVE_PREFLIGHT_IMAGE`; exits 70 and 71 otherwise), so a site
-  that ignores the bind costs no physics. Whether both pools honor the bind
-  is what stage 2 proves.
+  trivial nested execution in the other campaign image succeeds within two
+  minutes (`EPICPROD_NATIVE_PREFLIGHT_IMAGE`; exits 70 and 71 otherwise), and
+  logs the archive's checksum before extracting it, so a site that ignores
+  the bind costs no physics and every pilot's log names its archive. One
+  stage 2 pilot proves the bind on its own worker and site, not both pools.
 - `scripts/submit-native-cohort.py`: derives the cohort's description from
   the live production template (exclusions, undesired sites, node-guard
   clause, memory, disk, duration category, running bound), with

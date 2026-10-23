@@ -43,11 +43,12 @@ OSG_APPTAINER=/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer
     echo "no /var/lib/apptainer/mnt/session in the outer container: the +SingularityBind was not honored here; no job taken" >&2; exit 70; }
 PREFLIGHT=${EPICPROD_NATIVE_PREFLIGHT_IMAGE:-}
 if [[ -n $PREFLIGHT ]]; then
-    "$OSG_APPTAINER" exec --no-home --bind /cvmfs:/cvmfs "$PREFLIGHT" /bin/true || {
+    timeout 120 "$OSG_APPTAINER" exec --no-home --bind /cvmfs:/cvmfs "$PREFLIGHT" /bin/true || {
         echo "nested preflight in $PREFLIGHT failed (exit $?); no job taken" >&2; exit 71; }
     echo "ePIC native pilot: nested preflight in $PREFLIGHT ok"
 fi
 [[ ! -e pilot3 ]] || { echo 'pilot3 already present in the sandbox' >&2; exit 66; }
+echo "ePIC native pilot: archive $(sha256sum "$ARCHIVE")"
 tar xzf "$ARCHIVE"
 export PILOT_HOME=$HERE
 exec python3 "$HERE/pilot3/pilot.py" "$@"
