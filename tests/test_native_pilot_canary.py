@@ -1,4 +1,4 @@
-"""Execution and image-isolation checks for the opt-in native pilot canary."""
+"""Execution and image checks for the native ePIC pilot: in place when the image matches, nested otherwise."""
 import importlib.util
 import os
 from pathlib import Path
@@ -35,7 +35,23 @@ class NativePilotCanaryTests(unittest.TestCase):
             self.assertNotIn('apptainer exec', command)
             self.assertNotIn('atlasLocalSetup', command)
 
-    def test_another_campaign_is_rejected_before_payload_execution(self):
+    def test_another_campaign_runs_nested_in_its_own_image(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            old, wanted = work / 'old/image', work / 'wanted/image'
+            old.mkdir(parents=True)
+            wanted.mkdir(parents=True)
+            job = SimpleNamespace(imagename=str(wanted), workdir=str(work), jobid=12)
+            with patch.dict(os.environ, {'APPTAINER_CONTAINER': str(old), 'PILOT_HOME': str(work)}):
+                with patch.object(native, 'runtime', return_value='/fake/apptainer'):
+                    command = native.wrapper('touch should-not-run', job=job)
+            self.assertFalse((work / 'should-not-run').exists())
+            self.assertTrue(command.startswith('/fake/apptainer exec --no-home --bind /cvmfs:/cvmfs'))
+            self.assertIn(' ' + str(wanted) + ' /bin/bash -c ', command)
+            self.assertIn('--bind ' + str(work) + ':' + str(work), command)
+            self.assertFalse(native.same_image('image', str(wanted)))
+
+    def test_another_campaign_without_a_runtime_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             old, wanted = work / 'old/image', work / 'wanted/image'
@@ -43,10 +59,10 @@ class NativePilotCanaryTests(unittest.TestCase):
             wanted.mkdir(parents=True)
             job = SimpleNamespace(imagename=str(wanted), workdir=str(work), jobid=12)
             with patch.dict(os.environ, {'APPTAINER_CONTAINER': str(old)}):
-                with self.assertRaisesRegex(RuntimeError, 'mismatched image'):
-                    native.wrapper('touch should-not-run', job=job)
+                with patch.object(native, 'runtime', return_value=None):
+                    with self.assertRaisesRegex(RuntimeError, 'unavailable'):
+                        native.wrapper('touch should-not-run', job=job)
             self.assertFalse((work / 'should-not-run').exists())
-            self.assertFalse(native.same_image('image', str(wanted)))
 
     def test_launcher_refuses_an_unexpected_outer_image(self):
         with tempfile.TemporaryDirectory() as directory:

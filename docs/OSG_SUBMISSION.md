@@ -734,7 +734,8 @@ schedd's idle jobs only when it can match their requirements to its entries;
 `HAS_CVMFS_atlas_cern_ch` and the user-namespace requirement cannot be
 matched, and both exist only for the ALRB-nested pilot. The native pilot that
 passed its canaries on SU-ITS and GREX on 22 October needs neither (plan
-steps 2 and 3 above). The memory request is the next filter: at 23:36 ET
+steps 2 and 3 above); its staged trial on the active queue began on 23
+October ([NATIVE_PILOT_CANARY.md](NATIVE_PILOT_CANARY.md)). The memory request is the next filter: at 23:36 ET
 4,096 MB admitted 500 of 2,384 otherwise fitting OSPool slots and 206 of
 2,125 in the JLab pool.
 

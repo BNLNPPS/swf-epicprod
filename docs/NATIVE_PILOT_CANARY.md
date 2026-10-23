@@ -212,3 +212,56 @@ The coherent cleanup proposed here is the ALRB Python/bootstrap path,
 its redundant package setup, and its unrelated ATLAS repository checks.
 Do not discard certificate roots, proxy/token handling, registration,
 monitoring, or log delivery merely because inherited names mention ATLAS.
+
+## Staged trial on the active OSG queue, 23 October
+
+Torre's order (01:08 ET): run the native pilot on `BNL_OSG_PanDA_1` for
+experience to evaluate in the morning, by the staged sequence swf-3
+recommended and he confirmed. Stages, each only after the previous one is
+clean: (1) one pilot in `eic_xl:26.07.1-stable`, the image of every task
+activated on the queue that night, proving two consecutive jobs in one pilot
+and their output and log registration; (2) one pilot in
+`eic_xl:26.07.3-stable`, whose 26.07.1 job exercises the nested launch; (3)
+twenty pilots; (4) about two hundred. Ordinary Harvester pilots run
+throughout. On trouble no new trial submission is made and healthy running
+pilots finish.
+
+What runs:
+
+- `pilot/native/epic-native-pilot.sh`: the launcher. It verifies it is inside
+  the image `+SingularityImage` asked for, keeps the transferred proxy for the
+  payload, sets the certificate roots, Rucio configuration and the `root`
+  pilot-log scheme, extracts the archive and runs `pilot.py` with the
+  production arguments.
+- The archive from `pilot/native-canary/build.py --production`: the tested
+  canary without its one-task test guard, four changed files
+  (`native_container.py` new, `container.py`, `utilities.py`, `rucio.py`);
+  SHA-256 `e797224c23ad737feebac6b78d480690e7d110470fa0478227cac23ce12ed03b`
+  from the OSG baseline `pilot3-3.14.3.3.tar.gz`. `native_container` now runs
+  a job for another image nested in that image, through the Apptainer on the
+  path or the OSG one on CVMFS, instead of refusing; that needs unprivileged
+  user namespaces, which the requirements keep.
+- `scripts/submit-native-cohort.py`: derives the cohort's description from
+  the live production template (exclusions, undesired sites, node-guard
+  clause, memory, disk, duration category, running bound), with
+  `HasSingularity` required, the ATLAS CVMFS and host RHEL 9 requirements
+  dropped, priority 2 above the production pilots' 1, and the pilots bound to
+  one task (`PanDA_TaskID` with `--allow-same-user=True`, a baseline pilot
+  feature: every acquisition then carries the task id). The tag
+  `epic-native-20261023` is in `PANDA_JSID` (the job's `schedulerid` from its
+  first status update), in `GTAG` (the job's `pilotid` carries the stdout
+  URL) and in the ad attribute `EpicprodNative`.
+
+On osgsub01 everything lives in `/var/data/atlpan/native-20261023/`
+(launcher, build inputs, archive, `manifest.json`, the generated descriptions)
+with stdout under `condor_logs/native-20261023/`. Task 41043 was the bound
+task: 1,700 activated jobs at 01:20 ET, image 26.07.1, median job 82 minutes.
+
+Reading the result: PanDA jobs with `schedulerid = 'epic-native-20261023'`,
+their status, registration and error fields; `condor_history -constraint
+'EpicprodNative == "epic-native-20261023"'` for each pilot's wall time, exit
+code and site; each pilot's stdout for its sequence of "processing PanDA job"
+lines, "reuse matching image" or "launching the job image nested", and the
+pilot's final exit. Rollback is `condor_rm` of the cohort's idle pilots only;
+nothing in Harvester or the production template changed.
+

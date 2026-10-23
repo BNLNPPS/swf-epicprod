@@ -1,10 +1,29 @@
-"""ePIC canary container execution, with no ATLAS bootstrap or nested launch."""
+"""ePIC container execution without the ATLAS bootstrap.
+
+A job whose image is the one the pilot already runs in executes in place. A job
+for another image runs nested in its own image, as production does today from
+the pool's default image; that needs unprivileged user namespaces on the node.
+"""
 import logging
 import os
+import platform
 import shlex
 import shutil
 
 logger = logging.getLogger(__name__)
+
+# The OSG pool's Apptainer on CVMFS, for a pilot running inside an image that
+# ships none of its own.
+OSG_APPTAINER = '/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/%s/bin/apptainer' % platform.machine()
+
+
+def runtime():
+    found = shutil.which('apptainer') or shutil.which('singularity')
+    if found:
+        return found
+    if os.access(OSG_APPTAINER, os.X_OK):
+        return OSG_APPTAINER
+    return None
 
 
 def current_image():
@@ -42,15 +61,15 @@ def wrapper(executable, **kwargs):
                + ' GFORTRAN_TMPDIR=' + q(workdir) + ' PandaID=' + q(str(job.jobid))
                + '; ' + executable)
     job.command = command
-    if actual:
-        if not same_image(actual, wanted):
-            raise RuntimeError('ePIC refuses a nested container or a mismatched image: '
-                               + actual + ' != ' + wanted)
+    if actual and same_image(actual, wanted):
         logger.info('ePIC native: reuse matching image %s; no container launch', wanted)
         return command
-    runtime = shutil.which('apptainer') or shutil.which('singularity')
-    if not runtime:
-        raise RuntimeError('ePIC native: Apptainer/Singularity is unavailable')
+    if actual:
+        logger.warning('ePIC native: outer image %s is not the job image %s; '
+                       'launching the job image nested', actual, wanted)
+    launcher = runtime()
+    if not launcher:
+        raise RuntimeError('ePIC native: Apptainer/Singularity is unavailable for ' + wanted)
     # Bind the whole pilot work tree, not an individual token file. Refresh
     # replaces token files; the payload must see the replacement through the
     # same directory and the same pathname.
@@ -63,7 +82,7 @@ def wrapper(executable, **kwargs):
         value = os.environ.get(key, '')
         if value and os.path.isabs(value):
             roots.add(os.path.dirname(value))
-    args = [runtime, 'exec', '--no-home', '--bind', '/cvmfs:/cvmfs']
+    args = [launcher, 'exec', '--no-home', '--bind', '/cvmfs:/cvmfs']
     for root in sorted(roots):
         args += ['--bind', root + ':' + root]
     args += ['--pwd', workdir, wanted, '/bin/bash', '-c', command]
