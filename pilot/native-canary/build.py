@@ -114,6 +114,22 @@ def build(baseline, expected_sha256, output, production=False):
             data['task_id'] = int(taskid)
 """))
 
+    # The pilot takes a new job only when at least MIN_TIME_FOR_NEW_JOB remains
+    # by every clock it knows (proxy, PQ.maxtime, MachineFeatures shutdowntime).
+    # The baseline's 1800 s is far short of an ePIC job (median 82 min, p99 120
+    # min on 23 October 2026): a job started with 35 minutes of glidein life
+    # dies with it. The launcher supplies the glidein's death time as
+    # shutdowntime; the minimum becomes two hours unless the submission sets
+    # EPICPROD_MIN_TIME_FOR_NEW_JOB.
+    relative = 'pilot/control/job.py'
+    content = (tree / relative).read_text()
+    original = 'MIN_TIME_FOR_NEW_JOB = 1800\n'
+    if content.count(original) != 1:
+        raise ValueError('Unexpected MIN_TIME_FOR_NEW_JOB baseline in job.py')
+    content = content.replace(original,
+                              "MIN_TIME_FOR_NEW_JOB = int(os.environ.get('EPICPROD_MIN_TIME_FOR_NEW_JOB', 7200))\n")
+    write(relative, content)
+
     if not production:
         guard_test_task(tree, write)
 
