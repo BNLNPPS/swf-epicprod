@@ -285,8 +285,19 @@ code and site; each pilot's stdout for its sequence of "processing PanDA job"
 lines, "nested preflight ... ok", "reuse matching image" or "launching the
 job image nested", and the pilot's final exit; a Condor exit code of 70 or 71
 is the launcher refusing to take a job because the bind was not honored or
-the preflight failed. Stage 1 is Condor cluster 26754.0 and stage 2 is
-26755.0, both submitted 01:34 ET; 26746.0 and 26748.0 were earlier
-submissions of stage 1 with superseded builds, removed while idle. Rollback is `condor_rm` of the cohort's idle pilots only;
+the preflight failed. Stage 1 is Condor cluster 26759.0 and stage 2 is
+26760.0, submitted 01:39 ET. Earlier submissions: 26746.0 and 26748.0
+(stage 1, superseded builds, removed while idle); 26754.0 and 26755.0
+(01:34 ET), which matched Missouri-Hellbender and Duke-NCShare and were held
+by the worker's image-preparation hook, "Unable to download or build
+singularity image": those nodes advertise `HasSingularity` but no CVMFS at
+all. The production requirement on ATLAS CVMFS had been hiding this, so
+the cohort now requires the three repositories the pilot uses,
+`HAS_CVMFS_singularity_opensciencegrid_org` (the image),
+`HAS_CVMFS_oasis_opensciencegrid_org` (the runtime wrapper and the
+certificate roots) and `HAS_CVMFS_eic_opensciencegrid_org` (`rucio.cfg`).
+At 01:38 ET a 2,000-slot sample advertised all three on 1,084 OSPool and
+1,991 JLab-pool slots; 564 of the JLab ones lack ATLAS CVMFS, the capacity
+this pilot opens there. Rollback is `condor_rm` of the cohort's idle pilots only;
 nothing in Harvester or the production template changed.
 

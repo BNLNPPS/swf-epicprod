@@ -56,7 +56,13 @@ def describe(template, args):
         if clause not in requirements:
             raise ValueError(f'production requirements lack {clause!r}; review before deriving')
         requirements = requirements.replace(clause, '')
-    requirements = '(HasSingularity =?= True) && ' + requirements
+    # The repositories the pilot uses: the image, the runtime wrapper and
+    # certificates, rucio.cfg. Nodes without CVMFS advertise HasSingularity
+    # too and fail at image preparation (23 October: Missouri-Hellbender,
+    # Duke-NCShare); the ATLAS requirement used to hide this.
+    requirements = ('(HasSingularity =?= True) && (HAS_CVMFS_singularity_opensciencegrid_org == True) && '
+                    '(HAS_CVMFS_oasis_opensciencegrid_org == True) && (HAS_CVMFS_eic_opensciencegrid_org == True) && '
+                    + requirements)
     if 'HAS_UNPRIVILEGED_USER_NAMESPACES' not in requirements or 'EpicprodNodeGuard' not in requirements:
         raise ValueError('derived requirements lost the user-namespace or node-guard clause')
     undesired = line(text, '+UNDESIRED_Sites')
