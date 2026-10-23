@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -66,12 +67,17 @@ def describe(template, args):
     if 'HAS_UNPRIVILEGED_USER_NAMESPACES' not in requirements or 'EpicprodNodeGuard' not in requirements:
         raise ValueError('derived requirements lost the user-namespace or node-guard clause')
     if args.direct:
-        # User namespaces serve the nested launch only; a pilot that serves its
-        # own image alone, under task binding, does not need them.
-        userns = '(HAS_UNPRIVILEGED_USER_NAMESPACES =?= "enabled") && '
-        if requirements.count(userns) != 1:
-            raise ValueError('expected one user-namespace clause to drop for direct mode')
-        requirements = requirements.replace(userns, '')
+        # A pilot that serves its own image alone, under task binding, needs
+        # from the site only Singularity and the image's repository: user
+        # namespaces serve the nested launch, the oasis repository the CA
+        # certificates and the nesting runtime, the ePIC repository rucio.cfg,
+        # and the CA bundle and rucio.cfg travel with the pilot instead.
+        for clause in ('(HAS_UNPRIVILEGED_USER_NAMESPACES =?= "enabled") && ',
+                       '(HAS_CVMFS_oasis_opensciencegrid_org == True) && ',
+                       '(HAS_CVMFS_eic_opensciencegrid_org == True) && '):
+            if requirements.count(clause) != 1:
+                raise ValueError('expected one clause to drop for direct mode: ' + clause)
+            requirements = requirements.replace(clause, '')
     undesired = line(text, '+UNDESIRED_Sites')
     guard = line(text, '+EpicprodNodeGuard')
     memory = line(text, 'request_memory')
@@ -82,9 +88,12 @@ def describe(template, args):
     environment = [f'EPICPROD_NATIVE_IMAGE={args.image}', 'EPICPROD_NATIVE_ARCHIVE=' + args.archive,
                    f'EPICPROD_NATIVE_PREFLIGHT_IMAGE={"" if args.direct else args.preflight_image}',
                    f'EPICPROD_NATIVE_NESTING={"off" if args.direct else "on"}',
-                   # glideinWMS's singularity_lib.sh takes extra binds from these, not from +SingularityBind
-                   'APPTAINER_BINDPATH=' + SESSION_BIND, 'SINGULARITY_BINDPATH=' + SESSION_BIND,
                    f'PANDA_JSID={args.tag}', 'GTAG=' + LOG_URL.format(logdir=args.logdir)]
+    if not args.direct:
+        # the nested launch's session directory; glideins did not honor it, kept as a harmless extra
+        environment += ['APPTAINER_BINDPATH=' + SESSION_BIND, 'SINGULARITY_BINDPATH=' + SESSION_BIND]
+    binds = '' if args.direct else f'+SingularityBind = "{SESSION_BIND}"\n'
+    inputs = ','.join(f'{args.dir}/{name}' for name in (args.archive, 'certificates.tar.gz', 'rucio.cfg'))
     if args.task:
         environment.append(f'PanDA_TaskID={args.task}')
     return f'''# Native ePIC pilot cohort {args.tag}, generated {datetime.datetime.now(datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ}
@@ -95,7 +104,7 @@ transfer_executable = True
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
 transfer_output_files = ""
-transfer_input_files = {args.dir}/{args.archive}
+transfer_input_files = {inputs}
 x509userproxy = {args.proxy}
 initialdir = {args.dir}
 output = /var/data/atlpan/condor_logs/{args.logdir}/pilot.$(Cluster).$(Process).out
@@ -112,8 +121,7 @@ priority = {args.priority}
 +ProjectName = "EIC"
 +WantSingularity = True
 +SingularityImage = "{args.image}"
-+SingularityBind = "{SESSION_BIND}"
-Requirements = {requirements}
+{binds}Requirements = {requirements}
 +UNDESIRED_Sites = {undesired}
 +EpicprodNodeGuard = {guard}
 +EpicprodNative = "{args.tag}"
@@ -163,6 +171,11 @@ def main():
         for required in (Path(args.dir) / 'epic-native-pilot.sh', Path(args.dir) / args.archive):
             if not required.is_file():
                 sys.exit(f'missing {required}')
+        # The CA bundle this host keeps current, and rucio.cfg, travel with the
+        # pilot; the image has no grid CA directory.
+        subprocess.check_call(['tar', 'czf', str(Path(args.dir) / 'certificates.tar.gz'),
+                               '-C', '/etc/grid-security', 'certificates'])
+        shutil.copyfile('/cvmfs/eic.opensciencegrid.org/rucio-clients/rucio.cfg', str(Path(args.dir) / 'rucio.cfg'))
         Path('/var/data/atlpan/condor_logs', args.logdir).mkdir(exist_ok=True)
     path.write_text(text)
     print(text)

@@ -274,11 +274,20 @@ What runs:
   (`submit-native-cohort.py --direct`, `EPICPROD_NATIVE_NESTING=off`): the
   pilot serves its own image only under task binding, refuses any other
   image before the payload with a plain message, runs no preflight, and
-  requires no user namespaces, only `HasSingularity` and the three
-  repositories. Torre, 02:5x ET: a fallback's requirement must not be
-  make-or-break for mainline running. The direct pilots reach the slots the
-  nested ones cannot (SU-ITS and others without user namespaces); the ad
-  carries `EpicprodNativeMode`.
+  requires of the site only `HasSingularity` and the image's repository.
+  Torre, 02:5x ET: a fallback's requirement must not be make-or-break for
+  mainline running, and what else do we require of a site that may be as
+  dumb? Audited: the payload reads nothing from CVMFS (it ships its own
+  `rucio.cfg` and takes the CA directory from the environment); the pilot
+  needs the CA bundle, which the image lacks, and `rucio.cfg` for its log
+  upload, and the oasis repository otherwise served only the nesting runtime.
+  So the submit script packs osgsub01's maintained `/etc/grid-security/certificates`
+  (43 MB) and `rucio.cfg` into every submission and the launcher uses the
+  shipped copies, CVMFS copies being the fallback; the direct description
+  carries no bind. Left as inherited, for a decision with evidence:
+  `UNDESIRED_Sites`, the 9/7 node bans (the live guard now does that job),
+  4,096 MB, 4.5 GB, `+MaxRuntime` 360 and `JobDurationCategory` Medium. The
+  ad carries `EpicprodNativeMode`.
 - The node guard from inside the pilot: the archive carries the payload's
   `landing_check.py` as `pilot/user/epic/landing_check.py`, unchanged, and
   the baseline hook `pilot.user.epic.common.allow_timefloor`, which the pilot

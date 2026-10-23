@@ -27,8 +27,11 @@ if [[ -n ${X509_USER_PROXY:-} && $X509_USER_PROXY != /* ]]; then
 fi
 [[ -r ${X509_USER_PROXY:-/nonexistent} ]] || { echo "pilot proxy unreadable: ${X509_USER_PROXY:-unset}" >&2; exit 67; }
 export PILOT_X509_USER_PROXY=$X509_USER_PROXY
-export X509_CERT_DIR=/cvmfs/oasis.opensciencegrid.org/mis/certificates
-export RUCIO_CONFIG=/cvmfs/eic.opensciencegrid.org/rucio-clients/rucio.cfg
+# The CA bundle and rucio.cfg travel with the pilot; the CVMFS copies are the fallback.
+if [[ -f certificates.tar.gz ]]; then tar xzf certificates.tar.gz && export X509_CERT_DIR=$HERE/certificates
+else export X509_CERT_DIR=/cvmfs/oasis.opensciencegrid.org/mis/certificates; fi
+if [[ -f rucio.cfg ]]; then export RUCIO_CONFIG=$HERE/rucio.cfg
+else export RUCIO_CONFIG=/cvmfs/eic.opensciencegrid.org/rucio-clients/rucio.cfg; fi
 export RUCIO_ACCOUNT=panda
 # The OSG queues advertise root for pilot-log writes; the archive's copy tool reads this.
 export EPICPROD_CANARY_LOG_SCHEME=root
