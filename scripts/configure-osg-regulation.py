@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Install the accepted OSG pilot policy; see docs/REGULATION_AUDIT_2026-10-22.md.
+"""Install the accepted OSG pilot policy; see docs/REGULATION_AUDIT_2026-10-22.md
+and docs/OSG_SUBMISSION.md (22 October: the fall from 3,000 to 300 running).
 
 Run with Harvester's Python as root on osgsub01. All input files and Python
 patch contexts are validated before any write. --apply keeps dated backups;
@@ -17,6 +18,11 @@ import shutil
 import tempfile
 
 QUEUES = ('BNL_OSG_PanDA_1', 'BNL_OSG_EPIC_PROD_1')
+ACTIVE_QUEUE = 'BNL_OSG_PanDA_1'
+RETIRED_QUEUE = 'BNL_OSG_EPIC_PROD_1'  # retired 2026-10-22; Harvester submits nothing to it
+# A pilot holds its slot through a dispatch gap: up to 30 empty answers a
+# minute apart before it gives the slot back (the pilot's defaults are 2 and 5).
+IDLE_TOLERANCE = ' --getjobrequests 30 --getjobfailures 30'
 
 # Small compatibility patches to the installed Harvester. The reference
 # checkout stays untouched. Exact contexts make an incompatible upgrade fail.
@@ -97,13 +103,21 @@ def prepare(root):
                      maxNewWorkersPerCycle=300)
         entry.setdefault('monitor', {}).update(fifoCheckInterval=30, useCondorHistoryMaxAge=86400)
         entry.setdefault('submitter', {})['noPilotsWhenNoActiveJobs'] = True
+    data[RETIRED_QUEUE]['queueStatus'] = 'offline'
     changes = {cfg: text, queues: json.dumps(data, indent=2) + '\n'}
     for queue in QUEUES:
         path = Path(data[queue]['submitter']['templateFile'])
         source = path.read_text()
         if 'request_memory = 3700' not in source and 'request_memory = 4096' not in source:
             raise ValueError(f'unexpected memory request in {path}')
-        changes[path] = source.replace('request_memory = 3700', 'request_memory = 4096')
+        source = source.replace('request_memory = 3700', 'request_memory = 4096')
+        if queue == ACTIVE_QUEUE:
+            arguments = re.findall(r'(?m)^arguments = .*$', source)
+            if len(arguments) != 1:
+                raise ValueError(f'expected one arguments line in {path}')
+            if '--getjobrequests' not in arguments[0]:
+                source = source.replace(arguments[0], arguments[0] + IDLE_TOLERANCE)
+        changes[path] = source
     packages = list(root.glob('lib/python*/site-packages/pandaharvester'))
     if len(packages) != 1:
         raise ValueError(f'expected one installed Harvester package, found {packages}')

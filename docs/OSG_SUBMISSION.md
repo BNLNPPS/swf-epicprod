@@ -670,6 +670,74 @@ probe.
    slots listed above.
 4. Trial pull mode for the queue.
 
+## 22 October: the fall from 3,000 to 300 running
+
+`BNL_OSG_PanDA_1` ran 3,026 jobs at 15:51 ET and 284 at 23:09 ET, with 600
+pilots waiting and about 3,200 jobs activated through the evening. Four
+things happened, in order. The first three were ours.
+
+1. 15:02 ET: two by-hand whole-task reruns (41039, 41040) landed on the
+   retired `BNL_OSG_EPIC_PROD_1`, dropped from the floor but not from the
+   front's queue list. Harvester sent it 600 pilots, and by 17:40 ET it held
+   1,170 of the pool's slots while the active queue fell by as much. No
+   capacity was lost yet.
+2. 16:51 to 18:16 ET: the JEDI job throttler read the two OSG queues as one
+   pool, so PROD_1's 5,500 queued jobs saturated it and generation for the
+   active queue stopped; its activated count was zero. A pilot that started
+   in that window asked twice, a minute apart, was told "No jobs in PanDA"
+   and exited: every one of the 265 active-queue pilots that started
+   between 16:00 and 17:00 ET and ended within ten minutes did this, and
+   each gave its slot back to the pool. The pool split at 18:16 ET
+   (`osg:BNL_OSG_PanDA_1;osg_drain:BNL_OSG_EPIC_PROD_1`) restored
+   generation within fifteen minutes.
+3. 18:00 to 23:20 ET: the 600 PROD_1 pilots waiting in the schedd were older
+   than every active-queue pilot, so the pool matched them first. All of
+   them started, found no PROD_1 work, and exited within four minutes,
+   471 of them between 21:30 and 23:20 ET, taking that many of the
+   evening's scarce matches.
+4. From about 17:00 ET the pools' owners took the slots back. Our pilots run
+   as passengers in the JLab VO's pool and on OSPool glideins provisioned
+   for others; the afternoon's slots were those glideins' idle time. At
+   23:30 ET the JLab pool advertised 11,064 slots, 9,595 of them claimed:
+   8,525 by CLAS12's `gemc`, 874 by GlueX's `mcwrap`, 203 by our pilots. As
+   each of ours ended at its two-hour time floor, its slot went to `gemc`.
+   At 23:36 ET the matchmaker's own analysis of our oldest waiting pilot,
+   ignoring user priority, found 1 willing slot of 3,316 in the JLab pool
+   and 29 of 9,247 in the OSPool: 2,509 and 7,782 slots fail our
+   requirements, and most of the rest are partitionable remnants under
+   4 GB or already running others' jobs.
+
+The first three emptied the active queue two hours early and spent about
+470 matches on nothing; the fourth sets the level we are at now. Nothing on
+the submit side changed between the ramp and the fall: the templates'
+4,096 MB request dates from 00:55 ET and the ramp to 3,026 came after it.
+Both collectors list our schedd with its idle count, the JLab frontend reads
+our queue with a valid token, and reads need no authentication here, so the
+IDTOKENS failures logged from 128.105.82.113 once a minute are a daemon
+that cannot authenticate to us for a command that needs it, not a hidden
+demand.
+
+Changed as a result, installed by `scripts/configure-osg-regulation.py`:
+
+- The active queue's pilots hold their slot through a dispatch gap:
+  `--getjobrequests 30 --getjobfailures 30` in
+  `submit_pilot2_pull_bnl_osg.sdf`, in place of the pilot's defaults of 2
+  and 5, so a pilot asks for up to thirty minutes before it gives the slot
+  back. The wrapper passes both through unchanged. Pilots already waiting
+  keep the arguments they were submitted with.
+- `BNL_OSG_EPIC_PROD_1` is `offline` in Harvester's queue configuration. It
+  submits nothing again, whatever is activated on it.
+
+What would raise the level is capacity provisioned for us rather than
+passenger slots. The OSPool frontend provisions glideins for a flocked
+schedd's idle jobs only when it can match their requirements to its entries;
+`HAS_CVMFS_atlas_cern_ch` and the user-namespace requirement cannot be
+matched, and both exist only for the ALRB-nested pilot. The native pilot that
+passed its canaries on SU-ITS and GREX on 22 October needs neither (plan
+steps 2 and 3 above). The memory request is the next filter: at 23:36 ET
+4,096 MB admitted 500 of 2,384 otherwise fitting OSPool slots and 206 of
+2,125 in the JLab pool.
+
 ## Related
 
 - [EPICPROD_OPS_AGENT.md](EPICPROD_OPS_AGENT.md): the production
