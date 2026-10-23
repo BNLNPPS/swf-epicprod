@@ -390,4 +390,20 @@ build now casts it; the upstream pilot bug is to be reported.
   an earlier site shutdown, a stale generated deadline after a restart, the
   threshold boundary and the override. The cohort of twenty runs the
   earlier archive; later submissions carry this.
+- 04:55 ET: nineteen of the twenty hold one job each of task 41043 (PanDA ids
+  5816705 to 5816750, started 04:33 to 04:42 ET), across CRUSH, UA-LR,
+  IRISHEP, UNL-PATH, UWM, OU, CNAF, MWT2, UWL and FSU slots, most of them
+  OSPool slots the production pilot's requirements never matched; the server
+  log shows one request and no empty answer per node. The twentieth, 26957.18,
+  is held on scigrid7.physics.fsu.edu by the HTCondor starter's test of our
+  image ("Singularity test failed: WARNING: group: unknown groupid 9000",
+  hold code 45), the only such hold tonight among every pilot we run; the
+  same site's scigrid5 runs proc 17; production pilots carry no image at that
+  layer and ran on scigrid7 at 04:27 ET. It stays held as evidence: no
+  release, no retry, no site exclusion. Four native jobs have finished
+  tonight, each with 1,132 events and zero error codes: 5816241 (26834,
+  CNAF), 5816250 and 5816534 (26835 at Fir, nesting the other image, two
+  jobs in one pilot), 5816423 (26893 at GREX). Native pilots held 26 running
+  jobs at 04:55 ET. The jobs of a native pilot are found in the PanDA
+  database by a `pilotid` carrying `native-20261023`, the cohort's log path.
 
