@@ -17,12 +17,13 @@ With --record FILE one JSON line per pool is appended, the counts above and
 nothing else, so a run every ten minutes gives the day's curve of what each
 requirement costs and what the direct pilot gains.
 
-With --exact the collector also runs the matchmaker's own two-sided analysis
-(condor_q -better-analyze, user priority ignored) of a production pilot ad and
-a direct pilot ad, both built from the live production template, against the
-unclaimed slots that meet the resource requests; that count is the willing
-figure, the modeled one above is the clause diagnosis. Our priority row from
-each negotiator comes with it.
+With --exact the collector also does the matchmaker's two-sided match slot by
+slot (the ClassAd bindings, user priority ignored) for a production pilot ad
+and a direct pilot ad, both built from the live production template, against
+the unclaimed slots that meet the resource requests, and sums the free cores
+of the willing ones: the cores one-core pilots could take now. That is the
+willing figure, in slots and cores; the modeled counts above are the clause
+diagnosis. Our priority row from each negotiator comes with it.
 
 Usage: osg-mismatch-census.py [--pool NAME ...] [--memory MB] [--disk KB] [--timeout S]
                               [--record FILE] [--exact] [--template SDF]
@@ -164,8 +165,10 @@ def report(pool, rows, memory, disk, now, record=None, exact_counts=None):
                                          ('direct native pilot', fails_d, alone_d, willing_d)):
         print('   %s: modeled willing %d slots, %d cores%s' % (
             label, willing[0], willing[1],
-            ('; matchmaker: willing %(willing)d, rejected by ours %(rejected_by_ours)d, reject us %(reject_us)d'
-             % exact_counts[label.split()[0]]) if exact_counts and label.split()[0] in exact_counts else ''))
+            ('; matched: willing %d slots %d cores, our requirements reject %d, their gates reject %d'
+             % (exact_counts[label.split()[0]]['willing'][0], exact_counts[label.split()[0]]['willing'][1],
+                exact_counts[label.split()[0]]['rejected_by_ours'][0], exact_counts[label.split()[0]]['reject_us'][0]))
+            if exact_counts and label.split()[0] in exact_counts else ''))
         print('     our requirement       turns away slots/cores   is the only reason for slots/cores')
         for clause, (n, c) in sorted(fails.items(), key=lambda kv: -kv[1][0]):
             a = alone.get(clause, [0, 0])
@@ -219,22 +222,24 @@ def exact(pool, memory, disk, template, timeout):
                                      timeout=timeout)
         if fetched.returncode != 0:
             raise RuntimeError(fetched.stderr.strip())
-        result = {'reduced_ads': sum(1 for line in open(slots) if line.startswith('MyType'))}
-        for label, ad in zip(('production', 'direct'), job_ads(template, memory, disk)):
-            path = os.path.join(work, label + '.ad')
-            with open(path, 'w') as out:
-                out.write(ad)
-            analysis = subprocess.run(['condor_q', '-better-analyze', '-jobads', path, '-slotads', slots,
-                                       '-nouserprios'], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                      universal_newlines=True, timeout=timeout)
-            counts = {}
-            for key, pattern in (('willing', r'(\d+) slots match and are willing'),
-                                 ('rejected_by_ours', r'(\d+) slots are rejected by your job'),
-                                 ('reject_us', r'(\d+) slots reject your job'),
-                                 ('serving_others', r'(\d+) slots match but are serving'),
-                                 ('if_drained', r'(\d+) slots would match if drained')):
-                found = re.search(pattern, analysis.stdout)
-                counts[key] = int(found.group(1)) if found else 0
+        import classad2 as classad  # the system bindings on osgsub01
+        ads = list(classad.parseAds(open(slots).read()))
+        result = {'reduced_ads': len(ads)}
+        for label, text in zip(('production', 'direct'), job_ads(template, memory, disk)):
+            job = classad.parseOne(text)
+            counts = {'willing': [0, 0], 'rejected_by_ours': [0, 0], 'reject_us': [0, 0]}
+            for slot in ads:
+                cores = int(slot.get('Cpus', 0) or 0)
+                we_accept = slot.matches(job)      # our Requirements, the slot as target
+                accepts_us = job.matches(slot)     # the slot's START, our pilot as target
+                if we_accept and accepts_us:
+                    key = 'willing'
+                    counts[key][0] += 1; counts[key][1] += cores
+                    continue
+                if not we_accept:
+                    counts['rejected_by_ours'][0] += 1; counts['rejected_by_ours'][1] += cores
+                if not accepts_us:
+                    counts['reject_us'][0] += 1; counts['reject_us'][1] += cores
             result[label] = counts
         prio = subprocess.run(['condor_userprio', '-pool', pool, '-all', '-allusers'], stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, universal_newlines=True, timeout=timeout)
