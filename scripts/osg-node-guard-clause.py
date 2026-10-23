@@ -29,15 +29,25 @@ the guard excludes it keeps taking jobs that the payload's landing check
 declines in seconds, each at the cost of an attempt (23 October 2026: four
 pilots on nod46 at UConn, one declined job every two minutes each). With
 --remove-pilots the script also removes this user's running pilots on the
-excluded nodes (condor_rm; a job in flight there is one the landing check
-would decline), and logs each removal.
+excluded nodes that started after the node's exclusion (the clause does not
+reach pilots already idle in the schedd, whose ads keep the old
+requirements): such a pilot never ran a job the landing check admitted, so
+nothing healthy is lost. A pilot that was on the node before the exclusion
+may be finishing a healthy job and is left alone. Each removal is logged.
+
+A pilot idle in the schedd keeps the ad it was submitted with, so its guard
+attribute predates any later trip and it can still match the node (the
+fifth nod46 pilot, 23 October). With --refresh-idle the script sets the
+current expression on every idle pilot of these queues whose stamp differs,
+in one constrained condor_qedit per cycle; the next negotiation uses it.
 
 Usage: osg-node-guard-clause.py SDF [SDF ...] [--url URL] [--queues PREFIX]
-                                [--remove-pilots] [--dry-run]
+                                [--remove-pilots] [--refresh-idle] [--dry-run]
 Runs under Python 3.6 (the submit host's), standard library only.
 """
 
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -73,15 +83,16 @@ def excluded_nodes(document, now, queues=QUEUES):
             continue
         if node.get("until") and parse_time(node["until"]) <= now:
             continue
-        nodes.add((str(node.get("host") or ""), str(node.get("site") or "")))
-    return sorted(nodes)
+        nodes.add((str(node.get("host") or ""), str(node.get("site") or ""),
+                   parse_time(node["since"]) if node.get("since") else None))
+    return sorted(nodes, key=lambda n: (n[0], n[1]))
 
 
 def clause(nodes):
     """The attribute's expression: False on any of the nodes, else True.
     Returns the expression and the nodes it could not name safely."""
     terms, skipped = [], []
-    for host, site in nodes:
+    for host, site, _since in nodes:
         name = host.replace(".", "[.]")
         if not HOST.match(host):
             skipped.append((host, site))
@@ -129,17 +140,24 @@ def write(path, text):
 
 
 def pilots_on(nodes, rows):
-    """The running pilots that sit on an excluded node: rows are
-    (cluster, proc, machine, site) as condor_q reports them, nodes the
-    (host, site) pairs the document excludes. A full host name matches the
-    machine exactly; a bare name matches the machine's first label on the
-    same glidein site. Pure."""
-    full = {h.lower() for h, _ in nodes if "." in h}
-    bare = {(h.lower(), s) for h, s in nodes if "." not in h and s}
+    """The running pilots to remove: rows are (cluster, proc, machine, site,
+    started) as condor_q reports them, nodes the (host, site, since) the
+    document excludes. A full host name matches the machine exactly; a bare
+    name matches the machine's first label on the same glidein site. Only a
+    pilot that started at or after the node's exclusion is returned; one
+    whose exclusion has no time is matched by name alone. Pure."""
+    full = {h.lower(): since for h, _, since in nodes if "." in h}
+    bare = {(h.lower(), s): since for h, s, since in nodes if "." not in h and s}
     hits = []
-    for cluster, proc, machine, site in rows:
+    for cluster, proc, machine, site, started in rows:
         m = (machine or "").lower()
-        if m in full or (m.split(".", 1)[0], site) in bare:
+        if m in full:
+            since = full[m]
+        elif (m.split(".", 1)[0], site) in bare:
+            since = bare[(m.split(".", 1)[0], site)]
+        else:
+            continue
+        if since is None or started is None or started >= since:
             hits.append((cluster, proc, machine, site))
     return hits
 
@@ -148,17 +166,21 @@ def running_pilots(queues):
     """(cluster, proc, machine, site) for this user's running pilots whose
     arguments name a queue with the prefix."""
     out = subprocess.run(["condor_q", "-constraint", "JobStatus == 2", "-af:t", "ClusterId", "ProcId",
-                          "RemoteHost", "MachineAttrGLIDEIN_Site0", "Args"],
+                          "RemoteHost", "MachineAttrGLIDEIN_Site0", "JobCurrentStartDate", "Args"],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=120)
     if out.returncode != 0:
         raise RuntimeError("condor_q failed: %s" % out.stderr.strip())
     rows = []
     for line in out.stdout.splitlines():
         parts = line.split("\t")
-        if len(parts) < 5 or ("-q " + queues) not in parts[4]:
+        if len(parts) < 6 or ("-q " + queues) not in parts[5]:
             continue
         machine = parts[2].rsplit("@", 1)[-1]
-        rows.append((parts[0], parts[1], machine, "" if parts[3] == "undefined" else parts[3]))
+        try:
+            started = datetime.datetime.fromtimestamp(int(parts[4]), datetime.timezone.utc)
+        except ValueError:
+            started = None
+        rows.append((parts[0], parts[1], machine, "" if parts[3] == "undefined" else parts[3], started))
     return rows
 
 
@@ -177,6 +199,37 @@ def remove_pilots(nodes, queues, stamp, dry_run):
     return hits
 
 
+STAMP = "EpicprodNodeGuardStamp"
+
+
+def stamp_of(expression):
+    """A short name for an expression, kept on the ads that carry it."""
+    return hashlib.sha1(expression.encode()).hexdigest()[:12]
+
+
+def refresh_idle(expression, queues, stamp_text, dry_run):
+    """Set the current guard expression on this user's idle pilots of the
+    queues whose stamp is not this expression's; one condor_qedit."""
+    tag = stamp_of(expression)
+    constraint = ('JobStatus == 1 && regexp("-q %s", Args) && %s =!= "%s"' % (queues, STAMP, tag))
+    count = subprocess.run(["condor_q", "-constraint", constraint, "-af", "ClusterId"],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=120)
+    n = len(count.stdout.split()) if count.returncode == 0 else -1
+    if n <= 0:
+        return n
+    if dry_run:
+        print("%s would refresh the guard on %d idle pilots (stamp %s)" % (stamp_text, n, tag))
+        return n
+    for attribute, value in ((ATTRIBUTE.lstrip("+"), expression), (STAMP, '"%s"' % tag)):
+        edit = subprocess.run(["condor_qedit", "-constraint", constraint, attribute, value],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=300)
+        if edit.returncode != 0:
+            print("%s guard refresh failed on %s: %s" % (stamp_text, attribute, (edit.stdout + edit.stderr).strip()))
+            return -1
+    print("%s refreshed the guard on %d idle pilots (stamp %s)" % (stamp_text, n, tag))
+    return n
+
+
 def _option(args, name, default):
     if name in args:
         i = args.index(name)
@@ -191,8 +244,9 @@ def main(argv):
     url = _option(args, "--url", URL)
     queues = _option(args, "--queues", QUEUES)
     remove = "--remove-pilots" in args
+    refresh = "--refresh-idle" in args
     dry_run = "--dry-run" in args
-    args = [a for a in args if a not in ("--remove-pilots", "--dry-run")]
+    args = [a for a in args if a not in ("--remove-pilots", "--refresh-idle", "--dry-run")]
     if not args:
         sys.exit(__doc__)
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -223,7 +277,7 @@ def main(argv):
         if new != text:
             write(path, new)
     if error is None:
-        named = ", ".join(host for host, _ in nodes) or "none"
+        named = ", ".join(host for host, _, _ in nodes) or "none"
         print("%s mode %s, valid until %s; excluded on %s*: %s; written to %d descriptions"
               % (stamp, document.get("mode"), valid_until.isoformat(), queues, named, len(args)))
     if skipped:
@@ -234,6 +288,13 @@ def main(argv):
             remove_pilots(nodes, queues, stamp, dry_run)
         except Exception as exc:  # noqa: BLE001
             print("%s running pilots not checked (%s)" % (stamp, exc))
+            status = 1
+    if refresh and error is None:
+        try:
+            if refresh_idle(expression, queues, stamp, dry_run) < 0:
+                status = 1
+        except Exception as exc:  # noqa: BLE001
+            print("%s idle pilots not refreshed (%s)" % (stamp, exc))
             status = 1
     return status
 
