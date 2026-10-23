@@ -73,6 +73,13 @@ fi
 echo "ePIC native pilot: archive $(sha256sum "$ARCHIVE")"
 tar xzf "$ARCHIVE"
 export PILOT_HOME=$HERE
+# The Rucio client names its token cache after the user (getpass.getuser()):
+# a glidein uid with no passwd entry inside the image and no USER in the
+# environment (UA-LR, 23 October, job 5816712: the log upload crashed and the
+# pilot called it a timeout) leaves it no name. Give it one.
+export USER=${USER:-$(id -un 2>/dev/null || echo "uid$(id -u)")}
+export LOGNAME=${LOGNAME:-$USER}
+echo "ePIC native pilot: user $USER (uid $(id -u))"
 # The glidein's death time, from this execution's machine ad, as the HEPiX
 # MachineFeatures shutdowntime the pilot plans against before every further job
 # (glidein-deadline.sh, transferred with the pilot). The first job is decided here.
