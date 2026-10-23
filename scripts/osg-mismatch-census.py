@@ -13,9 +13,14 @@ undesired sites) and the direct native pilot's (Singularity, the image
 repository, memory, disk, exclusions, undesired sites), counting for each
 clause the slots that fail it and the slots that fail it alone. Python 3.6.
 
-Usage: osg-mismatch-census.py [--pool NAME ...] [--memory MB] [--disk KB] [--timeout S]
+With --record FILE one JSON line per pool is appended, the counts above and
+nothing else, so a run every ten minutes gives the day's curve of what each
+requirement costs and what the direct pilot gains.
+
+Usage: osg-mismatch-census.py [--pool NAME ...] [--memory MB] [--disk KB] [--timeout S] [--record FILE]
 """
 import argparse
+import json
 import subprocess
 import sys
 import time
@@ -125,11 +130,19 @@ def census(rows, direct, memory, disk, now):
     return gates, free_open, fails, alone, willing
 
 
-def report(pool, rows, memory, disk, now):
+def report(pool, rows, memory, disk, now, record=None):
     print('== %s: %d slot ads, %d cores, %s' % (pool, len(rows), sum(int(num(r['Cpus']) or 0) for r in rows),
                                                 time.strftime('%H:%M:%SZ', time.gmtime(now))))
     gates, free_open, fails_p, alone_p, willing_p = census(rows, False, memory, disk, now)
     _, _, fails_d, alone_d, willing_d = census(rows, True, memory, disk, now)
+    if record:
+        line = {'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now)), 'pool': pool, 'ads': len(rows),
+                'cores': sum(int(num(r['Cpus']) or 0) for r in rows), 'memory_mb': memory, 'disk_kb': disk,
+                'gates': gates, 'free_open': free_open,
+                'production': {'willing': willing_p, 'fails': fails_p, 'alone': alone_p},
+                'direct': {'willing': willing_d, 'fails': fails_d, 'alone': alone_d}}
+        with open(record, 'a') as out:
+            out.write(json.dumps(line, sort_keys=True) + '\n')
     print('   closed by the pool itself, no requirement of ours involved:')
     for gate, (n, c) in sorted(gates.items(), key=lambda kv: -kv[1][0]):
         print('     %6d slots %7d cores  %s' % (n, c, gate))
@@ -149,6 +162,7 @@ def main():
     parser.add_argument('--memory', type=int, default=4096, help='our request in MB')
     parser.add_argument('--disk', type=int, default=4500000, help='our request in KB')
     parser.add_argument('--timeout', type=int, default=180)
+    parser.add_argument('--record', help='append one JSON line per pool to this file')
     args = parser.parse_args()
     now = time.time()
     status = 0
@@ -159,7 +173,7 @@ def main():
             print('== %s: not read (%s)' % (pool, exc))
             status = 1
             continue
-        report(pool, rows, args.memory, args.disk, now)
+        report(pool, rows, args.memory, args.disk, now, args.record)
     return status
 
 
