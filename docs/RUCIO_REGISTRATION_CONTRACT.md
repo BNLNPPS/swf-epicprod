@@ -79,13 +79,21 @@ the `eicprod` account by a token from the PanDA server, the `eicprod`
 proxy as fallback; `swf_epicprod/jlab_auth.py`), so the three writers
 into the JLab catalog share one identity.
 
-A dataset that already exists is accepted: its rule is added if it has
-none, and its metadata is set where absent. Metadata that differs from
-the task's is a conflict, since the same output name would hold
-different physics, and the submission stops with the reason. A catalog
-that cannot be reached, or refuses a creation, stops the submission
-with the reason before any task is submitted; the outcome is on the
-`evgen_task_submit` action.
+A new submission refuses an output namespace already present in JLab
+Rucio or an output/log namespace already present in BNL Rucio. The
+credentialed doer checks every name before creating any output dataset;
+it does not amend an existing dataset's rule or metadata. BNL checks
+include JEDI's generated dataset suffixes and surviving log files, since
+the template container itself need not exist. A catalog lookup failure
+stops submission; it is never treated as an absent name. The refusal is
+recorded on the `evgen_task_submit` action. A failed submission that has
+already created some datasets needs a fresh attempt namespace before
+another submission.
+
+This protects new tasks. PanDA retries and resumes inside an existing
+task keep its datasets and do not run the submission preflight. The
+explicit developer canary option `--canary-defer-datasets` still skips
+catalog access so an outage can be exercised by the canary itself.
 
 The created DIDs are recorded on the task's submission record
 (`PandaTasks.metadata.output_datasets`). For an epicprod task this is

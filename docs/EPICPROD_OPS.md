@@ -36,6 +36,14 @@ During alpha commissioning, a draft task may be submitted with readiness
 warnings. This relaxes the readiness-state gate; it does not remove the
 authenticated operator-decision gate.
 
+One standing exception to the human gate, Torre, 23 October 2026, after a
+session proposed a pause as a question to an absent operator while the
+failure avalanche of task 41039 ran on for hours: **for failure cascades,
+pause the task.** A session that sees a task's jobs failing in a cascade
+pauses it and reports; it does not ask. The pause is reversible and its
+wrong-case cost is essentially nil, while the benefit is enormous. Every
+other task operation keeps its gate.
+
 ## Identity and client
 
 **EIC/production IAM subgroup.** Official production submission requires

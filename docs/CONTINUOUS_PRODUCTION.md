@@ -743,6 +743,31 @@ guard.
 
 ## The tripwire
 
+### Task failure guard (23 October 2026)
+
+On Torre's standing authorization after the 41039/41040 naming collisions,
+each active front cycle checks production tasks on its regulated queues.
+At **at least 50 completed job attempts and at least 95% failed**, it queues
+a task pause through the existing production operations agent. The agent
+verifies the PanDA state; running jobs finish normally. This guard is
+independent of the queue's feed switch and gate waivers. The global front
+switch and active/shadow mode apply; dry runs never enqueue operations.
+
+The sample contains distinct `finished` and `failed` PandaIDs from the live
+and archived job tables, excluding cancelled and closed records. It counts
+attempts, including retried failures, to catch a retry storm. A verified
+operator resume starts a new sample at its completion timestamp, so old
+failures cannot immediately pause a repaired task again. Recovery remains
+an operator action; this guard never resumes or kills work. Pending pauses
+are deduplicated by the existing durable operation record. Read failures
+appear as front-cycle errors, not as a healthy zero count.
+
+The pause request records task identity, counts, sample boundary and threshold
+in `PandaTaskOperation.evidence` and emits `task_failure_guard` on the live
+action stream. The implementation is `swf_epicprod/task_failure_guard.py`.
+
+### Breaker scopes
+
 Drains have three shapes, so the breaker has three scopes:
 
 - **queue breaker** — a site eating jobs (memory storms, site

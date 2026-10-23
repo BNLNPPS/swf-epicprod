@@ -91,6 +91,12 @@ identity are serialized in the PCS database. The local attempt history
 alone is insufficient: rehomed attempts caused tasks 41039 and 41040 to
 reuse older `.try2` names on 22 October 2026.
 
+Before submission, the credentialed doer also refuses occupied JLab
+output and BNL output/log namespaces. BNL checks include JEDI's suffixed
+datasets and surviving log files. Catalog lookup errors block submission;
+existing datasets are not repaired or reused by a new task. Within-task
+retries and resumes retain their existing datasets.
+
 Science output is named by the payload from the work unit, not by
 JEDI:
 

@@ -996,6 +996,10 @@ def run_cycle(*, dry_run=False, created_by='front'):
         regulator = _safe('job regulator', check_regulator, lambda exc: {
             'red': True, 'reason': f'job regulator unreadable: {exc}'})
     queues = regulated_queues()
+    from swf_epicprod import task_failure_guard
+    task_guard = _safe('task failure guard', lambda: task_failure_guard.run(
+        queues, enabled=enabled, mode=mode, dry_run=dry_run, created_by=created_by),
+        failed('task failure guard')) or []
     max_per_cycle = max(1, int(setting('front.max_per_cycle', 2) or 1))
     activation_window_s = int(setting('front.activation_window_s', 600))
 
@@ -1148,6 +1152,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
     summary = {'observed_at': (census or {}).get('observed_at') if census else None,
                'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
                'jedi_throttled': jedi_throttled,
+               'task_failure_guard': task_guard,
                'queues': len(queues), 'decisions_recorded': written,
                'errors': errors,
                'states': {q: d['state'] for q, d in latest.items()},
