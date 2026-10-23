@@ -7,6 +7,66 @@ that are under production operations control. Facts below were read
 from the live hosts and the pool on 2026-09-01; the dated snapshots
 should be refreshed when the configuration changes.
 
+## 23 October 2026: direct pilot in OSG production
+
+At **14:38:35 UTC (10:38:35 ET)**, on Torre's production Go after the
+20-pilot trial, `BNL_OSG_PanDA_1` switched new Harvester submissions to
+the direct pilot in `eic_xl:26.07.1-stable`. This section supersedes the
+older ALRB launch description below for that queue. Existing pilots finish
+normally; other queues and their templates were not changed.
+
+The existing live template path remains
+`/var/data/atlpan/harvester_common/submit_pilot2_pull_bnl_osg.sdf` on
+osgsub01. Its executable now explicitly names
+`/var/data/atlpan/harvester_common/native-production-20261023/epic-native-pilot.sh`,
+overriding the old `executableFile` value still present in queue configuration.
+Harvester reads the template for each submission; no restart was required.
+`scripts/render-native-production.py` derives the replacement from the old
+template and preserves Harvester IDs, worker reporting, log paths, proxy,
+resource requests, priority, site exclusions and the dynamic node guard.
+Wrapper-only arguments are replaced by pilot.py arguments and explicit
+queue/storage data URLs. The standalone trial's
+`--noworkerpilotstatusupdate` is deliberately absent.
+
+The slot must advertise `HasSingularity` and the image CVMFS repository.
+The ATLAS repository, host RHEL 9 and unprivileged-user-namespace requirements
+are removed. `+SingularityImage` selects the image; nesting is disabled.
+The archive, CA bundle, Rucio configuration, deadline helper and username
+helper travel with the pilot. The frozen asset directory above contains
+archive SHA-256
+`74b323e14ca5b3e35e79711e6fbcfd1c8fca3c0749fc7a29b5d8e57d49076060`
+and launcher SHA-256
+`447af86c75c7b12736682816f93f75d2266b1a1408d27cce1d6f08a6d23b3763`.
+The launcher includes the `USER`/`LOGNAME` fallback and glidein-deadline
+handling. These additions have less field exposure than the original cohort.
+
+The ramp is normal Harvester refill: at most 600 waiting pilots and 300
+new workers per cycle, subject to demand. No worker-limit increase or batch
+removal accompanied the switch. Condor dry-run rendering succeeded and the
+20 native tests passed. First real Harvester submission: `27496.0`, worker
+`2364932`, at 14:38:50 UTC, with the expected image, direct executable,
+transferred assets and `harvester-BNL_osg_harvester_1` scheduler identity.
+PanDA independently confirmed task 41040 running in `27498.2` (job
+5846574, 14:40:50 UTC), `27498.1` (5846575, 14:40:52 UTC, UA–Little
+Rock) and `27498.0` (5846586, 14:41:08 UTC, SU-ITS), with the normal
+Harvester scheduler identity and requested image. At 14:40 the new cohort
+already had 15 submitted pilots, six running and nine waiting, with no holds.
+This verifies submission, launch and payload acquisition; completion and
+registration of these production jobs have not yet been observed.
+
+This deployment serves a **single image**. Current active queue jobs were
+checked against 26.07.1. A different-image job would be refused after
+acquisition, before payload execution; this is not an attempt-free dispatch
+filter. Image-aware placement/dispatch must precede adding another image to
+this queue. Existing node-guard attribution of synchronized worker losses
+remains a separate issue; the rollout does not disable the guard.
+
+Rollback template, preserved beside the live file:
+`submit_pilot2_pull_bnl_osg.sdf.before-native-20261023T143835Z`.
+Restoring it changes future submissions only; refresh its dynamic node-guard
+line through the existing guard updater. Keep the frozen native assets while
+any submitted direct workers still reference them.
+
 ## Hosts and roles
 
 Two harvester instances submit ePIC pilots, on two SCDF hosts.

@@ -1,9 +1,12 @@
 # Native ePIC pilot and single-container canary — 22 October 2026
 
-This is an isolated candidate, not a production pilot release. Torre
-authorized building and testing the replacement on operating queues, with
-enough priority to be picked up. Production promotion and removal of
-production exclusions remain his decision.
+**Production update, 23 October:** Torre authorized promotion after the
+20-pilot trial. New `BNL_OSG_PanDA_1` Harvester submissions switched to the
+direct pilot at 14:38:35 UTC, in image 26.07.1, with the latest deadline and
+username helpers. See [the deployment record](OSG_SUBMISSION.md#23-october-2026-direct-pilot-in-osg-production)
+for assets, first submission, ramp and rollback. The sections below retain
+the candidate's development and trial history; other production queues have
+not been promoted by this change.
 
 The corrected candidate finished successfully on both GREX and OSG's
 SU-ITS site. It starts through the ePIC image's Python, reuses that image
