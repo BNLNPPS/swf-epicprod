@@ -56,8 +56,14 @@ def render(text, assets, image):
         requirements = requirements.replace(clause, '')
     if 'MY.EpicprodNodeGuard' not in requirements:
         raise ValueError('missing node guard')
+    # x86_64-v2 slots (Ivy Bridge and older, no AVX2) run the campaign job
+    # about half again slower than Haswell and cross the six-hour wall:
+    # 55 of 62 wall failures in the first seven hours of direct-pilot
+    # production, 23 October 2026, on Xeon E5-2660 v2 at SU-ITS; 5 percent
+    # of the usable cores. The matchmaker leaves them to others.
     requirements = ('(HasSingularity =?= True) && '
-                    '(HAS_CVMFS_singularity_opensciencegrid_org == True) && ' + requirements)
+                    '(HAS_CVMFS_singularity_opensciencegrid_org == True) && '
+                    '(Microarch =!= "x86_64-v2") && ' + requirements)
     text = replace_line(text, 'Requirements', requirements)
     inputs = ','.join(assets + '/' + x for x in
                       ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
