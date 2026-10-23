@@ -67,6 +67,35 @@ Restoring it changes future submissions only; refresh its dynamic node-guard
 line through the existing guard updater. Keep the frozen native assets while
 any submitted direct workers still reference them.
 
+## 23 October: image-aware dispatch verification
+
+The server on pandaserver01 gained the optional `container_name` filter
+at 15:34:49 UTC (`a754853d`, on its deployed `725129f3` base). The native
+builder now adds that field to `get_dispatcher_dictionary` only when
+`PILOT_CONTAINER_NAME` is nonempty. The launcher sets it after checking the
+actual outer image, using the exact configured CVMFS spelling rather than
+its resolved path. There is no retry without the image constraint.
+
+Candidate assets are frozen on osgsub01 in
+`/var/data/atlpan/harvester_common/native-image-dispatch-20261023`, archive
+SHA-256 `092ac7052bddb9dc644c4c0fc53d9a6b305ab6b9661188bb1411c5176ceee384`.
+At 15:50 UTC, four matching probes (`27597`–`27600`) and two negative
+probes (`27601`–`27602`) were submitted; a fifth matching probe (`27605`)
+followed. Five PCS trials, tasks `41072`–`41076`, each request ten events
+and their own FULL/RECO/log outputs. The matching pilots use 26.07.1;
+the negative pilots use the real 26.07.3 image, which cannot match these
+tasks. Task binding keeps every probe away from long production jobs;
+the negative probes also bind a trial task, testing that task and image
+constraints intersect. Logs are under `condor_logs/native-image-dispatch-20261023`.
+The production template has not yet switched to this candidate.
+
+Deployment order: server first, then declaring pilots. Before introducing
+another image to production, all old direct pilots that acquire without a
+container constraint must finish. For a server rollback, stop or drain the
+clients that send the new field first: changing future submissions alone
+does not change requests from running pilots. An old server rejects the new
+argument rather than silently ignoring it.
+
 ## Hosts and roles
 
 Two harvester instances submit ePIC pilots, on two SCDF hosts.

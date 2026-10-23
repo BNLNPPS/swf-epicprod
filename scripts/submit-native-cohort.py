@@ -53,7 +53,12 @@ def line(text, key):
 def describe(template, args):
     text = Path(template).read_text()
     requirements = line(text, 'Requirements')
+    already_direct = '+EpicprodNativeMode = "direct"' in text
+    if already_direct and not args.direct:
+        raise ValueError('a direct production template requires --direct')
     for clause in DROPPED:
+        if already_direct:
+            continue
         if clause not in requirements:
             raise ValueError(f'production requirements lack {clause!r}; review before deriving')
         requirements = requirements.replace(clause, '')
@@ -61,12 +66,13 @@ def describe(template, args):
     # certificates, rucio.cfg. Nodes without CVMFS advertise HasSingularity
     # too and fail at image preparation (23 October: Missouri-Hellbender,
     # Duke-NCShare); the ATLAS requirement used to hide this.
-    requirements = ('(HasSingularity =?= True) && (HAS_CVMFS_singularity_opensciencegrid_org == True) && '
+    if not already_direct:
+        requirements = ('(HasSingularity =?= True) && (HAS_CVMFS_singularity_opensciencegrid_org == True) && '
                     '(HAS_CVMFS_oasis_opensciencegrid_org == True) && (HAS_CVMFS_eic_opensciencegrid_org == True) && '
                     + requirements)
-    if 'HAS_UNPRIVILEGED_USER_NAMESPACES' not in requirements or 'EpicprodNodeGuard' not in requirements:
+    if (not already_direct and 'HAS_UNPRIVILEGED_USER_NAMESPACES' not in requirements) or 'EpicprodNodeGuard' not in requirements:
         raise ValueError('derived requirements lost the user-namespace or node-guard clause')
-    if args.direct:
+    if args.direct and not already_direct:
         # A pilot that serves its own image alone, under task binding, needs
         # from the site only Singularity and the image's repository: user
         # namespaces serve the nested launch, the oasis repository the CA

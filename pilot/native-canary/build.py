@@ -136,6 +136,12 @@ except ValueError:
 """)
     write(relative, content)
 
+    # Opt-in exact image dispatch. Unset preserves the upstream request;
+    # there is deliberately no fallback to an unbound acquisition.
+    relative = 'pilot/control/job.py'
+    content = (tree / relative).read_text()
+    write(relative, add_image_dispatch(content))
+
     if not production:
         guard_test_task(tree, write)
 
@@ -172,6 +178,20 @@ except ValueError:
                           if production else 'isolated canary; not a production release')}
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     return manifest
+
+
+def add_image_dispatch(content):
+    """Keep the dispatcher request unchanged unless the launcher opts in."""
+    fn = next(n for n in ast.parse(content).body if isinstance(n, ast.FunctionDef)
+              and n.name == 'get_dispatcher_dictionary')
+    returns = [n for n in ast.walk(fn) if isinstance(n, ast.Return)]
+    if len(returns) != 1:
+        raise ValueError('Unexpected dispatcher baseline')
+    lines = content.splitlines(keepends=True)
+    lines.insert(returns[0].lineno - 1, "    container_name = os.environ.get('PILOT_CONTAINER_NAME', '').strip()\n"
+                 "    if container_name:\n"
+                 "        data['container_name'] = container_name\n")
+    return ''.join(lines)
 
 
 def guard_test_task(tree, write):

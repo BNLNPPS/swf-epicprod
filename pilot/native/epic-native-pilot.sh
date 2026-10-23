@@ -21,6 +21,10 @@ ACTUAL=${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}
 [[ -n $ACTUAL ]] || { echo "not inside a container: the slot ignored +SingularityImage $IMAGE" >&2; exit 69; }
 [[ $(readlink -f "$ACTUAL") == $(readlink -f "$IMAGE") ]] || {
     echo "outer image $ACTUAL is not $IMAGE; refusing" >&2; exit 65; }
+# Dispatch uses the catalog spelling, not the resolved filesystem path.
+# The server must support container_name before deploying this launcher.
+export PILOT_CONTAINER_NAME="$IMAGE"
+echo "ePIC native pilot: dispatch container_name=$PILOT_CONTAINER_NAME"
 # The proxy HTCondor transferred (x509userproxy): absolute, readable, kept for the payload.
 if [[ -n ${X509_USER_PROXY:-} && $X509_USER_PROXY != /* ]]; then
     export X509_USER_PROXY=$HERE/$X509_USER_PROXY
