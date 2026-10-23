@@ -2228,11 +2228,29 @@
         const oldText = btn.textContent;
         btn.disabled = true;
         btn.textContent = 'Queued...';
-        const resp = await fetch(taskApiUrl(t, suffix), {
+        let resp = await fetch(taskApiUrl(t, suffix), {
             method: 'POST',
             headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
             body: JSON.stringify(body),
         });
+        // A full rerun of a dataset PanDA already shows produced is refused
+        // with the attempts that produced it; the person confirms it again.
+        if (op === 'rerun_entire_task' && resp.status === 409) {
+            const refusal = await resp.clone().json().catch(() => null);
+            if (refusal && refusal.produced && refusal.produced.length) {
+                if (!confirm(`${refusal.detail}\n\nRerun the entire task anyway?`)) {
+                    btn.disabled = false;
+                    btn.textContent = oldText;
+                    return;
+                }
+                body.confirm_produced = true;
+                resp = await fetch(taskApiUrl(t, suffix), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+                    body: JSON.stringify(body),
+                });
+            }
+        }
         if (resp.ok) {
             const updated = await resp.json().catch(() => null);
             updateTaskFromApiData(t.id, updated);

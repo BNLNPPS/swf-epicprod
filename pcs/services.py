@@ -6615,7 +6615,8 @@ def prodtask_panda_operation_request(*, task, operation, jedi_task_id=None,
 QUEUE_KINDS = ('submit', 'rerun_residual', 'rerun_entire')
 
 
-def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by=''):
+def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by='',
+                              confirm_produced=False):
     """Queue a person's submission for the pressure front instead of
     sending it to PanDA (CONTINUOUS_PRODUCTION.md, Placement: a person's
     submission waits in line). ``kind`` is ``submit``, ``rerun_residual``
@@ -6635,6 +6636,8 @@ def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by
     if kind != 'submit' and task.panda_task_id is None:
         raise ServiceError(
             'Task has no recorded PanDA submission; use Submit.', status=409)
+    if kind == 'rerun_entire' and not confirm_produced:
+        refuse_produced_rerun(task)
     rows = None
     if kind == 'rerun_residual':
         try:
@@ -6685,6 +6688,65 @@ def _clear_queued(task):
     if overrides.pop('queued', None) is not None:
         task.overrides = overrides
         task.save(update_fields=['overrides', 'updated_at'])
+
+
+# An attempt that finished this share of its input rows produced the dataset.
+PRODUCED_SHARE = 0.99
+
+
+class AlreadyProduced(ServiceError):
+    """A full rerun of a dataset PanDA already shows produced. The person
+    confirms it, having seen the attempts that produced it."""
+    def __init__(self, detail, produced):
+        super().__init__(detail, status=409)
+        self.produced = produced
+
+
+def produced_attempts(task):
+    """The finished PanDA attempts of ``task``'s dataset: tasks named by its
+    composed or stored name, or either with ``.tryN``, that ended done or
+    finished with at least ``PRODUCED_SHARE`` of their input rows finished.
+    Read from PanDA itself, so attempts submitted outside PCS or linked to
+    another PCS record count (41039 and 41040 reran datasets that 40443 and
+    40440 had produced, 2026-10-22). An unavailable lookup raises."""
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    names = sorted({n for n in (task.composed_name, task.name) if n})
+    if not names:
+        return []
+    pattern = '^(' + '|'.join(_re.escape(n) for n in names) + r')(\.try[0-9]+)?$'
+    try:
+        with connections['panda'].cursor() as cursor:
+            cursor.execute(
+                'SELECT t."jeditaskid", t."taskname", t."status", t."endtime", '
+                'SUM(d."nfiles"), SUM(d."nfilesfinished") '
+                f'FROM "{PANDA_SCHEMA}"."jedi_tasks" t '
+                f'JOIN "{PANDA_SCHEMA}"."jedi_datasets" d ON d."jeditaskid" = t."jeditaskid" '
+                'AND d."masterid" IS NULL AND d."type" IN (%s, %s) '
+                'WHERE t."taskname" ~ %s AND t."status" IN (%s, %s) '
+                'GROUP BY 1, 2, 3, 4 ORDER BY 1',
+                ['input', 'pseudo_input', pattern, 'done', 'finished'])
+            rows = cursor.fetchall()
+    except Exception as exc:
+        raise ServiceError(
+            'Cannot check whether the dataset is already produced: PanDA lookup failed.',
+            status=503) from exc
+    return [{'jedi_task_id': jedi_task_id, 'task_name': name, 'status': status,
+             'ended': format_datetime(ended) if ended else '',
+             'rows': int(total or 0), 'finished': int(finished or 0)}
+            for jedi_task_id, name, status, ended, total, finished in rows
+            if total and int(finished or 0) >= PRODUCED_SHARE * int(total)]
+
+
+def refuse_produced_rerun(task):
+    """Raise ``AlreadyProduced`` when PanDA shows ``task``'s dataset produced."""
+    produced = produced_attempts(task)
+    if produced:
+        listed = '; '.join(
+            f"PanDA task {p['jedi_task_id']} ({p['task_name']}), {p['status']} {p['ended']}, "
+            f"{p['finished']:,} of {p['rows']:,} input files finished" for p in produced)
+        raise AlreadyProduced(
+            f'This dataset is already produced: {listed}. A full rerun repeats all of it.',
+            produced)
 
 
 def prodtask_rerun_entire_task_request(*, task, site='', placement=None,

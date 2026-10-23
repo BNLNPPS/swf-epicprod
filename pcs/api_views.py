@@ -813,11 +813,16 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='rerun-entire-task')
     def rerun_entire_task(self, request, name=None):
-        """Queue a new full PanDA task attempt for this campaign task."""
+        """Queue a new full PanDA task attempt for this campaign task. A
+        dataset PanDA already shows produced is refused, with the attempts
+        that produced it, unless ``confirm_produced`` is set."""
         task = self.get_object()
         user = getattr(request.user, 'username', '') or ''
+        confirm_produced = bool(request.data.get('confirm_produced'))
         try:
             if request.data.get('now'):
+                if not confirm_produced:
+                    services.refuse_produced_rerun(task)
                 services.prodtask_rerun_entire_task_request(
                     task=task, site=request.data.get('site') or '',
                     placement=request.data.get('placement'), changed_by=user)
@@ -825,8 +830,11 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
                 services.prodtask_queue_submission(
                     task=task, kind='rerun_entire', changed_by=user,
                     site=request.data.get('site') or '',
-                    placement=request.data.get('placement'))
+                    placement=request.data.get('placement'),
+                    confirm_produced=confirm_produced)
                 task.refresh_from_db()
+        except services.AlreadyProduced as e:
+            return Response({'detail': e.detail, 'produced': e.produced}, status=e.status)
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)
         data = dict(self.get_serializer(task).data)

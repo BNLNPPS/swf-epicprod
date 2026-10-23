@@ -637,3 +637,68 @@ class BackgroundSourcesTest(TestCase):
             'bg_files_content': {'file': 'legacy.json', 'sources': self.SOURCES}})
         self.assertEqual(bg_files_sources(task), self.SOURCES)
         self.assertIsNone(bg_files_sources(self._task(evgen={'bg_files': 'legacy.json'})))
+
+
+class ProducedRerunTest(TestCase):
+    """A full rerun of a dataset PanDA already shows produced needs
+    confirmation (EPICPROD_RETRIES.md, Level 4)."""
+
+    NAME = 'group.EIC.26.07.1.epic_craterlake.p2234.e52.s9.r9'
+
+    def _task(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(composed_name=self.NAME, name='legacy.DIS.NC.18x275',
+                               panda_task_id=41040)
+
+    def _attempts(self, rows):
+        from unittest import mock
+        cursor = mock.MagicMock()
+        cursor.fetchall.return_value = rows
+        conn = mock.MagicMock()
+        conn.cursor.return_value.__enter__.return_value = cursor
+        with mock.patch('pcs.services.connections', {'panda': conn}):
+            from pcs.services import produced_attempts
+            return produced_attempts(self._task()), cursor.execute.call_args[0][1]
+
+    def test_only_attempts_that_finished_nearly_all_rows_count(self):
+        produced, params = self._attempts([
+            (40440, self.NAME + '.try2', 'finished', None, 100000, 99991),
+            (40441, self.NAME + '.try3', 'done', None, 50000, 25000),
+            (40442, self.NAME + '.try4', 'finished', None, 0, 0)])
+        self.assertEqual([p['jedi_task_id'] for p in produced], [40440])
+        import re
+        pattern = params[2]
+        self.assertTrue(re.match(pattern, self.NAME + '.try2'))
+        self.assertTrue(re.match(pattern, 'legacy.DIS.NC.18x275'))
+        self.assertFalse(re.match(pattern, self.NAME + '.try2.extra'))
+        self.assertFalse(re.match(pattern, self.NAME.replace('p2234', 'p2235')))
+
+    def test_refusal_names_the_producing_attempt(self):
+        from unittest import mock
+        from pcs import services
+        row = {'jedi_task_id': 40440, 'task_name': self.NAME + '.try2', 'status': 'finished',
+               'ended': '20261004 19:59:12', 'rows': 100000, 'finished': 99991}
+        with mock.patch('pcs.services.produced_attempts', return_value=[row]):
+            with self.assertRaises(services.AlreadyProduced) as raised:
+                services.refuse_produced_rerun(self._task())
+        self.assertEqual(raised.exception.status, 409)
+        self.assertIn('40440', raised.exception.detail)
+        with mock.patch('pcs.services.produced_attempts', return_value=[]):
+            services.refuse_produced_rerun(self._task())
+
+    def test_queued_rerun_entire_checks_unless_confirmed(self):
+        from unittest import mock
+        from pcs import services
+
+        class Reached(Exception):
+            pass
+
+        with mock.patch('pcs.services.refuse_produced_rerun',
+                        side_effect=services.AlreadyProduced('produced', [{}])), \
+                mock.patch('pcs.commands.pinned_site', return_value=''), \
+                mock.patch('pcs.services.refuse_closed_queue', side_effect=Reached):
+            with self.assertRaises(services.AlreadyProduced):
+                services.prodtask_queue_submission(task=self._task(), kind='rerun_entire')
+            with self.assertRaises(Reached):
+                services.prodtask_queue_submission(task=self._task(), kind='rerun_entire',
+                                                   confirm_produced=True)
