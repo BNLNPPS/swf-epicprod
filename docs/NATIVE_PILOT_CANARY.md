@@ -362,4 +362,19 @@ build now casts it; the upstream pilot bug is to be reported.
   free and open slots, what each of our clauses turns away, and the
   matchmaker's two-sided willing count in slots and cores for the production
   and the direct pilot. At 04:00 ET: production 10 cores willing, direct 275.
+- 04:4x ET: Fir's glideins died under 48 production pilots in two batches
+  (Condor "Job was evicted, Code 1005, Unspecified job interruption" at 03:44
+  and 04:22 ET; fc30311 alone shed twelve); Condor restarted the pilots
+  elsewhere and the PanDA jobs they held became orphans for the heartbeat
+  timeout. A pilot does not know its glidein's death time, so it starts jobs
+  it cannot finish; the baseline refuses a new job only below a fixed 1,800 s
+  of remaining time by the smallest of its clocks (proxy, queue maxtime,
+  MachineFeatures shutdowntime), and takes its first job regardless. From
+  archive `f7222cb706b402033bea25a631118a3f06d51d41a98d4a37e369928aed0ccdfd`
+  the minimum is two hours, the job's p99, set by
+  `EPICPROD_MIN_TIME_FOR_NEW_JOB`, and the launcher writes the glidein's
+  `GLIDEIN_ToDie` from this execution's machine ad as the HEPiX
+  `MACHINEFEATURES/shutdowntime` the pilot reads, declining to start at all
+  (exit 73) with less than that left. The cohort of twenty runs the earlier
+  archive; later submissions carry this.
 
