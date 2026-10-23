@@ -336,3 +336,30 @@ and the server's typed API refuses every acquisition ("'task_id' must be
 of type int | None, got str", 35 refusals in `panda-api_pilot.log`). The
 build now casts it; the upstream pilot bug is to be reported.
 
+### Results through 04:33 ET, and the cohort of twenty
+
+- Stage 1, pilot 26834 at CNAF, image 26.07.1 in place: job 5816241 finished
+  04:29:50 ET, 1,132 events, output and log registered, every error code
+  zero; the pilot then took job 5816695, the repeated-job behaviour with it.
+  Its pre-payload step lasted seventeen minutes; the cause waits for the
+  pilot's stdout.
+- Stage 2, pilot 26835 at ComputeCanada-Fir, image 26.07.3 nesting its
+  26.07.1 job: job 5816250 finished and registered. The nested launch through
+  the private namespace works on a real worker.
+- Direct pilots 26875 (CNAF) and 26891 (Rhodes-HPC) acquired jobs 5816380 and
+  5816416 three minutes after starting; the GREX-pinned 26893 ran on n351
+  through the JLab pool (route evidence only, we already run GREX on our own
+  queue); site probes 26902 SU-ITS, 26903 IRISHEP-SSL-UCHICAGO and 26904
+  UNL-PATH test the slots the old requirements excluded.
+- Torre, 03:4x ET: "keep watching, go to 20 if success in current round
+  warrants it", then "1 successful job is validation, repeated jobs is gravy":
+  the gate was one direct same-image job finished with registered outputs,
+  met by 5816241. Cluster 26957, twenty direct pilots, image 26.07.1, task
+  41043, was submitted 04:32:32 ET; swf-3 reads the evidence.
+- The willing-slot census (`scripts/osg-mismatch-census.py --exact`) runs
+  every ten minutes on osgsub01 under wenauseic's crontab, recording to
+  `/eic/u/wenauseic/osg-census/census.jsonl`: the pool's own closures, the
+  free and open slots, what each of our clauses turns away, and the
+  matchmaker's two-sided willing count in slots and cores for the production
+  and the direct pilot. At 04:00 ET: production 10 cores willing, direct 275.
+
