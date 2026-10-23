@@ -17,12 +17,23 @@ With --record FILE one JSON line per pool is appended, the counts above and
 nothing else, so a run every ten minutes gives the day's curve of what each
 requirement costs and what the direct pilot gains.
 
-Usage: osg-mismatch-census.py [--pool NAME ...] [--memory MB] [--disk KB] [--timeout S] [--record FILE]
+With --exact the collector also runs the matchmaker's own two-sided analysis
+(condor_q -better-analyze, user priority ignored) of a production pilot ad and
+a direct pilot ad, both built from the live production template, against the
+unclaimed slots that meet the resource requests; that count is the willing
+figure, the modeled one above is the clause diagnosis. Our priority row from
+each negotiator comes with it.
+
+Usage: osg-mismatch-census.py [--pool NAME ...] [--memory MB] [--disk KB] [--timeout S]
+                              [--record FILE] [--exact] [--template SDF]
 """
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
+import tempfile
 import time
 
 POOLS = ['jlab-cm.osg.chtc.io', 'cm-1.ospool.osg-htc.org']
@@ -130,7 +141,7 @@ def census(rows, direct, memory, disk, now):
     return gates, free_open, fails, alone, willing
 
 
-def report(pool, rows, memory, disk, now, record=None):
+def report(pool, rows, memory, disk, now, record=None, exact_counts=None):
     print('== %s: %d slot ads, %d cores, %s' % (pool, len(rows), sum(int(num(r['Cpus']) or 0) for r in rows),
                                                 time.strftime('%H:%M:%SZ', time.gmtime(now))))
     gates, free_open, fails_p, alone_p, willing_p = census(rows, False, memory, disk, now)
@@ -141,6 +152,8 @@ def report(pool, rows, memory, disk, now, record=None):
                 'gates': gates, 'free_open': free_open,
                 'production': {'willing': willing_p, 'fails': fails_p, 'alone': alone_p},
                 'direct': {'willing': willing_d, 'fails': fails_d, 'alone': alone_d}}
+        if exact_counts is not None:
+            line['exact'] = exact_counts
         with open(record, 'a') as out:
             out.write(json.dumps(line, sort_keys=True) + '\n')
     print('   closed by the pool itself, no requirement of ours involved:')
@@ -149,11 +162,91 @@ def report(pool, rows, memory, disk, now, record=None):
     print('   free and open: %d slots, %d cores' % tuple(free_open))
     for label, fails, alone, willing in (('production pilot', fails_p, alone_p, willing_p),
                                          ('direct native pilot', fails_d, alone_d, willing_d)):
-        print('   %s: willing %d slots, %d cores' % (label, willing[0], willing[1]))
+        print('   %s: modeled willing %d slots, %d cores%s' % (
+            label, willing[0], willing[1],
+            ('; matchmaker: willing %(willing)d, rejected by ours %(rejected_by_ours)d, reject us %(reject_us)d'
+             % exact_counts[label.split()[0]]) if exact_counts and label.split()[0] in exact_counts else ''))
         print('     our requirement       turns away slots/cores   is the only reason for slots/cores')
         for clause, (n, c) in sorted(fails.items(), key=lambda kv: -kv[1][0]):
             a = alone.get(clause, [0, 0])
             print('     %-20s %8d %8d           %8d %8d' % (clause, n, c, a[0], a[1]))
+
+
+TEMPLATE = '/var/data/atlpan/harvester_common/submit_pilot2_pull_bnl_osg.sdf'
+# The clauses the direct native pilot drops and adds; scripts/submit-native-cohort.py
+# makes the same change to the same template.
+DROPPED = ('(HAS_CVMFS_atlas_cern_ch == True) && ', '(OSGVO_OS_STRING == "RHEL 9") && ',
+           '(HAS_UNPRIVILEGED_USER_NAMESPACES =?= "enabled") && ')
+DIRECT_PREFIX = '(HasSingularity =?= True) && (HAS_CVMFS_singularity_opensciencegrid_org == True) && '
+AUTO = (' && (TARGET.Arch == "X86_64") && (TARGET.OpSys == "LINUX") && (TARGET.Disk >= RequestDisk)'
+        ' && (TARGET.Memory >= RequestMemory) && (TARGET.HasFileTransfer)')
+
+
+def template_value(text, key):
+    found = re.findall(r'(?m)^' + re.escape(key) + r'\s*=\s*(.*)$', text)
+    if len(found) != 1:
+        raise ValueError('expected one %s in the template' % key)
+    return found[0].strip()
+
+
+def job_ads(template, memory, disk):
+    """(production ad, direct ad) as ClassAd text, from the live template."""
+    text = open(template).read()
+    requirements = template_value(text, 'Requirements')
+    direct = requirements
+    for clause in DROPPED:
+        if direct.count(clause) != 1:
+            raise ValueError('template requirements lack ' + clause)
+        direct = direct.replace(clause, '')
+    direct = DIRECT_PREFIX + direct
+    common = ('MyType = "Job"\nTargetType = "Machine"\nJobUniverse = 5\nOwner = "atlpan"\nClusterId = 1\n'
+              'ProcId = 0\nJobStatus = 1\nRequestCpus = 1\nRequestMemory = %d\nRequestDisk = %d\n'
+              'JobDurationCategory = "Medium"\nProjectName = "EIC"\nUNDESIRED_Sites = %s\nEpicprodNodeGuard = %s\n'
+              % (memory, disk, template_value(text, '+UNDESIRED_Sites'), template_value(text, '+EpicprodNodeGuard')))
+    return (common + 'Requirements = (%s)%s\n' % (requirements, AUTO),
+            common + 'WantSingularity = true\nRequirements = (%s)%s\n' % (direct, AUTO))
+
+
+def exact(pool, memory, disk, template, timeout):
+    """The matchmaker's two-sided counts for both pilot shapes, and our priority row."""
+    work = tempfile.mkdtemp(prefix='osg-census-')
+    try:
+        slots = os.path.join(work, 'slots')
+        with open(slots, 'w') as out:
+            fetched = subprocess.run(['condor_status', '-pool', pool, '-constraint',
+                                      'State=="Unclaimed" && Cpus>=1 && Memory>=%d && Disk>=%d' % (memory, disk),
+                                      '-long'], stdout=out, stderr=subprocess.PIPE, universal_newlines=True,
+                                     timeout=timeout)
+        if fetched.returncode != 0:
+            raise RuntimeError(fetched.stderr.strip())
+        result = {'reduced_ads': sum(1 for line in open(slots) if line.startswith('MyType'))}
+        for label, ad in zip(('production', 'direct'), job_ads(template, memory, disk)):
+            path = os.path.join(work, label + '.ad')
+            with open(path, 'w') as out:
+                out.write(ad)
+            analysis = subprocess.run(['condor_q', '-better-analyze', '-jobads', path, '-slotads', slots,
+                                       '-nouserprios'], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      universal_newlines=True, timeout=timeout)
+            counts = {}
+            for key, pattern in (('willing', r'(\d+) slots match and are willing'),
+                                 ('rejected_by_ours', r'(\d+) slots are rejected by your job'),
+                                 ('reject_us', r'(\d+) slots reject your job'),
+                                 ('serving_others', r'(\d+) slots match but are serving'),
+                                 ('if_drained', r'(\d+) slots would match if drained')):
+                found = re.search(pattern, analysis.stdout)
+                counts[key] = int(found.group(1)) if found else 0
+            result[label] = counts
+        prio = subprocess.run(['condor_userprio', '-pool', pool, '-all', '-allusers'], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, universal_newlines=True, timeout=timeout)
+        row = [line.split() for line in prio.stdout.splitlines() if line.startswith('atlpan@osgsub01')]
+        if row:
+            result['priority'] = {'effective': float(row[0][1]), 'real': float(row[0][2]),
+                                  'factor': float(row[0][3]), 'in_use': int(row[0][4])}
+        return result
+    finally:
+        for name in os.listdir(work):
+            os.unlink(os.path.join(work, name))
+        os.rmdir(work)
 
 
 def main():
@@ -163,6 +256,8 @@ def main():
     parser.add_argument('--disk', type=int, default=4500000, help='our request in KB')
     parser.add_argument('--timeout', type=int, default=180)
     parser.add_argument('--record', help='append one JSON line per pool to this file')
+    parser.add_argument('--exact', action='store_true', help="add the matchmaker's two-sided counts and our priority")
+    parser.add_argument('--template', default=TEMPLATE, help='the production pull template the pilot ads are built from')
     args = parser.parse_args()
     now = time.time()
     status = 0
@@ -173,7 +268,14 @@ def main():
             print('== %s: not read (%s)' % (pool, exc))
             status = 1
             continue
-        report(pool, rows, args.memory, args.disk, now, args.record)
+        exact_counts = None
+        if args.exact:
+            try:
+                exact_counts = exact(pool, args.memory, args.disk, args.template, args.timeout)
+            except Exception as exc:  # noqa: BLE001
+                print('   exact analysis not done (%s)' % exc)
+                status = 1
+        report(pool, rows, args.memory, args.disk, now, args.record, exact_counts)
     return status
 
 
