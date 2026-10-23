@@ -79,6 +79,24 @@ class DeadlineTests(unittest.TestCase):
             verdict, _, at, _, _ = run({'_CONDOR_MACHINE_AD': machine_ad(d, todie), 'MACHINEFEATURES': str(stale)}, d)
             self.assertEqual((verdict, int(at)), ('ok', todie))
 
+    def test_stale_generated_deadline_without_a_fresh_one_is_dropped(self):
+        with tempfile.TemporaryDirectory() as d:
+            stale = Path(d) / 'machinefeatures'
+            stale.mkdir()
+            (stale / 'shutdowntime').write_text('%d\n' % (int(time.time()) + 100))
+            verdict, left, at, mf, _ = run({'_CONDOR_MACHINE_AD': machine_ad(d, None), 'MACHINEFEATURES': str(stale)}, d)
+            self.assertEqual((verdict, left, at, mf), ('unknown', '', '', ''))
+            self.assertFalse((stale / 'shutdowntime').exists())
+
+    def test_site_directory_survives_an_unknown_deadline(self):
+        with tempfile.TemporaryDirectory() as d:
+            site = Path(d) / 'site-features'
+            site.mkdir()
+            (site / 'hs06').write_text('11.5\n')  # a site directory without a shutdowntime
+            verdict, _, _, mf, _ = run({'_CONDOR_MACHINE_AD': machine_ad(d, None), 'MACHINEFEATURES': str(site)}, d)
+            self.assertEqual((verdict, mf), ('unknown', str(site)))
+            self.assertTrue((site / 'hs06').exists())
+
     def test_invalid_override_falls_back_to_the_default(self):
         with tempfile.TemporaryDirectory() as d:
             _, _, _, _, minimum = run({'_CONDOR_MACHINE_AD': machine_ad(d, int(time.time()) + 36000),

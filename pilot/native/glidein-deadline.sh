@@ -42,6 +42,12 @@ if [[ -n $DEADLINE_AT ]]; then
     DEADLINE_LEFT=$(( DEADLINE_AT - deadline_now ))
     if (( DEADLINE_LEFT >= deadline_min )); then DEADLINE_VERDICT=ok; else DEADLINE_VERDICT=short; fi
 else
+    # No fresh deadline: a generated directory left from an earlier execution
+    # must not stand in for one; a site's own directory stays as it was.
+    if [[ ${MACHINEFEATURES:-} == "$HERE/machinefeatures" ]]; then
+        rm -f "$HERE/machinefeatures/shutdowntime"
+        unset MACHINEFEATURES
+    fi
     DEADLINE_LEFT=""
     DEADLINE_VERDICT=unknown
 fi
