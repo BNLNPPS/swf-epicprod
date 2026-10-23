@@ -406,4 +406,9 @@ build now casts it; the upstream pilot bug is to be reported.
   jobs in one pilot), 5816423 (26893 at GREX). Native pilots held 26 running
   jobs at 04:55 ET. The jobs of a native pilot are found in the PanDA
   database by a `pilotid` carrying `native-20261023`, the cohort's log path.
+- 05:09 ET: the first direct-mode job, 5816380 of pilot 26875 at CNAF, the
+  mode the twenty run (no user namespaces, no ATLAS or OASIS repositories
+  required, CA bundle and Rucio configuration shipped with the pilot),
+  finished with its output and log registered and no failure (swf-3's read).
+  The cohort's own mode now has an end-to-end completion of its own.
 
