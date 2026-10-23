@@ -411,4 +411,8 @@ build now casts it; the upstream pilot bug is to be reported.
   required, CA bundle and Rucio configuration shipped with the pilot),
   finished with its output and log registered and no failure (swf-3's read).
   The cohort's own mode now has an end-to-end completion of its own.
+- 06:07 ET: the cohort's first completion, job 5816729 of 26957.8 at OU,
+  finished with its outputs registered, and the pilot took its second job,
+  5817072 (swf-3's read). No cohort payload has failed; 26957.18 stays held.
+  Native jobs finished tonight: seven, each 1,132 events, zero errors.
 
