@@ -299,13 +299,19 @@ code and site; each pilot's stdout for its sequence of "processing PanDA job"
 lines, "nested preflight ... ok", "reuse matching image" or "launching the
 job image nested", and the pilot's final exit; a Condor exit code of 70 or 71
 is the launcher refusing to take a job because the bind was not honored or
-the preflight failed. Stage 1 is Condor cluster 26802.0 and stage 2 is 26804.0, submitted
-02:08 and 02:11 ET with archive
-`4790501d2f9cb4e2e3ebc942095cbd3d0d138e8da12b9d11d8393878b63fa500`.
+the preflight failed. Stage 1 is Condor cluster 26834.0 and stage 2 is 26835.0, submitted
+02:30 ET with archive
+`417334ee81a211af604ff98b25e3b70f3726b1f31cb3157cd8406bff54a584a8`.
 Earlier submissions that night: 26746.0 and 26748.0 (stage 1, superseded
 builds, removed while idle); 26754.0 and 26755.0, held by the worker's
 image-preparation hook on nodes without CVMFS (above); 26759.0, which ran
 at PSU-LIGO and exited 70 when the bind it relied on was not there; 26760.0,
 26792.0 and 26796.0, replaced while idle; 26797.0, which ran at MWT2 with
-the intermediate launcher and recorded the worker's bind evidence.
+the intermediate launcher and recorded the worker's bind evidence; 26802.0
+and 26804.0, which ran at CNAF through launcher, namespace preflight and
+pilot start in three minutes and then looped for twenty on a defect of the
+baseline pilot: it sends the bound task id from `PanDA_TaskID` as a string,
+and the server's typed API refuses every acquisition ("'task_id' must be
+of type int | None, got str", 35 refusals in `panda-api_pilot.log`). The
+build now casts it; the upstream pilot bug is to be reported.
 
