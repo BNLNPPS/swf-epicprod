@@ -51,4 +51,25 @@ fi
 echo "ePIC native pilot: archive $(sha256sum "$ARCHIVE")"
 tar xzf "$ARCHIVE"
 export PILOT_HOME=$HERE
+# The node guard, before the first job: the pilot's own check covers every
+# further one (allow_timefloor). The queue is pilot.py's -q argument.
+QUEUE=""; prev=""; for a in "$@"; do [[ $prev == -q ]] && QUEUE=$a; prev=$a; done
+PILOT_SITENAME=$QUEUE python3 - <<'PY' || { echo "node guard excludes this node; no job taken" >&2; exit 72; }
+import json, os, sys, urllib.request
+from datetime import datetime, timezone
+sys.path.insert(0, 'pilot3')
+from pilot.user.epic import landing_check as guard
+try:
+    with urllib.request.urlopen(guard.EXCLUSION_URL, timeout=guard.EXCLUSION_TIMEOUT_S) as r:
+        document = json.loads(r.read().decode())
+except Exception as exc:
+    print('node guard document not read (%s); proceeding' % exc); sys.exit(0)
+entry = guard.excluded_here(document, guard._host_names(), os.environ.get('PILOT_SITENAME', ''),
+                            datetime.now(timezone.utc))
+if entry is not None:
+    print('node guard: this node %s on %s is excluded since %s (%s)'
+          % (entry.get('host'), entry.get('queue'), entry.get('since'), entry.get('reason')))
+    sys.exit(1)
+print('node guard: this node is not excluded (%d listed)' % len(document.get('nodes') or []))
+PY
 exec python3 "$HERE/pilot3/pilot.py" "$@"

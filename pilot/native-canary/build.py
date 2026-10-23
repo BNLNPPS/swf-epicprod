@@ -50,6 +50,48 @@ def build(baseline, expected_sha256, output, production=False):
 
 ''' + content[end:])
 
+    # The node guard reaches a running pilot: before each further job the
+    # pilot reads the guard's document the way the payload's landing check
+    # does (one source, shipped as is) and takes no further job on an
+    # excluded node. The first job is the launcher's pre-check.
+    here = Path(__file__).resolve()
+    landing = here.with_name('landing_check.py')  # beside the builder on a host
+    if not landing.exists():
+        landing = here.parents[2] / 'swf_epicprod/payload/landing_check.py'  # in the repository
+    write('pilot/user/epic/landing_check.py', landing.read_text())
+    relative = 'pilot/user/epic/common.py'
+    content = (tree / relative).read_text()
+    start = content.index('def allow_timefloor(')
+    end = content.index('\n\n\ndef ', start)
+    write(relative, content[:start] + '''def allow_timefloor(submitmode: str) -> bool:
+    """ePIC: no further job on a node the node guard excludes.
+
+    Read before each further job; the pilot then finishes the one it runs and
+    exits ("timefloor is set to 0"). The document is the one the payload's
+    landing check reads; a document that cannot be read allows the job, as
+    the landing check then decides.
+    """
+    import json as _json
+    import urllib.request as _request
+    from datetime import datetime as _datetime, timezone as _timezone
+    from pilot.user.epic import landing_check as guard
+    try:
+        with _request.urlopen(guard.EXCLUSION_URL, timeout=guard.EXCLUSION_TIMEOUT_S) as response:
+            document = _json.loads(response.read().decode())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('node guard document not read (%s): the next job is allowed', exc)
+        return True
+    entry = guard.excluded_here(document, guard._host_names(),
+                                os.environ.get('PILOT_SITENAME', '').strip(),
+                                _datetime.now(_timezone.utc))
+    if entry is not None:
+        logger.warning('ePIC node guard: this node %s on %s is excluded since %s (%s); '
+                       'no further job after the current one',
+                       entry.get('host'), entry.get('queue'), entry.get('since'), entry.get('reason'))
+        return False
+    logger.info('ePIC node guard: this node is not excluded; next job allowed')
+    return True''' + content[end:])
+
     relative = 'pilot/user/epic/utilities.py'
     content = (tree / relative).read_text()
     original = "        setup = get_asetup(asetup=False)\n        setup += 'lsetup prmon;'"

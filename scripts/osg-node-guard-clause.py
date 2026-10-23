@@ -24,7 +24,16 @@ expired, writes True; when it cannot be read, the clause stands until the
 validity it was written with has passed and is then written True, so a
 publisher that stops leaves no exclusion standing.
 
+The clause reaches only new matches. A pilot already running on a node when
+the guard excludes it keeps taking jobs that the payload's landing check
+declines in seconds, each at the cost of an attempt (23 October 2026: four
+pilots on nod46 at UConn, one declined job every two minutes each). With
+--remove-pilots the script also removes this user's running pilots on the
+excluded nodes (condor_rm; a job in flight there is one the landing check
+would decline), and logs each removal.
+
 Usage: osg-node-guard-clause.py SDF [SDF ...] [--url URL] [--queues PREFIX]
+                                [--remove-pilots] [--dry-run]
 Runs under Python 3.6 (the submit host's), standard library only.
 """
 
@@ -33,6 +42,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 import urllib.request
@@ -118,6 +128,55 @@ def write(path, text):
     os.replace(tmp, path)
 
 
+def pilots_on(nodes, rows):
+    """The running pilots that sit on an excluded node: rows are
+    (cluster, proc, machine, site) as condor_q reports them, nodes the
+    (host, site) pairs the document excludes. A full host name matches the
+    machine exactly; a bare name matches the machine's first label on the
+    same glidein site. Pure."""
+    full = {h.lower() for h, _ in nodes if "." in h}
+    bare = {(h.lower(), s) for h, s in nodes if "." not in h and s}
+    hits = []
+    for cluster, proc, machine, site in rows:
+        m = (machine or "").lower()
+        if m in full or (m.split(".", 1)[0], site) in bare:
+            hits.append((cluster, proc, machine, site))
+    return hits
+
+
+def running_pilots(queues):
+    """(cluster, proc, machine, site) for this user's running pilots whose
+    arguments name a queue with the prefix."""
+    out = subprocess.run(["condor_q", "-constraint", "JobStatus == 2", "-af:t", "ClusterId", "ProcId",
+                          "RemoteHost", "MachineAttrGLIDEIN_Site0", "Args"],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=120)
+    if out.returncode != 0:
+        raise RuntimeError("condor_q failed: %s" % out.stderr.strip())
+    rows = []
+    for line in out.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 5 or ("-q " + queues) not in parts[4]:
+            continue
+        machine = parts[2].rsplit("@", 1)[-1]
+        rows.append((parts[0], parts[1], machine, "" if parts[3] == "undefined" else parts[3]))
+    return rows
+
+
+def remove_pilots(nodes, queues, stamp, dry_run):
+    """Remove the running pilots on the excluded nodes; print each one."""
+    hits = pilots_on(nodes, running_pilots(queues))
+    for cluster, proc, machine, site in hits:
+        job = "%s.%s" % (cluster, proc)
+        if dry_run:
+            print("%s would remove %s on excluded node %s (%s)" % (stamp, job, machine, site))
+            continue
+        rm = subprocess.run(["condor_rm", job], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            universal_newlines=True, timeout=60)
+        print("%s removed %s on excluded node %s (%s): %s" % (stamp, job, machine, site,
+              (rm.stdout + rm.stderr).strip() or "rc %d" % rm.returncode))
+    return hits
+
+
 def _option(args, name, default):
     if name in args:
         i = args.index(name)
@@ -131,6 +190,9 @@ def main(argv):
     args = argv[1:]
     url = _option(args, "--url", URL)
     queues = _option(args, "--queues", QUEUES)
+    remove = "--remove-pilots" in args
+    dry_run = "--dry-run" in args
+    args = [a for a in args if a not in ("--remove-pilots", "--dry-run")]
     if not args:
         sys.exit(__doc__)
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -167,6 +229,12 @@ def main(argv):
     if skipped:
         print("%s not named (bare host without a site, or not a host name): %s" % (stamp, skipped))
         status = 1
+    if remove and error is None and nodes:
+        try:
+            remove_pilots(nodes, queues, stamp, dry_run)
+        except Exception as exc:  # noqa: BLE001
+            print("%s running pilots not checked (%s)" % (stamp, exc))
+            status = 1
     return status
 
 
