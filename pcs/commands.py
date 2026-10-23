@@ -828,7 +828,10 @@ def _evgen_manifest_internal(task, events_per_job):
             for i in range(n_jobs)]
 
 
-RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4})\.eicrecon\.edm4eic\.root$')
+# A diverted registration carries the attempt's mark after the chunk
+# (``<stem>.<chunk>.p<mark>.eicrecon.edm4eic.root``, register_to_rucio
+# derived_did_name): the same row, a second copy.
+RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4})(?:\.p\w+)?\.eicrecon\.edm4eic\.root$')
 TRY_SEGMENT_RE = re.compile(r'^try\d+$')
 
 
@@ -839,8 +842,9 @@ def reco_row_key(name):
     run.sh) writes each input row's RECO file to ``RECO/<ver>/<config>/
     <input dir below EVGEN>/<stem>.<chunk>.eicrecon.edm4eic.root``, and a
     rerun writes under its try segment (TAG_PREFIX=tryN, _add_try_env)
-    with the row the same below it, so the key maps one-to-one onto
-    manifest rows across every attempt of a version."""
+    with the row the same below it, and a diverted registration carries
+    the attempt's mark after the chunk, so the key maps one-to-one onto
+    manifest rows across every attempt and every copy of a version."""
     m = RECO_LFN_TAIL_RE.search(name)
     if not m:
         return None

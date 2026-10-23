@@ -29,6 +29,14 @@ class RowsOnce(unittest.TestCase):
                           'upsilon_run000', '0007'))
         self.assertIsNone(reco_row_key('/SIMU/26.07.1/epic_craterlake/x/y.0001.edm4hep.root'))
 
+    def test_diverted_copy_is_the_same_row(self):
+        # A retry's output registered under a derived name (the attempt's
+        # mark after the chunk) is a second copy of the row, not a new one.
+        diverted = (f'{TRY2}/upsilon_run000.0007.p4614093.eicrecon.edm4eic.root', '26.07', t(5), 100)
+        self.assertEqual(reco_row_key(diverted[0]), reco_row_key(f(TRY2, 7, 1)[0]))
+        kept, dup = count_each_row_once([f(TRY2, 7, 1), diverted])
+        self.assertEqual(([r[0] for r in kept], dup), ([f(TRY2, 7, 1)[0]], {TRY2: 1}))
+
     def test_earliest_copy_stands(self):
         records = [f(BASE, 1, 9), f(TRY2, 1, 3), f(BASE, 2, 9), f(TRY2, 3, 4)]
         kept, dup = count_each_row_once(records)
