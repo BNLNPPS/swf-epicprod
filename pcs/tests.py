@@ -650,13 +650,15 @@ class ProducedRerunTest(TestCase):
         return SimpleNamespace(composed_name=self.NAME, name='legacy.DIS.NC.18x275',
                                panda_task_id=41040)
 
-    def _attempts(self, rows):
+    def _attempts(self, rows, elsewhere=frozenset()):
         from unittest import mock
         cursor = mock.MagicMock()
         cursor.fetchall.return_value = rows
         conn = mock.MagicMock()
         conn.cursor.return_value.__enter__.return_value = cursor
-        with mock.patch('pcs.services.connections', {'panda': conn}):
+        with mock.patch('pcs.services.connections', {'panda': conn}), \
+                mock.patch('pcs.services._linked_elsewhere', return_value=elsewhere), \
+                mock.patch('pcs.services._linked_here', return_value=[]):
             from pcs.services import produced_attempts
             return produced_attempts(self._task()), cursor.execute.call_args[0][1]
 
@@ -672,6 +674,11 @@ class ProducedRerunTest(TestCase):
         self.assertTrue(re.match(pattern, 'legacy.DIS.NC.18x275'))
         self.assertFalse(re.match(pattern, self.NAME + '.try2.extra'))
         self.assertFalse(re.match(pattern, self.NAME.replace('p2234', 'p2235')))
+
+    def test_an_attempt_linked_to_another_task_does_not_count(self):
+        produced, _ = self._attempts(
+            [(40440, self.NAME + '.try2', 'finished', None, 100000, 99991)], elsewhere={40440})
+        self.assertEqual(produced, [])
 
     def test_refusal_names_the_producing_attempt(self):
         from unittest import mock

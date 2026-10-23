@@ -6703,17 +6703,19 @@ class AlreadyProduced(ServiceError):
 
 
 def produced_attempts(task):
-    """The finished PanDA attempts of ``task``'s dataset: tasks named by its
-    composed or stored name, or either with ``.tryN``, that ended done or
-    finished with at least ``PRODUCED_SHARE`` of their input rows finished.
-    Read from PanDA itself, so attempts submitted outside PCS or linked to
-    another PCS record count (41039 and 41040 reran datasets that 40443 and
-    40440 had produced, 2026-10-22). An unavailable lookup raises."""
+    """The finished PanDA attempts of ``task``'s dataset: tasks PCS links to
+    it, or named by its composed or stored name or either with ``.tryN``,
+    that ended done or finished with at least ``PRODUCED_SHARE`` of their
+    input rows finished. Read from PanDA itself, so attempts submitted outside
+    PCS count; an attempt PCS links to another task does not, since it
+    produced that task's sample. An unavailable lookup raises."""
     from monitor_app.panda.constants import PANDA_SCHEMA
     names = sorted({n for n in (task.composed_name, task.name) if n})
     if not names:
         return []
     pattern = '^(' + '|'.join(_re.escape(n) for n in names) + r')(\.try[0-9]+)?$'
+    # Attempts PCS links to this task count whatever their name.
+    linked = _linked_here(task) or [-1]
     try:
         with connections['panda'].cursor() as cursor:
             cursor.execute(
@@ -6722,19 +6724,40 @@ def produced_attempts(task):
                 f'FROM "{PANDA_SCHEMA}"."jedi_tasks" t '
                 f'JOIN "{PANDA_SCHEMA}"."jedi_datasets" d ON d."jeditaskid" = t."jeditaskid" '
                 'AND d."masterid" IS NULL AND d."type" IN (%s, %s) '
-                'WHERE t."taskname" ~ %s AND t."status" IN (%s, %s) '
+                'WHERE (t."taskname" ~ %s OR t."jeditaskid" = ANY(%s)) '
+                'AND t."status" IN (%s, %s) '
                 'GROUP BY 1, 2, 3, 4 ORDER BY 1',
-                ['input', 'pseudo_input', pattern, 'done', 'finished'])
+                ['input', 'pseudo_input', pattern, linked, 'done', 'finished'])
             rows = cursor.fetchall()
     except Exception as exc:
         raise ServiceError(
             'Cannot check whether the dataset is already produced: PanDA lookup failed.',
             status=503) from exc
+    # An attempt PCS links to another task produced that task's sample under
+    # this task's name (40440 is p2223's pythia8 production named p2234.try2).
+    elsewhere = _linked_elsewhere(task, [r[0] for r in rows])
     return [{'jedi_task_id': jedi_task_id, 'task_name': name, 'status': status,
              'ended': format_datetime(ended) if ended else '',
              'rows': int(total or 0), 'finished': int(finished or 0)}
             for jedi_task_id, name, status, ended, total, finished in rows
-            if total and int(finished or 0) >= PRODUCED_SHARE * int(total)]
+            if jedi_task_id not in elsewhere
+            and total and int(finished or 0) >= PRODUCED_SHARE * int(total)]
+
+
+def _linked_here(task):
+    """The PanDA tasks PCS links to ``task``."""
+    return [j for j in PandaTasks.objects.filter(prod_task_id=getattr(task, 'pk', None))
+            .values_list('jedi_task_id', flat=True) if j]
+
+
+def _linked_elsewhere(task, jedi_task_ids):
+    """The PanDA tasks among ``jedi_task_ids`` that PCS links to a task other
+    than ``task``."""
+    if not jedi_task_ids:
+        return set()
+    return set(PandaTasks.objects.filter(jedi_task_id__in=jedi_task_ids)
+               .exclude(prod_task_id=getattr(task, 'pk', None))
+               .values_list('jedi_task_id', flat=True))
 
 
 def refuse_produced_rerun(task):

@@ -63,13 +63,14 @@ manifest rows whose output was never delivered, so delivered data is
 not regenerated; see [Residual rerun](#residual-rerun) below.
 
 Rerun Entire Task asks for confirmation when PanDA shows the dataset
-already produced: a task under the composed or stored name, or either
-with `.tryN`, that ended done or finished with at least 99% of its
-input files finished. The check reads PanDA, so it sees attempts
-submitted outside PCS and attempts linked to another PCS record; the
-refusal names each such attempt, and the compose page repeats it in
-the confirmation. On 2026-10-22, 41039 and 41040 reran in full the
-datasets that 40443 and 40440 had produced on Oct 1 to 4.
+already produced: an attempt that ended done or finished with at least
+99% of its input files finished, and that PCS links to this task or
+that carries its composed or stored name (or either with `.tryN`)
+without PCS linking it to another task. Reading PanDA catches attempts
+submitted outside PCS; the PCS link decides for attempts submitted
+under another task's name, such as 40440, named `p2234.try2` and
+linked to p2223, whose pythia8 sample it produced. The refusal names
+each attempt, and the compose page repeats it in the confirmation.
 
 ## Names, namespaces, and the collision rule
 
