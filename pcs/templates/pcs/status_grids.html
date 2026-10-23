@@ -19,9 +19,9 @@
   .sg-num { text-align: right; }
   .sg-sub { display: block; font-size: 0.95rem; color: #333; }
   /* The summary's list: a long family name wraps, the samples get the room. */
-  .sg-attn td.sg-name { white-space: normal; }
-  .sg-attn td.sg-name a { display: inline-block; max-width: 22rem; overflow-wrap: anywhere; }
-  .sg-places div { min-width: 26rem; }
+  .sg-area { font-size: 1.5rem; margin-top: 1.4rem; }
+  .sg-line { margin-bottom: 0.4rem; }
+  .sg-grid-wrap { margin-bottom: 1.4rem; }
   /* The state colours, Sakib's three plus partial and missing; set with
      !important because the house table paints cell backgrounds. */
   .sg-complete { background-color: #b9eab9 !important; }
@@ -108,33 +108,18 @@
   <h2 class="sg-section">Missing, or registered and not produced</h2>
   <p>
     The families with samples the campaign asks for that are not registered, or
-    registered and not yet produced, each sample named by its place in the
-    family's grid, one line per beam. A family opens its grid.
+    registered and not yet produced, each as its grid, by physics area. Cells read
+    delivered / target events; a cell opens the configuration's data page.
   </p>
   {% if attention %}
-  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable sg-attn">
-    <thead>
-      <tr>
-        <th>Area</th><th>Family</th>
-        <th class="sg-missing">Missing</th>
-        <th class="sg-registered">Registered, not produced</th>
-        <th>Missing samples</th>
-        <th>Samples registered, not produced</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for a in attention %}
-      <tr>
-        <td>{{ a.area }}</td>
-        <td class="sg-name"><a href="?campaign={{ campaign }}&family={{ a.family|urlencode }}">{{ a.family }}</a></td>
-        <td class="sg-num">{{ a.counts.missing }}</td>
-        <td class="sg-num">{{ a.counts.registered }}</td>
-        <td class="sg-places">{% for line in a.missing %}<div>{{ line }}</div>{% endfor %}</td>
-        <td class="sg-places">{% for line in a.registered %}<div>{{ line }}</div>{% endfor %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  {% for g in attention %}
+  {% ifchanged g.area %}<h3 class="sg-area">{{ g.area }}</h3>{% endifchanged %}
+  <div class="sg-grid-wrap">
+    <div class="sg-family"><a href="?campaign={{ campaign }}&family={{ g.family|urlencode }}">{{ g.family }}</a></div>
+    <p class="sg-line">{{ g.counts.samples }} samples: {{ g.counts.complete }} complete, {{ g.counts.partial }} below target or without one, {{ g.counts.registered }} registered and not produced, {{ g.counts.missing }} missing.</p>
+    {% include 'pcs/_status_grid.html' with grid=g %}
+  </div>
+  {% endfor %}
   {% else %}
   <p>None: every sample the campaign asks for is registered and produced.</p>
   {% endif %}
@@ -161,7 +146,7 @@
     <strong>{{ a.partial }}</strong> below target or without one,
     <strong>{{ a.registered }}</strong> registered and not produced,
     <strong>{{ a.missing }}</strong> missing.
-    The families with samples missing come first; a family opens its grid.
+    The families with samples missing come first, each as its grid.
   </p>
   {% endif %}{% endfor %}
   <p class="sg-bar sg-noprint">
@@ -172,33 +157,20 @@
     ({{ families|length }} shown)
   </p>
   {% if families %}
-  <table class="table table-striped table-bordered table-sm align-middle w-auto swf-sortable">
-    <thead>
-      <tr>
-        <th>Family</th><th>Grid</th><th>Samples</th>
-        <th class="sg-complete">Complete</th>
-        <th class="sg-partial">Below target or no target</th>
-        <th class="sg-registered">Registered, not produced</th>
-        <th class="sg-missing">Missing</th>
-        <th>Events delivered</th><th>Events targeted</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for f in families %}
-      <tr>
-        <td class="sg-name"><a href="?campaign={{ campaign }}&family={{ f.family|urlencode }}">{{ f.family }}</a></td>
-        <td class="sg-num" title="{{ f.row_axis }} by {{ f.column_axis }}">{{ f.shape }}</td>
-        <td class="sg-num">{{ f.counts.samples }}</td>
-        <td class="sg-num">{{ f.counts.complete }}</td>
-        <td class="sg-num">{{ f.counts.partial }}</td>
-        <td class="sg-num">{{ f.counts.registered }}</td>
-        <td class="sg-num">{{ f.counts.missing }}</td>
-        <td class="sg-num" data-order="{{ f.counts.delivered|default:0 }}">{{ f.counts.delivered_label }}</td>
-        <td class="sg-num" data-order="{{ f.counts.target|default:0 }}">{{ f.counts.target_label }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <p class="sg-legend">
+    <span class="sg-complete">complete</span>
+    <span class="sg-partial">below target or no target</span>
+    <span class="sg-registered">registered, not produced</span>
+    <span class="sg-missing">missing: asked for, not registered, nothing delivered</span>
+    <span class="sg-empty">not asked for</span>
+  </p>
+  {% for g in families %}
+  <div class="sg-grid-wrap">
+    <div class="sg-family"><a href="?campaign={{ campaign }}&family={{ g.family|urlencode }}">{{ g.family }}</a></div>
+    <p class="sg-line">{{ g.counts.samples }} samples: {{ g.counts.complete }} complete, {{ g.counts.partial }} below target or without one, {{ g.counts.registered }} registered and not produced, {{ g.counts.missing }} missing.{% if g.counts.delivered %} {{ g.counts.delivered_label }} events delivered{% if g.counts.target_label %} against {{ g.counts.target_label }} targeted{% endif %}.{% endif %}</p>
+    {% include 'pcs/_status_grid.html' with grid=g %}
+  </div>
+  {% endfor %}
   {% else %}
   <p>No family matches this selection.</p>
   {% endif %}
@@ -231,31 +203,7 @@
       configuration's data page, or the sample on the EVGEN inputs page when the
       campaign has no configuration for it.
     </p>
-    <table class="table table-bordered table-sm align-middle w-auto sg-grid swf-sortable">
-      <thead>
-        <tr>
-          <th class="sg-beam">{{ grid.row_axis }}</th>
-          {% for col in grid.columns %}<th>{{ col.label }}</th>{% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in grid.rows %}
-        <tr>
-          <td class="sg-beam" data-order="{{ forloop.counter }}">{{ row.beam }}</td>
-          {% for cell in row.cells %}
-          {% if cell %}
-          <td class="sg-cell sg-{{ cell.state }}" data-order="{{ cell.delivered|default:0 }}"
-              title="{{ cell.path }}{% if cell.pc %} ({{ cell.pc }}){% endif %}{% if cell.in_flight %}, in production{% endif %}">
-            <a href="{% if cell.edition %}{% url 'pcs:pcs_edition_data' name=cell.edition %}{% else %}{% url 'pcs:evgen_inputs' %}?q={{ cell.path|cut:'/EVGEN/'|urlencode }}{% endif %}">{{ cell.label }}{% if not cell.registered and cell.state != 'missing' %}<span class="sg-sub">input not registered</span>{% endif %}{% if cell.in_flight %}<span class="sg-sub">in production</span>{% endif %}</a>
-          </td>
-          {% else %}
-          <td class="sg-empty" data-order="-1"></td>
-          {% endif %}
-          {% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% include 'pcs/_status_grid.html' with grid=grid %}
   </div>
   {% endif %}
   {% elif not error %}

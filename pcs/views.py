@@ -6526,7 +6526,7 @@ def status_grids(request):
     rebuilds behind the page; it builds in the request only on its first
     fill or the Update link. Read-open."""
     from monitor_app.models import CachedProduct
-    from swf_epicprod.analytics.status_grids import events_label, places, status_grids_product
+    from swf_epicprod.analytics.status_grids import events_label, status_grids_product
 
     # The campaigns the completion record covers: current or producing.
     completion = CachedProduct.objects.filter(key='prod_hub_campaign_completion').first()
@@ -6591,18 +6591,14 @@ def status_grids(request):
                                  shape=f"{len(g['rows'])} × {len(g['columns'])}"))
     else:
         level = 'summary'
-        # The families with samples to register or to produce, each with
-        # the samples named by their place in its grid.
+        # The families with samples to register or to produce, each as
+        # its grid, by physics area.
         for g in sorted(grids, key=attention_first):
             counts = g.get('counts') or {}
             if not (counts.get('missing') or counts.get('registered')):
                 continue
-            cells = [c for row in g['rows'] for c in row['cells'] if c]
-            attention.append({
-                'area': g['area'], 'family': g['family'], 'counts': counts,
-                'missing': places([c for c in cells if c['state'] == 'missing']),
-                'registered': places([c for c in cells if c['state'] == 'registered']),
-            })
+            attention.append(dict(g, counts=labelled(counts)))
+        attention.sort(key=lambda g: g['area'])
     return render(request, 'pcs/status_grids.html', {
         'campaigns': campaigns,
         'campaign': name,

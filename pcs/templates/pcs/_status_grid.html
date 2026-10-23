@@ -1,0 +1,26 @@
+{# One family's grid: rows by columns, each cell delivered / target. #}
+<table class="table table-bordered table-sm align-middle w-auto sg-grid swf-sortable">
+      <thead>
+        <tr>
+          <th class="sg-beam">{{ grid.row_axis }}</th>
+          {% for col in grid.columns %}<th>{{ col.label }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in grid.rows %}
+        <tr>
+          <td class="sg-beam" data-order="{{ forloop.counter }}">{{ row.beam }}</td>
+          {% for cell in row.cells %}
+          {% if cell %}
+          <td class="sg-cell sg-{{ cell.state }}" data-order="{{ cell.delivered|default:0 }}"
+              title="{{ cell.path }}{% if cell.pc %} ({{ cell.pc }}){% endif %}{% if cell.in_flight %}, in production{% endif %}">
+            <a href="{% if cell.edition %}{% url 'pcs:pcs_edition_data' name=cell.edition %}{% else %}{% url 'pcs:evgen_inputs' %}?q={{ cell.path|cut:'/EVGEN/'|urlencode }}{% endif %}">{{ cell.label }}{% if not cell.registered and cell.state != 'missing' %}<span class="sg-sub">input not registered</span>{% endif %}{% if cell.in_flight %}<span class="sg-sub">in production</span>{% endif %}</a>
+          </td>
+          {% else %}
+          <td class="sg-empty" data-order="-1"></td>
+          {% endif %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
