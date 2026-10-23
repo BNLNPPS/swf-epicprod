@@ -757,6 +757,12 @@ October ([NATIVE_PILOT_CANARY.md](NATIVE_PILOT_CANARY.md)). The memory request i
 4,096 MB admitted 500 of 2,384 otherwise fitting OSPool slots and 206 of
 2,125 in the JLab pool.
 
+Verified in the field at 06:40 ET on 23 October: the first ordinary
+production pilot submitted with the new arguments to end, 26692.1 (wall
+7,590 s, exit 0), logged `getjob_requests=30, getjob_failures=30` in its
+Namespace line. The pilots submitted before 00:53 ET keep the old 2/5 until
+consumed.
+
 ## Related
 
 - [EPICPROD_OPS_AGENT.md](EPICPROD_OPS_AGENT.md): the production
