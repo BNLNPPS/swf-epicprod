@@ -365,14 +365,13 @@ by-priority table carrying the rest.
    report with grid views that identify missing configurations, showing
    whether each input is registered and how much output exists, after
    his registration-and-production report for 26.07. The page has three
-   levels, each in the URL. The summary (the default) gives the
-   campaign's counts, a table of the physics areas, the families with
-   samples missing or registered and not produced, each with the
-   samples named, and the configurations no EVGEN path reaches. An area
-   (`area=`) lists its families, one line each with its grid's shape,
-   its counts and its delivered and target events, the families with
-   something missing first. A family (`family=`) shows its grid, as in
-   the report. A family is an EVGEN path without its beam and Q²
+   levels, each in the URL, and every level shows grids, as the report
+   does. The summary (the default) gives the campaign's counts, a table
+   of the physics areas, the grid of every family with samples missing
+   or registered and not produced, by area, and the configurations no
+   EVGEN path reaches. An area (`area=`) shows the grid of each of its
+   families, the families with something missing first. A family
+   (`family=`) shows its grid alone. A family is an EVGEN path without its beam and Q²
    segments, its grid beam energy against Q² range; a single-particle
    family is the particle, its grid energy against angle. A cell is one
    EVGEN sample and reads delivered / target events, coloured complete,
