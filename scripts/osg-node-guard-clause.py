@@ -27,13 +27,12 @@ publisher that stops leaves no exclusion standing.
 The clause reaches only new matches. A pilot already running on a node when
 the guard excludes it keeps taking jobs that the payload's landing check
 declines in seconds, each at the cost of an attempt (23 October 2026: four
-pilots on nod46 at UConn, one declined job every two minutes each). With
---remove-pilots the script also removes this user's running pilots on the
-excluded nodes that started after the node's exclusion (the clause does not
-reach pilots already idle in the schedd, whose ads keep the old
-requirements): such a pilot never ran a job the landing check admitted, so
-nothing healthy is lost. A pilot that was on the node before the exclusion
-may be finishing a healthy job and is left alone. Each removal is logged.
+pilots on nod46 at UConn, one declined job every two minutes each). --remove-pilots --dry-run lists this user's running pilots on excluded
+nodes that started after the node's exclusion, the likely churners; the
+operator removes them with the job evidence in hand (the landing check
+proceeds when the document cannot be read, so a start time alone is not
+proof of no healthy work). Without --dry-run it removes them; that is an
+operator's run, not the cron's.
 
 A pilot idle in the schedd keeps the ad it was submitted with, so its guard
 attribute predates any later trip and it can still match the node (the
@@ -157,7 +156,7 @@ def pilots_on(nodes, rows):
             since = bare[(m.split(".", 1)[0], site)]
         else:
             continue
-        if since is None or started is None or started >= since:
+        if since is not None and started is not None and started >= since:
             hits.append((cluster, proc, machine, site))
     return hits
 

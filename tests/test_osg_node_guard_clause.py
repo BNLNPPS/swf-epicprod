@@ -23,8 +23,9 @@ class NodeGuardClauseTests(unittest.TestCase):
                 ('26588', '4', 'NOD46.phys.uconn.edu', 'UConn', before),
                 ('26589', '5', 'nod46.phys.uconn.edu', 'UConn', None)]
         hits = guard.pilots_on(nodes, rows)
-        # 26588 was on nod46 before its exclusion and may be finishing a healthy job
-        self.assertEqual([h[0] for h in hits], ['26584', '26586', '26589'])
+        # 26588 was on nod46 before its exclusion and may be finishing a healthy
+        # job; 26586 and 26589 have no known times, and unknown is not evidence
+        self.assertEqual([h[0] for h in hits], ['26584'])
 
     def test_clause_names_full_hosts_and_bare_hosts_with_a_site(self):
         expression, skipped = guard.clause([('nod46.phys.uconn.edu', 'UConn', T0),
