@@ -65,6 +65,13 @@ def describe(template, args):
                     + requirements)
     if 'HAS_UNPRIVILEGED_USER_NAMESPACES' not in requirements or 'EpicprodNodeGuard' not in requirements:
         raise ValueError('derived requirements lost the user-namespace or node-guard clause')
+    if args.direct:
+        # User namespaces serve the nested launch only; a pilot that serves its
+        # own image alone, under task binding, does not need them.
+        userns = '(HAS_UNPRIVILEGED_USER_NAMESPACES =?= "enabled") && '
+        if requirements.count(userns) != 1:
+            raise ValueError('expected one user-namespace clause to drop for direct mode')
+        requirements = requirements.replace(userns, '')
     undesired = line(text, '+UNDESIRED_Sites')
     guard = line(text, '+EpicprodNodeGuard')
     memory = line(text, 'request_memory')
@@ -73,7 +80,8 @@ def describe(template, args):
     periodic_remove = line(text, 'periodic_remove')  # the production running bound; healthy jobs finish
     pilot_args = PILOT_ARGS.format(queue=args.queue, same_user='True' if args.task else 'False')
     environment = [f'EPICPROD_NATIVE_IMAGE={args.image}', 'EPICPROD_NATIVE_ARCHIVE=' + args.archive,
-                   f'EPICPROD_NATIVE_PREFLIGHT_IMAGE={args.preflight_image}',
+                   f'EPICPROD_NATIVE_PREFLIGHT_IMAGE={"" if args.direct else args.preflight_image}',
+                   f'EPICPROD_NATIVE_NESTING={"off" if args.direct else "on"}',
                    # glideinWMS's singularity_lib.sh takes extra binds from these, not from +SingularityBind
                    'APPTAINER_BINDPATH=' + SESSION_BIND, 'SINGULARITY_BINDPATH=' + SESSION_BIND,
                    f'PANDA_JSID={args.tag}', 'GTAG=' + LOG_URL.format(logdir=args.logdir)]
@@ -110,6 +118,7 @@ Requirements = {requirements}
 +EpicprodNodeGuard = {guard}
 +EpicprodNative = "{args.tag}"
 +EpicprodNativeImage = "{args.image}"
++EpicprodNativeMode = "{'direct' if args.direct else 'nested'}"
 periodic_remove = {periodic_remove} || (JobStatus == 1 && (CurrentTime - QDate) > 43200)
 queue {args.count}
 '''
@@ -131,8 +140,13 @@ def main():
     parser.add_argument('--submit', action='store_true', help='condor_submit the description as atlpan')
     parser.add_argument('--preflight-image', help='another campaign image the pilot must nest '
                         'successfully before taking a job; default: the other of the two known images')
+    parser.add_argument('--direct', action='store_true',
+                        help='serve this image only: no nested launch, no preflight, no user-namespace '
+                             'requirement; --task is then required')
     parser.add_argument('--out', help='write the description here instead of under --dir (review off the host)')
     args = parser.parse_args()
+    if args.direct and not args.task:
+        sys.exit('--direct needs --task: the task binding is the image guard')
     if not args.preflight_image:
         others = [path for path in IMAGES.values() if path != args.image]
         if len(others) != 1:

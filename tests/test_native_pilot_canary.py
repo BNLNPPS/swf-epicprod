@@ -58,6 +58,18 @@ class NativePilotCanaryTests(unittest.TestCase):
             self.assertTrue(direct.startswith('/fake/apptainer exec --no-home --bind /cvmfs:/cvmfs'))
             self.assertFalse(native.same_image('image', str(wanted)))
 
+    def test_direct_mode_refuses_another_campaign_before_the_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            old, wanted = work / 'old/image', work / 'wanted/image'
+            old.mkdir(parents=True)
+            wanted.mkdir(parents=True)
+            job = SimpleNamespace(imagename=str(wanted), workdir=str(work), jobid=12)
+            with patch.dict(os.environ, {'APPTAINER_CONTAINER': str(old), 'EPICPROD_NATIVE_NESTING': 'off'}):
+                with self.assertRaisesRegex(RuntimeError, 'direct mode'):
+                    native.wrapper('touch should-not-run', job=job)
+            self.assertFalse((work / 'should-not-run').exists())
+
     def test_another_campaign_without_a_runtime_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)

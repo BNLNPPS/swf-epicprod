@@ -37,7 +37,7 @@ import json, sys, ssl, psutil, requests, rucio.client, XRootD.client
 print(json.dumps({'epic_native_pilot': '20261023', 'python': sys.version.split()[0],
                   'dependencies': 'ssl psutil requests rucio XRootD imported'}))
 PY
-echo "ePIC native pilot: image $IMAGE, host $(hostname), $(date -u +%FT%TZ)"
+echo "ePIC native pilot: image $IMAGE, host $(hostname), $(date -u +%FT%TZ), nesting ${EPICPROD_NATIVE_NESTING:-on}"
 OSG_APPTAINER=/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer
 SESSION_DIR=/var/lib/apptainer/mnt/session
 nest() {

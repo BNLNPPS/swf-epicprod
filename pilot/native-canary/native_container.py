@@ -82,6 +82,9 @@ def wrapper(executable, **kwargs):
     if actual and same_image(actual, wanted):
         logger.info('ePIC native: reuse matching image %s; no container launch', wanted)
         return command
+    if actual and os.environ.get('EPICPROD_NATIVE_NESTING', '').lower() == 'off':
+        raise RuntimeError('ePIC native (direct mode): this pilot runs image ' + actual
+                           + ' and serves no other; the job wants ' + wanted + '. Refused before the payload.')
     if actual:
         logger.warning('ePIC native: outer image %s is not the job image %s; '
                        'launching the job image nested', actual, wanted)

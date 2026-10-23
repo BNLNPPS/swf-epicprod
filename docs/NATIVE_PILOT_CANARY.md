@@ -267,6 +267,18 @@ What runs:
   evidence otherwise), and logs the archive's checksum before extracting
   it, so every pilot's log names its archive. A `+SingularityBind` of the
   CVMFS session directory stays in the description as a harmless extra.
+- Two modes of the same archive, chosen by the submit description. Nested
+  (`EPICPROD_NATIVE_NESTING=on`, the default): a job for another image runs
+  nested, which needs unprivileged user namespaces, so the description
+  requires them and preflights the other image. Direct
+  (`submit-native-cohort.py --direct`, `EPICPROD_NATIVE_NESTING=off`): the
+  pilot serves its own image only under task binding, refuses any other
+  image before the payload with a plain message, runs no preflight, and
+  requires no user namespaces, only `HasSingularity` and the three
+  repositories. Torre, 02:5x ET: a fallback's requirement must not be
+  make-or-break for mainline running. The direct pilots reach the slots the
+  nested ones cannot (SU-ITS and others without user namespaces); the ad
+  carries `EpicprodNativeMode`.
 - The node guard from inside the pilot: the archive carries the payload's
   `landing_check.py` as `pilot/user/epic/landing_check.py`, unchanged, and
   the baseline hook `pilot.user.epic.common.allow_timefloor`, which the pilot
