@@ -235,12 +235,31 @@ What runs:
   production arguments.
 - The archive from `pilot/native-canary/build.py --production`: the tested
   canary without its one-task test guard, four changed files
-  (`native_container.py` new, `container.py`, `utilities.py`, `rucio.py`);
-  SHA-256 `e797224c23ad737feebac6b78d480690e7d110470fa0478227cac23ce12ed03b`
-  from the OSG baseline `pilot3-3.14.3.3.tar.gz`. `native_container` now runs
-  a job for another image nested in that image, through the Apptainer on the
-  path or the OSG one on CVMFS, instead of refusing; that needs unprivileged
-  user namespaces, which the requirements keep.
+  (`native_container.py` new, `container.py`, `utilities.py`, `rucio.py`),
+  built on osgsub01 from the OSG baseline `pilot3-3.14.3.3.tar.gz`: SHA-256
+  `6d8a761d0ae41a9ce83c7a01ec30812118efcbfda5b7aa96f1a59fc82dd54f8d`
+  (`/var/data/atlpan/native-20261023/manifest.json`; the same build under
+  another Python differs only in tar header format). `native_container` runs
+  a job for another image nested in that image instead of refusing; that
+  needs unprivileged user namespaces, which the requirements keep.
+- Nesting from inside the image, found and proven on osgsub01 that night
+  (swf-3's probes under `/data/swf-tmp/epic-native-verify-20261023/`): the
+  OSG pool's Apptainer on CVMFS must be invoked through its wrapper,
+  `/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer`, which
+  supplies the libraries its binary needs (`libsubid.so.3` and others absent
+  from the image); and inside the outer container the relocatable runtime
+  loses its own path after entering its namespace and falls back to
+  `/var/lib/apptainer/mnt/session`, so the outer container must carry that
+  directory. The submit description binds it in from CVMFS,
+  `.../1.4.5/x86_64/var/lib/apptainer:/var/lib/apptainer:ro`, both as
+  `+SingularityBind` and in `APPTAINER_BINDPATH` and `SINGULARITY_BINDPATH`,
+  which glideinWMS's `singularity_lib.sh` honors. A local copy of the runtime
+  tree, the 1.3.6 build and shipped host libraries do not solve it. The
+  launcher takes no job unless the session directory is present and a
+  trivial nested execution in the other campaign image succeeds
+  (`EPICPROD_NATIVE_PREFLIGHT_IMAGE`; exits 70 and 71 otherwise), so a site
+  that ignores the bind costs no physics. Whether both pools honor the bind
+  is what stage 2 proves.
 - `scripts/submit-native-cohort.py`: derives the cohort's description from
   the live production template (exclusions, undesired sites, node-guard
   clause, memory, disk, duration category, running bound), with
@@ -261,7 +280,11 @@ Reading the result: PanDA jobs with `schedulerid = 'epic-native-20261023'`,
 their status, registration and error fields; `condor_history -constraint
 'EpicprodNative == "epic-native-20261023"'` for each pilot's wall time, exit
 code and site; each pilot's stdout for its sequence of "processing PanDA job"
-lines, "reuse matching image" or "launching the job image nested", and the
-pilot's final exit. Rollback is `condor_rm` of the cohort's idle pilots only;
+lines, "nested preflight ... ok", "reuse matching image" or "launching the
+job image nested", and the pilot's final exit; a Condor exit code of 70 or 71
+is the launcher refusing to take a job because the bind was not honored or
+the preflight failed. Stage 1 is Condor cluster 26754.0 and stage 2 is
+26755.0, both submitted 01:34 ET; 26746.0 and 26748.0 were earlier
+submissions of stage 1 with superseded builds, removed while idle. Rollback is `condor_rm` of the cohort's idle pilots only;
 nothing in Harvester or the production template changed.
 

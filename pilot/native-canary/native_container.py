@@ -1,29 +1,30 @@
 """ePIC container execution without the ATLAS bootstrap.
 
-A job whose image is the one the pilot already runs in executes in place. A job
-for another image runs nested in its own image, as production does today from
-the pool's default image; that needs unprivileged user namespaces on the node.
+The pilot runs inside the campaign image the slot was asked for. A job for that
+image executes in place. A job for another image runs nested in its own image
+through the OSG pool's Apptainer on CVMFS, invoked by its supported wrapper
+(which supplies its libraries); the outer container must carry a
+/var/lib/apptainer directory with mnt/session, bound in by the submit
+description (+SingularityBind), because inside the outer container the
+relocatable runtime loses its own path and falls back to that location.
+Nesting needs unprivileged user namespaces on the node.
 """
 import logging
 import os
-import platform
 import shlex
 import shutil
 
 logger = logging.getLogger(__name__)
 
-# The OSG pool's Apptainer on CVMFS, for a pilot running inside an image that
-# ships none of its own.
-OSG_APPTAINER = '/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/%s/bin/apptainer' % platform.machine()
+# The OSG pool's Apptainer on CVMFS, through its wrapper; pinned to the version
+# tested on 23 October 2026 (OSG_SUBMISSION.md, NATIVE_PILOT_CANARY.md).
+OSG_APPTAINER = '/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer'
 
 
 def runtime():
-    found = shutil.which('apptainer') or shutil.which('singularity')
-    if found:
-        return found
     if os.access(OSG_APPTAINER, os.X_OK):
         return OSG_APPTAINER
-    return None
+    return shutil.which('apptainer') or shutil.which('singularity')
 
 
 def current_image():

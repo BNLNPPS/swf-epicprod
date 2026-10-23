@@ -35,6 +35,11 @@ PILOT_ARGS = ('-q {queue} -i PR -j unified -t -w generic --pilot-user epic '
               '--getjobrequests 30 --getjobfailures 30 --noworkerpilotstatusupdate')
 DROPPED = ('(HAS_CVMFS_atlas_cern_ch == True) && ', '(OSGVO_OS_STRING == "RHEL 9") && ')
 LOG_URL = 'https://osgsub01.sdcc.bnl.gov/condor_logs/{logdir}/pilot.$(Cluster).$(Process).out'
+# The outer container's /var/lib/apptainer, so the OSG Apptainer can nest another
+# image from inside this one (proven on osgsub01, 23 October 2026).
+SESSION_BIND = '/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/x86_64/var/lib/apptainer:/var/lib/apptainer:ro'
+IMAGES = {'26.07.1': '/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.1-stable',
+          '26.07.3': '/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable'}
 
 
 def line(text, key):
@@ -62,6 +67,9 @@ def describe(template, args):
     periodic_remove = line(text, 'periodic_remove')  # the production running bound; healthy jobs finish
     pilot_args = PILOT_ARGS.format(queue=args.queue, same_user='True' if args.task else 'False')
     environment = [f'EPICPROD_NATIVE_IMAGE={args.image}', 'EPICPROD_NATIVE_ARCHIVE=' + args.archive,
+                   f'EPICPROD_NATIVE_PREFLIGHT_IMAGE={args.preflight_image}',
+                   # glideinWMS's singularity_lib.sh takes extra binds from these, not from +SingularityBind
+                   'APPTAINER_BINDPATH=' + SESSION_BIND, 'SINGULARITY_BINDPATH=' + SESSION_BIND,
                    f'PANDA_JSID={args.tag}', 'GTAG=' + LOG_URL.format(logdir=args.logdir)]
     if args.task:
         environment.append(f'PanDA_TaskID={args.task}')
@@ -90,6 +98,7 @@ priority = {args.priority}
 +ProjectName = "EIC"
 +WantSingularity = True
 +SingularityImage = "{args.image}"
++SingularityBind = "{SESSION_BIND}"
 Requirements = {requirements}
 +UNDESIRED_Sites = {undesired}
 +EpicprodNodeGuard = {guard}
@@ -114,8 +123,15 @@ def main():
     parser.add_argument('--priority', type=int, default=2, help='above the production pilots\' 1')
     parser.add_argument('--template', default='/var/data/atlpan/harvester_common/submit_pilot2_pull_bnl_osg.sdf')
     parser.add_argument('--submit', action='store_true', help='condor_submit the description as atlpan')
+    parser.add_argument('--preflight-image', help='another campaign image the pilot must nest '
+                        'successfully before taking a job; default: the other of the two known images')
     parser.add_argument('--out', help='write the description here instead of under --dir (review off the host)')
     args = parser.parse_args()
+    if not args.preflight_image:
+        others = [path for path in IMAGES.values() if path != args.image]
+        if len(others) != 1:
+            sys.exit('give --preflight-image: the image is not one of the two known ones')
+        args.preflight_image = others[0]
     if not os.path.isabs(args.image):
         sys.exit(f'image must be an absolute CVMFS path: {args.image}')
     text = describe(args.template, args)
