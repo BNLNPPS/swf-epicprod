@@ -262,6 +262,15 @@ What runs:
   logs the archive's checksum before extracting it, so a site that ignores
   the bind costs no physics and every pilot's log names its archive. One
   stage 2 pilot proves the bind on its own worker and site, not both pools.
+- The node guard from inside the pilot: the archive carries the payload's
+  `landing_check.py` as `pilot/user/epic/landing_check.py`, unchanged, and
+  the baseline hook `pilot.user.epic.common.allow_timefloor`, which the pilot
+  calls before each further job, reads the guard's document through it and
+  returns False on an excluded node; the pilot then finishes the job it runs
+  and exits ("timefloor is set to 0"). The hook does not cover the first job,
+  so the launcher reads the same document before `pilot.py` and exits 72 on
+  an excluded node. A document that cannot be read allows the job, as the
+  landing check then decides.
 - `scripts/submit-native-cohort.py`: derives the cohort's description from
   the live production template (exclusions, undesired sites, node-guard
   clause, memory, disk, duration category, running bound), with

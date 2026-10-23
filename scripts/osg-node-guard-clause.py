@@ -27,12 +27,11 @@ publisher that stops leaves no exclusion standing.
 The clause reaches only new matches. A pilot already running on a node when
 the guard excludes it keeps taking jobs that the payload's landing check
 declines in seconds, each at the cost of an attempt (23 October 2026: four
-pilots on nod46 at UConn, one declined job every two minutes each). --remove-pilots --dry-run lists this user's running pilots on excluded
-nodes that started after the node's exclusion, the likely churners; the
-operator removes them with the job evidence in hand (the landing check
-proceeds when the document cannot be read, so a start time alone is not
-proof of no healthy work). Without --dry-run it removes them; that is an
-operator's run, not the cron's.
+pilots on nod46 at UConn, one declined job every two minutes each). --list-churners prints this user's running pilots on excluded nodes that
+started after the node's exclusion, the likely churners, and removes
+nothing; the operator removes them with the job evidence in hand (the
+landing check proceeds when the document cannot be read, so a start time
+alone is not proof of no healthy work).
 
 A pilot idle in the schedd keeps the ad it was submitted with, so its guard
 attribute predates any later trip and it can still match the node (the
@@ -41,7 +40,7 @@ current expression on every idle pilot of these queues whose stamp differs,
 in one constrained condor_qedit per cycle; the next negotiation uses it.
 
 Usage: osg-node-guard-clause.py SDF [SDF ...] [--url URL] [--queues PREFIX]
-                                [--remove-pilots] [--refresh-idle] [--dry-run]
+                                [--refresh-idle] [--list-churners] [--dry-run]
 Runs under Python 3.6 (the submit host's), standard library only.
 """
 
@@ -183,18 +182,13 @@ def running_pilots(queues):
     return rows
 
 
-def remove_pilots(nodes, queues, stamp, dry_run):
-    """Remove the running pilots on the excluded nodes; print each one."""
+def list_churners(nodes, queues, stamp):
+    """Print the running pilots on excluded nodes that started after the
+    exclusion; the operator decides. Nothing is removed here."""
     hits = pilots_on(nodes, running_pilots(queues))
     for cluster, proc, machine, site in hits:
-        job = "%s.%s" % (cluster, proc)
-        if dry_run:
-            print("%s would remove %s on excluded node %s (%s)" % (stamp, job, machine, site))
-            continue
-        rm = subprocess.run(["condor_rm", job], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            universal_newlines=True, timeout=60)
-        print("%s removed %s on excluded node %s (%s): %s" % (stamp, job, machine, site,
-              (rm.stdout + rm.stderr).strip() or "rc %d" % rm.returncode))
+        print("%s likely churner %s.%s on excluded node %s (%s); operator's call"
+              % (stamp, cluster, proc, machine, site))
     return hits
 
 
@@ -242,10 +236,10 @@ def main(argv):
     args = argv[1:]
     url = _option(args, "--url", URL)
     queues = _option(args, "--queues", QUEUES)
-    remove = "--remove-pilots" in args
+    churners = "--list-churners" in args
     refresh = "--refresh-idle" in args
     dry_run = "--dry-run" in args
-    args = [a for a in args if a not in ("--remove-pilots", "--refresh-idle", "--dry-run")]
+    args = [a for a in args if a not in ("--list-churners", "--refresh-idle", "--dry-run")]
     if not args:
         sys.exit(__doc__)
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -282,9 +276,9 @@ def main(argv):
     if skipped:
         print("%s not named (bare host without a site, or not a host name): %s" % (stamp, skipped))
         status = 1
-    if remove and error is None and nodes:
+    if churners and error is None and nodes:
         try:
-            remove_pilots(nodes, queues, stamp, dry_run)
+            list_churners(nodes, queues, stamp)
         except Exception as exc:  # noqa: BLE001
             print("%s running pilots not checked (%s)" % (stamp, exc))
             status = 1

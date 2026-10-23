@@ -636,6 +636,24 @@ node `cn-leo-070.cr.cnaf.infn.it`, excluded on `BNL_OSG_PanDA_1` at 05:19
 ET, went on taking jobs on both queues and declined 361 of them at the
 landing check in four hours, each at the cost of an attempt.
 
+The clause reaches only new matches, and two gaps showed on 23 October
+when the guard tripped nod46 at UConn at 00:59 ET: pilots already idle in
+the schedd keep the ads they were submitted with, so their clause predated
+the trip and five of them matched the node over the next hour; and a pilot
+on the node keeps taking jobs the payload's landing check declines in
+seconds, one attempt each. Since 02:00 ET the cron runs the script with
+`--refresh-idle`: one constrained `condor_qedit` per cycle sets the current
+expression and a stamp (`EpicprodNodeGuardStamp`) on the idle pilots of
+these queues whose stamp differs, and the next negotiation uses it (598 ads
+refreshed in the first run). `--list-churners` prints the running
+pilots on excluded nodes that started at or after the exclusion, the likely
+churners, and removes nothing: the operator removes them with the job
+evidence in hand, because the landing check proceeds when the guard's
+document cannot be read, so a start time alone is not proof that no healthy
+job runs. Five such pilots were removed by hand that night. Our own pilot closes the gap from inside: before each further job
+it reads the guard's document and takes no further job on an excluded node
+(NATIVE_PILOT_CANARY.md, the per-acquisition guard).
+
 Checked before it went live, on osgsub01 against the pool's own slot
 ads: with the clause naming two nodes then in the pool, one by full name
 (`nod48.phys.uconn.edu`) and one by bare name and site
