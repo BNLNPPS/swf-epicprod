@@ -44,11 +44,18 @@ class NativePilotCanaryTests(unittest.TestCase):
             job = SimpleNamespace(imagename=str(wanted), workdir=str(work), jobid=12)
             with patch.dict(os.environ, {'APPTAINER_CONTAINER': str(old), 'PILOT_HOME': str(work)}):
                 with patch.object(native, 'runtime', return_value='/fake/apptainer'):
-                    command = native.wrapper('touch should-not-run', job=job)
+                    with patch.object(native.os.path, 'isdir', side_effect=lambda d: d != native.SESSION_DIR):
+                        command = native.wrapper('touch should-not-run', job=job)
+                    with patch.object(native.os.path, 'isdir', return_value=True):
+                        direct = native.wrapper('touch should-not-run', job=job)
             self.assertFalse((work / 'should-not-run').exists())
-            self.assertTrue(command.startswith('/fake/apptainer exec --no-home --bind /cvmfs:/cvmfs'))
-            self.assertIn(' ' + str(wanted) + ' /bin/bash -c ', command)
+            # the outer container lacks the session directory: a private namespace carries it
+            self.assertTrue(command.startswith('unshare --user --map-current-user --keep-caps --mount --propagation private /bin/bash -c '))
+            self.assertIn('mount -t tmpfs -o size=1m,nodev,nosuid tmpfs /var/lib && mkdir -p /var/lib/apptainer/mnt/session && exec /fake/apptainer exec --no-home --bind /cvmfs:/cvmfs', command)
+            self.assertIn(str(wanted) + ' /bin/bash -c ', command)
             self.assertIn('--bind ' + str(work) + ':' + str(work), command)
+            # with the directory present the runtime runs directly
+            self.assertTrue(direct.startswith('/fake/apptainer exec --no-home --bind /cvmfs:/cvmfs'))
             self.assertFalse(native.same_image('image', str(wanted)))
 
     def test_another_campaign_without_a_runtime_is_refused(self):

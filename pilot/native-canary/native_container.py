@@ -3,10 +3,11 @@
 The pilot runs inside the campaign image the slot was asked for. A job for that
 image executes in place. A job for another image runs nested in its own image
 through the OSG pool's Apptainer on CVMFS, invoked by its supported wrapper
-(which supplies its libraries); the outer container must carry a
-/var/lib/apptainer directory with mnt/session, bound in by the submit
-description (+SingularityBind), because inside the outer container the
-relocatable runtime loses its own path and falls back to that location.
+(which supplies its libraries). Inside the outer container that relocatable
+runtime loses its own path and falls back to /var/lib/apptainer/mnt/session,
+which the image does not have and no glidein binds for a job; so the nested
+launch runs in a private user and mount namespace of its own, with a tmpfs
+over /var/lib carrying that directory. Nothing outside the launch sees it.
 Nesting needs unprivileged user namespaces on the node.
 """
 import logging
@@ -19,6 +20,22 @@ logger = logging.getLogger(__name__)
 # The OSG pool's Apptainer on CVMFS, through its wrapper; pinned to the version
 # tested on 23 October 2026 (OSG_SUBMISSION.md, NATIVE_PILOT_CANARY.md).
 OSG_APPTAINER = '/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer'
+
+
+SESSION_DIR = '/var/lib/apptainer/mnt/session'
+
+
+def nested(args):
+    """The shell command for a nested launch: the runtime's own argv, inside
+    a private namespace with the session directory when the outer container
+    lacks it (osgsub01 and the pool's workers, 23 October 2026)."""
+    launch = shlex.join(args)
+    if os.path.isdir(SESSION_DIR):
+        return launch
+    inner = ('mount -t tmpfs -o size=1m,nodev,nosuid tmpfs /var/lib && mkdir -p ' + SESSION_DIR
+             + ' && exec ' + launch)
+    return shlex.join(['unshare', '--user', '--map-current-user', '--keep-caps', '--mount',
+                       '--propagation', 'private', '/bin/bash', '-c', inner])
 
 
 def runtime():
@@ -88,4 +105,4 @@ def wrapper(executable, **kwargs):
         args += ['--bind', root + ':' + root]
     args += ['--pwd', workdir, wanted, '/bin/bash', '-c', command]
     logger.info('ePIC native: launch one payload container %s', wanted)
-    return shlex.join(args)
+    return nested(args)
