@@ -99,6 +99,21 @@ def build(baseline, expected_sha256, output, production=False):
         raise ValueError('Unexpected memory-monitor baseline')
     write(relative, content.replace(original, "        setup = 'command -v prmon >/dev/null || exit 69;'"))
 
+    # The bound task from the PanDA_TaskID environment reaches the server as
+    # an int: the baseline sends the string and the server's typed API
+    # refuses it ("'task_id' must be of type int | None, got str", 23 October
+    # 2026, every acquisition of the first two trial pilots).
+    relative = 'pilot/control/job.py'
+    content = (tree / relative).read_text()
+    original = """        if taskid != "" and args.allow_same_user:
+            data['task_id'] = taskid
+"""
+    if content.count(original) != 1:
+        raise ValueError('Unexpected task-id baseline in job.py')
+    write(relative, content.replace(original, """        if taskid != "" and args.allow_same_user:
+            data['task_id'] = int(taskid)
+"""))
+
     if not production:
         guard_test_task(tree, write)
 
