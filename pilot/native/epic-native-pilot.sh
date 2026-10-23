@@ -56,7 +56,8 @@ PREFLIGHT=${EPICPROD_NATIVE_PREFLIGHT_IMAGE:-}
 if [[ -n $PREFLIGHT ]]; then
     route=$([[ -d $SESSION_DIR ]] && echo "session directory present" || echo "private namespace")
     nest "$PREFLIGHT" /bin/true || {
-        echo "nested preflight in $PREFLIGHT failed (exit $?, $route); no job taken" >&2
+        rc=$?; set +e; trap - ERR  # the evidence below may itself fail; the exit code must stay 71
+        echo "nested preflight in $PREFLIGHT failed (exit $rc, $route); no job taken" >&2
         echo "=== nesting evidence ==="
         env | grep -iE "bindpath|singularity|apptainer" | grep -v "^EPICPROD_" | sort
         echo "--- /var/lib:"; ls -ld /var/lib /var/lib/apptainer 2>&1
