@@ -263,10 +263,11 @@ script clears such rows with a comment.
 ### The estimate
 
 The `campaign_completion` analytics member (EPICPROD_ASSESSMENTS.md)
-reads the recorded targets of every source — the first edition head
-carrying one, per PC, the rule every denominator reader shares
-(`completion.pc_targets`) — against delivered events from the newest
-daily delivery snap:
+reads the recorded targets of every source — per PC, the best-sourced
+target among its edition heads, included over requested over derived,
+and among equals the first edition head carrying one, the rule every
+denominator reader shares (`completion.pc_targets`) — against delivered
+events from the newest daily delivery snap:
 
 - per PC, completion = min(delivered / target, 1); a PC with no files,
   no events, and no task in flight counts as not started (0); a PC

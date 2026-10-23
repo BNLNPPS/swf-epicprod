@@ -99,20 +99,33 @@ def campaign_heads(campaign_name):
                 .distinct('composed_name'))
 
 
+# The denominator's provenance chain (Metrics): a better-sourced target
+# on any edition outranks a weaker one on an earlier edition.
+TARGET_SOURCE_RANK = {'included': 0, 'requested': 1, 'derived': 2}
+
+
 def pc_targets(heads):
-    """pc label -> (expected, source) — the first edition head carrying
-    a target wins; a PC with targetless editions beside a targeted one
-    keeps the target. Every reader of the denominator uses this rule."""
+    """pc label -> (expected, source): the best-sourced target among a
+    PC's edition heads, included over requested over derived over any
+    other source, and among equals the first edition head carrying one.
+    A PC with targetless editions beside a targeted one keeps the
+    target. Every reader of the denominator uses this rule. (23 October
+    2026: pc6498's 26.07.0 edition carried a derived 500,000 and, first
+    by edition order, hid the included 5,000,000 on its 26.07.1 edition.)"""
     per = {}
+    rank = {}
     for head in heads:
         if not head.physics_config_id:
             continue
-        label = head.physics_config.label
-        if label in per:
+        if head.expected_events is None:
             continue
-        if head.expected_events is not None:
-            per[label] = (head.expected_events,
-                          head.expected_events_source or '')
+        label = head.physics_config.label
+        source = head.expected_events_source or ''
+        r = TARGET_SOURCE_RANK.get(source, len(TARGET_SOURCE_RANK))
+        if label in per and rank[label] <= r:
+            continue
+        per[label] = (head.expected_events, source)
+        rank[label] = r
     return per
 
 
