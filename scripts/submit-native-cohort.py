@@ -105,7 +105,7 @@ def describe(template, args):
         environment += ['APPTAINER_BINDPATH=' + SESSION_BIND, 'SINGULARITY_BINDPATH=' + SESSION_BIND]
     binds = '' if args.direct else f'+SingularityBind = "{SESSION_BIND}"\n'
     inputs = ','.join(f'{args.dir}/{name}' for name in (args.archive, 'certificates.tar.gz', 'rucio.cfg',
-                                                         'glidein-deadline.sh'))
+                                                         'glidein-deadline.sh', 'job-user.sh'))
     if args.task:
         environment.append(f'PanDA_TaskID={args.task}')
     return f'''# Native ePIC pilot cohort {args.tag}, generated {datetime.datetime.now(datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ}
@@ -186,7 +186,7 @@ def main():
         if not os.path.isdir(args.image):
             sys.exit(f'image is not a directory on this host: {args.image}')
         for required in (Path(args.dir) / 'epic-native-pilot.sh', Path(args.dir) / 'glidein-deadline.sh',
-                         Path(args.dir) / args.archive):
+                         Path(args.dir) / 'job-user.sh', Path(args.dir) / args.archive):
             if not required.is_file():
                 sys.exit(f'missing {required}')
         # The CA bundle this host keeps current, and rucio.cfg, travel with the
