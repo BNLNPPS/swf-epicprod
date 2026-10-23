@@ -435,4 +435,19 @@ build now casts it; the upstream pilot bug is to be reported.
   slow, not stuck; the same job takes 80 to 120 minutes on the 8480 and
   EPYC cores. The job's 21,600 s walltime limit is the bound to watch on
   the oldest OSPool slots; a job killed at that limit would cost an attempt.
+- 07:15 ET, the cohort's first failure, 5816712 of 26957.1 at UA-LR: the
+  payload finished, 1,132 events, output registered; the pilot's upload of
+  the 637 KB log tarball to BNL_PROD_DISK_1 failed and the job carries pilot
+  error 1152, "file transfer timed out". It did not time out. The pilot's
+  stderr has the Rucio client raising "No username set in the environment"
+  from `getpass.getuser()` while naming its token cache: inside the image on
+  that execution point the glidein's uid 1000 has no passwd entry and no
+  USER or LOGNAME reaches the job (the payload's own `whoami` failed too and
+  carried on). The pilot's Rucio copytool labelled the crash a timeout with
+  "timeout=None", a misclassification for the upstream list. Only this pilot
+  hit it tonight. From 35577c0 the launcher exports USER and LOGNAME before
+  the pilot starts (from `id -un`, else `uid<n>`), installed on osgsub01 for
+  later submissions; the twenty keep their launcher. The job is failed in
+  PanDA for its log alone while its output is registered, and task 41043
+  allows one attempt: what becomes of that output is Torre's question.
 
