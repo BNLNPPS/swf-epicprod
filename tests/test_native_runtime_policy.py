@@ -55,6 +55,7 @@ class RuntimePolicyTests(unittest.TestCase):
         self.assertNotIn('/old/', result)
         self.assertIn('+MaxRuntime = ifThenElse(MachineAttrGLIDEIN_Site0 =?= "OSG_US_FSU_HNPGRID", 960, 600)', result)
         self.assertIn('job_machine_attrs = GLIDEIN_Site', result)
+        self.assertEqual(renderer.runtime_limits(result), result)
 
     def test_cohort_does_not_silently_reintroduce_the_old_six_hour_budget(self):
         self.assertEqual(cohort.runtime_minutes('+MaxRuntime = 600\n'), 600)

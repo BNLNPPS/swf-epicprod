@@ -28,13 +28,17 @@ def runtime_limits(text):
     expression = module.condor_maximum(json.loads((native / 'queue-runtime-policy.json').read_text()), 'BNL_OSG_PanDA_1')
     if expression is None:
         return text
-    if re.search(r'(?m)^job_machine_attrs\s*=', text):
+    existing = re.search(r'(?m)^job_machine_attrs\s*=\s*(.*)$', text)
+    if existing and existing.group(1).strip() != 'GLIDEIN_Site':
         raise ValueError('review existing job_machine_attrs before installing site runtime limits')
-    text = replace_line(text, '+MaxRuntime', expression + '\njob_machine_attrs = GLIDEIN_Site\njob_machine_attrs_history_length = 1')
+    additions = '' if existing else '\njob_machine_attrs = GLIDEIN_Site\njob_machine_attrs_history_length = 1'
+    text = replace_line(text, '+MaxRuntime', expression + additions)
     old = re.search(r'(?m)^periodic_remove\s*=\s*(.*)$', text)
     if old is None:
         raise ValueError('missing existing periodic_remove safeguard')
     cap = '(JobStatus == 2 && (CurrentTime - EnteredCurrentStatus) > (60 * MaxRuntime))'
+    if cap in old.group(1):
+        return text
     return replace_line(text, 'periodic_remove', '(' + old.group(1) + ') || ' + cap)
 
 
