@@ -463,7 +463,9 @@ closes when its project has used `nersc.close_at_used` (0.9) or more of
 its CPU node-hours, with a reason starting "NERSC allocation:", and
 reopens when a new balance brings usage below it. A queue closed for
 any other reason stays as the operator set it, and an unreadable balance
-changes nothing. Each change is a `nersc_queue_switch` action.
+changes nothing. An explicit `commissioning` queue remains under operator
+control for bounded validation; the balance neither closes it nor promotes it.
+Each change is a `nersc_queue_switch` action.
 
 **The Site control.** It sits on the compose page, in a task's detail,
 and shows:

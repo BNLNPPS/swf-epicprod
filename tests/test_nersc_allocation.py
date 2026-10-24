@@ -2,7 +2,7 @@
 (swf_epicprod.nersc_allocation.summarize and line are pure)."""
 import unittest
 
-from swf_epicprod.nersc_allocation import line, summarize
+from swf_epicprod.nersc_allocation import line, summarize, queue_switches
 
 PROJECTS = [{'id': 'p1', 'name': 'm2616', 'description': 'ATLAS'},
             {'id': 'p2', 'name': 'm3763', 'description': 'ePIC'}]
@@ -17,6 +17,23 @@ ALLOCATIONS = {'p2': [
 
 
 class Balance(unittest.TestCase):
+
+    def test_commissioning_is_preserved_while_production_reserve_is_enforced(self):
+        record = {'projects': {'m3763': {'cpu': {'allocation': 100, 'usage': 93}}}}
+        prod, es = 'NERSC_Perlmutter_epic', 'NERSC_Perlmutter_epic_es'
+        queues = {prod: 'm3763', es: 'm3763'}
+        changes = queue_switches(record, queues, 0.9, {}, commissioning={es})
+        self.assertEqual([(c['queue'], c['action']) for c in changes], [(prod, 'close')])
+        changes = queue_switches(record, queues, 0.9, {})
+        self.assertEqual({c['queue'] for c in changes}, {prod, es})
+
+    def test_balance_recovery_does_not_promote_a_commissioning_queue(self):
+        record = {'projects': {'m3763': {'cpu': {'allocation': 100, 'usage': 50}}}}
+        es = 'NERSC_Perlmutter_epic_es'
+        changes = queue_switches(record, {es: 'm3763'}, 0.9,
+                                 {es: 'NERSC allocation: m3763 CPU 90% or more used'},
+                                 commissioning={es})
+        self.assertEqual(changes, [])
 
     def test_node_hours_per_capability(self):
         out = summarize(PROJECTS, ALLOCATIONS, ['m3763'])

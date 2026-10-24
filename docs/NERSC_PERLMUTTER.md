@@ -12,6 +12,13 @@ program that precedes Perlmutter is
 
 ## The queues
 
+The site is commissioning for Event Service. The ordinary production queue
+remains off; `NERSC_Perlmutter_epic_es` is the commissioning lane and automatic
+production feeding stays disabled. The allocation monitor preserves an
+explicit commissioning state. Start with short native-pilot smoke jobs and
+verify ES execution, output registration and readability before moving to
+production-shaped validation.
+
 | Queue | Role | Record |
 |---|---|---|
 | `NERSC_Perlmutter_epic` | production | `jobseed` `std`; mcore; `maxtime` 14400 s |

@@ -30,6 +30,9 @@ queue closed for allocation (that reason, or an operator's reason naming
 the allocation) reopens when a new balance brings usage below it. A
 queue an operator closed for any other reason is left alone, and an
 unreadable balance changes nothing.
+
+An explicitly commissioning queue stays operator-controlled for bounded
+validation. Its balance neither closes it nor promotes it to production.
 """
 import json
 import logging
@@ -159,17 +162,20 @@ def _allocation_reason(reason):
     return reason.startswith(RULE_PREFIX) or 'allocation' in reason.lower()
 
 
-def queue_switches(record, queues, close_at, closed):
+def queue_switches(record, queues, close_at, closed, *, commissioning=()):
     """The queue changes a balance calls for. Pure.
 
     ``queues`` {queue: project}; ``closed`` the current
     closed queues, {queue: reason}. Returns [{queue, project, used, action,
     reason}] with action 'close' or 'open', only where the state
-    changes; a project without a readable CPU balance decides nothing."""
+    changes; a project without a readable CPU balance decides nothing.
+    Explicit commissioning remains operator-controlled for bounded tests."""
     out = []
     if not record or record.get('error'):
         return out
     for queue, project in sorted(queues.items()):
+        if queue in commissioning:
+            continue
         cpu = ((record.get('projects') or {}).get(project) or {}).get('cpu') or {}
         if not cpu.get('allocation'):
             continue
@@ -205,7 +211,9 @@ def apply_queue_switches(record, created_by):
         close_at = DEFAULT_CLOSE_AT_USED
     def switch(entries):
         closed = {e['queue']: e['reason'] for e in entries if e['status'] in registry.CLOSED}
-        changes = queue_switches(record, queues, close_at, closed)
+        changes = queue_switches(record, queues, close_at, closed,
+                                 commissioning={e['queue'] for e in entries
+                                                if e['status'] == 'commissioning'})
         for c in changes:
             if c['action'] == 'close':
                 registry.change(entries, c['queue'], 'off', reason=c['reason'], by=created_by)
