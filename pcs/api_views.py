@@ -568,6 +568,32 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         self._save_or_refuse(serializer)
 
+    def destroy(self, request, *args, **kwargs):
+        """Delete a draft task, as the compose page's Delete does: only a
+        draft, a trial's own dataset with it, and one task_delete record.
+        The default destroy deleted any task and left no record (tasks
+        8460 and 8461, 2026-10-24 03:27Z)."""
+        from monitor_app.epicprod_logging import log_epicprod_action
+        task = self.get_object()
+        if task.status != 'draft':
+            return Response({'detail': 'Only draft tasks can be deleted.'},
+                            status=status.HTTP_409_CONFLICT)
+        deleted_name = task.composed_name
+        dataset = task.dataset
+        trial_dataset = (dataset is not None
+                         and 'trial' in (dataset.metadata or {})
+                         and dataset.prod_tasks.exclude(pk=task.pk).count() == 0)
+        task.delete()
+        if trial_dataset:
+            dataset.delete()
+        log_epicprod_action(
+            'api', 'task_delete', subject_type='campaign_task',
+            subject_key=deleted_name,
+            username=getattr(request.user, 'username', ''),
+            sublevel='normal', live_default=True,
+            trial_dataset_removed=bool(trial_dataset))
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @action(detail=True, methods=['post'], url_path='generate-commands')
     def generate_commands(self, request, name=None):
         task = self.get_object()

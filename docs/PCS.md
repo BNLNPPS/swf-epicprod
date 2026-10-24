@@ -137,6 +137,8 @@ Tags support list, create, get, update (draft only), and lock. Replace `{type}` 
 
 Physics tag creation requires a `category` field (digit). Tag numbers are always auto-assigned.
 
+`DELETE /pcs/api/prod-tasks/<name>/` deletes a task as the compose page's Delete does: only a draft (anything else is refused with 409), a trial's own dataset with it, and one `task_delete` action-stream record naming who deleted it.
+
 ### Production Tasks — submission artifacts
 
 A single read-only endpoint regenerates a task's submission artifact from current PCS state on every call (no DB writes):
