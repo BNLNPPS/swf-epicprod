@@ -11,18 +11,21 @@ the agent's host) and starts nothing unless every setting it needs is
 in place.
 """
 import copy
+import fcntl
 import hashlib
 import logging
 import os
+import shlex
 import uuid
 
 logger = logging.getLogger(__name__)
 
 TEMPLATE_DEFAULT = os.path.join(os.path.dirname(__file__), 'gke', 'pilot-job.yaml')
 PLACEHOLDER = '__SET_FROM_CLUSTER__'
-WRAPPER = ('/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/'
-           'epicprod-pilot-wrapper.sh')
+NATIVE_RUNTIME = ('/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/'
+                  'native-runtime-e8cc102')
 LABEL = 'epicprod-pilot'
+CAPABILITY_KEY = 'gke_pilot_runtime'
 DEFAULTS = {
     'enabled': False,
     'queue': 'BNL_ePIC_GOOGLE_es',
@@ -39,6 +42,12 @@ DEFAULTS = {
     'getjobrequests': 5,
     'proxy': '/etc/swf-monitor/longproxy-for-rucio',
     'secret_name': 'epicprod-pilot-proxy',
+    'native_runtime': NATIVE_RUNTIME,
+    'native_image': '/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable',
+    'es_channel': ('/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/'
+                   'es-channel-py313-debian13'),
+    'queuedata': ('/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/'
+                  'queuedata/BNL_ePIC_GOOGLE_es.json'),
 }
 
 
@@ -83,6 +92,12 @@ def blockers(cfg, template_text=None):
         out.append(f"no cluster credential at {cfg.get('credential')}")
     if template_text is not None and PLACEHOLDER in template_text:
         out.append('the pod template still has values to set from the cluster')
+    for key, filename in (('native_runtime', 'epic-native-pilot.sh'),
+                          ('native_runtime', 'pilot3-native.tar.gz')):
+        if not os.path.isfile(os.path.join(cfg.get(key) or '', filename)):
+            out.append(f"native runtime unavailable: {key}/{filename}")
+    if not os.path.isdir(os.path.join(cfg.get('es_channel') or '', 'python')):
+        out.append('Python-matched ES channel unavailable')
     return out
 
 
@@ -106,13 +121,36 @@ def render_job(template, cfg, name=None):
     resources = {'cpu': str(cfg['cpu']), 'memory': str(cfg['memory'])}
     container['resources'] = {'requests': dict(resources), 'limits': dict(resources)}
     queue = cfg['queue']
+    runtime = cfg['native_runtime']
+    # The same native archive/launcher as production; site settings supply
+    # the image, credentials and ES channel. No resource-type filter: the
+    # queue can generate SCORE jobs for a whole-node ES harness.
+    exports = {
+        'EPICPROD_NATIVE_IMAGE': cfg['native_image'],
+        'EPICPROD_NATIVE_ARCHIVE': 'pilot3-native.tar.gz',
+        'EPICPROD_NATIVE_BATCH': '1',
+        'EPICPROD_NATIVE_NESTING': 'off',
+        'EPICPROD_NATIVE_PROXY': 'x509up',
+        'EPICPROD_ES_CHANNEL': cfg['es_channel'],
+        'PILOT_ES_EXECUTOR_TYPE': 'generic',
+        'ATHENA_PROC_NUMBER': str(int(cfg['cpu'])),
+    }
+    command = ['bash', '/pilotdir/epic-native-pilot.sh', '-q', queue,
+               '-i', 'PR', '-j', 'managed', '-t', '-w', 'generic',
+               '--pilot-user', 'epic', '--url', 'https://pandaserver01.sdcc.bnl.gov',
+               '-p', '25443', '--allow-same-user=False', '--job-type=managed',
+               '--use-rucio-traces', 'False', '--rucio-host', 'https://nprucio01.sdcc.bnl.gov:443',
+               '--queuedata-url', 'file://' + cfg['queuedata'],
+               '--storagedata-url', 'https://datalake-cric.cern.ch/cache/ddmendpoints.json',
+               '--getjobrequests', str(int(cfg['getjobrequests'])), '--noworkerpilotstatusupdate']
     container['command'] = ['/bin/bash', '-c']
     # The proxy Secret is mounted read-only and group-readable; grid tools
     # want their own copy at mode 600, as Harvester's pods make it.
     container['args'] = [
         'install -m 600 /proxy/x509up /pilotdir/x509up && '
-        f'exec {WRAPPER} -q {queue} -r {queue} -s {queue} -i PR -j managed '
-        f"--getjobrequests {int(cfg['getjobrequests'])}"]
+        'cp -a ' + shlex.quote(runtime) + '/. /pilotdir/ && '
+        'export ' + ' '.join(k + '=' + shlex.quote(v) for k, v in exports.items()) + ' && '
+        'exec ' + ' '.join(shlex.quote(v) for v in command)]
     return job
 
 
@@ -160,11 +198,24 @@ def _clients(cfg):
     return client.CoreV1Api(api), client.BatchV1Api(api)
 
 
-def pod_supply(core, cfg):
-    """Our pilot pods in the namespace by phase: (pending, running)."""
+def pod_supply(core, batch, cfg):
+    """Count live Jobs even before Kubernetes has created their pods."""
     pods = core.list_namespaced_pod(cfg['namespace'], label_selector=f'app={LABEL}').items
-    pending = sum(1 for p in pods if p.status.phase == 'Pending')
-    running = sum(1 for p in pods if p.status.phase == 'Running')
+    jobs = batch.list_namespaced_job(cfg['namespace'], label_selector=f'app={LABEL}').items
+    live = {j.metadata.name for j in jobs
+            if not any(c.status == 'True' and c.type in ('Complete', 'Failed')
+                       for c in (j.status.conditions or []))}
+    working = set()
+    for pod in pods:
+        if pod.status.phase not in ('Pending', 'Running', 'Unknown'):
+            continue
+        owner = next((o.name for o in (pod.metadata.owner_references or []) if o.kind == 'Job'),
+                     pod.metadata.name)
+        live.add(owner)  # Also count a terminating pod after its Job was deleted.
+        if pod.status.phase == 'Running':
+            working.add(owner)
+    running = len(working)
+    pending = len(live) - running
     return pending, running
 
 
@@ -208,7 +259,44 @@ def _last_reason():
     return ((row or {}).get('extra_data') or {}).get('reason')
 
 
+def publish_capability(cfg, summary, template_text):
+    """Admission evidence from the controller's checked runtime and pod template."""
+    import json
+    from monitor_app.cached_product import get_product
+    cap = {'queue': cfg['queue'], 'mode': 'unknown', 'images': [],
+           'source': cfg['native_runtime'], 'max_pods': int(cfg['max_pods']),
+           'template_sha256': hashlib.sha256(template_text.encode()).hexdigest()}
+    if summary['outcome'] == 'held':
+        cap['error'] = summary['reason']
+    else:
+        path = os.path.join(cfg['native_runtime'], 'manifest.json')
+        with open(path) as handle:
+            manifest = json.load(handle)
+        archive = os.path.join(cfg['native_runtime'], 'pilot3-native.tar.gz')
+        with open(archive, 'rb') as handle:
+            digest = hashlib.sha256(handle.read()).hexdigest()
+        if digest != manifest['pilot_archive_sha256']:
+            raise ValueError('native archive differs from its published manifest')
+        cap.update(mode='bound', images=[cfg['native_image']],
+                   pilot_archive_sha256=digest, source_commit=manifest['source_commit'])
+    get_product(CAPABILITY_KEY, lambda: cap, ttl_seconds=900, refresh=True)
+
+
 def run_cycle(*, dry_run=False, created_by='gke_pilots'):
+    """Serialize every local controller invocation before measuring supply."""
+    root = os.environ.get('SWF_TMP_DIR', '/data/swf-tmp')
+    os.makedirs(root, exist_ok=True)
+    with open(os.path.join(root, 'gke-pilot-cycle.lock'), 'a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return {'queue': 'BNL_ePIC_GOOGLE_es', 'activated': 0, 'started': 0,
+                    'dry_run': dry_run, 'outcome': 'held',
+                    'reason': 'another GKE pilot cycle is active'}
+        return _run_cycle(dry_run=dry_run, created_by=created_by)
+
+
+def _run_cycle(*, dry_run=False, created_by='gke_pilots'):
     """One cycle. Returns the summary; records it when pods were started or
     the reason changed (never on a dry run)."""
     from monitor_app.epicprod_logging import log_epicprod_action
@@ -229,7 +317,7 @@ def run_cycle(*, dry_run=False, created_by='gke_pilots'):
         summary.update(outcome='held', reason='; '.join(stop))
     else:
         core, batch = _clients(cfg)
-        pending, running = pod_supply(core, cfg)
+        pending, running = pod_supply(core, batch, cfg)
         n, reason = decide(summary['activated'], pending, running, cfg['max_pods'])
         summary.update(pending=pending, running=running, to_start=n, reason=reason,
                        outcome='started' if n else 'steady')
@@ -250,4 +338,6 @@ def run_cycle(*, dry_run=False, created_by='gke_pilots'):
             message=(f"{cfg['queue']}: {summary['outcome']} ({summary['reason']}); "
                      f"started {summary['started']}"),
             **{k: v for k, v in summary.items() if k not in ('jobs', 'outcome')})
+    if not dry_run:
+        publish_capability(cfg, summary, text)
     return summary

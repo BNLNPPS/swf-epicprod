@@ -78,6 +78,20 @@ def dispatch_capabilities(reports=None):
             elif previous.get('mode') not in ('any', 'bound'):
                 result[queue] = dict(cap, mode='unknown', host=host)
     if cache:
+        # This queue is served by our GKE controller, not Harvester. Its
+        # checked runtime observation is authoritative for image admission.
+        from monitor_app.models import CachedProduct
+        from swf_epicprod.gke_pilots import CAPABILITY_KEY
+        row = CachedProduct.objects.filter(key=CAPABILITY_KEY).first()
+        queue = 'BNL_ePIC_GOOGLE_es'
+        cap = row.value if row and row.value else {}
+        age = ((datetime.now(timezone.utc) - row.built_at).total_seconds()
+               if row and row.built_at else None)
+        if cap.get('queue') == queue and age is not None and 0 <= age <= DISPATCH_MAX_AGE_S:
+            result[queue] = dict(cap, host='gke-pilots')
+        else:
+            result[queue] = {'mode': 'unknown', 'images': [], 'host': 'gke-pilots',
+                             'error': 'no fresh GKE native runtime report'}
         _dispatch_cache.update(at=now, value=result)
     return result
 

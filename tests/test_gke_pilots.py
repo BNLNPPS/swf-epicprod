@@ -2,11 +2,14 @@
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace as Obj
+from unittest.mock import Mock, patch
 
 import yaml
 
 from swf_epicprod.gke_pilots import (DEFAULTS, PLACEHOLDER, TEMPLATE_DEFAULT,
-                                     WRAPPER, blockers, decide, render_job)
+                                     NATIVE_RUNTIME, blockers, decide, pod_supply, render_job,
+                                     run_cycle)
 
 
 class DecideTest(unittest.TestCase):
@@ -35,12 +38,17 @@ class BlockersTest(unittest.TestCase):
             text = f.read()
         cfg = dict(DEFAULTS, credential='/nonexistent')
         reasons = blockers(cfg, text + PLACEHOLDER)
-        self.assertEqual(len(reasons), 4)  # enabled, max_pods, credential, template
+        self.assertIn('gke_pilots.enabled is false', reasons)
+        self.assertIn('gke_pilots.max_pods is 0', reasons)
+        self.assertTrue(any('native runtime unavailable' in r for r in reasons))
 
     def test_ready(self):
-        with tempfile.NamedTemporaryFile() as kc:
+        with tempfile.TemporaryDirectory() as root, tempfile.NamedTemporaryFile() as kc:
+            for name in ('epic-native-pilot.sh', 'pilot3-native.tar.gz'):
+                open(os.path.join(root, name), 'w').close()
+            os.mkdir(os.path.join(root, 'python'))
             cfg = dict(DEFAULTS, enabled=True, namespace='epic', max_pods=4,
-                       credential=kc.name)
+                       credential=kc.name, native_runtime=root, es_channel=root)
             self.assertEqual(blockers(cfg, 'image: x'), [])
 
 
@@ -55,13 +63,44 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(pod['metadata']['labels']['app'], 'epicprod-pilot')
         c = pod['spec']['containers'][0]
         self.assertEqual(c['resources']['limits'], {'cpu': '13', 'memory': '90Gi'})
-        self.assertIn(WRAPPER, c['args'][0])
+        self.assertIn(NATIVE_RUNTIME, c['args'][0])
+        self.assertIn('EPICPROD_NATIVE_BATCH=1', c['args'][0])
+        self.assertIn('ATHENA_PROC_NUMBER=13', c['args'][0])
+        self.assertIn('EPICPROD_ES_CHANNEL=', c['args'][0])
         self.assertTrue(c['args'][0].startswith('install -m 600 /proxy/x509up /pilotdir/x509up'))
         self.assertIn('-q BNL_ePIC_GOOGLE_es', c['args'][0])
         self.assertNotIn('--resource-type', c['args'][0])
         secrets = [v['secret']['secretName'] for v in pod['spec']['volumes'] if 'secret' in v]
         self.assertEqual(secrets, ['s1'])
         self.assertNotIn('resources', template['spec']['template']['spec']['containers'][0])
+
+
+class SupplyTest(unittest.TestCase):
+    def test_jobs_without_pods_fill_the_cap(self):
+        core, batch = Mock(), Mock()
+        core.list_namespaced_pod.return_value.items = []
+        batch.list_namespaced_job.return_value.items = [
+            Obj(metadata=Obj(name=f'job-{i}'), status=Obj(conditions=[])) for i in range(5)]
+        pending, running = pod_supply(core, batch, DEFAULTS)
+        self.assertEqual((pending, running), (5, 0))
+        self.assertEqual(decide(50, pending, running, 5)[0], 0)
+
+    def test_running_orphan_still_uses_a_slot(self):
+        core, batch = Mock(), Mock()
+        core.list_namespaced_pod.return_value.items = [
+            Obj(metadata=Obj(name='pod', owner_references=[Obj(kind='Job', name='deleted-job')]),
+                status=Obj(phase='Running'))]
+        batch.list_namespaced_job.return_value.items = []
+        self.assertEqual(pod_supply(core, batch, DEFAULTS), (0, 1))
+
+    def test_overlapping_cycle_does_not_start_work(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, SWF_TMP_DIR=root):
+            with open(os.path.join(root, 'gke-pilot-cycle.lock'), 'a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch('swf_epicprod.gke_pilots._run_cycle') as cycle:
+                    self.assertEqual(run_cycle()['outcome'], 'held')
+                    cycle.assert_not_called()
 
 
 if __name__ == '__main__':

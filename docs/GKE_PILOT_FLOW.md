@@ -7,6 +7,12 @@ step with the queue's Event Service backlog. PanDA's Harvester does not
 serve this queue. `BNL_ePIC_GOOGLE` stays with the PanDA team's
 Harvester (`BNL_harvester_2`).
 
+Torre resumed Google ES commissioning on 24 October 2026: at most five
+concurrent ES jobs, using the production native pilot. Evaluate natural
+preemptions and the recovery of completed/unfinished ranges. If no natural
+preemption is observed, request one controlled worker termination after
+registered progress is available. Expansion requires his explicit approval.
+
 Decided with Torre on 2026-09-30, after Harvester was found starting
 empty workers for the queue (below). The request to the PanDA team
 went out the same day.
@@ -45,11 +51,11 @@ Each cycle:
 1. **Reads the backlog.** It counts the queue's activated jobs from
    PanDA's `jobsactive4`, each a job waiting for a pilot.
 2. **Reads the supply.** It lists the pilot Jobs it has started in the
-   cluster, by label, and counts their pods as waiting (Pending) or
-   working (Running).
+   cluster, by label. Live Jobs count even before their pods appear;
+   terminating pods still count after their Job is deleted.
 3. **Decides** (`decide`, a pure function). The pods to start are the
    activated jobs not already covered by a waiting pod, bounded by the
-   cap `max_pods` less every pod alive. With no backlog nothing starts.
+   cap `max_pods` less every worker alive. With no backlog nothing starts.
 4. **Starts them.** Each is one Kubernetes Job, one pod, from the pod
    template, and runs our pilot wrapper in pull mode.
 5. **Records** a `gke_pilot_cycle` action when it starts pods or its
@@ -57,6 +63,9 @@ Each cycle:
 
 Finished Jobs remove themselves (`ttlSecondsAfterFinished`). A pilot
 that finds no job exits after its `--getjobrequests` attempts.
+Cycles share a local file lock under `SWF_TMP_DIR` (default
+`/data/swf-tmp`), so overlapping cron/manual invocations cannot each
+allocate the same remaining capacity.
 
 ## The pod
 
@@ -68,15 +77,29 @@ The cycle sets:
 - the CPU and memory, the `cpu` and `memory` settings, sized so that
   one pod takes one node;
 - the proxy, mounted from the Secret the cycle keeps current;
-- the command: our wrapper,
-  `/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/epicprod-pilot-wrapper.sh`,
-  with `-q -r -s <queue> -i PR -j managed --getjobrequests N` and no
-  resource type.
+- the command: the production native launcher and archive, copied from
+  `native_runtime`, with the queue, credentials, campaign image and
+  Python-matched ES channel supplied as settings. There is no resource-type
+  filter: a whole-node harness can be carried by a generated SCORE job.
 
-The wrapper sets `ATHENA_PROC_NUMBER` from the pod's CPU limit and
-runs our pilot build (OSG_SUBMISSION.md, Our pilot wrapper). The
+The controller sets `ATHENA_PROC_NUMBER` from the pod's CPU limit. The
+native launcher enters the campaign image and runs its Python, adding
+the ES channel after image startup. The
 payload's harness takes its slots from the same number
 (NODE_EVENT_DISPATCHER.md, The core count, from the node).
+
+The initial runtime is
+`/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/native-runtime-e8cc102`:
+the shared main launcher and the exact GREX production archive, SHA256
+`9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`.
+This is one native pilot implementation. ES fixes belong in that shared
+implementation; commissioning tasks and configuration remain separate.
+
+Each successful controller cycle publishes `gke_pilot_runtime`, a cached
+observation carrying the checked archive digest, runtime path, pod-template
+hash and bound image. Queue image admission reads this observation for the
+ES queue, which Harvester does not serve. A held or stale controller does
+not authorize image placement.
 
 **Credential.** The pilots use the proxy the npps0 pilots use, the
 production robot identity also used by the PanDA team's Harvester
@@ -108,6 +131,15 @@ requested from the PanDA team, regenerates the ranges it left.
 | `cpu`, `memory` | `'14'`, `'100Gi'` | each pod's request and limit |
 | `getjobrequests` | 5 | job requests before an idle pilot exits |
 | `proxy`, `secret_name` | as above, `epicprod-pilot-proxy` | the credential |
+| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle |
+| `native_image` | `/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable` | the image containing the pilot's Python and the payload |
+| `es_channel` | `.../canary/es-channel-py313-debian13` | the channel matching Python 3.13 in that image |
+| `queuedata` | `.../canary/queuedata/BNL_ePIC_GOOGLE_es.json` | existing ES storage/cadence overrides, preserved from the previous launcher |
+
+The commissioning cap is five pilot Jobs, including workers still waiting
+for a pod. Each pilot runs one ES job at a time; its 14 harness slots are
+within that job. Five jobs therefore reserve at most 70 CPUs with the
+current resource settings. No automatic cap increase is configured.
 
 The cycle refuses to start pods, and records why, while `enabled` is
 false, `namespace` is empty, `max_pods` is 0, the credential is
@@ -145,7 +177,8 @@ debug pod with that setting started the payload image as uid 1000
 
 ## Still to do
 
-- A first pod by hand (`max_pods` 1) against an Event Service trial
-  task, then the cap raised.
-- Cron enqueue (`*/5`) with the first enabled cycle.
+- A first native pod against an Event Service trial task, then sustained
+  commissioning under the authorized five-job cap.
+- Cron enqueue (`*/5`) is installed; the controller is enabled only after
+  its native runtime is available.
 - Whether preemption notices reach the pod.
