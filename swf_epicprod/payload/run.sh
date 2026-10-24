@@ -7,6 +7,22 @@ CURRENT_STAGE=""
 stage() {
   CURRENT_STAGE=$1
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 $2${3:+ $3}" >> "${PAYLOAD_STAGES_LOG:-payload-stages.log}"
+  # With EPICPROD_SWITCH_SCRATCH_PEAK=1, the scratch's size in KB and its
+  # file count (inodes: files and directories) at every stage start and
+  # end (EPICPROD_PAYLOAD.md, Scratch disk): the payload's files only grow
+  # until the closeout, so the largest of these are its peak disk and inode
+  # use, which the report carries and the job metrics name. A du that fails
+  # or takes over a minute leaves its value out; it never fails a stage.
+  if [ "${EPICPROD_SWITCH_SCRATCH_PEAK:-0}" = "1" ] && [ -n "${TMPDIR:-}" ] && [ -d "${TMPDIR}" ]; then
+    local scratch_kb scratch_files
+    # "|| true" inside each substitution: the ERR trap is inherited there
+    # (set -E), and du exits 1 on any unreadable file while still printing
+    # the total, which must not mark the stage failed.
+    scratch_kb=$(timeout 60 du -skx "${TMPDIR}" 2>/dev/null | cut -f1 || true)
+    scratch_files=$(timeout 60 du -sx --inodes "${TMPDIR}" 2>/dev/null | cut -f1 || true)
+    [ -n "${scratch_kb}" ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 $2 ${scratch_kb} ${scratch_files:--}" \
+      >> "${PAYLOAD_SCRATCH_LOG:-payload-scratch.log}"
+  fi
   # As each stage starts and ends, refresh the report, so the metrics the
   # pilot sends on its next heartbeat say where the payload has got to. A
   # job that dies with its worker, or is killed at the wall inside a long
@@ -182,6 +198,7 @@ payload_report() {
     --reco "${RECO_TEMP:+${RECO_TEMP}/${TASKNAME:-}.eicrecon.edm4eic.root}" \
     --full-events "${FULL_EVENTS}" --reco-events "${RECO_EVENTS}" --note "${REPORT_NOTE}" \
     --pool-sample "${EPICPROD_POOL_SAMPLE:-}" \
+    --scratch "${PAYLOAD_SCRATCH_LOG:-payload-scratch.log}" \
     || echo "payload report not written (payload_report.py exit $?)"
   report_send || true
 }
@@ -355,6 +372,17 @@ else
     # the EXIT trap removes it (EPICPROD_KEEP_TMPDIR=1 keeps it).
     TMPDIR_OURS=1
   fi
+fi
+# With EPICPROD_SWITCH_OWN_SCRATCH=1 the payload works in a directory of
+# its own under the batch system's scratch and removes it at exit, as it
+# removes a scratch it made itself (EPICPROD_PAYLOAD.md, Scratch disk). A
+# pilot runs several jobs in one batch job, and a GREX allocation eight
+# pilots in one Slurm scratch, which the batch system clears only when the
+# batch job ends: without this, each job's FULL and RECO files stay there,
+# and an OSG pilot's second job left 4.1 GB of a 4.5 GB slot (2026-10-24).
+if [ "${EPICPROD_SWITCH_OWN_SCRATCH:-0}" = "1" ] && [ "${TMPDIR_OURS}" != 1 ]; then
+  TMPDIR=${TMPDIR}/epicprod-payload-${$}
+  TMPDIR_OURS=1
 fi
 echo "TMPDIR=${TMPDIR}"
 mkdir -p ${TMPDIR}
