@@ -482,7 +482,7 @@ Without the setting, the launcher's environment is unchanged.
 
 `scripts/render-native-grex.py --canary-es-task TASK
 --canary-es-channel CHANNEL --canary-es-cores 2` renders one task-bound
-MCORE test pilot instead of the production multipilot launcher. It keeps
+test pilot instead of the production multipilot launcher. It keeps
 memory per core, uses a private queue-data file with a zero timefloor and
 the requested walltime, and supplies the queue's existing write storage
 for the `es_events` and `es_failover` activities. The normal templates and
@@ -496,6 +496,18 @@ in units of five using the existing Upsilon reference input and the
 `/data/atlpan/harvester_common/native-grex-es-yampl313-20261024`, using the
 unchanged native pilot archive
 `9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`.
-The trial is submitted, awaiting worker execution and output registration.
-It does not replace the separate GREX ordinary-pilot gate, Condor 27242.0.
+The trial does not establish channel success: GREX's queue generates a
+SCORE job despite the task requesting two cores. Ordinary pilot 27109.7
+took job 5888754 before the private worker started; it failed with pilot
+error 1301 (`fg_stumble`), taking none of the 20 ranges. The first private
+worker requests MCORE and cannot take that generated SCORE job. The
+renderer now retains SCORE while reserving the cores for the ES slots.
+
+Task binding restricts the private pilot's requests, but does not reserve
+the task against other pilots. GREX's ordinary pilots request `unified`,
+which also admits user-labelled jobs; changing to the existing `user`
+workqueue would not isolate another attempt. A private dispatch route is
+still needed before the next channel trial. No label or workqueue
+configuration has been changed. This trial does not replace the separate
+GREX ordinary-pilot gate, Condor 27242.0.
 

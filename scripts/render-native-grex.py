@@ -98,7 +98,11 @@ def canary(text, directory, wall_minutes, token):
 
 
 def es_canary(text, directory, taskid, channel, cores=2):
-    """One MCORE test pilot, isolated from the production SCORE pilots."""
+    """One task-bound test pilot with cores reserved for its ES slots.
+
+    Task binding restricts this pilot's requests; other pilots can still take
+    the task. GREX generates SCORE jobs even when the task requests more cores.
+    """
     if int(taskid) < 1 or int(cores) < 2:
         raise ValueError('an ES canary needs a task id and at least two cores')
     if not channel.startswith('/cvmfs/') or any(c in channel for c in '\n\r" {}'):
@@ -111,7 +115,6 @@ def es_canary(text, directory, taskid, channel, cores=2):
     text = replace_line(text, '+maxMemory', str(memory // allocation * cores))
     executable = re.search(r'(?m)^executable\s*=\s*(.*)$', text).group(1).strip()
     text = replace_line(text, 'executable', str(Path(executable).with_name('epic-native-pilot.sh')))
-    text = text.replace('--resource-type SCORE', '--resource-type MCORE')
     text = text.replace('--allow-same-user=False', '--allow-same-user=True')
     text = text.replace('-j managed ', '-j test ').replace('--job-type=managed', '--job-type=test')
     env = re.search(r'(?m)^environment\s*=\s*"([^"\n]*)"$', text).group(1)
@@ -152,7 +155,7 @@ if __name__ == '__main__':
     ap.add_argument('--canary-dir', help='fill the placeholders for one hand submission from this directory')
     ap.add_argument('--wall-minutes', type=int, default=240)
     ap.add_argument('--token', default='/data/atlpan/tokens/ce/prod/112106b0e5d956dff67942864654eb41')
-    ap.add_argument('--canary-es-task', type=int, help='bind one MCORE Event Service pilot to this test task')
+    ap.add_argument('--canary-es-task', type=int, help='bind one Event Service pilot to this test task')
     ap.add_argument('--canary-es-channel', help='published Python-matched yampl channel directory on CVMFS')
     ap.add_argument('--canary-es-cores', type=int, default=2)
     a = ap.parse_args()
