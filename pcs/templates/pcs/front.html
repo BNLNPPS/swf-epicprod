@@ -8,7 +8,7 @@
                    margin-bottom: 0.8rem; }
   .front-state-supplied, .front-state-fed, .front-state-would_feed { background-color: #d9f2df; }
   .front-state-degraded, .front-state-oversize, .front-state-error { background-color: #f8d7da; }
-  .front-state-held, .front-state-no_work, .front-state-idle_capacity,
+  .front-state-held, .front-state-no_work,
   .front-state-awaiting_observation, .front-state-undecided { background-color: #f1f1f1; }
 </style>
 <div class="container-fluid">
@@ -41,7 +41,6 @@
                     <li><strong>supplied</strong>: committed depth is at or above the low-water mark; nothing to do.</li>
                     <li><strong>would feed</strong> (shadow mode) or <strong>fed</strong>: the next eligible task was released, or in shadow mode would have been.</li>
                     <li><strong>awaiting observation</strong>: a feed is younger than the activation window (600 s); it counts as committed depth until the census shows its jobs.</li>
-                    <li><strong>idle capacity</strong>: work is pending but the queue runs below 30% of its ceiling, and has done so for longer than its start latency since the front's last feed; the worker supply or the site, not the front, is short.</li>
                     <li><strong>degraded</strong>: a gate is red (canary, credential, breaker, or a failure detector); the reason names which.</li>
                     <li><strong>oversize</strong>: the next eligible task alone exceeds the high-water mark; the operator decides.</li>
                     <li><strong>held</strong>: the front or the queue's feed switch is off, a downtime is declared for the queue, a cap would be passed, the feed would pass the high-water mark, the task cannot be sized, or the queue has no calibration.</li>
@@ -62,7 +61,6 @@
                     <li><strong>awaiting_observation</strong>: the front fed the queue less than 600 s ago and waits for the census to show the jobs.</li>
                     <li><strong>no_calibration</strong>: the queue finished no production job in 14 days, so its hours cannot be computed.</li>
                     <li><strong>supplied</strong>: committed hours are at or above the low-water mark.</li>
-                    <li><strong>not_pulling</strong>: work is pending but the queue runs below 30% of its capacity, and has since before its start latency elapsed after the front's last feed.</li>
                     <li><strong>no_eligible_task</strong>: no task in ready is pinned to the queue and passes the readiness checks.</li>
                     <li><strong>unsized_task</strong>: the next task's job count cannot be read (no per-job event count or no matched input).</li>
                     <li><strong>oversize_task</strong>: the next task alone exceeds the high-water mark.</li>

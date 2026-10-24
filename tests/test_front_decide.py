@@ -153,14 +153,16 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(out[0][:2], ('awaiting_observation', 'awaiting_observation'))
         self.assertEqual(out[0][2]['committed_h'], 4.0)
 
-    def test_idle_capacity_uses_short_grace_despite_long_historical_wait(self):
+    def test_low_running_count_does_not_hold_ready_work(self):
         idle = census(not_started=1000, running=10, p90_start_h=2.0)
-        self.assertEqual(run(idle, [entry('t')], last_feed_age_h=0.1)[0][0], 'would_feed')
-        self.assertEqual(run(idle, [entry('t')], last_feed_age_h=1.0)[0][:2], ('idle_capacity', 'not_pulling'))
+        for age in (0.1, 1.0, 3.0, None):
+            self.assertEqual(run(idle, [entry('t')], last_feed_age_h=age)[0][:2],
+                             ('would_feed', 'would_feed:t'))
         deep = census(not_started=20000, running=10, p90_start_h=40)
-        self.assertEqual(run(deep, [entry('t')], last_feed_age_h=1.0)[0][:2], ('idle_capacity', 'not_pulling'))
-        self.assertEqual(run(idle, [entry('t')], last_feed_age_h=3.0)[0][:2], ('idle_capacity', 'not_pulling'))
-        self.assertEqual(run(idle, [entry('t')], last_feed_age_h=None)[0][0], 'would_feed')
+        self.assertEqual(run(deep, [entry('t')], last_feed_age_h=1.0)[0][:2],
+                         ('supplied', 'supplied'))
+        self.assertEqual(run(idle, [], last_feed_age_h=1.0)[0][:2],
+                         ('no_work', 'no_eligible_task'))
 
     def test_no_calibration_holds(self):
         bare = {'not_started': 0, 'running': 0, 'ceiling': 0, 'hours_at_capacity': None,

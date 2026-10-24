@@ -65,7 +65,6 @@ BURN_MIN_FAILED = 10
 BURN_FAST_FRACTION = 0.5
 FAILURE_WINDOW_MIN_OUTCOMES = 50
 FAILURE_WINDOW_RATE = 0.6
-IDLE_FRACTION = 0.3
 ROWS_CACHE_TTL_S = 24 * 3600
 STATE_KEY = 'front_state'
 STATE_TTL_S = 24 * 3600
@@ -268,7 +267,7 @@ def _recent_feeds(queue, window_s):
 
 def _last_feed_age_h(queue):
     """Hours since the front's latest feed of the queue, None when it
-    never fed it: the clock of the idle-capacity rule."""
+    never fed it, for the queue's decision record and display."""
     from monitor_app.models import AppLog
     row = (AppLog.objects.filter(app_name='epicprod',
                                  extra_data__action='front_decision',
@@ -597,9 +596,6 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         return [('awaiting_observation', 'awaiting_observation', rec())]
     if committed_h is None:
         return [('held', 'no_calibration', rec())]
-    if (ceiling > 0 and not_started > 0 and running < IDLE_FRACTION * ceiling
-            and last_feed_age_h is not None and last_feed_age_h > STALL_GRACE_H):
-        return [('idle_capacity', 'not_pulling', rec())]
     if committed_h >= h_low:
         return [('supplied', 'supplied', rec())]
     if not eligible:

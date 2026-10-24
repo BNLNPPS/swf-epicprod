@@ -6412,7 +6412,7 @@ def front_page(request):
     queues = regulated_queues()
     labels = {'supplied': 'supplied', 'fed': 'fed', 'would_feed': 'would feed',
               'awaiting_observation': 'awaiting observation',
-              'idle_capacity': 'idle capacity', 'degraded': 'degraded',
+              'degraded': 'degraded',
               'oversize': 'oversize', 'held': 'held', 'no_work': 'no work',
               'error': 'error'}
     latest = state.get('queues') or {}

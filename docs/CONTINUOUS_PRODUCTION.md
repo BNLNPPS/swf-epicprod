@@ -141,6 +141,10 @@ from 20 of them (`CALIBRATION_MIN_JOBS` in `monitor_app/panda/census.py`).
 Below that the queue reads uncalibrated: one fast trial job gave
 UM_GREX_PanDA_1 a p90 start latency of 0.04 h.
 
+Historical concurrency normalizes work depth. A running count below that
+reference does not establish unused available slots and does not hold task
+releases.
+
 The two are read together. Low runnable and low committed depth is a
 queue that needs work; low runnable and high committed depth is work
 held upstream of the queue (generation, brokerage, worker supply) that
@@ -240,7 +244,7 @@ and `front.activation_window_s`, and the regulated queues are the
 queue registry's (QUEUE_REGISTRY.md); the census is
 `monitor_app/panda/census.py`, which also carries each queue's
 non-terminal production tasks (the task cap's count) and p90 start
-latency (the idle rule's clock); the decision records are the
+latency; the decision records are the
 `front_decision` and `front_cycle` actions, and the cycle stores its
 whole state as the cached product `front_state`, which the front page
 reads without computing. Every read the cycle makes is fenced: a
@@ -303,7 +307,6 @@ task cap; `max_per_cycle` and the activation window bound a cycle.
 | supplied | depth ≥ `h_low`, gates green | hold | `supplied` |
 | refill | depth < `h_low`, gates green, feed on, no submission awaiting observation | submit the highest-priority eligible task; at most `max_per_cycle` per cycle, never past `h_high`, never past the caps | `fed:<task>` |
 | awaiting observation | a submission is younger than one activation window (two cycles) | hold; count the submission as committed depth | `awaiting_observation` |
-| idle capacity | running below a fraction of the ceiling while depth > 0, for longer than the queue's p90 start latency since the front's last feed | hold; notice (worker supply or site, not the front) | `not_pulling` |
 | degraded | a gate is red: canary failing or its window stale, burn-through or windowed failure rate over threshold, credential invalid | hold; breaker opens | `canary`, `burn_through`, `failure_window`, `credential` |
 | half open | the breaker's cause has cleared and policy allows automatic recovery | submit one task and wait for completions; on failure reopen with a doubled wait | `half_open` |
 | held | queue feed off or front off; a declared downtime in force or starting within `h_high` hours (checked right after the breaker, ahead of the measured gates: a declaration is not a fault, the breaker stays closed and the hold lifts itself when the window ends); a feed that would pass `h_high`; the task or job cap; a task that cannot be sized; no calibration for the queue | hold | `queue_off`, `front_off`, `declared`, `would_exceed_high`, `task_cap`, `job_cap`, `unsized_task`, `no_calibration` |
@@ -834,7 +837,7 @@ allows.
 
 Two kinds of stop are kept apart in the record and on the page. A hold
 is the dispatcher's own transient decision (supplied, awaiting
-observation, idle capacity, no eligible task); it clears by itself and
+observation, no eligible task); it clears by itself and
 is never latched. A breaker is a latched state on a queue, a task or
 the front, opened by a detection or an operator and closed by an
 operator or, per breaker class and only where policy allows, after one
