@@ -60,6 +60,11 @@ fi
 [[ -n $ACTUAL ]] || { echo "not inside a container: the slot ignored +SingularityImage $IMAGE" >&2; exit 69; }
 [[ $(readlink -f "$ACTUAL") == $(readlink -f "$IMAGE") ]] || {
     echo "outer image $ACTUAL is not $IMAGE; refusing" >&2; exit 65; }
+# Campaign images set PYTHONPATH during startup. Add the matching Event Service
+# channel afterwards, so both the pilot and its payload inherit the extension.
+if [[ -n ${EPICPROD_ES_CHANNEL:-} ]]; then
+    export PYTHONPATH=$EPICPROD_ES_CHANNEL/python${PYTHONPATH:+:$PYTHONPATH}
+fi
 # Dispatch uses the catalog spelling, not the resolved filesystem path.
 # The server must support container_name before deploying this launcher.
 export PILOT_CONTAINER_NAME="$IMAGE"

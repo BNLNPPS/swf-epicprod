@@ -14,6 +14,7 @@ reports to PanDA without a Harvester worker.
 """
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import re
 
@@ -96,6 +97,52 @@ def canary(text, directory, wall_minutes, token):
     return text
 
 
+def es_canary(text, directory, taskid, channel, cores=2):
+    """One MCORE test pilot, isolated from the production SCORE pilots."""
+    if int(taskid) < 1 or int(cores) < 2:
+        raise ValueError('an ES canary needs a task id and at least two cores')
+    if not channel.startswith('/cvmfs/') or any(c in channel for c in '\n\r" {}'):
+        raise ValueError('absolute CVMFS channel path required')
+    allocation = int(re.search(r'(?m)^\+xcount\s*=\s*(\d+)\s*$', text).group(1))
+    memory = int(re.search(r'(?m)^\+maxMemory\s*=\s*(\d+)\s*$', text).group(1))
+    if allocation < 1 or memory % allocation:
+        raise ValueError('expected an integer memory allowance per core')
+    text = replace_line(text, '+xcount', str(cores))
+    text = replace_line(text, '+maxMemory', str(memory // allocation * cores))
+    executable = re.search(r'(?m)^executable\s*=\s*(.*)$', text).group(1).strip()
+    text = replace_line(text, 'executable', str(Path(executable).with_name('epic-native-pilot.sh')))
+    text = text.replace('--resource-type SCORE', '--resource-type MCORE')
+    text = text.replace('--allow-same-user=False', '--allow-same-user=True')
+    text = text.replace('-j managed ', '-j test ').replace('--job-type=managed', '--job-type=test')
+    env = re.search(r'(?m)^environment\s*=\s*"([^"\n]*)"$', text).group(1)
+    env += (f' PanDA_TaskID={int(taskid)} EPICPROD_MIN_TIME_FOR_NEW_JOB=1200'
+            f' EPICPROD_ES_CHANNEL={channel}'
+            f' PILOT_ES_EXECUTOR_TYPE=generic'
+            f' ATHENA_PROC_NUMBER={int(cores)}')
+    text = replace_line(text, 'environment', '"' + env + '"')
+    inputs = re.search(r'(?m)^transfer_input_files\s*=\s*(.*)$', text).group(1).split(',')
+    inputs = [p for p in inputs if p != str(Path(executable).with_name('epic-native-pilot.sh'))]
+    queuefiles = [p for p in inputs if p.endswith('/queuedata.json')]
+    if len(queuefiles) != 1:
+        raise ValueError('expected one source queue-data file')
+    queue = json.loads(Path(queuefiles[0]).read_text())
+    queue.update(timefloor=0, maxtime=int(re.search(r'(?m)^\+maxWallTime\s*=\s*(\d+)', text).group(1)) * 60)
+    for key in ('acopytools', 'astorages'):
+        activities = queue[key]
+        for activity in ('es_events', 'es_failover'):
+            activities[activity] = list(activities['pw'])
+    dest = Path(directory) / 'queuedata.json'
+    content = json.dumps(queue, indent=2) + '\n'
+    if dest.exists():
+        if dest.read_text() != content:
+            raise ValueError('refusing to replace different canary queue data')
+    else:
+        with dest.open('x') as f:
+            f.write(content)
+    inputs[inputs.index(queuefiles[0])] = str(dest)
+    return replace_line(text, 'transfer_input_files', ','.join(inputs))
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('template')
@@ -105,8 +152,15 @@ if __name__ == '__main__':
     ap.add_argument('--canary-dir', help='fill the placeholders for one hand submission from this directory')
     ap.add_argument('--wall-minutes', type=int, default=240)
     ap.add_argument('--token', default='/data/atlpan/tokens/ce/prod/112106b0e5d956dff67942864654eb41')
+    ap.add_argument('--canary-es-task', type=int, help='bind one MCORE Event Service pilot to this test task')
+    ap.add_argument('--canary-es-channel', help='published Python-matched yampl channel directory on CVMFS')
+    ap.add_argument('--canary-es-cores', type=int, default=2)
     a = ap.parse_args()
     out = render(Path(a.template).read_text(), a.assets, a.image, a.tag)
     if a.canary_dir:
         out = canary(out, a.canary_dir, a.wall_minutes, a.token)
+    if a.canary_es_task or a.canary_es_channel:
+        if not a.canary_dir or not a.canary_es_task or not a.canary_es_channel:
+            ap.error('an ES canary needs --canary-dir, --canary-es-task and --canary-es-channel')
+        out = es_canary(out, a.canary_dir, a.canary_es_task, a.canary_es_channel, a.canary_es_cores)
     print(out, end='')

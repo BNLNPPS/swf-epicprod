@@ -464,3 +464,38 @@ build now casts it; the upstream pilot bug is to be reported.
   PanDA for its log alone while its output is registered, and task 41043
   allows one attempt: what becomes of that output is Torre's question.
 
+## GREX Event Service channel
+
+The Python 3.13 channel is published beside the existing Python 3.11
+channel at
+`/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/es-channel-py313-debian13`.
+Its sibling tarball has SHA256
+`0993145fb66b52fc759fafe01bd5cef80ead0f3fb47d721feae6aa2a61a0d0ae`.
+It was built with `perlmutter/build-es-channel.sh` in the 26.07.3 campaign
+image; import and a yampl socket also passed with Python 3.13.12 in the
+26.07.1 reference image. These local checks do not establish worker success.
+
+`EPICPROD_ES_CHANNEL` names this directory for a native pilot. The launcher
+prepends its `python` directory after entering the campaign image, whose
+startup resets `PYTHONPATH`. The pilot and its payload inherit that path.
+Without the setting, the launcher's environment is unchanged.
+
+`scripts/render-native-grex.py --canary-es-task TASK
+--canary-es-channel CHANNEL --canary-es-cores 2` renders one task-bound
+MCORE test pilot instead of the production multipilot launcher. It keeps
+memory per core, uses a private queue-data file with a zero timefloor and
+the requested walltime, and supplies the queue's existing write storage
+for the `es_events` and `es_failover` activities. The normal templates and
+their queue data are not changed.
+
+The first worker trial is [task 41112](https://pandamon01.sdcc.bnl.gov/task?jeditaskid=41112),
+Condor 27270.0 on pandaharvester01: two cores, 12 GB, 60 minutes, 20 events
+in units of five using the existing Upsilon reference input and the
+26.07.1 image. Its private directory is
+`/data/atlpan/native-grex-es-yampl313-20261024`; its frozen assets are
+`/data/atlpan/harvester_common/native-grex-es-yampl313-20261024`, using the
+unchanged native pilot archive
+`9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`.
+The trial is submitted, awaiting worker execution and output registration.
+It does not replace the separate GREX ordinary-pilot gate, Condor 27242.0.
+
