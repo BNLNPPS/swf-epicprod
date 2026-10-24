@@ -25,7 +25,21 @@ def runtime_limits(text):
     spec = importlib.util.spec_from_file_location('osg_runtime_policy', native / 'runtime-policy.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    expression = module.condor_maximum(json.loads((native / 'queue-runtime-policy.json').read_text()), 'BNL_OSG_PanDA_1')
+    policy = json.loads((native / 'queue-runtime-policy.json').read_text())
+    gate = module.condor_admission(policy, 'BNL_OSG_PanDA_1')
+    requirements = re.search(r'(?m)^Requirements\s*=\s*(.*)$', text)
+    if requirements is None:
+        raise ValueError('missing existing Requirements')
+    value = requirements.group(1)
+    old_gate = '(GLIDEIN_ToDie =?= undefined || GLIDEIN_ToDie - time() > 7200)'
+    if old_gate in value:
+        value = value.replace(old_gate, gate)
+    elif gate not in value:
+        if 'GLIDEIN_ToDie' in value:
+            raise ValueError('review existing glidein-life requirement before replacing it')
+        value = '(' + value + ') && ' + gate
+    text = replace_line(text, 'Requirements', value)
+    expression = module.condor_maximum(policy, 'BNL_OSG_PanDA_1')
     if expression is None:
         return text
     existing = re.search(r'(?m)^job_machine_attrs\s*=\s*(.*)$', text)

@@ -101,6 +101,15 @@ pilot start, proxy validity, and MachineFeatures shutdowntime. This
 policy neither extends those clocks nor resizes any submitted manifest.
 A damaged shipped policy stops startup before work is acquired.
 
+The renderer derives the matchmaking headroom requirement from this same
+policy: `TARGET.GLIDEIN_ToDie - time()` must exceed the execution queue's
+minimum (or the default for an unknown queue). Slots with no advertised
+death time retain their existing treatment. The launcher's landing check
+remains the backstop. This avoids repeatedly matching pilots to a dying
+glidein only to decline it after startup. Updating an existing template
+also replaces the earlier uniform two-hour gate; unfamiliar lifetime
+expressions require review rather than silently adding another rule.
+
 On 24 October the same policy also sets the pilot maximum: 57,600 seconds
 at `OSG_US_FSU_HNPGRID`, 36,000 at other OSG execution queues, including
 an unknown execution queue. The launcher copies the current server queue

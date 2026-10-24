@@ -50,12 +50,29 @@ class RuntimePolicyTests(unittest.TestCase):
                 'transfer_input_files = ' + ','.join('/old/' + name for name in files) + '\n'
                 '+EpicprodNative = "old"\n+MaxRuntime = {requestWalltimeMinute}\nperiodic_remove = False\n' + unchanged)
         result = renderer.retarget(text, '/new', 'headroom-test')
-        self.assertIn(unchanged, result)
+        self.assertIn('(Microarch =!= "x86_64-v2") && (MY.EpicprodNodeGuard =!= False)', result)
+        for line in unchanged.splitlines()[1:]:
+            self.assertIn(line, result)
         self.assertIn('/new/runtime-policy.py,/new/queue-runtime-policy.json', result)
         self.assertNotIn('/old/', result)
         self.assertIn('+MaxRuntime = ifThenElse(MachineAttrGLIDEIN_Site0 =?= "OSG_US_FSU_HNPGRID", 960, 600)', result)
         self.assertIn('job_machine_attrs = GLIDEIN_Site', result)
         self.assertEqual(renderer.runtime_limits(result), result)
+
+    def test_matchmaking_floor_uses_the_landing_policy(self):
+        gate = policy_module.condor_admission(POLICY, 'BNL_OSG_PanDA_1')
+        self.assertIn('TARGET.GLIDEIN_ToDie =?= undefined', gate)
+        for site in ('SU-ITS', 'OSG_US_FSU_HNPGRID', 'ComputeCanada-Fir'):
+            minimum = policy_module.select(POLICY, 'BNL_OSG_PanDA_1', site)[0]
+            self.assertIn('TARGET.GLIDEIN_Site =?= ' + json.dumps(site) + ', ' + str(minimum), gate)
+        text = ('Requirements = (GLIDEIN_ToDie =?= undefined || GLIDEIN_ToDie - time() > 7200) && '
+                '(MY.EpicprodNodeGuard =!= False)\n+MaxRuntime = 600\nperiodic_remove = False\n')
+        result = renderer.runtime_limits(text)
+        self.assertIn(gate, result)
+        self.assertNotIn('> 7200)', result)
+        self.assertEqual(renderer.runtime_limits(result), result)
+        with self.assertRaisesRegex(ValueError, 'review existing glidein-life'):
+            renderer.runtime_limits(text.replace('> 7200)', '> 8000)'))
 
     def test_cohort_does_not_silently_reintroduce_the_old_six_hour_budget(self):
         self.assertEqual(cohort.runtime_minutes('+MaxRuntime = 600\n'), 600)

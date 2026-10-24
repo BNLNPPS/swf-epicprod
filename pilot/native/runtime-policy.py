@@ -96,6 +96,17 @@ def prepare_queuedata(policy, queue, execute_queue, source, output):
     return str(output)
 
 
+def condor_admission(policy, queue):
+    """Match only slots with the same headroom the landing check requires."""
+    expression = str(select(policy, queue, '')[0])
+    for site in sorted(policy.get('queues', {}).get(queue, {}).get('execute_queues', {})):
+        seconds = select(policy, queue, site)[0]
+        expression = ('ifThenElse(TARGET.GLIDEIN_Site =?= ' + json.dumps(site)
+                      + ', ' + str(seconds) + ', ' + expression + ')')
+    return ('(TARGET.GLIDEIN_ToDie =?= undefined || '
+            'TARGET.GLIDEIN_ToDie - time() > ' + expression + ')')
+
+
 def condor_maximum(policy, queue):
     """Minutes, using the execution-site attribute recorded at match time."""
     default = maximum(policy, queue, '')
