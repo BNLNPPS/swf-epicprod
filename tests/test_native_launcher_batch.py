@@ -63,3 +63,55 @@ class BatchLaunch(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class InsideTheImage(unittest.TestCase):
+    """Inside the image (on GREX after the batch step, on OSG as started by the
+    glidein), the pilot receives this pilot directory's queuedata.json, the
+    per-pilot copy epicprod-multipilot.sh writes with its time floor and
+    maxtime, unless the arguments already name queue data."""
+
+    def setUp(self):
+        import tarfile
+        self.root = Path(tempfile.mkdtemp())
+        self.top = self.root / 'allocation'; self.top.mkdir()
+        self.here = self.top / 'pilot-1'; self.here.mkdir()
+        self.image = self.root / 'image'; self.image.mkdir()
+        src = Path(__file__).resolve().parents[1] / 'pilot/native'
+        for f in ('job-user.sh', 'glidein-deadline.sh'):
+            (self.top / f).write_text((src / f).read_text())
+        tree = self.root / 'tree' / 'pilot3'; tree.mkdir(parents=True)
+        (tree / 'pilot.py').write_text('')
+        with tarfile.open(self.top / 'pilot3-native.tar.gz', 'w:gz') as archive:
+            archive.add(tree, arcname='pilot3')
+        (self.top / 'x509up_u1000').write_text('proxy')
+        (self.here / 'queuedata.json').write_text('{"timefloor": 55}')
+        self.bin = self.root / 'bin'; self.bin.mkdir()
+        self.calls = self.root / 'python3-calls'
+        fake = self.bin / 'python3'
+        fake.write_text('#!/bin/bash\nprintf "%s " "$@" >> ' + str(self.calls) + '\necho >> '
+                        + str(self.calls) + '\ncat >/dev/null\nexit 0\n')
+        fake.chmod(0o755)
+
+    def run_launcher(self, *args):
+        env = {k: v for k, v in os.environ.items() if not k.startswith(('APPTAINER_', 'SINGULARITY_'))}
+        env.update(PATH=str(self.bin) + os.pathsep + env['PATH'], APPTAINER_CONTAINER=str(self.image),
+                   EPICPROD_NATIVE_IMAGE=str(self.image), EPICPROD_NATIVE_ARCHIVE='pilot3-native.tar.gz',
+                   EPICPROD_NATIVE_ASSETS=str(self.top), EPICPROD_NATIVE_PROXY='x509up_u1000',
+                   EPICPROD_NATIVE_BATCH='1', X509_USER_PROXY='/ce/spool/elsewhere')
+        return subprocess.run(['bash', str(LAUNCHER), '-q', 'UM_GREX_PanDA_1', *args], cwd=self.here,
+                              env=env, capture_output=True, text=True)
+
+    def test_pilot_gets_this_pilots_queuedata(self):
+        result = self.run_launcher()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        last = self.calls.read_text().strip().splitlines()[-1]
+        self.assertIn('pilot3/pilot.py -q UM_GREX_PanDA_1 --queuedata-url file://%s/queuedata.json'
+                      % self.here, last)
+
+    def test_named_queuedata_is_kept(self):
+        result = self.run_launcher('--queuedata-url', 'http://elsewhere/q.json')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        last = self.calls.read_text().strip().splitlines()[-1]
+        self.assertIn('--queuedata-url http://elsewhere/q.json', last)
+        self.assertEqual(last.count('--queuedata-url'), 1)

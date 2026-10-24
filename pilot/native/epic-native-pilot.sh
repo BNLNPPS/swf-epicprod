@@ -38,8 +38,15 @@ if [[ -n ${EPICPROD_NATIVE_PROXY:-} && -r $HERE/$EPICPROD_NATIVE_PROXY ]]; then
 fi
 ACTUAL=${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}
 if [[ -z $ACTUAL && ${EPICPROD_NATIVE_BATCH:-0} == 1 ]]; then
+    # The node's runtime, else the OSG pool's on CVMFS through its wrapper (which
+    # supplies its libraries; the raw binary has lacked libsubid.so.3), else
+    # the raw binary, which the 22 October GREX canary ran.
     RUNTIME=$(command -v apptainer || command -v singularity || true)
-    [[ -n $RUNTIME ]] || RUNTIME=/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/$(uname -m)/bin/apptainer
+    for candidate in /cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer \
+                     "/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/$(uname -m)/bin/apptainer"; do
+        [[ -n $RUNTIME ]] && break
+        [[ -x $candidate ]] && RUNTIME=$candidate
+    done
     [[ -x $RUNTIME ]] || { echo "Apptainer unavailable: $RUNTIME" >&2; exit 69; }
     binds=(--bind /cvmfs:/cvmfs --bind "$HERE:$HERE" --bind "$ASSETS:$ASSETS" --bind "$SELF:$SELF")
     for d in "${SLURM_TMPDIR:-}" "/scratch/slurm/${SLURM_JOB_ID:-}" "${_CONDOR_SCRATCH_DIR:-}" \
