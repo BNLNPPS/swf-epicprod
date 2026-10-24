@@ -308,13 +308,14 @@ fi
 if [ -n "${EPICPROD_CHUNK_LABEL:-}" ]; then
   TASK=".${EPICPROD_CHUNK_LABEL}"
 fi
-# A particle gun's chunks draw their own random streams, behind its switch
-# (docs/EPICPROD_INTERNAL_EVGEN.md, Single-particle guns): with chunk + 1
+# A particle gun's chunks draw their own random streams, on by default
+# since 0.25.1 (docs/EPICPROD_INTERNAL_EVGEN.md, Single-particle guns;
+# EPICPROD_SWITCH_PARTICLE_GUN=0 turns the gun off): with chunk + 1
 # alone, every gun dataset would share streams chunk for chunk. The seed
 # mixes the stem's SHA-256 (its first 28 bits) with the chunk, reduced
 # into npsim's positive 31-bit seed; a retried chunk keeps its seed.
 GUN_SEED_NOTE=""
-if [ "${EPICPROD_SWITCH_PARTICLE_GUN:-0}" = "1" ] && [ "${EVGEN_GENERATOR:-}" = "particle_gun" ] && [ ${#} -ge 4 ]; then
+if [ "${EPICPROD_SWITCH_PARTICLE_GUN:-1}" = "1" ] && [ "${EVGEN_GENERATOR:-}" = "particle_gun" ] && [ ${#} -ge 4 ]; then
   GUN_STEM_HASH=$(printf '%s' "$(basename ${BASENAME})" | sha256sum | cut -c1-7)
   SEED=$(( (16#${GUN_STEM_HASH} * 10000 + 10#${4} + 1) % 2147483647 ))
   [ ${SEED} -gt 0 ] || SEED=1

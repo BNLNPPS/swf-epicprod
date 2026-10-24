@@ -716,7 +716,9 @@ In order, each a committed step on the clone:
     after ROOT's `TNetXNGFile::Open` server error exits 88 with the
     door's line in the report's note (Exit codes).
 24. **The particle gun composed in the job** (2026-10-24, payload
-    0.25.0 behind `EPICPROD_SWITCH_PARTICLE_GUN=1`;
+    0.25.0 behind `EPICPROD_SWITCH_PARTICLE_GUN=1`; on by default since
+    0.25.1, after canaries 41093 and 41094 ran with the switch, and
+    `EPICPROD_SWITCH_PARTICLE_GUN=0` turns it off;
     EPICPROD_INTERNAL_EVGEN.md, Single-particle guns). An internal-EVGEN
     row of generator `particle_gun` has `evgen_generate.py` write the
     npsim steering from the generation environment, an angle range or an
@@ -724,8 +726,8 @@ In order, each a committed step on the clone:
     files have it, and run nothing else; npsim then runs the gun from it
     as before. The seed mixes the stem's SHA-256 with the chunk, so gun
     datasets do not share random streams, and the evgen stage log
-    records the steering. Unset, the gun is refused at the evgen stage
-    (exit 82).
+    records the steering. With the switch at 0 the gun is refused at the
+    evgen stage (exit 82).
 
 ## Multithreading
 

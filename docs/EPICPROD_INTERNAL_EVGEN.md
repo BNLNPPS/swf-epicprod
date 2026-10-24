@@ -473,10 +473,13 @@ a FLUKA the collaboration may ship.
 
 ## Single-particle guns (plan)
 
-Status: proposed 2026-10-24; built the same day behind
-`EPICPROD_SWITCH_PARTICLE_GUN` (payload 0.25.0; `pcs/commands.py`
-`gun_config` and its readers; `tests/test_particle_gun.py`), the two
-canaries pending. The single-particle configurations produced from
+Status: proposed 2026-10-24; built the same day (payload 0.25.0;
+`pcs/commands.py` `gun_config` and its readers;
+`tests/test_particle_gun.py`); the two canaries passed on GREX at
+26.07.3 (PanDA 41093 and 41094: every check, 5×41 geometry, 100 of 100
+events, RECO under `/TEST/canary`), and the gun is on by default since
+payload 0.25.1. The 274 configurations wait on the production
+`events_per_job`. The single-particle configurations produced from
 their tags, the steering composed in the job as it is for every
 generator above, instead of read from a hand-written file.
 

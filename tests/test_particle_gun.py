@@ -125,7 +125,7 @@ class Steering(unittest.TestCase):
             return run.returncode, (open(out).read() if os.path.exists(out) else None)
 
     def test_byte_for_byte(self):
-        on = {'EPICPROD_SWITCH_PARTICLE_GUN': '1'}
+        on = {}  # on by default since 0.25.1
         self.assertEqual(self.compose(dict(on, EVGEN_PARTICLE='pi+', EVGEN_GUN_ENERGY='1*GeV',
                                            EVGEN_GUN_THETA_MIN='3', EVGEN_GUN_THETA_MAX='50'),
                                       'pi+_1GeV_3to50deg.steer'), (0, ANGLE_FILE))
@@ -134,8 +134,8 @@ class Steering(unittest.TestCase):
                                       'e-_2GeV_eta-1.7.steer'), (0, ETA_FILE))
 
     def test_switch_off_refuses(self):
-        rc, written = self.compose({'EVGEN_PARTICLE': 'e-', 'EVGEN_GUN_ENERGY': '2*GeV',
-                                    'EVGEN_GUN_ETA': '-1.7'}, 'x.steer')
+        rc, written = self.compose({'EPICPROD_SWITCH_PARTICLE_GUN': '0', 'EVGEN_PARTICLE': 'e-',
+                                    'EVGEN_GUN_ENERGY': '2*GeV', 'EVGEN_GUN_ETA': '-1.7'}, 'x.steer')
         self.assertEqual((rc != 0, written), (True, None))
 
 

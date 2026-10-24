@@ -647,10 +647,10 @@ def main():
     summary_path = args.summary or os.path.join(args.workdir, 'evgen-summary.json')
 
     generator = env_value('EVGEN_GENERATOR', required=True).lower()
-    # The particle gun, behind its switch (DEVELOPING_THE_PAYLOAD.md,
-    # Switches): unset, it is refused below as an unknown generator.
+    # The particle gun, on by default since 0.25.1 (canaries 41093 and
+    # 41094); EPICPROD_SWITCH_PARTICLE_GUN=0 refuses it.
     if generator == 'particle_gun':
-        if os.environ.get('EPICPROD_SWITCH_PARTICLE_GUN') != '1':
+        if os.environ.get('EPICPROD_SWITCH_PARTICLE_GUN', '1') != '1':
             fail('no steering composer for generator particle_gun: '
                  'EPICPROD_SWITCH_PARTICLE_GUN is not 1')
         if args.events <= 0:
