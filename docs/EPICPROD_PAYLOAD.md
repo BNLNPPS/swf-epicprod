@@ -784,9 +784,11 @@ In order, each a committed step on the clone:
 
 ## Multithreading
 
-Resident Event Service reconstruction startup has a PID-based wait behind
-`EPICPROD_SWITCH_RESIDENT_PID_WAIT=1` in payload 0.25.4 (off by default while
-the canary is pending). Google job 5896226's unit starting at event 29 failed
+Resident Event Service reconstruction startup uses a PID-based wait by
+default from payload 0.25.5; `EPICPROD_SWITCH_RESIDENT_PID_WAIT=0` retains the
+old process scan for diagnosis. The switch-enabled 0.25.4 proof was Google
+task 41121/job 5897518, which finished all 20 events and registered both output
+closes. Google job 5896226's unit starting at event 29 failed
 at 19:39:53 UTC on 24 October 2026 because `pgrep` found no resident, yet that
 resident subsequently created `/tmp/esreco-537.sock` and remained alive;
 the container recorded zero OOM kills. The wait tracks the launched PID from
