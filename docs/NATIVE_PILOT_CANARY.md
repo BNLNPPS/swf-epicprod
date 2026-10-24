@@ -416,7 +416,10 @@ build now casts it; the upstream pilot bug is to be reported.
   The cohort's own mode now has an end-to-end completion of its own.
 - 06:07 ET: the cohort's first completion, job 5816729 of 26957.8 at OU,
   finished with its outputs registered, and the pilot took its second job,
-  5817072 (swf-3's read). No cohort payload has failed; 26957.18 stays held.
+  5817072 (swf-3's read). No cohort payload has failed; 26957.18 stays held. Removed 2026-10-24 04:12 UTC
+  with its hold recorded above (code 45, subcode -1000, slot1_4 of glidein
+  2883416 on scigrid7.physics.fsu.edu): a hand-submitted pilot, not a
+  harvester worker, whose hold raised the platform's held-workers alarm.
   Native jobs finished tonight: seven, each 1,132 events, zero errors.
 - 06:36 ET: five cohort completions (OU one, Rhodes two, UNL-PATH two), no
   payload failure. The first cohort pilot to leave, 26957.3 at UNL-PATH,
