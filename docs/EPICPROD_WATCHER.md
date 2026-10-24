@@ -87,24 +87,25 @@ is pushed.
 A tick wakes the watcher session when it finds a new item, an item
 whose evidence changed, a wait that has expired, or a promise that has
 come due. A tick that finds none of these sends nothing. The wake is one
-TeamComms Notify LLM (teamcomms-ai `docs/notify-llm.md`) to the
-watcher session, through the program connector the notifier already
-supports. The event id is the tick time and a digest of the open set, so
-a retried send is the same message. The content lists every open item
-without an outcome, with its source, evidence, link and age, followed by
-the items the tick reopened.
+TJAI message to the watcher session, found by its name `swf-watch` among
+the host's sessions; the session's inbox receiver delivers it as a turn.
+The content lists every open item without an outcome, with its key,
+source, evidence, link and age. TeamComms Notify LLM becomes the route
+once a program connector is configured for the watcher (none is on this
+host today).
 
 The watcher session is a Claude Code session under the operating
-account, on the subscription login, never metered access. A systemd unit
-keeps it running in a terminal multiplexer, restarts it when it exits,
-and restarts it daily so its context starts from its brief: this
-document, the operating rules, and the open set. It subscribes to the
-TeamComms topic `prod-watch` and answers each wake with one outcome
-record per item.
+account, on the subscription login, never metered access, in auto
+permission mode. `scripts/prod-watch-session.sh`, run by the user unit
+`scripts/systemd/prod-watch-session.service`, keeps it running in tmux
+(session `swf-watch`), restarts it when it exits, and restarts it daily
+so its context starts from its brief, EPICPROD_WATCHER_BRIEF.md. It
+answers each wake with one outcome record per item through
+`scripts/watch-record.py`.
 
 When the watcher session is offline, the tick sends the digest to the
 working sessions on the host through TJAI messaging, the notifier's
-route, and opens the `watcher:session` item.
+route, and says so at its head.
 
 A headless run for each wake (`claude -p`, the doer of the wrangler
 agent, swf-monitor WRANGLER_AGENT.md) carries no context from one wake
@@ -175,4 +176,11 @@ added evidence.
 
 ## Status
 
-Design. Nothing in this document is implemented.
+Torre Wenaus, 2026-10-23: "good plan, I like it! go". Built: the tick
+(`scripts/prod-watch.py`, cron every fifteen minutes) with the room's
+report, live screen, recent pauses and promises as sources; the outcome
+and promise writer (`scripts/watch-record.py`); the watcher session and
+its brief; the wake. Escalation runs in shadow (`watch_escalated`
+recorded, not live) until the tick is given `--escalate`. Not yet: the
+notifier's triggers and the session's liveness as sources, the Capcom
+subscriptions, the live watch as reviewer.

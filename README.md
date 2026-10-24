@@ -118,6 +118,8 @@ Production operations:
 - [EPICPROD_WATCHER.md](docs/EPICPROD_WATCHER.md) — the production
   watcher: a fifteen-minute tick over the known open problems, one LLM
   session that gives each an outcome, escalation at red when none comes.
+- [EPICPROD_WATCHER_BRIEF.md](docs/EPICPROD_WATCHER_BRIEF.md) — the watcher
+  session's standing brief: its outcomes, its authority, how it reads items.
 - [AUTODEPLOY.md](docs/AUTODEPLOY.md) — automatic deployment: a merge to
   main deploys itself, the deploy chosen from the changed paths.
 - [EPICPROD_TASK_CATALOG.md](docs/EPICPROD_TASK_CATALOG.md) — the

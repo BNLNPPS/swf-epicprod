@@ -1,0 +1,11 @@
+[Unit]
+Description=The production watcher session, swf-watch (swf-epicprod docs/EPICPROD_WATCHER.md)
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /data/wenauseic/github/swf-epicprod/scripts/prod-watch-session.sh
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target
