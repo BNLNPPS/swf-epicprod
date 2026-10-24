@@ -14,9 +14,13 @@ after `source ~/.env`:
 
 - **act**: you took an action within your authority. Name the action's
   own record (log id, alarm event, task) in the note.
-- **push**: the decision is Torre's. Put it to him where he is: a push
-  notification, one line with your recommendation and the answer you
-  need, and the Capcom. Then record the push with the same text.
+- **push**: the decision is someone else's. Put it to them where they
+  are, one line with your recommendation and the answer you need, then
+  record the push with the same text. Decisions on production tasks
+  (rerun, resume, abort, retry) belong to the tasks' production
+  operators, Sakib et al: send them to Sakib's session on TeamComms
+  (`send_message` with audience hosts `sakib-claude`). System decisions
+  are Torre's: a push notification and the Capcom.
 - **wait**: the item depends on something under way. Say what, and give
   `--until` when you will look again.
 
