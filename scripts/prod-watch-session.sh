@@ -13,7 +13,7 @@ CLAUDE=$HOME/.local/bin/claude
 
 start() {
     tmux new-session -d -s "$NAME" -c /data/wenauseic/github \
-        "bash -lc 'source ~/.env; export TJAI_SESSION_NAME=$NAME; exec $CLAUDE -n $NAME --permission-mode auto \"\$(cat $BRIEF)\"'"
+        "bash -lc 'source ~/.env; export TJAI_SESSION_NAME=$NAME; exec $CLAUDE -n $NAME --permission-mode auto --effort high \"\$(cat $BRIEF)\"'"
     date +%s > "$STAMP"
     echo "$(date -u +%FT%TZ) started $NAME"
 }
