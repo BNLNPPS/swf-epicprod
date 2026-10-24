@@ -156,11 +156,25 @@ requested from the PanDA team, regenerates the ranges it left.
 | `es_channel` | `.../canary/es-channel-py313-debian13` | the channel matching Python 3.13 in that image |
 | `queuedata` | `.../canary/queuedata/BNL_ePIC_GOOGLE_es.json` | existing ES storage/cadence overrides, preserved from the previous launcher |
 
-Commissioning is limited to one concurrent pilot Job until a job completes and
-its output registration is verified. Each pilot runs one ES job at a time;
-its 14 harness slots are within that job. The current limit therefore reserves
-at most 14 CPUs. The configured cap counts Jobs still waiting for a pod and
-has no automatic increase.
+The initial one-worker gate passed on 24 October 2026: task 41115/job 5893349
+finished at 19:31:38 UTC, all 20 ranges `finished`, substatus `fg_done`, harness
+and pilot errors zero. Four five-event units were reconstructed and merged into
+one registered file. Independent JLab Rucio readback of
+`epic:/TEST/canary/google-native-20261024T182959Z` confirmed 20 events,
+7,439,041 bytes and Adler-32 `ad5db215`. The worker used shared runtime
+`native-runtime-6d64079`, archive `9532f30b...27ae2`, campaign 26.07.1 and
+Python 3.13.12. This proves native ES execution and registration; preemption
+recovery remains to be validated.
+
+After that proof, the configured cap was raised to the already authorized five
+workers. Sustained commissioning tasks 41116–41120 each request 20,000 events,
+250-event units, 300-second closes, automatic slots, a six-hour deadline with
+a 30-minute drain margin, maxAttempt 10 and maxFailure 3. Their expiring output
+datasets use `TEST/canary/google-native-sustained-20261024T193436Z-01` through
+`-05`. Each pilot runs one ES job at a time; its 14 harness slots are within
+that job, so the ceiling reserves at most 70 CPUs. The cap counts Jobs still
+waiting for a pod and has no automatic increase. Expansion beyond five still
+requires Torre's explicit approval.
 
 The cycle refuses to start pods, and records why, while `enabled` is
 false, `namespace` is empty, `max_pods` is 0, the credential is
@@ -198,8 +212,9 @@ debug pod with that setting started the payload image as uid 1000
 
 ## Still to do
 
-- A first native pod against an Event Service trial task, then sustained
-  commissioning under the authorized five-job cap.
-- Cron enqueue (`*/5`) is installed; the controller is enabled only after
-  its native runtime is available.
+- Observe sustained registered closes and preemption/range recovery under the
+  authorized five-job cap. If no natural preemption occurs, request one
+  controlled worker termination after registered progress.
+- Cron enqueue (`*/5`) is installed and enabled; preserve the cap and shared
+  native runtime while commissioning continues.
 - Whether preemption notices reach the pod.
