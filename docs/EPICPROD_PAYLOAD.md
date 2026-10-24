@@ -784,6 +784,17 @@ In order, each a committed step on the clone:
 
 ## Multithreading
 
+Resident Event Service reconstruction startup has a PID-based wait behind
+`EPICPROD_SWITCH_RESIDENT_PID_WAIT=1` in payload 0.25.4 (off by default while
+the canary is pending). Google job 5896226's unit starting at event 29 failed
+at 19:39:53 UTC on 24 October 2026 because `pgrep` found no resident, yet that
+resident subsequently created `/tmp/esreco-537.sock` and remained alive;
+the container recorded zero OOM kills. The wait tracks the launched PID from
+fork through exec, with `setsid --wait` retaining that PID if setsid must fork.
+A process that actually exits or fails to create its socket still fails the
+unit with exit 86. This is shared payload code, independent of the pilot's
+site or Event Service commissioning configuration.
+
 From 26.10, npsim (`--numberOfThreads N`) and eicrecon (`-Pnthreads=N`)
 run multithreaded. The thread count is the task's core count: the
 production configuration's `corecount` becomes the task's `coreCount`,

@@ -936,12 +936,30 @@ if [ -n "${EPICPROD_RECO_SOCKET:-}" ]; then
     date
     if [ ! -S "${EPICPROD_RECO_SOCKET}" ]; then
       echo "starting the resident eicrecon on ${EPICPROD_RECO_SOCKET}"
-      setsid nohup eicrecon \
+      resident_wait=()
+      [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-0}" != 1 ] || resident_wait=(--wait)
+      setsid "${resident_wait[@]}" nohup eicrecon \
         -Pdd4hep:xml_files="${DETECTOR_COMPACT}" \
         -Ppodio:managed_socket_path="${EPICPROD_RECO_SOCKET}" \
         -Pjana:warmup_timeout=0 -Pjana:timeout=0 \
         > "${EPICPROD_RECO_SOCKET}.log" 2>&1 < /dev/null &
-      for i in $(seq 1 "${EPICPROD_RECO_STARTUP_S:-600}"); do [ -S "${EPICPROD_RECO_SOCKET}" ] && break; if ! pgrep -f "managed_socket_path=${EPICPROD_RECO_SOCKET}" >/dev/null; then echo "ERROR: resident eicrecon exited before its socket appeared"; tail -30 "${EPICPROD_RECO_SOCKET}.log"; exit 86; fi; sleep 1; done
+      resident_pid=$!
+      for i in $(seq 1 "${EPICPROD_RECO_STARTUP_S:-600}"); do
+        [ -S "${EPICPROD_RECO_SOCKET}" ] && break
+        # The forked child is alive before exec exposes eicrecon's arguments
+        # to pgrep. Track that child instead; --wait also covers setsid forks.
+        if [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-0}" = 1 ]; then
+          kill -0 "$resident_pid" 2>/dev/null && resident_alive=1 || resident_alive=0
+        else
+          pgrep -f "managed_socket_path=${EPICPROD_RECO_SOCKET}" >/dev/null && resident_alive=1 || resident_alive=0
+        fi
+        if [ "$resident_alive" = 0 ]; then
+          echo "ERROR: resident eicrecon exited before its socket appeared"
+          tail -30 "${EPICPROD_RECO_SOCKET}.log"
+          exit 86
+        fi
+        sleep 1
+      done
       [ -S "${EPICPROD_RECO_SOCKET}" ] || { echo "ERROR: resident eicrecon gave no socket in ${EPICPROD_RECO_STARTUP_S:-600} s"; tail -20 "${EPICPROD_RECO_SOCKET}.log"; exit 86; }
       echo "resident eicrecon up after ${i} s"
     fi
