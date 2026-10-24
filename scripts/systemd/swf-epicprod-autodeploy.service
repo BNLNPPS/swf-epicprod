@@ -6,7 +6,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 User=wenauseic
-Environment=HOME=/data/wenauseic
+Environment=HOME=/eic/u/wenauseic
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/local/libexec/swf-epicprod-autodeploy-poll
 TimeoutStartSec=30min
