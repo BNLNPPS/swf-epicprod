@@ -7,19 +7,21 @@ first classed by the pool's own gates, which no requirement of ours changes:
 claimed, draining, unvalidated, black hole, overloaded, past its glidein's
 retirement, or with too little life left for a non-Long job (the glidein START
 clause: Max_Walltime defined and >= 43200 and ToDie - now < 36000). The free and
-open remainder is then tested against our production pilot's requirements
-(ATLAS CVMFS, host RHEL 9, user namespaces, memory, disk, node exclusions,
-undesired sites) and the direct native pilot's (Singularity, the image
-repository, memory, disk, exclusions, undesired sites), counting for each
-clause the slots that fail it and the slots that fail it alone. Python 3.6.
+open remainder is then tested against the requirements of the pilot we
+submit, read from the live production template on every run: each clause the
+template's Requirements carries (of Singularity, the image repository, the CPU
+level, ATLAS CVMFS, host RHEL 9, user namespaces), memory, disk, the template's
+node exclusions and its undesired sites, counting for each clause the slots
+that fail it and the slots that fail it alone. A clause the template drops is
+no longer counted. Python 3.6.
 
 With --record FILE one JSON line per pool is appended, the counts above and
 nothing else, so a run every ten minutes gives the day's curve of what each
-requirement costs and what the direct pilot gains.
+requirement costs; the line names the clauses it modeled.
 
 With --exact the collector also does the matchmaker's two-sided match slot by
-slot (the ClassAd bindings, user priority ignored) for a production pilot ad
-and a direct pilot ad, both built from the live production template, against
+slot (the ClassAd bindings, user priority ignored) for the pilot ad built from
+the live production template, against
 the unclaimed slots that meet the resource requests, and sums the free cores
 of the willing ones: the cores one-core pilots could take now. That is the
 willing figure, in slots and cores; the modeled counts above are the clause
@@ -41,15 +43,20 @@ POOLS = ['jlab-cm.osg.chtc.io', 'cm-1.ospool.osg-htc.org']
 ATTRS = ['Name', 'GLIDEIN_Site', 'Machine', 'State', 'Cpus', 'Memory', 'Disk', 'HasSingularity',
          'HAS_CVMFS_atlas_cern_ch', 'HAS_CVMFS_singularity_opensciencegrid_org', 'OSGVO_OS_STRING',
          'HAS_UNPRIVILEGED_USER_NAMESPACES', 'GLIDEIN_ToRetire', 'GLIDEIN_ToDie', 'GLIDEIN_Max_Walltime',
-         'SiteWMS_WN_Draining', 'OSG_NODE_VALIDATED', 'IsBlackHole', 'HasExcessiveLoad', 'PartitionableSlot']
-UNDESIRED = {'UCSD', 'FNAL', 'MI-HORUS', 'GREX', 'BNL-SDCC', 'Alabama-CHPC'}
-# the static node exclusions of the production template, (site, bare host prefix)
-EXCLUDED_NODES = {('Nebraska', 'red-c0823'), ('Nebraska', 'red-c7228'), ('Nebraska', 'red-c0831'),
-                  ('UConn', 'nod58'), ('Rhodes-HPC', 'compute05'), ('GREX', 'n358'),
-                  ('ComputeCanada-Fir', 'fc30438'), ('ComputeCanada-Fir', 'fc20637'),
-                  ('ComputeCanada-Fir', 'fc20621'), ('ComputeCanada-Fir', 'fc20667'),
-                  ('ComputeCanada-Fir', 'fc20624'), ('ComputeCanada-Fir', 'fc30416'),
-                  ('BEOCAT-SLATE', 'warlock12')}
+         'SiteWMS_WN_Draining', 'OSG_NODE_VALIDATED', 'IsBlackHole', 'HasExcessiveLoad', 'PartitionableSlot',
+         'Microarch']
+# The clauses a template's Requirements may carry: (the attribute naming it,
+# the clause's name, the slot passes it).
+CLAUSES = (
+    ('HasSingularity', 'Singularity', lambda s: s['HasSingularity'] == 'true'),
+    ('HAS_CVMFS_singularity_opensciencegrid_org', 'image repository',
+     lambda s: s['HAS_CVMFS_singularity_opensciencegrid_org'] == 'true'),
+    ('Microarch', 'CPU x86_64-v2', lambda s: s['Microarch'] != 'x86_64-v2'),
+    ('HAS_CVMFS_atlas_cern_ch', 'ATLAS CVMFS', lambda s: s['HAS_CVMFS_atlas_cern_ch'] == 'true'),
+    ('OSGVO_OS_STRING', 'host RHEL 9', lambda s: s['OSGVO_OS_STRING'] == 'RHEL 9'),
+    ('HAS_UNPRIVILEGED_USER_NAMESPACES', 'user namespaces',
+     lambda s: s['HAS_UNPRIVILEGED_USER_NAMESPACES'] == 'enabled'),
+)
 
 
 def read(pool, timeout):
@@ -93,7 +100,20 @@ def pool_gate(slot, now):
     return ''
 
 
-def our_failures(slot, direct, memory, disk):
+def template_model(path):
+    """What the live template requires: its clauses, its node exclusions
+    {(site, host prefix)} and its undesired sites."""
+    text = open(path).read()
+    requirements = template_value(text, 'Requirements')
+    clauses = [(name, test) for attr, name, test in CLAUSES if attr in requirements]
+    excluded = set()
+    for site, hosts in re.findall(r'GLIDEIN_Site =\?= "([^"]+)" && regexp\("\^\(([^)]*)\)', requirements):
+        excluded.update((site, h) for h in hosts.split('|'))
+    undesired = {s.strip() for s in template_value(text, '+UNDESIRED_Sites').strip('"').split(',') if s.strip()}
+    return {'clauses': clauses, 'excluded': excluded, 'undesired': undesired}
+
+
+def our_failures(slot, model, memory, disk):
     """The names of our requirement clauses this slot fails."""
     failed = []
     mem, dsk = num(slot['Memory']) or 0, num(slot['Disk']) or 0
@@ -101,27 +121,18 @@ def our_failures(slot, direct, memory, disk):
         failed.append('memory %d MB' % memory)
     if dsk < disk:
         failed.append('disk %d GB' % (disk // 1000000))
-    if direct:
-        if slot['HasSingularity'] != 'true':
-            failed.append('Singularity')
-        if slot['HAS_CVMFS_singularity_opensciencegrid_org'] != 'true':
-            failed.append('image repository')
-    else:
-        if slot['HAS_CVMFS_atlas_cern_ch'] != 'true':
-            failed.append('ATLAS CVMFS')
-        if slot['OSGVO_OS_STRING'] != 'RHEL 9':
-            failed.append('host RHEL 9')
-        if slot['HAS_UNPRIVILEGED_USER_NAMESPACES'] != 'enabled':
-            failed.append('user namespaces')
+    for name, test in model['clauses']:
+        if not test(slot):
+            failed.append(name)
     site, machine = slot['GLIDEIN_Site'], slot['Machine'].split('.', 1)[0]
-    if site in UNDESIRED:
+    if site in model['undesired']:
         failed.append('undesired site')
-    if (site, machine) in EXCLUDED_NODES:
+    if (site, machine) in model['excluded']:
         failed.append('excluded node')
     return failed
 
 
-def census(rows, direct, memory, disk, now):
+def census(rows, model, memory, disk, now):
     gates, fails, alone = {}, {}, {}
     free_open, willing = [0, 0], [0, 0]
     for slot in rows:
@@ -131,7 +142,7 @@ def census(rows, direct, memory, disk, now):
             g = gates.setdefault(gate, [0, 0]); g[0] += 1; g[1] += cores
             continue
         free_open[0] += 1; free_open[1] += cores
-        failed = our_failures(slot, direct, memory, disk)
+        failed = our_failures(slot, model, memory, disk)
         if not failed:
             willing[0] += 1; willing[1] += cores
             continue
@@ -142,17 +153,17 @@ def census(rows, direct, memory, disk, now):
     return gates, free_open, fails, alone, willing
 
 
-def report(pool, rows, memory, disk, now, record=None, exact_counts=None):
+def report(pool, rows, model, memory, disk, now, record=None, exact_counts=None):
     print('== %s: %d slot ads, %d cores, %s' % (pool, len(rows), sum(int(num(r['Cpus']) or 0) for r in rows),
                                                 time.strftime('%H:%M:%SZ', time.gmtime(now))))
-    gates, free_open, fails_p, alone_p, willing_p = census(rows, False, memory, disk, now)
-    _, _, fails_d, alone_d, willing_d = census(rows, True, memory, disk, now)
+    gates, free_open, fails_p, alone_p, willing_p = census(rows, model, memory, disk, now)
+    modeled = [name for name, _ in model['clauses']]
     if record:
         line = {'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now)), 'pool': pool, 'ads': len(rows),
                 'cores': sum(int(num(r['Cpus']) or 0) for r in rows), 'memory_mb': memory, 'disk_kb': disk,
                 'gates': gates, 'free_open': free_open,
-                'production': {'willing': willing_p, 'fails': fails_p, 'alone': alone_p},
-                'direct': {'willing': willing_d, 'fails': fails_d, 'alone': alone_d}}
+                'production': {'willing': willing_p, 'fails': fails_p, 'alone': alone_p,
+                               'model': 'live template', 'clauses': modeled}}
         if exact_counts is not None:
             line['exact'] = exact_counts
         with open(record, 'a') as out:
@@ -161,8 +172,8 @@ def report(pool, rows, memory, disk, now, record=None, exact_counts=None):
     for gate, (n, c) in sorted(gates.items(), key=lambda kv: -kv[1][0]):
         print('     %6d slots %7d cores  %s' % (n, c, gate))
     print('   free and open: %d slots, %d cores' % tuple(free_open))
-    for label, fails, alone, willing in (('production pilot', fails_p, alone_p, willing_p),
-                                         ('direct native pilot', fails_d, alone_d, willing_d)):
+    print('   the pilot we submit (live template; clauses %s):' % ', '.join(modeled))
+    for label, fails, alone, willing in (('production pilot', fails_p, alone_p, willing_p),):
         print('   %s: modeled willing %d slots, %d cores%s' % (
             label, willing[0], willing[1],
             ('; matched: willing %d slots %d cores, our requirements reject %d, their gates reject %d'
@@ -176,11 +187,6 @@ def report(pool, rows, memory, disk, now, record=None, exact_counts=None):
 
 
 TEMPLATE = '/var/data/atlpan/harvester_common/submit_pilot2_pull_bnl_osg.sdf'
-# The clauses the direct native pilot drops and adds; scripts/submit-native-cohort.py
-# makes the same change to the same template.
-DROPPED = ('(HAS_CVMFS_atlas_cern_ch == True) && ', '(OSGVO_OS_STRING == "RHEL 9") && ',
-           '(HAS_UNPRIVILEGED_USER_NAMESPACES =?= "enabled") && ')
-DIRECT_PREFIX = '(HasSingularity =?= True) && (HAS_CVMFS_singularity_opensciencegrid_org == True) && '
 AUTO = (' && (TARGET.Arch == "X86_64") && (TARGET.OpSys == "LINUX") && (TARGET.Disk >= RequestDisk)'
         ' && (TARGET.Memory >= RequestMemory) && (TARGET.HasFileTransfer)')
 
@@ -192,26 +198,21 @@ def template_value(text, key):
     return found[0].strip()
 
 
-def job_ads(template, memory, disk):
-    """(production ad, direct ad) as ClassAd text, from the live template."""
+def job_ad(template, memory, disk):
+    """The pilot ad as ClassAd text, from the live template."""
     text = open(template).read()
     requirements = template_value(text, 'Requirements')
-    direct = requirements
-    for clause in DROPPED:
-        if direct.count(clause) != 1:
-            raise ValueError('template requirements lack ' + clause)
-        direct = direct.replace(clause, '')
-    direct = DIRECT_PREFIX + direct
-    common = ('MyType = "Job"\nTargetType = "Machine"\nJobUniverse = 5\nOwner = "atlpan"\nClusterId = 1\n'
-              'ProcId = 0\nJobStatus = 1\nRequestCpus = 1\nRequestMemory = %d\nRequestDisk = %d\n'
-              'JobDurationCategory = "Medium"\nProjectName = "EIC"\nUNDESIRED_Sites = %s\nEpicprodNodeGuard = %s\n'
-              % (memory, disk, template_value(text, '+UNDESIRED_Sites'), template_value(text, '+EpicprodNodeGuard')))
-    return (common + 'Requirements = (%s)%s\n' % (requirements, AUTO),
-            common + 'WantSingularity = true\nRequirements = (%s)%s\n' % (direct, AUTO))
+    want = 'WantSingularity = true\n' if 'HasSingularity' in requirements else ''
+    return ('MyType = "Job"\nTargetType = "Machine"\nJobUniverse = 5\nOwner = "atlpan"\nClusterId = 1\n'
+            'ProcId = 0\nJobStatus = 1\nRequestCpus = 1\nRequestMemory = %d\nRequestDisk = %d\n'
+            'JobDurationCategory = "Medium"\nProjectName = "EIC"\nUNDESIRED_Sites = %s\nEpicprodNodeGuard = %s\n'
+            '%sRequirements = (%s)%s\n'
+            % (memory, disk, template_value(text, '+UNDESIRED_Sites'), template_value(text, '+EpicprodNodeGuard'),
+               want, requirements, AUTO))
 
 
 def exact(pool, memory, disk, template, timeout):
-    """The matchmaker's two-sided counts for both pilot shapes, and our priority row."""
+    """The matchmaker's two-sided counts for the pilot we submit, and our priority row."""
     work = tempfile.mkdtemp(prefix='osg-census-')
     try:
         slots = os.path.join(work, 'slots')
@@ -225,7 +226,7 @@ def exact(pool, memory, disk, template, timeout):
         import classad2 as classad  # the system bindings on osgsub01
         ads = list(classad.parseAds(open(slots).read()))
         result = {'reduced_ads': len(ads)}
-        for label, text in zip(('production', 'direct'), job_ads(template, memory, disk)):
+        for label, text in (('production', job_ad(template, memory, disk)),):
             job = classad.parseOne(text)
             counts = {'willing': [0, 0], 'rejected_by_ours': [0, 0], 'reject_us': [0, 0]}
             for slot in ads:
@@ -266,6 +267,7 @@ def main():
     args = parser.parse_args()
     now = time.time()
     status = 0
+    model = template_model(args.template)
     for pool in args.pool or POOLS:
         try:
             rows = read(pool, args.timeout)
@@ -280,7 +282,7 @@ def main():
             except Exception as exc:  # noqa: BLE001
                 print('   exact analysis not done (%s)' % exc)
                 status = 1
-        report(pool, rows, args.memory, args.disk, now, args.record, exact_counts)
+        report(pool, rows, model, args.memory, args.disk, now, args.record, exact_counts)
     return status
 
 

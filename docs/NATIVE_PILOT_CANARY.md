@@ -365,6 +365,13 @@ build now casts it; the upstream pilot bug is to be reported.
   free and open slots, what each of our clauses turns away, and the
   matchmaker's two-sided willing count in slots and cores for the production
   and the direct pilot. At 04:00 ET: production 10 cores willing, direct 275.
+  Since 2026-10-24 08:36 UTC the census models only the pilot we submit,
+  reading its clauses, node exclusions and undesired sites from the live
+  production template on each run; the old pilot's clauses (ATLAS CVMFS,
+  host RHEL 9, user namespaces) left with that pilot. Its records before
+  then carry a `production` block for the old pilot. At 08:35 UTC the
+  matchmaker found 772 free cores willing (38 JLab pool, 734 OSPool), and
+  the 4,096 MB memory request alone turned away 5,673.
 - 04:4x ET: Fir's glideins died under 48 production pilots in two batches
   (Condor "Job was evicted, Code 1005, Unspecified job interruption" at 03:44
   and 04:22 ET; fc30311 alone shed twelve); Condor restarted the pilots
