@@ -473,10 +473,12 @@ a FLUKA the collaboration may ship.
 
 ## Single-particle guns (plan)
 
-Status: proposed 2026-10-24, not implemented. The single-particle
-configurations produced from their tags, the steering composed in the
-job as it is for every generator above, instead of read from a
-hand-written file.
+Status: proposed 2026-10-24; built the same day behind
+`EPICPROD_SWITCH_PARTICLE_GUN` (payload 0.25.0; `pcs/commands.py`
+`gun_config` and its readers; `tests/test_particle_gun.py`), the two
+canaries pending. The single-particle configurations produced from
+their tags, the steering composed in the job as it is for every
+generator above, instead of read from a hand-written file.
 
 ### What exists
 

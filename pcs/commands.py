@@ -588,6 +588,11 @@ def payload_beams(task):
     its geometry check rather than running the wrong geometry.
     """
     ds = task.dataset
+    # A particle gun has no physics beams: its tags carry N/A or another
+    # sample's energies, and its field configuration is DETECTOR_BEAMS
+    # (GUN_DEFAULT_BEAMS, docs/EPICPROD_INTERNAL_EVGEN.md § Single-particle guns).
+    if is_particle_gun(task):
+        return '', '', ''
     physics = (ds.physics_tag.parameters or {}) if ds and ds.physics_tag_id else {}
     ebeam = str(physics.get('beam_energy_electron') or '').strip()
     energy = str(physics.get('beam_energy_hadron') or '').strip()
@@ -703,8 +708,10 @@ def _evgen_env(task):
         'PBEAM': payload_beams(task)[1],
         # The beams whose detector geometry the job simulates with, when
         # they are not the physics tag's own: a trial's declared stand-in
-        # for a beam pair the image has no compact file for.
-        'DETECTOR_BEAMS': str(data.get('detector_beams') or ''),
+        # for a beam pair the image has no compact file for, or a particle
+        # gun's field configuration, 5x41 unless the config declares one.
+        'DETECTOR_BEAMS': str(data.get('detector_beams')
+                              or (GUN_DEFAULT_BEAMS if is_particle_gun(task) else '')),
     }
     _add_background_env(env, task)
     # The doer writes these into the sandbox under the BG_FILES name and
@@ -717,6 +724,86 @@ def _evgen_env(task):
     return {k: v for k, v in env.items() if v != ''}
 
 
+# Single-particle guns (docs/EPICPROD_INTERNAL_EVGEN.md § Single-particle
+# guns): the steering is composed in the job from the tags and the sample
+# name. gun_config is the one resolver the environment, the sample layout
+# and the manifest read.
+GUN_GENERATOR = 'particle_gun'
+# The field configuration every gun production has simulated with.
+GUN_DEFAULT_BEAMS = '5x41'
+GUN_PARTICLE_RE = re.compile(r'[A-Za-z0-9_+-]+')
+GUN_ENERGY_RE = re.compile(r'(\d+(?:\.\d+)?)(MeV|GeV)')
+GUN_ANGLE_RE = re.compile(r'(\d+(?:\.\d+)?)to(\d+(?:\.\d+)?)deg')
+GUN_ETA_RE = re.compile(r'eta(-?\d+\.\d)')
+# The four-digit chunk of the payload's names.
+GUN_MAX_CHUNKS = 9999
+
+
+def is_particle_gun(task):
+    """True when the task's EvGen tag is the particle gun."""
+    ds = task.dataset if task.dataset_id else None
+    if ds is None or not ds.evgen_tag_id:
+        return False
+    return str((ds.evgen_tag.parameters or {}).get('generator') or '') == GUN_GENERATOR
+
+
+def gun_config(task):
+    """The gun a particle-gun task's jobs run: the particle, the energy
+    as the tag writes it and as a g4units factor (``100MeV`` ->
+    ``100*MeV``), and the variant its sample name declares, theta bounds
+    in degrees (``3to50deg``) or one eta point (``eta-1.7``). Anything
+    missing or malformed is refused, so a bad tag or name fails at
+    submission rather than in the job."""
+    ds = task.dataset
+    physics = (ds.physics_tag.parameters or {}) if ds.physics_tag_id else {}
+    particle = str(physics.get('particle') or '').strip()
+    energy = str(physics.get('gun_energy') or '').strip()
+    sample = str(ds.sample_name or '').strip()
+    problems = []
+    if not GUN_PARTICLE_RE.fullmatch(particle):
+        problems.append(f'physics tag particle (got {particle!r})')
+    m_energy = GUN_ENERGY_RE.fullmatch(energy)
+    if not m_energy or float(m_energy.group(1)) <= 0:
+        problems.append(f'physics tag gun_energy as <number>MeV or <number>GeV (got {energy!r})')
+    m_angle = GUN_ANGLE_RE.fullmatch(sample)
+    m_eta = GUN_ETA_RE.fullmatch(sample)
+    if m_angle:
+        if not 0 <= float(m_angle.group(1)) < float(m_angle.group(2)) <= 180:
+            problems.append(f'theta bounds 0 <= N < M <= 180 (got {sample!r})')
+    elif not m_eta:
+        problems.append(f'sample name <N>to<M>deg or eta<value> (got {sample!r})')
+    if problems:
+        raise ValueError('a particle gun needs ' + ', '.join(problems))
+    gun = {'particle': particle, 'energy': energy, 'sample': sample,
+           'energy_g4': f'{m_energy.group(1)}*{m_energy.group(2)}'}
+    if m_angle:
+        gun.update(theta_min=m_angle.group(1), theta_max=m_angle.group(2))
+    else:
+        gun['eta'] = m_eta.group(1)
+    return gun
+
+
+def _gun_evgen_env(task):
+    """The generation environment of a particle-gun task: what the
+    payload's gun branch composes the steering from. No beams, generator
+    version or afterburner: the gun has none."""
+    gun = gun_config(task)
+    env = {
+        'EVGEN_INTERNAL': 'true',
+        'EVGEN_GENERATOR': GUN_GENERATOR,
+        'EVGEN_PARTICLE': gun['particle'],
+        'EVGEN_GUN_ENERGY': gun['energy_g4'],
+        # A steering file is not an event sample, so nothing is kept.
+        'COPYEVGEN': 'false',
+    }
+    if 'eta' in gun:
+        env['EVGEN_GUN_ETA'] = gun['eta']
+    else:
+        env['EVGEN_GUN_THETA_MIN'] = gun['theta_min']
+        env['EVGEN_GUN_THETA_MAX'] = gun['theta_max']
+    return env
+
+
 def _internal_evgen_env(task):
     """The generation environment of an internal-EVGEN task
     (docs/EPICPROD_INTERNAL_EVGEN.md § PCS): what the payload's
@@ -724,6 +811,8 @@ def _internal_evgen_env(task):
     and the production config. Every value the steering needs is here
     or the spec refuses: a job that starts without them would fail in
     its first minute for a reason known at submission."""
+    if is_particle_gun(task):
+        return _gun_evgen_env(task)
     ds = task.dataset
     cfg = task.get_effective_config()
     data = cfg.get('data') or {}
@@ -775,7 +864,13 @@ def internal_evgen_sample(task):
     beam_config (those present, in that order) as the qualifier:
     ``EXCLUSIVE/UPSILON/eSTARlight1.2.0/ep/9x275/1s_photo_hiAcc`` and
     ``eSTARlight1.2.0_UPSILON_1s_photo_hiAcc_ep_9x275``. The name a job
-    generates under is this stem with ``_run<NNN>`` for its row."""
+    generates under is this stem with ``_run<NNN>`` for its row. A
+    particle gun takes the SINGLE layout its produced samples have:
+    ``SINGLE/pi+/1GeV/3to50deg`` and ``pi+_1GeV_3to50deg``."""
+    if is_particle_gun(task):
+        gun = gun_config(task)
+        parts = (gun['particle'], gun['energy'], gun['sample'])
+        return 'SINGLE/' + '/'.join(parts), '_'.join(parts)
     ds = task.dataset
     physics = ds.physics_tag.parameters or {}
     evgen = ds.evgen_tag.parameters or {}
@@ -818,14 +913,40 @@ def _evgen_manifest_internal(task, events_per_job):
     the job generates, named as an external one would be, so the
     payload's naming and registration run unchanged. The job count is
     the config's ``n_jobs``; a trial takes the first row."""
+    path, stem = internal_evgen_sample(task)
+    if is_particle_gun(task):
+        return _gun_manifest(task, path, stem, events_per_job)
     cfg = task.get_effective_config()
     data = cfg.get('data') or {}
     n_jobs = int(data.get('n_jobs') or 1)
     if n_jobs <= 0:
         raise ValueError('n_jobs on the config must be positive for internal EVGEN')
-    path, stem = internal_evgen_sample(task)
     return [f'{path}/{stem}_run{i:03d},hepmc3.tree.root,{events_per_job},0000'
             for i in range(n_jobs)]
+
+
+def _gun_manifest(task, path, stem, events_per_job):
+    """A particle-gun task's rows: one stem and its chunks, as the legacy
+    steering manifests were, summing to the dataset's included
+    expected-events target exactly, the last chunk carrying the
+    remainder (a gun row skips no events, so a short one is safe). A
+    trial with no target runs one row at the per-job count."""
+    ds = task.dataset
+    target = ds.expected_events if (ds.expected_events_source or '') == 'included' else None
+    if not target or target <= 0:
+        if (ds.metadata or {}).get('trial'):
+            return [f'{path}/{stem},steer,{events_per_job},0000']
+        raise ValueError(
+            'a particle-gun task is sized by its dataset\'s included '
+            'expected-events target, and none is recorded')
+    chunks = -(-int(target) // events_per_job)
+    if chunks > GUN_MAX_CHUNKS:
+        raise ValueError(
+            f'{chunks} chunks of {events_per_job} events for {target}, past '
+            f'the {GUN_MAX_CHUNKS} the four-digit chunk names allow')
+    last = int(target) - events_per_job * (chunks - 1)
+    return [f'{path}/{stem},steer,{events_per_job if i < chunks - 1 else last},{i:04d}'
+            for i in range(chunks)]
 
 
 # A diverted registration carries the attempt's mark after the chunk
@@ -1267,8 +1388,12 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         # through Rucio and the logs uploaded. Set before the output
         # datasets are derived from this environment, so the datasets
         # created at submission and the job agree (docs/PCS.md, Trials).
+        # A particle gun's steering file is not an event sample, so even a
+        # trial keeps no EVGEN record of it.
+        gun = spec['env'].get('EVGEN_GENERATOR') == GUN_GENERATOR
         spec['env'] = dict(spec['env'], COPYFULL='true', COPYRECO='true',
-                           COPYLOG='true', COPYEVGEN='true', USERUCIO='true')
+                           COPYLOG='true', COPYEVGEN='false' if gun else 'true',
+                           USERUCIO='true')
     spec['outputs'] = output_datasets(spec, cfg)
     # Rucio refuses a name past its limit, and a job whose outputs cannot
     # be registered runs for nothing: refuse the spec instead.

@@ -308,6 +308,18 @@ fi
 if [ -n "${EPICPROD_CHUNK_LABEL:-}" ]; then
   TASK=".${EPICPROD_CHUNK_LABEL}"
 fi
+# A particle gun's chunks draw their own random streams, behind its switch
+# (docs/EPICPROD_INTERNAL_EVGEN.md, Single-particle guns): with chunk + 1
+# alone, every gun dataset would share streams chunk for chunk. The seed
+# mixes the stem's SHA-256 (its first 28 bits) with the chunk, reduced
+# into npsim's positive 31-bit seed; a retried chunk keeps its seed.
+GUN_SEED_NOTE=""
+if [ "${EPICPROD_SWITCH_PARTICLE_GUN:-0}" = "1" ] && [ "${EVGEN_GENERATOR:-}" = "particle_gun" ] && [ ${#} -ge 4 ]; then
+  GUN_STEM_HASH=$(printf '%s' "$(basename ${BASENAME})" | sha256sum | cut -c1-7)
+  SEED=$(( (16#${GUN_STEM_HASH} * 10000 + 10#${4} + 1) % 2147483647 ))
+  [ ${SEED} -gt 0 ] || SEED=1
+  GUN_SEED_NOTE=", seed ${SEED}"
+fi
 
 # Output location
 BASEDIR=${DATADIR:-${PWD}}
@@ -437,7 +449,9 @@ DETECTOR_BEAMS=${DETECTOR_BEAMS:-${EBEAM:+${PBEAM:+${EBEAM}x${PBEAM}}}}
 export DETECTOR_COMPACT=${DETECTOR_PATH}/${DETECTOR_CONFIG}${DETECTOR_BEAMS:+_${DETECTOR_BEAMS}}.xml
 stage geometry start
 if [ -f "${DETECTOR_COMPACT}" ]; then
-  if [ "${DETECTOR_BEAMS}" != "${EBEAM:-}x${PBEAM:-}" ]; then
+  if [ -n "${GUN_SEED_NOTE}" ] && [ -z "${EBEAM:-}${PBEAM:-}" ]; then
+    stage geometry ok "$(basename ${DETECTOR_COMPACT}), the particle gun's field configuration"
+  elif [ "${DETECTOR_BEAMS}" != "${EBEAM:-}x${PBEAM:-}" ]; then
     stage geometry ok "$(basename ${DETECTOR_COMPACT}), a stand-in for beams ${EBEAM:-?}x${PBEAM:-?}"
   else
     stage geometry ok "$(basename ${DETECTOR_COMPACT})"
@@ -463,7 +477,13 @@ if [ "${EVGEN_INTERNAL:-false}" == "true" ]; then
   EVGEN_WORK=${TMPDIR}/evgen
   EVGEN_SUMMARY=${EVGEN_WORK}/evgen-summary.json
   mkdir -p ${EVGEN_WORK}
-  if monitor evgen python $SCRIPT_DIR/evgen_generate.py \
+  # A particle gun reports the seed npsim runs with; a generator derives
+  # its own from the row.
+  EVGEN_SEED_ARGS=()
+  if [ -n "${GUN_SEED_NOTE}" ]; then
+    EVGEN_SEED_ARGS=(--seed "${SEED}")
+  fi
+  if monitor evgen python $SCRIPT_DIR/evgen_generate.py ${EVGEN_SEED_ARGS[@]+"${EVGEN_SEED_ARGS[@]}"} \
        --out "${EVGEN_LOCAL}" --events "${EVENTS_PER_TASK}" \
        --workdir "${EVGEN_WORK}" --log "${LOG_TEMP}/${TASKNAME}.evgen.log" \
        --summary "${EVGEN_SUMMARY}"; then
@@ -820,7 +840,7 @@ if [ "${NTHREADS}" -gt 1 ]; then
 fi
 
 # Run simulation
-stage simulation start "${EVENTS_PER_TASK:-?} events"
+stage simulation start "${EVENTS_PER_TASK:-?} events${GUN_SEED_NOTE}"
 {
   date
   eic-info

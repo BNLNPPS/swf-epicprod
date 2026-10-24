@@ -559,6 +559,72 @@ def count_tree_events(path):
     return int(tree.GetEntries()) if tree else None
 
 
+GUN_HEADER = ('from DDSim.DD4hepSimulation import DD4hepSimulation\n'
+              'from g4units import mm, GeV, MeV, degree\n'
+              'SIM = DD4hepSimulation()\n')
+
+
+def gun_steering():
+    """The npsim steering of a particle gun, composed from the generation
+    environment as the production team's hand-written files have it, line
+    for line (docs/EPICPROD_INTERNAL_EVGEN.md § Single-particle guns): an
+    angle range is a cos(theta) gun between EVGEN_GUN_THETA_MIN and _MAX
+    degrees, an eta point a uniform gun at EVGEN_GUN_ETA. The event count
+    and the seed are npsim's command line, not the steering."""
+    particle = env_value('EVGEN_PARTICLE', required=True)
+    energy = env_value('EVGEN_GUN_ENERGY', required=True)
+    eta = env_value('EVGEN_GUN_ETA', '')
+    if eta:
+        body = (f'SIM.gun.distribution = "uniform"\n'
+                f'SIM.gun.energy = {energy}\n'
+                f'SIM.gun.particle = "{particle}"\n'
+                f'SIM.gun.position = (0.0, 0.0, 0.0)\n'
+                f'SIM.gun.etaMin = {eta}\n'
+                f'SIM.gun.etaMax = {eta}\n')
+    else:
+        theta_min = env_value('EVGEN_GUN_THETA_MIN', required=True)
+        theta_max = env_value('EVGEN_GUN_THETA_MAX', required=True)
+        body = (f'SIM.gun.energy = {energy}\n'
+                f'SIM.gun.particle = "{particle}"\n'
+                f'SIM.gun.position = (0.0, 0.0, 0.0)\n'
+                f'SIM.gun.direction = (0.0, 0.0, 1.0)\n'
+                f'SIM.gun.distribution = "cos(theta)"\n'
+                f'SIM.gun.thetaMin = {theta_min}*degree\n'
+                f'SIM.gun.thetaMax = {theta_max}*degree\n')
+    return GUN_HEADER + body
+
+
+def particle_gun(args, started, log, summary_path):
+    """A particle gun generates nothing: the job writes the steering npsim
+    runs the gun from, at the input's place, and records it in the stage
+    log, the one durable record of the recipe."""
+    steering = gun_steering()
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    with open(args.out, 'w') as handle:
+        handle.write(steering)
+    with open(log, 'a') as handle:
+        handle.write(f'particle-gun steering ({os.path.basename(args.out)}):\n{steering}')
+    print(f'steering ({args.out}):')
+    print(steering, end='')
+    summary = {
+        'generator': 'particle_gun',
+        'particle': env_value('EVGEN_PARTICLE', ''),
+        'energy': env_value('EVGEN_GUN_ENERGY', ''),
+        'theta_min_deg': env_value('EVGEN_GUN_THETA_MIN', ''),
+        'theta_max_deg': env_value('EVGEN_GUN_THETA_MAX', ''),
+        'eta': env_value('EVGEN_GUN_ETA', ''),
+        # The seed npsim runs with (run.sh); the gun itself has none.
+        'seed': args.seed,
+        'events_requested': args.events,
+        'steering': steering, 'output': args.out,
+        'total_seconds': round(time.time() - started, 1),
+    }
+    with open(summary_path, 'w') as handle:
+        json.dump(summary, handle, indent=2)
+    print(f'evgen: particle-gun steering for {args.events} events written to {args.out}')
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True,
@@ -581,6 +647,15 @@ def main():
     summary_path = args.summary or os.path.join(args.workdir, 'evgen-summary.json')
 
     generator = env_value('EVGEN_GENERATOR', required=True).lower()
+    # The particle gun, behind its switch (DEVELOPING_THE_PAYLOAD.md,
+    # Switches): unset, it is refused below as an unknown generator.
+    if generator == 'particle_gun':
+        if os.environ.get('EPICPROD_SWITCH_PARTICLE_GUN') != '1':
+            fail('no steering composer for generator particle_gun: '
+                 'EPICPROD_SWITCH_PARTICLE_GUN is not 1')
+        if args.events <= 0:
+            fail(f'--events must be positive, got {args.events}')
+        return particle_gun(args, started, log, summary_path)
     process = env_value('EVGEN_PROCESS', required=True).upper()
     composer = CARDS.get((generator, process))
     if composer is None:
