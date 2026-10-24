@@ -521,6 +521,7 @@ def completion_product_value():
         entries.append({
             'campaign': name,
             'summary': delivered_summary(block['overall']),
+            'overall': block['overall'],
             'priority_rows': panel_priority_rows(block),
             'pcs': block['configurations']})
     return entries
