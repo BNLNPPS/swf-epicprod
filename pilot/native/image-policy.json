@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "queue": "BNL_OSG_PanDA_1",
+  "template_file": "/var/data/atlpan/harvester_common/submit_pilot2_pull_bnl_osg.sdf",
+  "waiting_limit": 600,
+  "review_seconds": 120,
+  "demand_max_age_seconds": 120,
+  "state_valid_seconds": 360,
+  "images": [
+    "/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.1-stable",
+    "/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable"
+  ]
+}

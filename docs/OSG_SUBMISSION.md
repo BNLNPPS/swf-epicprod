@@ -188,6 +188,41 @@ clients that send the new field first: changing future submissions alone
 does not change requests from running pilots. An old server rejects the new
 argument rather than silently ignoring it.
 
+## Image allocation within the shared waiting budget
+
+Harvester remains the sole pilot refiller, with one combined cap of 600
+waiting workers. `pilot/native/image-policy.json` declares the approved
+images. `image-allocation.py` reviews grouped runnable demand and current
+Condor workers every two minutes; it accounts for the image distribution
+already running and rebalances only idle workers. The image environment,
+outer container and declared dispatch image change in one queue transaction.
+Running workers retain their image and finish normally.
+
+Waiting targets never exceed runnable job counts or the shared budget.
+Existing assignments are retained where possible, with the oldest excess
+workers available to a newly needed image. A runnable image gets at least
+one opportunity, preventing small canaries from waiting behind production.
+Protected trial workers are counted but never retagged. Surplus idle
+workers have `EpicprodImageReady=False`; the template's Requirements keeps
+them unmatched until work exists. This does not create held workers or a
+second submission stream. Fresh Harvester refills wait for the allocator's
+first decision before matching.
+
+The demand endpoint is one active-job aggregate, with the native SCORE
+profile's memory and core limits. The pilot still checks actual free disk
+space: its job requirement cannot be compared to Condor's minimum disk
+reservation as though those were the same measurement. The allocator reads
+the template's resource requests and records query and fetch timing.
+Missing or stale demand refuses edits. Its active state expires after six
+minutes; the host reporter advertises both images only with fresh matching
+state, and the existing image admission check then enforces that evidence.
+
+`scripts/configure-osg-images.py` installs the controller and policy, adds
+the template readiness gate, refreshes idle Requirements and installs the
+two-minute cron with backups. Installation follows a real matching-image
+test job through completion and output registration. The shared epic5
+archive replacement retains its separate GREX native-canary gate.
+
 ## Hosts and roles
 
 Two harvester instances submit ePIC pilots, on two SCDF hosts.
