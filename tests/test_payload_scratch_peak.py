@@ -65,6 +65,9 @@ class ScratchPeak(unittest.TestCase):
         self.assertGreaterEqual(rec['peak_kb'], 1100)
         self.assertEqual(rec['samples'], 4)
         self.assertLess(rec['by_stage_kb']['closeout'], rec['peak_kb'])
+        # the scratch directory and two files at the end of reconstruction
+        self.assertEqual(rec['peak_files'], 3)
+        self.assertEqual(rec['peak_files_stage'], 'reconstruction')
         stages = open(os.path.join(d, 'stages.log')).read()
         self.assertNotIn(' fail', stages)
 
@@ -82,16 +85,57 @@ class ScratchPeak(unittest.TestCase):
     def test_job_metrics_name_the_peak_in_mb(self):
         report = {'stages': {}, 'events': {}, 'registration': {'outcome': 'registered'},
                   'payload_version': 'epicprod-payload 0.25.2',
-                  'scratch': {'peak_kb': 2167847, 'peak_stage': 'reconstruction'}}
+                  'scratch': {'peak_kb': 2167847, 'peak_stage': 'reconstruction', 'peak_files': 41}}
         self.assertEqual(pr.job_metrics(report)['payloadScratchPeakMB'], 2118)
+        self.assertEqual(pr.job_metrics(report)['payloadScratchPeakFiles'], 41)
         report.pop('scratch')
         self.assertNotIn('payloadScratchPeakMB', pr.job_metrics(report))
 
     def test_malformed_lines_are_skipped(self):
         with tempfile.NamedTemporaryFile('w', delete=False) as f:
-            f.write('garbage\n2026-10-24T09:00:00Z simulation ok 12\n2026-10-24T09:01:00Z x ok notanumber\n')
-        self.assertEqual(pr.scratch_record(f.name)['peak_kb'], 12)
+            f.write('garbage\n2026-10-24T09:00:00Z simulation ok 12\n2026-10-24T09:01:00Z x ok notanumber\n'
+                    '2026-10-24T09:02:00Z y ok 10 -\n')
+        rec = pr.scratch_record(f.name)
+        self.assertEqual(rec['peak_kb'], 12)
+        self.assertNotIn('peak_files', rec)
 
 
 if __name__ == '__main__':
     unittest.main()
+
+
+SELECT = re.compile(r'(?ms)^if \[ -n "\$\{_CONDOR_SCRATCH_DIR:-\}" \] ; then\n.*?^ls -al \$\{TMPDIR\}\n')
+CLEANUP = re.compile(r'(?ms)^TMPDIR_OURS=0\ntmpdir_cleanup\(\) \{\n.*?^\}\n')
+
+
+class OwnScratch(unittest.TestCase):
+    """EPICPROD_SWITCH_OWN_SCRATCH: each job works in its own directory
+    under the batch scratch and removes it at exit; the batch scratch and
+    anything else in it stay."""
+
+    def run_job(self, switch):
+        text = open(os.path.join(PAYLOAD, 'run.sh')).read()
+        d = tempfile.mkdtemp()
+        batch = os.path.join(d, 'condor'); os.mkdir(batch)
+        open(os.path.join(batch, 'pilot-file'), 'w').close()
+        script = 'set -Euo pipefail\n' + CLEANUP.search(text).group(0) + SELECT.search(text).group(0) + '''
+head -c 1000 /dev/zero > "$TMPDIR/full.root"
+echo "$TMPDIR" > "%s/tmpdir"
+tmpdir_cleanup
+''' % d
+        env = dict(os.environ, _CONDOR_SCRATCH_DIR=batch)
+        if switch:
+            env['EPICPROD_SWITCH_OWN_SCRATCH'] = '1'
+        subprocess.run(['bash', '-c', script], env=env, check=True, stdout=subprocess.DEVNULL)
+        return batch, open(os.path.join(d, 'tmpdir')).read().strip()
+
+    def test_switch_on_removes_the_jobs_files_and_keeps_the_batch_scratch(self):
+        batch, tmpdir = self.run_job(True)
+        self.assertTrue(tmpdir.startswith(batch + '/epicprod-payload-'))
+        self.assertFalse(os.path.exists(tmpdir))
+        self.assertEqual(os.listdir(batch), ['pilot-file'])
+
+    def test_switch_off_leaves_the_files_as_before(self):
+        batch, tmpdir = self.run_job(False)
+        self.assertEqual(tmpdir, batch)
+        self.assertIn('full.root', os.listdir(batch))

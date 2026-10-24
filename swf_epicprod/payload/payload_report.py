@@ -81,29 +81,37 @@ def read_stage_log(path):
 
 
 def scratch_record(path):
-    """The scratch's size through the job, from the scratch log that
-    ``EPICPROD_SWITCH_SCRATCH_PEAK`` writes (one line per stage start and
-    end: time, stage, start or status, KB): the peak with the stage it
-    was measured at, each stage's largest, and the count of samples. None
-    when there is no log."""
-    peak, by_stage, samples = None, {}, 0
+    """The scratch's size and file count through the job, from the scratch
+    log that ``EPICPROD_SWITCH_SCRATCH_PEAK`` writes (one line per stage
+    start and end: time, stage, start or status, KB, inodes or ``-``):
+    each peak with the stage it was measured at, each stage's largest
+    size, and the count of samples. None when there is no log."""
+    peak, files_peak, by_stage, samples = None, None, {}, 0
     try:
         with open(path) as f:
             for line in f:
                 parts = line.split()
-                if len(parts) != 4 or not parts[3].isdigit():
+                if len(parts) not in (4, 5) or not parts[3].isdigit():
                     continue
                 kb, name = int(parts[3]), parts[1]
                 samples += 1
                 by_stage[name] = max(by_stage.get(name, 0), kb)
                 if peak is None or kb > peak["kb"]:
                     peak = {"kb": kb, "stage": name, "at": parts[0], "mark": parts[2]}
+                if len(parts) == 5 and parts[4].isdigit():
+                    n = int(parts[4])
+                    if files_peak is None or n > files_peak["files"]:
+                        files_peak = {"files": n, "stage": name}
     except OSError:
         return None
     if peak is None:
         return None
-    return {"peak_kb": peak["kb"], "peak_stage": peak["stage"], "peak_at": peak["at"],
-            "peak_mark": peak["mark"], "by_stage_kb": by_stage, "samples": samples}
+    out = {"peak_kb": peak["kb"], "peak_stage": peak["stage"], "peak_at": peak["at"],
+           "peak_mark": peak["mark"], "by_stage_kb": by_stage, "samples": samples}
+    if files_peak is not None:
+        out["peak_files"] = files_peak["files"]
+        out["peak_files_stage"] = files_peak["stage"]
+    return out
 
 
 def stage_summary(entries):
@@ -361,6 +369,8 @@ def job_metrics(report):
     scratch = report.get("scratch") or {}
     if isinstance(scratch.get("peak_kb"), int):
         metrics["payloadScratchPeakMB"] = (scratch["peak_kb"] + 1023) // 1024
+    if isinstance(scratch.get("peak_files"), int):
+        metrics["payloadScratchPeakFiles"] = scratch["peak_files"]
     fatal = report.get("fatal") or {}
     if fatal.get("signal") in (6, 7, 8, 11):
         metrics["payloadFatalSignal"] = fatal["signal"]

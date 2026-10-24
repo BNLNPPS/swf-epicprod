@@ -156,20 +156,37 @@ job metadata, which the server keeps for finished jobs. The canary
 verdict's events check reads the reconstructed count.
 
 **Scratch disk.** With `EPICPROD_SWITCH_SCRATCH_PEAK=1` the stage
-marker measures the scratch (`du -skx` of `TMPDIR`, the batch system's
-job scratch where it has one) at every stage start and end, into
-`payload-scratch.log`. The payload's files only grow until the
-closeout, so the largest sample is its peak disk use: on a
-simulation-and-reconstruction job, the FULL and RECO files together at
-the end of reconstruction. The report carries it as `scratch` (the
-peak in KB, the stage and time it was measured at, each stage's
-largest, the sample count) and the job metrics as
-`payloadScratchPeakMB`, so the job record keeps it on every queue,
-including those whose batch system records none. A `du` that fails or
+marker measures the scratch (`TMPDIR`, the batch system's job scratch
+where it has one) at every stage start and end, into
+`payload-scratch.log`: its size (`du -skx`) and its file count, the
+inodes it holds (`du -sx --inodes`), since a site can run out of
+inodes before bytes (GREX did in October 2026). The payload's files
+only grow until the closeout, so the largest samples are its peaks: on
+a simulation-and-reconstruction job, the FULL and RECO files together
+at the end of reconstruction. The report carries them as `scratch`
+(the peak in KB with the stage and time it was measured at, each
+stage's largest, the peak file count and its stage, the sample count)
+and the job metrics as `payloadScratchPeakMB` and
+`payloadScratchPeakFiles`, so the job record keeps them on every
+queue, including those whose batch system records none. A `du` that fails or
 runs over a minute leaves its line out and never marks a stage. On
 OSG, HTCondor's own peak (`DiskUsage` in the job's terminate event) is
 the cross-check. The peak is what a task's disk request is to be set
 from: its bytes per event times its events per job.
+
+**Cleaning up after each job.** A pilot runs several jobs in one batch
+job, and a GREX allocation runs eight pilots in one Slurm scratch; the
+batch system clears its scratch only when the batch job ends. The
+payload removed only a scratch it made itself, so on OSG and GREX each
+job's FULL and RECO files stayed for the rest of the batch job: on
+2026-10-24 an OSG pilot's peak disk was 2.1 GB after one job and 4.1 GB
+after two (226 pilots), no pilot ran a third job in a 4.5 GB slot, and
+on GREX the leftovers of up to eight pilots shared one scratch. With
+`EPICPROD_SWITCH_OWN_SCRATCH=1` the payload works in
+`epicprod-payload-<pid>` under the batch scratch and removes it at exit,
+after the report has read it (`EPICPROD_KEEP_TMPDIR=1` keeps it, as for
+a scratch of its own). The stage, report and scratch logs are in the job
+working directory and stay.
 
 ### Reporting from a job that fails
 
@@ -747,11 +764,19 @@ In order, each a committed step on the clone:
 25. **The scratch peak in the job record** (2026-10-24, payload 0.25.2
     behind `EPICPROD_SWITCH_SCRATCH_PEAK=1`, Torre Wenaus: "we should
     record peak payload disk usage"). The stage marker measures the
-    scratch at each stage boundary; the report's `scratch` and the job
-    metric `payloadScratchPeakMB` carry the peak (The payload report,
+    scratch's size and file count at each stage boundary; the report's
+    `scratch` and the job metrics `payloadScratchPeakMB` and
+    `payloadScratchPeakFiles` carry the peaks (The payload report,
     Scratch disk). PanDA held no payload disk use before: the pilot's
     `workDirSize` measures its own job directory, not the scratch the
     payload writes in.
+26. **Each job cleans up its scratch** (2026-10-24, payload 0.25.2
+    behind `EPICPROD_SWITCH_OWN_SCRATCH=1`; Torre Wenaus: "we should clean
+    up after each job"). The payload works in its own directory under the
+    batch system's scratch and removes it at exit, so a pilot's next job,
+    or another pilot in the same allocation, starts with the scratch as
+    the batch system gave it (The payload report, Cleaning up after each
+    job).
 
 ## Multithreading
 
