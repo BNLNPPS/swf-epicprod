@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # autodeploy.sh: deploy what has landed on swf-epicprod main since the last
-# deployed commit (docs/AUTODEPLOY.md). Run on swf-testbed by the self-hosted
-# GitHub Actions runner on every push to main; safe to run by hand.
+# deployed commit (docs/AUTODEPLOY.md). Run on swf-testbed by the host-side
+# main poller; safe to run by hand on the trusted main checkout.
 #
 # Pulls the dev tree, takes the changed paths since the recorded deployed
 # commit, asks autodeploy-choose.sh which deploy they need, refuses when a
 # tree the deploy ships from is dirty or unpushed, deploys, checks every
 # changed package file against the deployed copy, and records the commit.
-# Any refusal or failure exits nonzero, so the run shows red in Actions.
+# Any refusal or failure exits nonzero; the poller reports it on GitHub.
 set -euo pipefail
 
 GH=/data/wenauseic/github
@@ -25,7 +25,10 @@ log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
 summary() { [[ -n "${GITHUB_STEP_SUMMARY:-}" ]] && echo "$*" >> "$GITHUB_STEP_SUMMARY" || true; }
 fail() { log "REFUSED: $*"; summary "**Not deployed:** $*"; exit 1; }
 
-exec 9>"$SHARED/epicprod-autodeploy.lock"
+# Reuse the host poller's inherited lock; a manual invocation opens its own.
+if [[ ! /proc/$$/fd/9 -ef "$SHARED/epicprod-autodeploy.lock" ]]; then
+    exec 9>"$SHARED/epicprod-autodeploy.lock"
+fi
 flock 9
 
 [[ -s "$STATE" ]] || fail "no deployed-commit record at $STATE"

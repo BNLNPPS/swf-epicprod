@@ -37,13 +37,14 @@ repository is not in the coordinated `infra/baseline-vNN` set.
 
 ## Deployment
 
-A push or merge to `main` deploys itself: the self-hosted runner on the
-production host runs `scripts/autodeploy.sh`, which chooses no deploy, a
+A push or merge to `main` deploys itself: a host-side timer polls canonical
+`main` every minute and runs `scripts/autodeploy.sh`, which chooses no deploy, a
 lightweight one or a full one from the changed paths, and stops on a
 change to `pcs/models.py` or `pcs/migrations/`, which is deployed by hand
 on explicit approval ([docs/AUTODEPLOY.md](docs/AUTODEPLOY.md)). A push
-is therefore not deployed again by hand; its run is checked in the
-Actions tab. A payload change reaches tasks submitted after the deploy.
+is therefore not deployed again by hand; check its `deployment/swf-testbed`
+commit status. PR checks run on GitHub-hosted machines; production is not
+registered as an Actions runner. A payload change reaches tasks submitted after the deploy.
 
 ## Findings
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Deploy merged swf-epicprod main from the production host
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=wenauseic
+Environment=HOME=/data/wenauseic
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/libexec/swf-epicprod-autodeploy-poll
+TimeoutStartSec=30min

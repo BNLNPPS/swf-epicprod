@@ -1,18 +1,20 @@
 # Automatic deployment of swf-epicprod
 
 A change merged or pushed to `main` of BNLNPPS/swf-epicprod is deployed
-to production on swf-testbed within moments, without a manual step.
+to production on swf-testbed within about a minute, without a manual step.
 Contributors open a pull request from their fork and merge it
 themselves; no review is required. The deploy follows the merge.
 
 ## Mechanism
 
-A GitHub Actions self-hosted runner on swf-testbed (label
-`swf-testbed`, account `wenauseic`, systemd service) holds an outbound
-connection to GitHub; the host is inside the SCDF perimeter and accepts
-no inbound webhook. A push to `main` starts the `deploy` workflow
-(`.github/workflows/deploy.yml`) on that runner, which runs
-`scripts/autodeploy.sh`:
+A systemd timer on swf-testbed polls the canonical repository's `main`
+every minute. The host accepts no inbound webhook and is not registered
+as a GitHub Actions runner. The root-owned installed copy of
+`scripts/autodeploy-poll.sh` runs as `wenauseic`. It fetches only
+`refs/heads/main` from `https://github.com/BNLNPPS/swf-epicprod.git`,
+checks the checkout's origin and upstream, and refuses a dirty checkout,
+a branch other than `main`, unmerged local commits or rewritten history.
+Only then does it run the checked-out `scripts/autodeploy.sh`:
 
 1. Pulls the dev tree `/data/wenauseic/github/swf-epicprod`. The
    lightweight deploy syncs from this tree and the full deploy freezes
@@ -29,14 +31,25 @@ no inbound webhook. A push to `main` starts the `deploy` workflow
    deployed copy, checks the monitor's health endpoint, and records the
    new commit.
 
-Every refusal and failure exits nonzero: the run is red in the
-repository's Actions tab, and GitHub notifies the author of the push.
-Each run also appends to
-`/opt/swf-monitor/shared/logs/epicprod-autodeploy.log`. A refused run
-is repeated with **Run workflow** on the `deploy` workflow, or by
-`bash scripts/autodeploy.sh` on swf-testbed, once its cause is
-cleared. Runs are serialized by the workflow's concurrency group and a
-lock file.
+Every refusal and failure exits nonzero. The poller publishes a
+`deployment/swf-testbed` commit status on GitHub (pending, success or
+failure), also visible on the merged PR. It uses the host's existing
+`gh` authentication, which must permit commit-status writes. A status API
+failure is logged and retried; it cannot silently produce a green status.
+GitHub notification behavior for Actions runs does not apply to this
+external status. Read the service journal for poller refusals:
+
+```
+journalctl -u swf-epicprod-autodeploy.service
+```
+
+The existing deploy log remains
+`/opt/swf-monitor/shared/logs/epicprod-autodeploy.log`. Refused changes
+are retried on the next timer tick after their cause is cleared; an
+operator can also run `sudo systemctl start swf-epicprod-autodeploy.service`.
+Locks serialize polls and existing deploys. An unchanged deployed commit
+does not rebuild the application; it only retries an outstanding GitHub
+status update. Repeated refusals do not post duplicate statuses.
 
 ## Which deploy
 
@@ -73,13 +86,51 @@ then covers the range.
 
 The `deploy-preview` workflow runs on every pull request to `main`, on
 GitHub's own machines, and reports which deploy the merge will trigger
-as a notice on the PR's checks. It reads only the diff. The deploy
-workflow has no `pull_request` trigger and must never be given one:
-code from a fork must not run on the production host.
+as a notice on the PR's checks. It reads only the diff. There is no
+production Actions runner for fork-authored workflow YAML to select.
+The trust boundary is the merge to `main`: code merged there can deploy,
+including changes to the deploy script. This does not add a merge-review
+gate or change contributor permissions.
 
-## Runner
+## Installation and cutover
 
-Installed in `/data/wenauseic/actions-runner`, registered to the
-repository with the label `swf-testbed`, and run by the systemd unit
-the runner's `svc.sh` installs. The account has passwordless sudo,
-which both deploy scripts require.
+For a host still using the former Actions runner, perform this as an
+approved live cutover. The order matters:
+
+1. Check that the existing runner is idle and coordinate a brief deploy
+   hold with other maintainers. Stop and disable
+   `actions.runner.BNLNPPS-swf-epicprod.swf-testbed.service`, then delete
+   runner id `2` from the repository's Actions runner registrations.
+   Stopping alone is not the permanent fix. Confirm the runner list no
+   longer contains the production host.
+2. Merge this branch to `main`. The change is scripts, tests, workflow
+   and documentation only, so it requires no application restart. Keep
+   the existing deployed-commit record; do not reset it to skip changes.
+3. From the clean canonical `main` checkout, install the reviewed files:
+
+   ```bash
+   sudo install -d -m 0755 /usr/local/libexec
+   sudo install -o root -g root -m 0755 scripts/autodeploy-poll.sh /usr/local/libexec/swf-epicprod-autodeploy-poll
+   sudo install -o root -g root -m 0644 scripts/systemd/swf-epicprod-autodeploy.{service,timer} /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now swf-epicprod-autodeploy.timer
+   sudo systemctl start swf-epicprod-autodeploy.service
+   ```
+
+4. Check the service result, recorded deployed commit, GitHub commit
+   status and enabled timer. This first pass should record this change
+   as requiring no app deploy, unless other changes have also landed.
+   Set the repository's default workflow token to read-only and disable
+   workflow-token PR approval. The PR preview already declares
+   `contents: read` explicitly. These token settings are additional
+   hardening; unregistering the production runner closes the host route.
+
+The installed poller and units are not updated by merging repository
+changes: an operator reviews and reinstalls them. The existing account
+and sudo policy are unchanged. Root ownership protects the installed
+trigger from accidental checkout edits; the deployment account itself
+still has the existing host privileges.
+
+If polling needs to be stopped, stop the timer and use the existing
+manual deploy procedure from trusted `main`. Do not re-register the
+public repository's production runner as a rollback.
