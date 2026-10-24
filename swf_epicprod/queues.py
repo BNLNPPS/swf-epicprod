@@ -36,6 +36,72 @@ ROOM_STATUS = {'production': None, 'commissioning': 'off', 'off': 'off',
                'not_built': 'not_built'}
 FIELDS = ('queue', 'status', 'reason', 'since', 'by', 'site', 'pool', 'front')
 CACHE_S = 10
+DISPATCH_MAX_AGE_S = 900
+_dispatch_cache = {'at': 0, 'value': {}}
+
+
+def dispatch_capabilities(reports=None):
+    """Fresh template-derived pilot capabilities, shared by all admission paths.
+
+    These are observations from the submit hosts, not another editable image
+    list. Multiple live launchers may serve different images of one queue.
+    """
+    now = time.monotonic()
+    if reports is None:
+        if now - _dispatch_cache['at'] < CACHE_S:
+            return _dispatch_cache['value']
+        from monitor_app.host_reports import latest
+        reports = {host: latest(host) for host in
+                   ('osgsub01-harvester', 'pandaharvester01', 'pandaharvester02')}
+        cache = True
+    else:
+        cache = False
+    result = {}
+    for host, report in reports.items():
+        if not report:
+            continue
+        age = report.get('age_seconds')
+        for queue, cap in (((report.get('record') or {}).get('queue_status') or {})
+                           .get('pilot_dispatch') or {}).items():
+            previous = result.get(queue) or {}
+            if age is None or age > DISPATCH_MAX_AGE_S:
+                result.setdefault(queue, {'mode': 'unknown', 'error': 'pilot image report is stale'})
+                continue
+            mode = cap.get('mode')
+            if mode == 'any':
+                result[queue] = dict(cap, host=host)
+            elif mode == 'bound' and cap.get('images'):
+                if previous.get('mode') == 'any':
+                    continue
+                images = set(previous.get('images') or []) | set(cap['images'])
+                result[queue] = dict(cap, images=sorted(images), host=host)
+            elif previous.get('mode') not in ('any', 'bound'):
+                result[queue] = dict(cap, mode='unknown', host=host)
+    if cache:
+        _dispatch_cache.update(at=now, value=result)
+    return result
+
+
+def image_problem(image, capability):
+    """A missing proof of compatibility is a refusal, never a wildcard."""
+    if not image:
+        return 'the task does not declare a container image'
+    capability = capability or {}
+    if capability.get('mode') == 'any':
+        return ''
+    if capability.get('mode') == 'bound' and image in (capability.get('images') or []):
+        return ''
+    if capability.get('mode') == 'bound':
+        return ('needs image ' + image + '; pilots serve only '
+                + ', '.join(capability.get('images') or []))
+    return ('cannot verify pilots serving image ' + image + ': '
+            + (capability.get('error') or 'no fresh pilot image report'))
+
+
+def require_image(queue, image):
+    problem = image_problem(image, dispatch_capabilities().get(queue))
+    if problem:
+        raise ValueError(f'{queue}: {problem}')
 
 # The settings the record replaces, as they stood on 2026-10-23: the
 # derivation's defaults when a setting is missing or malformed.

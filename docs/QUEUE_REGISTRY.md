@@ -55,6 +55,25 @@ pause or a pilot shutdown.
 The record is read and written through `swf_epicprod.queues`. Reads are
 cached in each process for ten seconds.
 
+## Pilot image compatibility
+
+Admission also reads the submit hosts' current pilot dispatch capability,
+through `queues.dispatch_capabilities`, from the harvester reports'
+`queue_status.pilot_dispatch`. The reporter derives this from each queue's
+actual submit template and includes its path and hash. Native pilots are
+bound to their declared image; known legacy ALRB launchers select the
+task's image dynamically. Missing, stale (over fifteen minutes), unreadable
+or unresolved capability cannot authorize a placement. This is observed
+capability, not a second editable image list in the status record.
+
+The front compares the task's exact submission image with that capability
+when recommending a queue and when reading already-placed ready work.
+PCS checks the same rule before placement, queueing, submission, rerun or
+move. The credentialed submission doer rechecks the final site and image
+through the read-only command API's `fmt=admission`, after trial and canary
+overrides and before creating anything in PanDA. An explicit site cannot
+bypass the image check. Existing running tasks and jobs are unchanged.
+
 ## The readers
 
 | Reader | What it reads | Replaces |

@@ -1208,6 +1208,16 @@ def prodtask_task_priority(task, cfg=None, plan=None):
     return TASK_PRIORITY_BY_LEVEL.get(level, TASK_PRIORITY_UNSET), {'level': level, 'source': source}
 
 
+def task_container_image(cfg, override=None):
+    """The exact image spelling the submission sends to dispatch."""
+    image = override or cfg.get('container_image') or ''
+    if not image and cfg.get('jug_xl_tag'):
+        image = f"/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:{cfg['jug_xl_tag']}"
+    if not image:
+        raise ValueError('no container image (set container_image or jug_xl_tag on the config)')
+    return image
+
+
 def build_evgen_task_params(task, panda_tasks=None, residual=False,
                             residual_of=None, rows=None, container=None):
     """Build the client-API EVGEN production submission spec from a ProdTask.
@@ -1304,12 +1314,7 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
     # Container: the caller's image (a reproduction runs the image the
     # crashed task ran) wins; else the configuration's explicit image; else
     # the cvmfs eic_xl ref from the jug_xl tag, as submit_csv.sh does.
-    container = container or cfg.get('container_image') or ''
-    if not container and cfg.get('jug_xl_tag'):
-        container = f"/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:{cfg['jug_xl_tag']}"
-    if not container:
-        raise ValueError(
-            'no container image (set container_image or jug_xl_tag on the config)')
+    container = task_container_image(cfg, container)
 
     # csv_base: a filesystem-safe stem for the per-task manifest in the sandbox.
     csv_base = re.sub(r'[^A-Za-z0-9._-]', '_', out_ds) or 'evgen_input'

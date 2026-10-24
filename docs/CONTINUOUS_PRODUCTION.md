@@ -357,6 +357,14 @@ retired on 2026-09-30. Submitting an unplaced task places it first:
 
 The submission kernel refuses a spec without a site.
 
+A queue is eligible only when its pilot launchers can run the task's
+exact container image. The queue registry reads that capability from
+fresh template-derived harvester reports (QUEUE_REGISTRY.md, Pilot image
+compatibility). A queue bound to another image is unplaceable, with the
+required and served images in the reason. Manual placement, saved queue
+choices and the final submission doer enforce the same check; unavailable
+image evidence refuses submission rather than guessing.
+
 **The front's placement.** Each cycle, the front sends unplaced
 `ready` tasks to the queue the recommendation names, among the queues
 it feeds (feed switch on, and calibrated, since an uncalibrated queue

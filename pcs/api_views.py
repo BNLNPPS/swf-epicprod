@@ -612,9 +612,10 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
 
         Query params:
             name — ProdTask.name (required)
-            fmt  — condor | panda | jedi | dump (required). Named 'fmt'
+            fmt  — condor | panda | jedi | evgen | dump | admission. Named 'fmt'
                    (not 'format') because DRF reserves 'format' for
                    content negotiation.
+            site, container — final destination and image for admission.
 
         Returns:
             text/plain for condor/panda, application/json for jedi/dump.
@@ -629,15 +630,28 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         fmt = request.query_params.get('fmt', '').lower()
         if not name:
             return Response({'detail': 'Missing ?name='}, status=status.HTTP_400_BAD_REQUEST)
-        if fmt not in ('condor', 'panda', 'jedi', 'evgen', 'dump'):
+        if fmt not in ('condor', 'panda', 'jedi', 'evgen', 'dump', 'admission'):
             return Response(
-                {'detail': "fmt must be one of: condor, panda, jedi, evgen, dump"},
+                {'detail': "fmt must be one of: condor, panda, jedi, evgen, dump, admission"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
             task = services.resolve_prodtask(name, self.get_queryset())
         except ProdTask.DoesNotExist:
             return Response({'detail': f"No task named '{name}'"}, status=status.HTTP_404_NOT_FOUND)
+
+        if fmt == 'admission':
+            from swf_epicprod.queues import require_image
+            site = (request.query_params.get('site') or '').strip()
+            image = (request.query_params.get('container') or '').strip()
+            if not site or not image:
+                return Response({'detail': 'site and container are required for admission'}, status=400)
+            try:
+                services.refuse_closed_queue(site)
+                require_image(site, image)
+            except (ValueError, ServiceError) as exc:
+                return Response({'detail': str(exc)}, status=409)
+            return Response({'allowed': True, 'site': site, 'container_image': image})
 
         if fmt == 'condor':
             return HttpResponse(build_condor_command(task), content_type='text/plain')

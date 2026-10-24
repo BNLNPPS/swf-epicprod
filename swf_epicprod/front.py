@@ -413,6 +413,12 @@ def ready_backlog():
             entry['rows'] = (int(queued['rows']) if entry['kind'] == 'rerun_residual'
                              and (queued or {}).get('rows') else task_rows(task, cfg))
             entry['need'] = task_need(cfg, rows=entry['rows'])
+            if queue != UNPLACED:
+                from .queues import dispatch_capabilities, image_problem
+                problem = image_problem(entry['need']['container_image'],
+                                        dispatch_capabilities().get(queue))
+                if problem:
+                    entry['problems'].append(problem)
         except Exception as exc:  # noqa: BLE001
             logger.exception('front: reading ready task %s failed', task.pk)
             entry['problems'].append(f'reading the task failed: {type(exc).__name__}: {exc}')
@@ -712,13 +718,15 @@ def queue_limits(queue):
 def task_need(cfg, rows=None):
     """What one job of a task asks of a queue, from its effective
     configuration, as the submission declares it (pcs/commands.py)."""
+    from pcs.commands import task_container_image
     data = cfg.get('data') or {}
     hours = cfg.get('target_hours_per_job')
     walltime_h = float(hours) if hours is not None else float(data.get('walltime_hours', 2.0))
     cores = int(data.get('corecount') or 1)
     ram = int(data.get('ram_count') or 4096)
     return {'walltime_h': round(walltime_h, 2), 'cores': cores,
-            'ram_mb_per_core': ram, 'memory_mb': ram * cores, 'rows': rows}
+            'ram_mb_per_core': ram, 'memory_mb': ram * cores, 'rows': rows,
+            'container_image': task_container_image(cfg)}
 
 
 def fit_problems(need, limits):
@@ -804,10 +812,9 @@ def _depth_line(r):
     return f"{r['not_started']} jobs queued, depth in hours not yet calibrated"
 
 
-def recommend(state, need, queues=None, closed=None):
-    """Rank the production queues for a task's work. Pure apart from
-    reading the closed queues (``closed_queues``) when ``closed`` is not
-    given.
+def recommend(state, need, queues=None, closed=None, dispatch=None):
+    """Rank production queues, reading current closures and pilot capability
+    unless ``closed`` and ``dispatch`` are supplied for a pure calculation.
 
     ``state`` is the front's stored state (``front_state``), ``need`` the
     task's ``task_need``. A queue whose feed switch is off, with a red
@@ -826,6 +833,10 @@ def recommend(state, need, queues=None, closed=None):
     queues = list(queues or decisions.keys())
     closed = dict(closed_queues() if closed is None else closed)
     closed.update(RETIRED_QUEUES)
+    from .queues import dispatch_capabilities, image_problem
+    check_image = need is not None and 'container_image' in need
+    if dispatch is None:
+        dispatch = dispatch_capabilities() if check_image else {}
     rows = []
     for queue in queues:
         d = decisions.get(queue) or {}
@@ -853,6 +864,10 @@ def recommend(state, need, queues=None, closed=None):
             'feed_off': not d.get('feed_switch'),
             'front_state': d.get('state', ''), 'front_reason': d.get('reason', ''),
         }
+        image_issue = image_problem(need.get('container_image'), dispatch.get(queue)) if check_image else ''
+        row['image_problem'] = image_issue
+        if image_issue:
+            row['fit'].append(image_issue)
         if limits is None:
             row['fit_unknown'] = True
         if committed_h is not None:
@@ -878,6 +893,10 @@ def recommend(state, need, queues=None, closed=None):
         if not placement:
             reason = ('no recommendation yet: the front stores its gate readings '
                       'with each cycle, and none is stored')
+        image_reasons = [r['queue'] + ': ' + r['image_problem'] for r in rows
+                         if r['image_problem'] and r['queue'] not in closed and not r['feed_off']]
+        if image_reasons:
+            reason += '; ' + '; '.join(image_reasons)
         return {'rows': rows, 'recommended': '', 'reason': reason}
     bits = [_depth_line(best), f"canary {best['canary']}"]
     if best['p90_start_latency_h'] is not None:
