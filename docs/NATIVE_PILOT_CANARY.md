@@ -15,6 +15,37 @@ log through the queue's declared protocol. The failures encountered and
 their corrections are recorded below; no production pilot, exclusion,
 queue configuration, or server was changed by these tests.
 
+## Standard-pilot rollout, 24 October
+
+Native execution is the standard pilot architecture. Event Service adds
+its channel dependency and job configuration to that pilot; it is not a
+reason to keep the standard rollout on the older bootstrap.
+
+| Site | Deployment status |
+| --- | --- |
+| OSG | Native production launcher, archive `092ac705`, both 26.07.1 and 26.07.3; completed and registered jobs on both images. |
+| GREX | Standard production template switched to the native launcher at 17:33:09 UTC. Archive `9532f30b` retains GREX's epic5 operational fixes. All current queued/running jobs use 26.07.3. First Harvester production submission from this template is still to be observed. |
+| Perlmutter | Off for allocation usage; the existing site launcher still uses the ALRB Python setup. Standard native migration is not deployed. |
+| Google | Off by operator instruction; no native production rollout verified. |
+| JLab | Commissioning, no running workers; the host-Python bootstrap is not the campaign-image native launcher. |
+| Compute Canada | Queue not built, awaiting CE identity mapping. |
+
+GREX's live template is
+`/data/atlpan/harvester_common/submit_pilot3_pull_umgrex.sdf`, SHA256
+`d306587ccc6eb83d6bc3eaf26f45f356cb80bed4d2ed793e2d712d8d97c8e921`.
+Its frozen assets are in
+`/data/atlpan/harvester_common/native-grex-production-20261024`.
+The eight-pilot, 48 GB, 12-hour allocation, CE, Harvester identities and
+lifetime policy are preserved. Existing running allocations keep their
+original launcher. The previous template is retained beside the live one
+as `submit_pilot3_pull_umgrex.sdf.before-native-20261024`.
+
+This promotion follows the operator's instruction to make the validated
+native architecture standard. The earlier private 27242.0 canary is no
+longer a prerequisite to installing GREX's production template. Its result
+and actual production payload/registration results remain separate evidence;
+the ES channel trial below has not passed.
+
 ## What changes
 
 `pilot/native-canary/epic-native-canary.sh` starts the pilot using Python
