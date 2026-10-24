@@ -12,12 +12,44 @@
 # inside a private namespace that carries the session directory the runtime
 # falls back to; the preflight proves that route before any job is taken.
 # docs/NATIVE_PILOT_CANARY.md § Staged trial, 23 October.
+# On a batch allocation with no glidein (GREX through its CE), with
+# EPICPROD_NATIVE_BATCH=1, the launcher starts the image once itself through
+# Apptainer and runs inside it; the rest is unchanged. The shipped files may be
+# in the allocation's directory (EPICPROD_NATIVE_ASSETS, set by
+# epicprod-multipilot.sh for its pilots) and are linked into this pilot's; a
+# shipped proxy named by EPICPROD_NATIVE_PROXY wins over a CE's rewritten
+# X509_USER_PROXY; a queuedata.json here becomes pilot.py's queue data unless
+# the arguments name one. docs/NATIVE_PILOT_CANARY.md § GREX.
 set -euo pipefail
 trap 'echo "ePIC native pilot startup failed at line $LINENO (exit $?)" >&2' ERR
 IMAGE=${EPICPROD_NATIVE_IMAGE:?campaign image required}
 ARCHIVE=${EPICPROD_NATIVE_ARCHIVE:?transferred pilot archive required}
 HERE=$(pwd -P)
+SELF=$(readlink -f "$0")
+ASSETS=$(readlink -f "${EPICPROD_NATIVE_ASSETS:-$HERE}")
+if [[ $ASSETS != "$HERE" ]]; then
+    for f in "$ARCHIVE" certificates.tar.gz rucio.cfg glidein-deadline.sh job-user.sh \
+             runtime-policy.py queue-runtime-policy.json ${EPICPROD_NATIVE_PROXY:-}; do
+        [[ -e $ASSETS/$f && ! -e $HERE/$f ]] && ln -s "$ASSETS/$f" "$HERE/$f"
+    done
+fi
+if [[ -n ${EPICPROD_NATIVE_PROXY:-} && -r $HERE/$EPICPROD_NATIVE_PROXY ]]; then
+    export X509_USER_PROXY=$HERE/$EPICPROD_NATIVE_PROXY
+fi
 ACTUAL=${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}
+if [[ -z $ACTUAL && ${EPICPROD_NATIVE_BATCH:-0} == 1 ]]; then
+    RUNTIME=$(command -v apptainer || command -v singularity || true)
+    [[ -n $RUNTIME ]] || RUNTIME=/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/$(uname -m)/bin/apptainer
+    [[ -x $RUNTIME ]] || { echo "Apptainer unavailable: $RUNTIME" >&2; exit 69; }
+    binds=(--bind /cvmfs:/cvmfs --bind "$HERE:$HERE" --bind "$ASSETS:$ASSETS" --bind "$SELF:$SELF")
+    for d in "${SLURM_TMPDIR:-}" "/scratch/slurm/${SLURM_JOB_ID:-}" "${_CONDOR_SCRATCH_DIR:-}" \
+             "$(dirname "$(readlink -f "${X509_USER_PROXY:-/nonexistent}")")"; do
+        [[ -n ${SLURM_JOB_ID:-} || $d != /scratch/slurm/ ]] || continue
+        [[ -d $d && $d != / ]] && binds+=(--bind "$d:$d")
+    done
+    echo "ePIC native pilot: batch host $(hostname), runtime $RUNTIME, image $IMAGE"
+    exec "$RUNTIME" exec --no-home "${binds[@]}" --pwd "$HERE" "$IMAGE" /bin/bash "$SELF" "$@"
+fi
 [[ -n $ACTUAL ]] || { echo "not inside a container: the slot ignored +SingularityImage $IMAGE" >&2; exit 69; }
 [[ $(readlink -f "$ACTUAL") == $(readlink -f "$IMAGE") ]] || {
     echo "outer image $ACTUAL is not $IMAGE; refusing" >&2; exit 65; }
@@ -111,4 +143,8 @@ if entry is not None:
     sys.exit(1)
 print('node guard: this node is not excluded (%d listed)' % len(document.get('nodes') or []))
 PY
-exec python3 "$HERE/pilot3/pilot.py" "$@"
+queuedata=()
+if [[ -r $HERE/queuedata.json && " $* " != *" --queuedata-url "* ]]; then
+    queuedata=(--queuedata-url "file://$HERE/queuedata.json")
+fi
+exec python3 "$HERE/pilot3/pilot.py" "$@" ${queuedata[@]+"${queuedata[@]}"}

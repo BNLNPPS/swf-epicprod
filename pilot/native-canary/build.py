@@ -157,6 +157,17 @@ except ValueError:
         _file['force_scheme'] = log_scheme
 '''))
 
+    # The job metrics (EPICPROD_PAYLOAD.md, Scratch disk): the scratch peaks the
+    # container wrapper samples for every job, and the payload's declared
+    # metrics without the count and length limits the epic5 plugin set itself
+    # (Torre Wenaus, 2026-10-24: "i do not like arbitrary limits"). PanDA's own
+    # bound, the 500-character jobmetrics column, is the pilot's whole-string
+    # cut, kept as it is.
+    relative = 'pilot/user/epic/jobmetrics.py'
+    path = tree / relative
+    if path.exists() and 'def get_payload_metrics(' in path.read_text():
+        write(relative, patch_job_metrics(path.read_text()))
+
     # Authentication and refresh are deliberately carried from the baseline.
     with tarfile.open(baseline) as archive:
         assert archive.extractfile('pilot3/pilot/util/https.py').read() == (tree / 'pilot/util/https.py').read_bytes()
@@ -178,6 +189,37 @@ except ValueError:
                           if production else 'isolated canary; not a production release')}
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     return manifest
+
+
+def patch_job_metrics(content):
+    """Scratch peaks in, the payload metrics' own limits out."""
+    replacements = (
+        ("""        if reported >= MAX_PAYLOAD_METRICS:
+            logger.warning(f"payload declared more than {MAX_PAYLOAD_METRICS} job metrics - ignoring the rest")
+            break
+""", ""),
+        ("""        if not text or len(text) > MAX_PAYLOAD_METRIC_VALUE or any(c.isspace() for c in text):""",
+         """        if not text or any(c.isspace() for c in text):"""),
+        ("""        if len(job_metrics) + len(entry) > MAX_PAYLOAD_METRICS_LENGTH:
+            logger.warning("payload job metrics exceed the space allowed for them - ignoring the rest")
+            break
+""", ""),
+        ("""    # is there a detected rucio trace service error?
+""", """    # ePIC: the job's scratch peaks, sampled by the native container wrapper
+    from pilot.user.epic.native_container import scratch_peak
+    peak = scratch_peak(job.workdir)
+    if peak:
+        job_metrics += get_job_metrics_entry("scratchPeakMB", (peak[0] + 1023) // 1024)
+        job_metrics += get_job_metrics_entry("scratchPeakFiles", peak[1])
+
+    # is there a detected rucio trace service error?
+"""),
+    )
+    for old, new in replacements:
+        if content.count(old) != 1:
+            raise ValueError('Unexpected job-metrics baseline: ' + old.strip()[:60])
+        content = content.replace(old, new)
+    return content
 
 
 def add_image_dispatch(content):
