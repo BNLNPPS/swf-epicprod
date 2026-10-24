@@ -95,9 +95,18 @@ batch launcher supplies it in a private user/mount namespace, using the
 same mechanism as its nested-image path. Existing session directories
 are used directly.
 
-The initial runtime is
-`/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/native-runtime-e8cc102`:
-the shared main launcher and the exact GREX production archive, SHA256
+Assemble each runtime with `scripts/stage-native-runtime.py --baseline FROZEN_ASSETS
+--output NEW_DIRECTORY --archive-sha256 APPROVED_DIGEST`. All launcher and helper
+code comes from one committed source revision; only the pilot archive, CA bundle
+and Rucio configuration come from the frozen baseline. The manifest records that
+revision and every file digest. Never reuse helpers from an older bundle: the
+first Google startup reached the campaign image but failed because an old
+`runtime-policy.py` lacked the launcher's `--prepare-queuedata` interface.
+
+Publish the new directory under `/panda/pilot/canary` on the CVMFS write host,
+then update `gke_pilots.native_runtime` to its immutable CVMFS path. Existing
+bundles are retained. The controller holds launches until the path is available.
+The approved GREX production archive has SHA256
 `9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`.
 This is one native pilot implementation. ES fixes belong in that shared
 implementation; commissioning tasks and configuration remain separate.
