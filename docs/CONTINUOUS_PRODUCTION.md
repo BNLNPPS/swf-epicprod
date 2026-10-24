@@ -770,26 +770,32 @@ beside it, in shadow from 2026-10-24: pause when the latest 10 completed
 attempts all failed, or 25 of the latest 50 did, counted in completion
 order with each PandaID once. A failure whose worker ended under the job
 (dispatcher 100, lost heartbeat; taskbuffer 300, worker finished while the
-job ran) counts as neither failure nor success, and the failures behind the
+job ran) counts as neither failure nor success, and so does a job the pilot
+cut at the slot's time limit (pilot 1213, reached maxtime; Torre Wenaus,
+2026-10-24): the slot's clock, not the task's fault. The failures behind the
 trigger must span at least three hosts, since a run on one node is the node
 guard's. A verified resume starts a fresh sample, as above. Its mode is
 SysConfig `front.task_guard.mode` (`shadow` by default, `active`, `off`);
 its thresholds are `front.task_guard.run_failed`, `.window`,
 `.window_failed` and `.min_hosts`. In shadow it records each trip once a day
 as `task_failure_guard_shadow` and acts on nothing; active, it pauses through
-the same agent path with source `front_task_failure_guard_rolling`. The
-first rule acts until `front.task_guard.legacy` is set false, which is the
-step after the shadow day.
+the same agent path with source `front_task_failure_guard_rolling`. After
+the shadow day only `front.task_guard.mode` changes: the first rule stays on
+beside it (`front.task_guard.legacy` true; Torre Wenaus, 2026-10-24) as the
+backstop for total failure where a queue reports few host names, as at
+GREX.
 
 Replayed over the recorded histories (2026-10-24), the rolling rule trips
 41039, 41040, 40855, 40856 and 40857 within 2 to 6 minutes of their first
 failure; the first rule trips four of them 2 to 5 minutes later and 41039 17
 minutes earlier. 40431, at GREX, waits 277 minutes because GREX reports four
 host names and no run of ten spanned three of them, while the first rule
-paused it at once. On healthy tasks it trips twice: 41051 on 2026-10-23 at
-23:04Z, on a wave of 83 jobs cut by the six-hour time limit (pilot 1213)
-across 26 hosts, and 40584 on 2026-10-07 at 11:10Z, on 192 failures with no
-error code across 109 hosts. 41035, 41043, 41044 and 41052 never trip.
+paused it at once. On healthy tasks it tripped twice before time-limit kills
+were set aside: 41051 on 2026-10-23 at 23:04Z, on a wave of 83 jobs cut by
+the six-hour limit across 26 hosts, which no longer trips; and 40584 on
+2026-10-07 at 11:10Z, on 192 failures with no error code across 109 hosts at
+eight or more OSG sites, which still does and looked like a task fault on
+every count. 41035, 41043, 41044 and 41052 never trip.
 
 ### Breaker scopes
 

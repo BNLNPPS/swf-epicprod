@@ -23,9 +23,13 @@ ROLLING = {'run_failed': 10, 'window': 50, 'window_failed': 25, 'min_hosts': 3}
 ROLLING_SOURCE = 'front_task_failure_guard_rolling'
 # A failure whose worker ended under the job counts as neither failure nor
 # success: the glidein's, not the task's, and it arrives in batches that
-# look exactly like a cascade.
+# look exactly like a cascade. So does a job the pilot cut at the slot's
+# time limit (Torre Wenaus, 2026-10-24): the slot's clock, not the task's
+# fault, which on 2026-10-23 put 83 kills on 26 hosts at SU-ITS into a
+# healthy task (41051).
 WORKER_LOSS = (('jobdispatchererrorcode', 100),   # lost heartbeat
-               ('taskbuffererrorcode', 300))      # worker finished while the job ran
+               ('taskbuffererrorcode', 300),      # worker finished while the job ran
+               ('piloterrorcode', 1213))          # reached maxtime
 # Attempts read per task, newest first: the window and room for the
 # worker losses set aside within it.
 ROLLING_READ = 300
@@ -87,13 +91,14 @@ def judge_rolling(attempts, cfg=None):
 
 def attempt_rows(rows):
     """PanDA job rows (jobstatus, jobdispatchererrorcode,
-    taskbuffererrorcode, modificationhost), newest first, as the judge's
-    attempts: the host without its slot (``slot1_2@comphy.fsu.edu`` ->
-    ``comphy.fsu.edu``)."""
+    taskbuffererrorcode, piloterrorcode, modificationhost), newest first,
+    as the judge's attempts: the host without its slot
+    (``slot1_2@comphy.fsu.edu`` -> ``comphy.fsu.edu``)."""
     out = []
-    for status, dispatcher, taskbuffer, host in rows:
+    for status, dispatcher, taskbuffer, pilot, host in rows:
         codes = {'jobdispatchererrorcode': int(dispatcher or 0),
-                 'taskbuffererrorcode': int(taskbuffer or 0)}
+                 'taskbuffererrorcode': int(taskbuffer or 0),
+                 'piloterrorcode': int(pilot or 0)}
         failed = status == 'failed'
         out.append({'failed': failed,
                     'worker_loss': failed and any(codes[k] == v for k, v in WORKER_LOSS),
@@ -147,9 +152,11 @@ def observations(queues):
                         since=since.isoformat() if since else None)
             # The rolling sample: the latest completed attempts in completion
             # order, each PandaID once.
-            cols = 'pandaid, jobstatus, endtime, jobdispatchererrorcode, taskbuffererrorcode, modificationhost'
+            cols = ('pandaid, jobstatus, endtime, jobdispatchererrorcode, taskbuffererrorcode, '
+                    'piloterrorcode, modificationhost')
             cursor.execute(
-                'SELECT jobstatus, jobdispatchererrorcode, taskbuffererrorcode, modificationhost FROM ('
+                'SELECT jobstatus, jobdispatchererrorcode, taskbuffererrorcode, piloterrorcode, '
+                'modificationhost FROM ('
                 f'SELECT {cols} FROM "{PANDA_SCHEMA}".jobsactive4 WHERE {predicate} '
                 'UNION '
                 f'SELECT {cols} FROM "{PANDA_SCHEMA}".jobsarchived4 WHERE {predicate}'
@@ -201,7 +208,9 @@ def run(queues, *, enabled, mode, dry_run, created_by,
     rule acts in it (``legacy``). The mailed rule acts only when
     ``rolling_mode`` is also ``active``; in ``shadow`` it records each
     trip once a day as task_failure_guard_shadow and acts on nothing;
-    ``off`` skips it."""
+    ``off`` skips it. Once the mailed rule acts, the first stays on as
+    the backstop for total failure where a queue reports few host names
+    (Torre Wenaus, 2026-10-24)."""
     from monitor_app.epicprod_logging import log_epicprod_action
 
     results = []

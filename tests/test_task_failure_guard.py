@@ -109,10 +109,11 @@ class RollingRuleTest(unittest.TestCase):
         self.assertTrue(guard.judge_rolling(attempts('F' * 5 + 'S' * 45), cfg)[0])
 
     def test_attempt_rows_read_panda_fields(self):
-        rows = [('failed', 100, 0, 'slot1_2@comphy.fsu.edu'), ('failed', 0, 300, 'a@x'),
-                ('failed', 0, 0, 'b@y'), ('finished', 0, 0, 'c@z')]
+        rows = [('failed', 100, 0, 0, 'slot1_2@comphy.fsu.edu'), ('failed', 0, 300, 0, 'a@x'),
+                ('failed', 0, 0, 1213, 'w@v'), ('failed', 0, 0, 1305, 'b@y'),
+                ('finished', 0, 0, 0, 'c@z')]
         self.assertEqual([(a['failed'], a['worker_loss'], a['host']) for a in guard.attempt_rows(rows)],
-                         [(True, True, 'comphy.fsu.edu'), (True, True, 'x'),
+                         [(True, True, 'comphy.fsu.edu'), (True, True, 'x'), (True, True, 'v'),
                           (True, False, 'y'), (False, False, 'z')])
 
     def exercise(self, pattern, *, rolling_mode, mode='active', recorded=False):
