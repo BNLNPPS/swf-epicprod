@@ -101,3 +101,65 @@ class NativePilotCanaryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class JobScratch(unittest.TestCase):
+    """Each job's own scratch: the payload sees it as _CONDOR_SCRATCH_DIR, it is
+    removed after the payload exits with the exit code kept, the peaks are
+    sampled into the job directory, a killed job's scratch is swept by the
+    pilot's next job from its own ledger only, and EPICPROD_KEEP_TMPDIR=1 keeps it."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.batch = self.root / 'batch'; self.batch.mkdir()
+        self.pilotdir = self.root / 'pilot'; self.pilotdir.mkdir()
+        self.image = self.root / 'image'; self.image.mkdir()
+
+    def job(self, jobid):
+        work = self.pilotdir / ('PanDA_Pilot-%d' % jobid); work.mkdir()
+        return SimpleNamespace(imagename=str(self.image), workdir=str(work), jobid=jobid)
+
+    def run_job(self, jobid, executable, extra_env=None):
+        job = self.job(jobid)
+        env = dict(APPTAINER_CONTAINER=str(self.image), _CONDOR_SCRATCH_DIR=str(self.batch))
+        env.update(extra_env or {})
+        with patch.dict(os.environ, env):
+            command = native.wrapper(executable, job=job)
+            result = subprocess.run(['bash', '-c', command], capture_output=True, text=True,
+                                    env=dict(os.environ, **env))
+        return job, result
+
+    def test_payload_scratch_is_its_own_removed_at_exit_and_peaks_recorded(self):
+        job, result = self.run_job(7, 'echo "$_CONDOR_SCRATCH_DIR" > seen; '
+                                      'mkdir -p "$_CONDOR_SCRATCH_DIR/FULL"; '
+                                      'head -c 300000 /dev/zero > "$_CONDOR_SCRATCH_DIR/FULL/a.root"; exit 3')
+        self.assertEqual(result.returncode, 3, result.stderr)
+        scratch = self.batch / 'epicprod-scratch-7'
+        self.assertEqual(Path(job.workdir, 'seen').read_text().strip(), str(scratch))
+        self.assertFalse(scratch.exists())
+        kb, files = native.scratch_peak(job.workdir)
+        self.assertGreaterEqual(kb, 290)
+        self.assertGreaterEqual(files, 3)
+        self.assertTrue(Path(job.workdir).is_dir())
+
+    def test_killed_jobs_scratch_is_swept_by_the_next_job_of_this_pilot_only(self):
+        stale = self.batch / 'epicprod-scratch-5'; stale.mkdir()
+        neighbour = self.batch / 'epicprod-scratch-6'; neighbour.mkdir()
+        (self.pilotdir / native.SCRATCH_LEDGER).write_text(str(stale) + '\n')
+        self.run_job(8, 'true')
+        self.assertFalse(stale.exists())
+        self.assertTrue(neighbour.exists())  # another pilot's job, not in this ledger
+
+    def test_keep_tmpdir_keeps_the_scratch_and_the_stale_one(self):
+        stale = self.batch / 'epicprod-scratch-5'; stale.mkdir()
+        (self.pilotdir / native.SCRATCH_LEDGER).write_text(str(stale) + '\n')
+        job, result = self.run_job(9, 'touch "$_CONDOR_SCRATCH_DIR/x"', {'EPICPROD_KEEP_TMPDIR': '1'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.batch / 'epicprod-scratch-9' / 'x').exists())
+        self.assertTrue(stale.exists())
+
+    def test_slurm_scratch_is_the_base_when_there_is_no_condor_scratch(self):
+        with patch.dict(os.environ, {'_CONDOR_SCRATCH_DIR': '', 'SLURM_TMPDIR': str(self.batch)}):
+            self.assertEqual(native.scratch_base(str(self.pilotdir / 'w')), str(self.batch))
+        with patch.dict(os.environ, {'_CONDOR_SCRATCH_DIR': '', 'SLURM_TMPDIR': '', 'SLURM_JOB_ID': ''}):
+            self.assertEqual(native.scratch_base(str(self.pilotdir / 'w')), str(self.pilotdir))

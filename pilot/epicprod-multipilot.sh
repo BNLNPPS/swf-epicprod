@@ -54,6 +54,10 @@ MARGIN=${EPICPROD_STARTUP_MARGIN_SECONDS:-300}
 TOP=$(pwd)
 WRAPPER=${EPICPROD_STANDARD_WRAPPER:-${TOP}/bnlpanda.runpilot2-wrapper.sh}
 [[ -r ${WRAPPER} ]] || WRAPPER=/cvmfs/eic.opensciencegrid.org/panda/bnlpanda.runpilot2-wrapper.sh
+# Each wrapper runs in its own subdirectory: the path must be absolute, and the
+# native launcher finds the allocation's shipped files here (epic-native-pilot.sh).
+WRAPPER=$(readlink -f "${WRAPPER}")
+export EPICPROD_NATIVE_ASSETS=${EPICPROD_NATIVE_ASSETS:-${TOP}}
 
 for value in "$N" "$STAGGER" "$SPREAD" "$ALLOCATION" "$RESERVE" "$MARGIN"; do
   if [[ ! $value =~ ^(0|[1-9][0-9]*)$ ]]; then

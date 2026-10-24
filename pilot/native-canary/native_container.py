@@ -9,6 +9,20 @@ which the image does not have and no glidein binds for a job; so the nested
 launch runs in a private user and mount namespace of its own, with a tmpfs
 over /var/lib carrying that directory. Nothing outside the launch sees it.
 Nesting needs unprivileged user namespaces on the node.
+
+Each job's payload gets a scratch of its own, ``epicprod-scratch-<PandaID>``
+under the batch system's scratch, exported as ``_CONDOR_SCRATCH_DIR`` (which
+the payload prefers to ``SLURM_TMPDIR``), and removed when the payload exits,
+after the payload's own exit handling. A batch job runs several jobs, and a GREX
+allocation eight pilots in one Slurm scratch; the payload removed only a scratch
+it made itself, so each job's files stayed for the rest of the batch job
+(EPICPROD_PAYLOAD.md, Cleaning up after each job). A payload the pilot kills
+leaves its scratch behind: the next job of the same pilot sweeps it, from this
+pilot's own ledger, never another pilot's. EPICPROD_KEEP_TMPDIR=1 keeps every
+scratch for diagnosis. While the payload runs, its scratch's size and file count
+are sampled every minute; the peaks go to ``epicprod-scratch-peak.txt`` in the
+job directory, which the job metrics report (``scratchPeakMB``,
+``scratchPeakFiles``). The PanDA job directory itself is never touched.
 """
 import logging
 import os
@@ -23,6 +37,82 @@ OSG_APPTAINER = '/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptai
 
 
 SESSION_DIR = '/var/lib/apptainer/mnt/session'
+
+SCRATCH_PREFIX = 'epicprod-scratch-'
+SCRATCH_LEDGER = '.epicprod-scratch-ledger'
+PEAK_FILE = 'epicprod-scratch-peak.txt'
+SAMPLE_S = 60
+
+
+def scratch_base(workdir):
+    """Where the batch system keeps a job's scratch: HTCondor's, Slurm's, else
+    beside the pilot's job directories."""
+    for key in ('_CONDOR_SCRATCH_DIR', 'SLURM_TMPDIR'):
+        value = os.environ.get(key, '')
+        if value and os.path.isdir(value):
+            return os.path.abspath(value)
+    slurm = '/scratch/slurm/' + os.environ.get('SLURM_JOB_ID', '')
+    if os.environ.get('SLURM_JOB_ID') and os.path.isdir(slurm):
+        return slurm
+    return os.path.dirname(os.path.abspath(workdir))
+
+
+def keep_scratch():
+    return os.environ.get('EPICPROD_KEEP_TMPDIR', '') == '1'
+
+
+def sweep(ledger, current):
+    """Remove the scratch of this pilot's earlier jobs that is still there,
+    from this pilot's ledger only, and record the current job's."""
+    try:
+        with open(ledger) as handle:
+            earlier = handle.read().split()
+    except OSError:
+        earlier = []
+    kept = []
+    for path in earlier:
+        if path == current or not os.path.basename(path).startswith(SCRATCH_PREFIX):
+            continue
+        if not os.path.isdir(path):
+            continue
+        if keep_scratch():
+            kept.append(path)
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        logger.info('ePIC scratch: removed %s, left by an earlier job of this pilot', path)
+    with open(ledger, 'w') as handle:
+        handle.write('\n'.join(kept + [current]) + '\n')
+
+
+def scratch_peak(workdir):
+    """(KB, files) peaks the wrapper sampled for the job in ``workdir``, or None."""
+    try:
+        with open(os.path.join(workdir, PEAK_FILE)) as handle:
+            parts = handle.read().split()
+        kb, files = int(parts[0]), int(parts[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return (kb, files) if kb > 0 else None
+
+
+def scratch_command(executable, scratch, peak):
+    """The payload run with its own scratch: sampled while it runs, removed
+    after it has exited (unless EPICPROD_KEEP_TMPDIR=1), its exit code kept."""
+    q = shlex.quote
+    s, p = q(scratch), q(peak)
+    sample = ('epicprod_peak() { k=$(du -skx ' + s + ' 2>/dev/null | cut -f1 || true); '
+              'n=$(du -sx --inodes ' + s + ' 2>/dev/null | cut -f1 || true); '
+              'pk=0; pn=0; [ -r ' + p + ' ] && read -r pk pn < ' + p + ' || true; '
+              '[ "${k:-0}" -gt "${pk:-0}" ] 2>/dev/null && pk=$k; '
+              '[ "${n:-0}" -gt "${pn:-0}" ] 2>/dev/null && pn=$n; '
+              'echo "${pk:-0} ${pn:-0}" > ' + p + '.tmp && mv -f ' + p + '.tmp ' + p + ' || true; }; ')
+    sampler = ('( trap \'kill $epicprod_sp 2>/dev/null; exit 0\' TERM; '
+               'while :; do sleep ' + str(SAMPLE_S) + ' & epicprod_sp=$!; wait $epicprod_sp; epicprod_peak; done ) '
+               '& epicprod_sampler=$!; ')
+    remove = '' if keep_scratch() else 'rm -rf ' + s + '; '
+    return ('export _CONDOR_SCRATCH_DIR=' + s + '; mkdir -p ' + s + ' || exit 66; ' + sample + sampler
+            + '( ' + executable + '\n); epicprod_rc=$?; kill $epicprod_sampler 2>/dev/null; '
+            'wait $epicprod_sampler 2>/dev/null; epicprod_peak; ' + remove + 'exit $epicprod_rc')
 
 
 def nested(args):
@@ -75,9 +165,11 @@ def wrapper(executable, **kwargs):
         executable = replace_last_command(executable, payload)
     if options.get('execArgs'):
         executable += ' ' + options['execArgs']
+    scratch = os.path.join(scratch_base(workdir), SCRATCH_PREFIX + str(job.jobid))
+    sweep(os.path.join(os.path.dirname(workdir), SCRATCH_LEDGER), scratch)
     command = ('cd ' + q(workdir) + ' || exit 66; export TMPDIR=' + q(workdir)
                + ' GFORTRAN_TMPDIR=' + q(workdir) + ' PandaID=' + q(str(job.jobid))
-               + '; ' + executable)
+               + '; ' + scratch_command(executable, scratch, os.path.join(workdir, PEAK_FILE)))
     job.command = command
     if actual and same_image(actual, wanted):
         logger.info('ePIC native: reuse matching image %s; no container launch', wanted)
@@ -94,7 +186,8 @@ def wrapper(executable, **kwargs):
     # Bind the whole pilot work tree, not an individual token file. Refresh
     # replaces token files; the payload must see the replacement through the
     # same directory and the same pathname.
-    roots = {workdir, os.path.abspath(os.environ.get('PILOT_HOME', workdir))}
+    roots = {workdir, os.path.abspath(os.environ.get('PILOT_HOME', workdir)),
+             scratch_base(workdir)}
     for key in ('PILOT_SOURCE_DIR', 'PILOT_WORK_DIR'):
         if os.environ.get(key):
             roots.add(os.path.abspath(os.environ[key]))
