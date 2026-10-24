@@ -937,7 +937,7 @@ if [ -n "${EPICPROD_RECO_SOCKET:-}" ]; then
     if [ ! -S "${EPICPROD_RECO_SOCKET}" ]; then
       echo "starting the resident eicrecon on ${EPICPROD_RECO_SOCKET}"
       resident_wait=()
-      [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-0}" != 1 ] || resident_wait=(--wait)
+      [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-1}" != 1 ] || resident_wait=(--wait)
       setsid "${resident_wait[@]}" nohup eicrecon \
         -Pdd4hep:xml_files="${DETECTOR_COMPACT}" \
         -Ppodio:managed_socket_path="${EPICPROD_RECO_SOCKET}" \
@@ -948,7 +948,7 @@ if [ -n "${EPICPROD_RECO_SOCKET:-}" ]; then
         [ -S "${EPICPROD_RECO_SOCKET}" ] && break
         # The forked child is alive before exec exposes eicrecon's arguments
         # to pgrep. Track that child instead; --wait also covers setsid forks.
-        if [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-0}" = 1 ]; then
+        if [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-1}" = 1 ]; then
           kill -0 "$resident_pid" 2>/dev/null && resident_alive=1 || resident_alive=0
         else
           pgrep -f "managed_socket_path=${EPICPROD_RECO_SOCKET}" >/dev/null && resident_alive=1 || resident_alive=0

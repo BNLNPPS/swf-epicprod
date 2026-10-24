@@ -32,8 +32,10 @@ class ResidentStartup(unittest.TestCase):
             resident.chmod(0o755)
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
                        EPICPROD_RECO_SOCKET=str(root / 'resident.sock'),
-                       EPICPROD_RECO_STARTUP_S='3', DETECTOR_COMPACT='geometry.xml',
-                       EPICPROD_SWITCH_RESIDENT_PID_WAIT=str(switch))
+                       EPICPROD_RECO_STARTUP_S='3', DETECTOR_COMPACT='geometry.xml')
+            env.pop('EPICPROD_SWITCH_RESIDENT_PID_WAIT', None)
+            if switch is not None:
+                env['EPICPROD_SWITCH_RESIDENT_PID_WAIT'] = str(switch)
             script = ('set -e\ntrap \'kill "${resident_pid:-}" 2>/dev/null || true\' EXIT\n'
                       'resident_wait=()\n' + block + '\necho SOCKET_READY\n')
             return subprocess.run(['bash', '-c', script], env=env, text=True,
@@ -50,3 +52,10 @@ class ResidentStartup(unittest.TestCase):
         result = self.start(1, crashes=True)
         self.assertEqual(result.returncode, 86, result.stdout + result.stderr)
         self.assertIn('genuine-startup-failure', result.stdout)
+
+    def test_unset_switch_uses_pid_wait_and_still_detects_real_exit(self):
+        result = self.start(None)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('SOCKET_READY', result.stdout)
+        failed = self.start(None, crashes=True)
+        self.assertEqual(failed.returncode, 86, failed.stdout + failed.stderr)
