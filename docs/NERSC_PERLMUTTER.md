@@ -28,7 +28,7 @@ production-shaped validation.
 for a task's unprocessed ranges (NODE_EVENT_DISPATCHER.md, The pilot
 side); the production queue keeps `std` until the worker-shape change.
 
-## How a pilot starts
+## The original site wrapper
 
 Read from the worker record of a probe job on 2026-09-12 (job 2723589,
 worker 20654, Slurm 58243510). The harvester submits a Slurm job in the
@@ -116,47 +116,43 @@ every worker directory): whose it is, where it runs, what it does. It
 is served from `main`, as everything in this repository is: `main` is what
 runs.
 
-Its nucleus is the site's own production wrapper, on the pattern of the
-payload ([EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md): the production
-team's script taken in as it stands and evolved here). The wrapper's
-source is not published, but the public worker record carries
-everything it does: its working directory, the environment file and
-the payload script it writes for the container (both reproduced byte
-for byte), the pilot it runs from the harvester installation, the
-container ALRB starts and its mounts, and the signal forwarding. The
-launcher reproduces those from production job 3102135 (worker 20721,
-2026-09-19) and marks what is ours: the pool sample below and the node
-guard's exclusion, both before the container starts, and, since
-2026-09-20 with the nucleus proven (three healthy canaries on worker
-21108 and 21117), the Event Service step: the pilot from the devcloud
-bucket (the site's release with pilot3 PRs 220 and 221, pinned by
-checksum, run from `/srv/pilot3`), the `queuedata.json` above (the
-server cache plus the `es_events` and `es_failover` activities), the
-yampl channel built by `perlmutter/build-es-channel.sh` on the
-container's Python (`PYTHONPATH` in the environment file), and
-`PILOT_ES_EXECUTOR_TYPE=generic`. Each is fetched by every task; one
-that cannot be fetched whole leaves the site's own pilot and
-configuration in place, so ordinary jobs run either way. The pilot runs
-an event-service payload in its own environment, not in the job's
-container, so the payload sees the channel library; the dispatcher's
-`es` mode (swf-monitor `scripts/evgen_job_dispatcher.py`) starts the
-task's image itself, once per range.
+The launcher is a site adapter to the **common native pilot**, using the
+same `native-runtime-6d64079` bundle and archive
+`9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`
+as Google commissioning. It starts the campaign image's own Python through
+Apptainer, without ALRB. Event Service uses that pilot's generic executor
+and a matching Python 3.13 yampl channel; there is no separate ES pilot fork.
+The runtime and channel arrive over immutable, checksum-pinned HTTPS URLs
+under the devcloud bucket's public `pilot/` prefix because the EIC CVMFS
+repository is unavailable on these nodes. A failed artifact check ends the
+launch before dispatch; it never selects the legacy pilot as a fallback.
 
-The first thing the launcher does that the site's wrapper does not is
-read the batch pool: the first task of each worker runs `squeue` and
-`sinfo` on the node, outside the container where they answer, and
-writes `pool-sample.json` above the tasks' working directories
-(`pool-sample/1`: the machine's and the account's running and pending
-jobs and nodes, the account's oldest pending age, the partition's node
-states). The environment file names the path as `EPICPROD_POOL_SAMPLE`
-and again as `APPTAINERENV_EPICPROD_POOL_SAMPLE`: the payload runs in a
-second container the pilot starts with a clean environment, which
-apptainer lets only prefixed variables through (the first `_es` job
-of the launcher, 3492628, carried no pool block for want of it);
-the payload reads it and carries it in its report, and the monitor
-shows it as the Perlmutter pool (swf-monitor docs/POOL_REPORTER.md,
-Pools we cannot read). This is the only reading of that pool: no
-collector answers us and no NERSC credential is held here.
+The existing Slurm script can still start eighty copies of the adapter.
+Only rank zero continues, producing one pilot on the single-node allocation;
+all other ranks exit before staging anything. The pilot advertises the
+node's CPU count, retains the Harvester identity and uses a mode-0600 copy
+of the site's proxy. `/global`, `/pscratch` and `/cvmfs` remain accessible.
+Local queue and storage configuration retain the `es_events` and
+`es_failover` routes. Pilot console output stays private; the public launch
+record contains adapter messages and selected startup markers, without an
+environment dump.
+
+Initial commissioning workers have a twenty-minute ceiling including staging,
+clamped to an earlier Slurm end time. HEPiX `shutdowntime` exposes the same
+deadline to the common pilot; its first-job admission minimum is ten minutes.
+A worker takes at most one job and then exits. The initial ES smoke shape is
+20 events, four explicit execution slots and 1,500 MB/core, so whole-node
+memory accounting remains below the node's capacity. The site's existing
+Slurm template is unchanged; the adapter bounds actual worker lifetime.
+Native worker completion, output registration and normal-reader validation
+remain required before advancing to production-shaped tests.
+
+The adapter also samples `squeue` and `sinfo` before entering the container,
+writing `pool-sample.json` above its work directory (`pool-sample/1`). It
+exports that path as `EPICPROD_POOL_SAMPLE` and its Apptainer equivalent so
+the payload report carries the account's and machine's running/pending jobs,
+nodes and partition state (swf-monitor `docs/POOL_REPORTER.md`). The existing
+node-exclusion check remains before pilot startup.
 
 The site's Slurm job takes it by queue name, keeping a cached copy in
 the harvester installation, where the job script now copies the site's

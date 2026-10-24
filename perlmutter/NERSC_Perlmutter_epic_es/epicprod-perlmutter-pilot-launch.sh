@@ -1,49 +1,27 @@
 #!/bin/bash
-# The epicprod pilot launch on Perlmutter for NERSC_Perlmutter_epic_es
-# (docs/NERSC_PERLMUTTER.md). The site's Slurm job fetches this file by
-# queue name at worker start and runs one copy per pilot:
-#
-#   srun -n <tasks> --export=HARVESTER_ID,HARVESTER_WORKER_ID,GTAG \
-#        /bin/bash ./epicprod-perlmutter-pilot-launch.sh <queue> <accessPoint>
-#
-# Its nucleus is the site's own production wrapper
-# (wrapper-wrapper-3-epic-test.sh, PanDA operations' file), reproduced
-# from the public worker record of production job 3102135 (worker
-# 20721, 2026-09-19): the same working directory, the same environment
-# file and payload script inside the container, byte for byte, the same
-# pilot from the harvester installation, the same container from ALRB
-# with the same mounts, the same signal forwarding. What is ours is
-# marked: the pool sample and the node guard's exclusion, both before
-# the container starts. The Event Service material the first version of
-# this file carried (a pilot from the devcloud bucket, queuedata.json,
-# the yampl channel) is in this file's history (swf-epicprod b24baf1)
-# and returns as an evolution step once this nucleus has run.
+# Perlmutter's site adapter to the common ePIC native pilot. The site's Slurm
+# job fetches this file from main and may still srun 80 copies; only rank zero
+# starts a pilot, which carries the node's ES payload. No separate ES pilot.
+# docs/NERSC_PERLMUTTER.md
 set -u
 
+[[ ${SLURM_PROCID:-0} == 0 ]] || exit 0
 PQ=${1:?panda queue}
 ACCESS_POINT=${2:?harvester access point}
-
-# The site's harvester installation: the pilot release the site runs,
-# and the Rucio client configuration for the pilot's Rucio account.
 HARVESTER_DIR=/global/common/software/m3763/panda-harvester
-# The site wrapper's latestNERSCPilotVer on 2026-09-19.
-NERSC_PILOT_VERSION=3.14.3.3
-PILOT_PY=$HARVESTER_DIR/pilot/pilot3-$NERSC_PILOT_VERSION/pilot3/pilot.py
-
-# OURS, the Event Service step (docs/NODE_EVENT_DISPATCHER.md): the
-# pilot from the devcloud bucket, the site's release with the two
-# event-service fixes (pilot3 PRs 220 and 221) and the debug-mode file
-# (PR 224), pinned by checksum; the
-# queue's pilot-side configuration with the es_events activities; and
-# yampl, the library the generic executor hands ranges through, built
-# for the container's Python. Each is fetched into this directory,
-# which is /srv inside the container. A fetch that fails leaves the
-# site's own pilot and configuration in place, so ordinary jobs run.
 QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/$PQ
-PILOT_TARBALL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/pilot3-3.14.3.3-epic4.tar.gz
-PILOT_TARBALL_SHA256=2b7151e9555d2dc9fc4f4f3cf628555bc7e4b6c4ba7546f94cf2edf35da17d63
-ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py311-el9.tar.gz
-ES_CHANNEL_SHA256=f6c11690f046ae8ceb90886d034e4fbba0f494203f839a16e8a85f687efcc938
+RUNTIME_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/native-runtime-6d64079.tar.gz
+RUNTIME_SHA256=3293f3cf3317af8d90266684ef71506c0d6b8272866d30e410e0324da628fbf2
+PILOT_SHA256=9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2
+ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py313-debian13.tar.gz
+ES_CHANNEL_SHA256=0993145fb66b52fc759fafe01bd5cef80ead0f3fb47d721feae6aa2a61a0d0ae
+IMAGE=/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.1-stable
+# Initial commissioning: at most twenty minutes, including staging. This
+# bounds the worker even while the site's Slurm template has a longer limit.
+DEADLINE_AT=$(( $(date +%s) + 1200 ))
+if [[ ${SLURM_JOB_END_TIME:-} =~ ^[0-9]+$ ]] && (( SLURM_JOB_END_TIME < DEADLINE_AT )); then
+    DEADLINE_AT=$SLURM_JOB_END_TIME
+fi
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
@@ -81,7 +59,6 @@ trap publish_launch_log EXIT
 log "queue $PQ worker ${HARVESTER_WORKER_ID:-?} harvester ${HARVESTER_ID:-?} task ${SLURM_PROCID:-0} host $(hostname -s) workdir $PWD"
 log "launcher $(sha256sum "$SELF" 2>/dev/null | cut -c1-12) from $SELF"
 unset TMPDIR
-[[ -f $PILOT_PY ]] || { log "no pilot at $PILOT_PY"; exit 1; }
 command -v python3 >/dev/null || log "no python3 on the host: the pool sample and the node guard read are skipped"
 
 # OURS: the pool as this worker finds it (swf-monitor docs/POOL_REPORTER.md,
@@ -192,171 +169,100 @@ PY
 )
 if [[ -n "$EXCLUDED" ]]; then log "node guard excludes this node: $EXCLUDED; no pilot started"; exit 0; fi
 
-# OURS: the Event Service step's material (above), fetched by every
-# task; the pilot runs from /srv/pilot3 when ours arrived whole.
-if curl -sfL -m 60 "$PILOT_TARBALL_URL" -o pilot3.tar.gz \
-    && echo "$PILOT_TARBALL_SHA256  pilot3.tar.gz" | sha256sum -c --quiet \
-    && tar -xzf pilot3.tar.gz && [[ -f pilot3/pilot.py ]]; then
-    PILOT_PY=/srv/pilot3/pilot.py
-    log "pilot $(cat pilot3/PILOTVERSION 2>/dev/null || echo unknown)-epic4 from $PILOT_TARBALL_URL"
-else
-    rm -rf pilot3 pilot3.tar.gz
-    log "our pilot not usable (fetch, checksum or unpack failed): $PILOT_TARBALL_URL; the site's pilot runs"
-fi
-if curl -sfL -m 30 "$QUEUE_URL/queuedata.json" -o queuedata.json; then
-    log "queuedata.json from $QUEUE_URL"
-else
-    rm -f queuedata.json
-    log "no queuedata.json published for $PQ; the pilot uses the server cache"
-fi
-ES_PYTHONPATH=
-if curl -sfL -m 60 "$ES_CHANNEL_URL" -o es-channel.tar.gz \
-    && echo "$ES_CHANNEL_SHA256  es-channel.tar.gz" | sha256sum -c --quiet \
-    && tar -xzf es-channel.tar.gz; then
-    ES_PYTHONPATH=/srv/es-channel/python
-    log "event service channel library from $ES_CHANNEL_URL"
-else
-    rm -rf es-channel es-channel.tar.gz
-    log "event service channel library not usable (fetch, checksum or unpack failed): $ES_CHANNEL_URL"
-fi
+# Stage the same native runtime that Google uses. Perlmutter compute nodes
+# cannot read eic.opensciencegrid.org, so immutable HTTPS objects carry it and
+# the matching Python 3.13 ES channel. Fail closed; never fall back to ALRB or
+# a different pilot after a failed download or verification.
+fetch() {
+    curl -sfL --retry 2 --connect-timeout 15 -m 90 "$1" -o "$2"
+}
+verify() {
+    echo "$1  $2" | sha256sum -c --quiet
+}
+fetch "$RUNTIME_URL" native-runtime.tar.gz \
+    && verify "$RUNTIME_SHA256" native-runtime.tar.gz \
+    && mkdir -p native-runtime \
+    && tar -xzf native-runtime.tar.gz -C native-runtime \
+    || { log 'native runtime staging failed; no pilot started'; exit 65; }
+python3 - native-runtime "$PILOT_SHA256" <<'CHECK' \
+    || { log 'native runtime manifest failed; no pilot started'; exit 65; }
+import hashlib, json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+manifest = json.loads((root / 'manifest.json').read_text())
+assert manifest['pilot_archive_sha256'] == sys.argv[2], 'wrong pilot archive'
+for name, expected in manifest['files'].items():
+    assert hashlib.sha256((root / name).read_bytes()).hexdigest() == expected, name
+CHECK
+fetch "$ES_CHANNEL_URL" es-channel.tar.gz \
+    && verify "$ES_CHANNEL_SHA256" es-channel.tar.gz \
+    && tar -xzf es-channel.tar.gz \
+    && [[ -r es-channel/python/yampl.cpython-313-x86_64-linux-gnu.so ]] \
+    || { log 'Python 3.13 ES channel staging failed; no pilot started'; exit 65; }
+fetch "$QUEUE_URL/queuedata.json" queuedata.json \
+    && fetch "$QUEUE_URL/ddmendpoints.json" ddmendpoints.json \
+    || { log 'queue/storage configuration staging failed; no pilot started'; exit 65; }
 
-# The container's environment file, as the site wrapper writes it (ALRB
-# sources it inside the container).
-cat > myEnv.sh <<EOF
-# Created on $(date)
-export HARVESTER_ID=${HARVESTER_ID:-}
-export HARVESTER_WORKER_ID=${HARVESTER_WORKER_ID:-}
-export GTAG=${GTAG:-}
-lsetup -q "python pilot-default-SL9"
-export RUCIO_ACCOUNT=panda
-lsetup -q rucio xrootd davix psutil logstash prmon
-export ALRB_CONT_CHOME=/pscratch/sd/x/xin/panda/.alrb/container/apptainer
-export RUCIO_CONFIG=$HARVESTER_DIR/rucio.cfg
-export X509_VOMS_DIR=/cvmfs/oasis.opensciencegrid.org/mis/vodata/grid-security/vomsdir
-export X509_VOMSES=/cvmfs/oasis.opensciencegrid.org/mis/vodata/vomses
-export X509_CERT_DIR=/cvmfs/oasis.opensciencegrid.org/mis/certificates
-# OURS: where the pool sample is (this worker's, taken by its first task).
-# The payload runs in a second container the pilot starts with a clean
-# environment (-C), so the plain variable stops at the pilot (worker
-# 21108, job 3492628: no pool block); apptainer injects APPTAINERENV_-
-# prefixed variables through a clean environment, the route ALRB uses
-# for its own ENV, and /pscratch is bound in that container.
+# Preserve the site's Harvester identity. A private local proxy copy remains
+# readable at the same absolute path inside the campaign image.
+umask 077
+cp "$HARVESTER_DIR/globus/harvesterproxy" harvesterproxy \
+    && chmod 600 harvesterproxy \
+    || { log 'Harvester proxy unavailable; no pilot started'; exit 67; }
+export X509_USER_PROXY=$WORKDIR/harvesterproxy
+export EPICPROD_NATIVE_PROXY=harvesterproxy
+export EPICPROD_NATIVE_BATCH=1
+export EPICPROD_NATIVE_ASSETS=$WORKDIR/native-runtime
+export EPICPROD_NATIVE_ARCHIVE=pilot3-native.tar.gz
+export EPICPROD_NATIVE_IMAGE=$IMAGE
+export EPICPROD_ES_CHANNEL=$WORKDIR/es-channel
+export PILOT_ES_EXECUTOR_TYPE=generic
+export STORAGEDATA_SERVER_URL=file://$WORKDIR/ddmendpoints.json
 export EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
 export APPTAINERENV_EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
-# OURS: the Event Service executor and its channel library (the pilot
-# runs an event-service payload in this environment, not in the job's
-# container, so the payload sees them too), and the storage record the
-# pilot resolves the es_events storage to an id from: the pilot knows
-# storages only from ATLAS CRIC, and its executor looks the id up on
-# the pilot-wide information service, which the job's own record does
-# not reach (job 3494150: every range staged and then reported failed
-# for want of the id). STORAGEDATA_SERVER_URL is that service's first
-# source.
-export PILOT_ES_EXECUTOR_TYPE=generic
-export STORAGEDATA_SERVER_URL=$QUEUE_URL/ddmendpoints.json
-# OURS: the job's core count, from the node. The queue record declares 1,
-# and the pilot asks the server for twice the job's core count of event
-# ranges per request (esprocess.py, baseexecutor.py queue_factor 2): at 1,
-# a fine-grained job got 2 single-event ranges per round trip and kept 2
-# to 3 of its 64 slots busy (job 3618765). The pilot takes
-# ATHENA_PROC_NUMBER over the job definition's core count
-# (info/jobdata.py clean__corecount), which also reports the whole node
-# to the server.
 export ATHENA_PROC_NUMBER=${SLURM_CPUS_ON_NODE:-$(nproc)}
-EOF
-[[ -n "$ES_PYTHONPATH" ]] && echo "export PYTHONPATH=$ES_PYTHONPATH\${PYTHONPATH:+:\$PYTHONPATH}" >> myEnv.sh
+export APPTAINER_BINDPATH=${APPTAINER_BINDPATH:+$APPTAINER_BINDPATH,}/global,/pscratch
+export MACHINEFEATURES=$WORKDIR/sitefeatures
+mkdir -p "$MACHINEFEATURES"
+printf '%s\n' "$DEADLINE_AT" > "$MACHINEFEATURES/shutdowntime"
+export EPICPROD_MIN_TIME_FOR_NEW_JOB=600
+SECONDS_LEFT=$(( DEADLINE_AT - $(date +%s) ))
+(( SECONDS_LEFT > EPICPROD_MIN_TIME_FOR_NEW_JOB )) \
+    || { log 'commissioning worker has insufficient time left; no pilot started'; exit 73; }
 
-# The payload script (runs inside the container), as the site wrapper
-# writes it: the pilot in the background, Slurm's signals forwarded to
-# it. The queue name and the pilot path are the two substitutions.
-cat > myPayload.sh <<EOF
-#!/bin/bash
-# Created on \$(date)
-# This script runs inside the container and handles signals
-function log_payload() {
-  dt=\$(date --utc +"%Y-%m-%d %H:%M:%S,%3N [payload]")
-  echo "\$dt \$@"
-}
-function err_payload() {
-  dt=\$(date --utc +"%Y-%m-%d %H:%M:%S,%3N [payload]")
-  echo "\$dt \$@" >&2
-}
-function payload_trap_handler() {
-  if [[ -n "\${pilot_pid}" ]]; then
-    log_payload "Signal \$1 received, forwarding to pilot PID: \$pilot_pid"
-    err_payload "Signal \$1 received, forwarding to pilot PID: \$pilot_pid"
-    # Forward signal to pilot
-    kill -s "\$1" "\$pilot_pid" 2>/dev/null
-    # Wait for pilot to finish cleanup
-    wait "\$pilot_pid" 2>/dev/null
-    pilot_rc=\$?
-    log_payload "Pilot exited with code: \$pilot_rc"
-    exit \$pilot_rc
-  else
-    log_payload "Signal \$1 received before pilot started"
-    err_payload "Signal \$1 received before pilot started"
-    exit 1
-  fi
-}
-# Set up signal traps inside container
-trap 'payload_trap_handler 2' SIGINT
-trap 'payload_trap_handler 3' SIGQUIT
-trap 'payload_trap_handler 10' SIGUSR1
-trap 'payload_trap_handler 15' SIGTERM
-trap 'payload_trap_handler 18' SIGCONT
-trap 'payload_trap_handler 24' SIGXCPU
-log_payload "Starting payload script inside container"
-env | sort
-# Start pilot in background so we can handle signals
-python3 $PILOT_PY -q $PQ -i PR -j managed -w generic --url https://pandaserver01.sdcc.bnl.gov -p 25443 --queuedata-url http://pandaserver01.sdcc.bnl.gov:25080/cache/schedconfig/$PQ.all.json --pilot-user epic --allow-same-user=False --job-type=managed --use-rucio-traces False --rucio-host https://nprucio01.sdcc.bnl.gov:443 --getjobrequests=50 --cleanup True   --noworkerpilotstatusupdate --debug &
-pilot_pid=\$!
-log_payload "Pilot started with PID: \$pilot_pid"
-# Wait for pilot to complete
-wait "\$pilot_pid"
-pilot_rc=\$?
-log_payload "Pilot completed with return code: \$pilot_rc"
-exit \$pilot_rc
-EOF
-chmod +x myPayload.sh
-
-# The container, as the site wrapper starts it: ALRB's AlmaLinux 9 image
-# with /global and /pscratch mounted (/cvmfs by default), this directory
-# as /srv and the working directory inside, the environment file sourced
-# and the payload script run. setupATLAS runs in the background so that
-# Slurm's signals reach it and, through the payload script, the pilot.
-export ATLAS_LOCAL_ROOT_BASE=/cvmfs/atlas.cern.ch/repo/ATLASLocalRootBase
-export ALRB_CONT_CHOME=/pscratch/sd/x/xin/panda/.alrb/container/apptainer
-# The harvester's proxy, as the site wrapper exports it on the host: ALRB
-# copies the file X509_USER_PROXY names into the container's dummy home
-# as /alrb/harvesterproxy and points the variable there, which is how the
-# pilot finds its credential. Without it the pilot reports "SSL
-# communication is impossible" and never asks for a job (worker 21107).
-export X509_USER_PROXY=$HARVESTER_DIR/globus/harvesterproxy
-export ALRB_CONT_SETUPFILE=/srv/myEnv.sh
-export ALRB_CONT_RUNPAYLOAD=/srv/myPayload.sh
-mkdir -p "$ALRB_CONT_CHOME"
-
-setup_pid=
+native_pid=
 forward_host() {
-    if [[ -n "$setup_pid" ]]; then
-        log "signal $1 received, forwarding to the container process $setup_pid"
-        kill -s "$1" "$setup_pid" 2>/dev/null
-        wait "$setup_pid"; rc=$?
-        log "container process exited with code $rc"; exit $rc
+    if [[ -n "$native_pid" ]]; then
+        log "signal $1 received, forwarding to native pilot process $native_pid"
+        kill -s "$1" "$native_pid" 2>/dev/null || true
+        wait "$native_pid"; rc=$?
+        exit "$rc"
     fi
-    log "signal $1 received before the container started"; exit 1
+    log "signal $1 received before the native pilot started"; exit 1
 }
-for s in INT QUIT USR1 TERM CONT XCPU; do trap "forward_host $s" $s; done
-
-log "starting the container"
-# setupATLAS is this source line; the subshell keeps the sourced setup
-# out of this script's own environment, and drops set -u, under which
-# ALRB's setup fails on its own unbound variables.
-# The setup file and the payload script travel in ALRB_CONT_SETUPFILE and
-# ALRB_CONT_RUNPAYLOAD, exported above as the site wrapper exports them;
-# the two mounts give ALRB's option string the site's exact form.
-( set +u; source "$ATLAS_LOCAL_ROOT_BASE/user/atlasLocalSetup.sh" -c el9 -m /global -m /pscratch ) &
-setup_pid=$!
-wait "$setup_pid"; rc=$?
-log "container finished with code $rc"
-exit $rc
+for sig in INT QUIT USR1 TERM CONT XCPU; do trap "forward_host $sig" "$sig"; done
+log "native runtime $RUNTIME_SHA256; pilot $PILOT_SHA256; Python 3.13 channel $ES_CHANNEL_SHA256"
+log "starting common native pilot in $IMAGE; ${SECONDS_LEFT}s left; one job maximum"
+# The public startup record contains only the adapter's own messages. Pilot
+# console and job diagnostics stay in the private worker file and normal
+# pilot-log route; never publish an environment or unfiltered debug output.
+timeout --signal=TERM --kill-after=60s "$SECONDS_LEFT" \
+    bash "$EPICPROD_NATIVE_ASSETS/epic-native-pilot.sh" \
+    -q "$PQ" -i PR -j managed -w generic \
+    --url https://pandaserver01.sdcc.bnl.gov -p 25443 \
+    --queuedata-url "file://$WORKDIR/queuedata.json" \
+    --storagedata-url "file://$WORKDIR/ddmendpoints.json" \
+    --pilot-user epic --allow-same-user=True --job-type=managed \
+    --use-rucio-traces False --rucio-host https://nprucio01.sdcc.bnl.gov:443 \
+    --getjobrequests=1 --getjobfailures=1 --cleanup True --noworkerpilotstatusupdate \
+    > native-pilot-console.log 2>&1 &
+native_pid=$!
+wait "$native_pid"; rc=$?
+if (( rc != 0 )); then
+    # Only the common launcher's startup markers are safe in the public
+    # record; the complete console remains private.
+    grep -E '^ePIC native pilot(:| startup failed)|^ModuleNotFoundError:|^FATAL[ :]' \
+        native-pilot-console.log | tail -12 || true
+fi
+log "native pilot finished with code $rc"
+exit "$rc"
