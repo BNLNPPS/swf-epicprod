@@ -420,6 +420,21 @@ exercised.
 - The pilot defect the probe died on, above; fixed by PR 220 and
   confirmed on the first run below.
 
+**Building the range channel.** `perlmutter/build-es-channel.sh BUILD
+IMAGE` compiles yampl v1.0 and its Python binding inside the named
+campaign image. The archive name records the Python ABI and operating
+system; the 26.07.3 image produces `es-channel-py313-debian13.tar.gz`.
+The extension locates `libyampl.so` relative to itself, and the build
+checks the channel from a relocated copy. A failed campaign build can
+continue with a third argument, `--resume`. Without `IMAGE`, the script
+retains the Perlmutter ALRB Python 3.11 build on AlmaLinux 9.
+
+The campaign build includes the image's Spack headers and libraries
+under `/opt/local`. It also corrects the Python binding's parsing of
+pkg-config flags: pkgconf omits the trailing space its setup script
+assumed, which otherwise removes the last character from the header
+path and library name.
+
 **First run of the pilot side (2026-09-09, `BNL_NPPS_GPU`,
 [task 39564](https://epic-devcloud.org/prod/panda/tasks/39564/), job
 2722535).** Under the canary pilot with PR 220, the generic executor and
