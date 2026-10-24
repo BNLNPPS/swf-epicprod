@@ -101,8 +101,11 @@ class Manifest(unittest.TestCase):
         for target, source in ((None, ''), (1_000_000, 'derived'), (0, 'included')):
             with self.subTest(target=target, source=source), self.assertRaises(ValueError):
                 _evgen_manifest_internal(task(target=target, source=source), 3000)
+        # 100 per job is exactly the 10,000 chunks 0000 to 9999; 99 is past them.
+        rows = _evgen_manifest_internal(task(target=1_000_000, source='included'), 100)
+        self.assertEqual((len(rows), rows[-1].rsplit(',', 1)[1]), (10000, '9999'))
         with self.assertRaises(ValueError):
-            _evgen_manifest_internal(task(target=1_000_000, source='included'), 100)
+            _evgen_manifest_internal(task(target=1_000_000, source='included'), 99)
 
     def test_trial_one_row(self):
         self.assertEqual(_evgen_manifest_internal(task(trial=True), 50),

@@ -735,8 +735,8 @@ GUN_PARTICLE_RE = re.compile(r'[A-Za-z0-9_+-]+')
 GUN_ENERGY_RE = re.compile(r'(\d+(?:\.\d+)?)(MeV|GeV)')
 GUN_ANGLE_RE = re.compile(r'(\d+(?:\.\d+)?)to(\d+(?:\.\d+)?)deg')
 GUN_ETA_RE = re.compile(r'eta(-?\d+\.\d)')
-# The four-digit chunk of the payload's names.
-GUN_MAX_CHUNKS = 9999
+# The four-digit chunk of the payload's names: 0000 to 9999.
+GUN_MAX_CHUNKS = 10000
 
 
 def is_particle_gun(task):
@@ -943,7 +943,7 @@ def _gun_manifest(task, path, stem, events_per_job):
     if chunks > GUN_MAX_CHUNKS:
         raise ValueError(
             f'{chunks} chunks of {events_per_job} events for {target}, past '
-            f'the {GUN_MAX_CHUNKS} the four-digit chunk names allow')
+            f'the {GUN_MAX_CHUNKS} the four-digit chunk names (0000 to 9999) allow')
     last = int(target) - events_per_job * (chunks - 1)
     return [f'{path}/{stem},steer,{events_per_job if i < chunks - 1 else last},{i:04d}'
             for i in range(chunks)]

@@ -650,7 +650,7 @@ reproduced every one byte for byte.
 - Sizing: a dataset's rows sum to its target exactly. With 1,000,000
   events and the config's events per job, the chunks are
   `ceil(target / events_per_job)`, the last carrying the remainder,
-  refused above 9999 (the four-digit chunk grammar). A gun row skips no
+  refused above 10,000 (the four-digit chunk grammar, 0000 to 9999). A gun row skips no
   events, so a short last row is safe. A trial keeps today's sizing,
   one small row (`submit-evgen-task.py` and the dispatcher's
   first-row `TRIAL_EVENTS` path), and needs no production target.
