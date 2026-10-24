@@ -987,7 +987,12 @@ def run_cycle(*, dry_run=False, created_by='front'):
     queues = regulated_queues()
     from swf_epicprod import task_failure_guard
     task_guard = _safe('task failure guard', lambda: task_failure_guard.run(
-        queues, enabled=enabled, mode=mode, dry_run=dry_run, created_by=created_by),
+        queues, enabled=enabled, mode=mode, dry_run=dry_run, created_by=created_by,
+        # The mailed rule: shadow until its day has run (CONTINUOUS_PRODUCTION.md,
+        # Task failure guard); the first rule acts until front.task_guard.legacy is off.
+        rolling_mode=str(setting('front.task_guard.mode', 'shadow')),
+        rolling_cfg=task_failure_guard.rolling_settings(setting),
+        legacy=bool(setting('front.task_guard.legacy', True))),
         failed('task failure guard')) or []
     max_per_cycle = max(1, int(setting('front.max_per_cycle', 2) or 1))
     activation_window_s = int(setting('front.activation_window_s', 600))
