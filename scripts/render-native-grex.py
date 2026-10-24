@@ -89,7 +89,8 @@ def canary(text, directory, wall_minutes, token):
         text = text.replace(key, value)
     text = re.sub(r'(?m)^\+maxWallTime\s*=.*$', '+maxWallTime = ' + str(int(wall_minutes)), text)
     text = re.sub(r'EPICPROD_ALLOCATION_SECONDS=\d+', 'EPICPROD_ALLOCATION_SECONDS=' + str(int(wall_minutes) * 60), text)
-    left = sorted(set(re.findall(r'\{[A-Za-z]+\}', text)))
+    live = '\n'.join(x for x in text.splitlines() if not x.lstrip().startswith('#'))
+    left = sorted(set(re.findall(r'\{[A-Za-z]+\}', live)))
     if left:
         raise ValueError('unfilled placeholders: ' + ', '.join(left))
     return text
