@@ -165,10 +165,12 @@ only grow until the closeout, so the largest samples are its peaks: on
 a simulation-and-reconstruction job, the FULL and RECO files together
 at the end of reconstruction. The report carries them as `scratch`
 (the peak in KB with the stage and time it was measured at, each
-stage's largest, the peak file count and its stage, the sample count)
-and the job metrics as `payloadScratchPeakMB` and
-`payloadScratchPeakFiles`, so the job record keeps them on every
-queue, including those whose batch system records none. A `du` that fails or
+stage's largest, the peak file count and its stage, the sample count),
+which reaches the job's metadata for finished jobs. The job metrics do
+not carry them: the pilot takes at most ten payload metrics in 200
+characters, which the stage trail nearly fills. The native pilot
+samples each job's scratch itself and reports the peaks in the job
+metrics for every job. A `du` that fails or
 runs over a minute leaves its line out and never marks a stage. On
 OSG, HTCondor's own peak (`DiskUsage` in the job's terminate event) is
 the cross-check. The peak is what a task's disk request is to be set
@@ -765,9 +767,7 @@ In order, each a committed step on the clone:
     behind `EPICPROD_SWITCH_SCRATCH_PEAK=1`, Torre Wenaus: "we should
     record peak payload disk usage"). The stage marker measures the
     scratch's size and file count at each stage boundary; the report's
-    `scratch` and the job metrics `payloadScratchPeakMB` and
-    `payloadScratchPeakFiles` carry the peaks (The payload report,
-    Scratch disk). PanDA held no payload disk use before: the pilot's
+    `scratch` carries the peaks (The payload report, Scratch disk). PanDA held no payload disk use before: the pilot's
     `workDirSize` measures its own job directory, not the scratch the
     payload writes in.
 26. **Each job cleans up its scratch** (2026-10-24, payload 0.25.2

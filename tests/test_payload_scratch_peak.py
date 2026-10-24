@@ -82,14 +82,12 @@ class ScratchPeak(unittest.TestCase):
         self.assertNotIn(' fail', stages)
         self.assertEqual(pr.scratch_record(os.path.join(d, 'scratch.log'))['peak_kb'], 4)
 
-    def test_job_metrics_name_the_peak_in_mb(self):
+    def test_scratch_stays_in_the_report_not_the_capped_job_metrics(self):
         report = {'stages': {}, 'events': {}, 'registration': {'outcome': 'registered'},
                   'payload_version': 'epicprod-payload 0.25.2',
                   'scratch': {'peak_kb': 2167847, 'peak_stage': 'reconstruction', 'peak_files': 41}}
-        self.assertEqual(pr.job_metrics(report)['payloadScratchPeakMB'], 2118)
-        self.assertEqual(pr.job_metrics(report)['payloadScratchPeakFiles'], 41)
-        report.pop('scratch')
-        self.assertNotIn('payloadScratchPeakMB', pr.job_metrics(report))
+        metrics = pr.job_metrics(report)
+        self.assertFalse(any(k.startswith('payloadScratch') for k in metrics))
 
     def test_malformed_lines_are_skipped(self):
         with tempfile.NamedTemporaryFile('w', delete=False) as f:

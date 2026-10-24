@@ -366,11 +366,10 @@ def job_metrics(report):
         metrics["payloadThreads"] = report["threads"]
     if report.get("exit_code") is not None:
         metrics["payloadExit"] = report["exit_code"]
-    scratch = report.get("scratch") or {}
-    if isinstance(scratch.get("peak_kb"), int):
-        metrics["payloadScratchPeakMB"] = (scratch["peak_kb"] + 1023) // 1024
-    if isinstance(scratch.get("peak_files"), int):
-        metrics["payloadScratchPeakFiles"] = scratch["peak_files"]
+    # The scratch peaks stay in the report, not here: the pilot takes at most
+    # 10 payload metrics in 200 characters, which a full trail nearly fills,
+    # so these would be dropped; the native pilot reports its own sampled
+    # scratch peaks (EPICPROD_PAYLOAD.md, Scratch disk).
     fatal = report.get("fatal") or {}
     if fatal.get("signal") in (6, 7, 8, 11):
         metrics["payloadFatalSignal"] = fatal["signal"]
