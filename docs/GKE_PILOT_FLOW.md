@@ -87,6 +87,9 @@ native launcher enters the campaign image and runs its Python, adding
 the ES channel after image startup. The
 payload's harness takes its slots from the same number
 (NODE_EVENT_DISPATCHER.md, The core count, from the node).
+Runtime files are copied without preserving the source directory's
+ownership or timestamps: Kubernetes owns the destination volume root,
+and preserving those attributes aborts setup before the pilot starts.
 
 The initial runtime is
 `/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/native-runtime-e8cc102`:

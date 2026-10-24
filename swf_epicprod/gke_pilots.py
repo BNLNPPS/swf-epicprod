@@ -148,7 +148,7 @@ def render_job(template, cfg, name=None):
     # want their own copy at mode 600, as Harvester's pods make it.
     container['args'] = [
         'install -m 600 /proxy/x509up /pilotdir/x509up && '
-        'cp -a ' + shlex.quote(runtime) + '/. /pilotdir/ && '
+        'cp -R ' + shlex.quote(runtime) + '/. /pilotdir/ && '
         'export ' + ' '.join(k + '=' + shlex.quote(v) for k, v in exports.items()) + ' && '
         'exec ' + ' '.join(shlex.quote(v) for v in command)]
     return job
