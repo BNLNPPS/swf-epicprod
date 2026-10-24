@@ -162,7 +162,7 @@
             <button type="button" class="btn btn-link btn-sm p-0 ms-1 pcs-qf-priority-edit" title="Set the priority for this request" aria-label="Set priority"><i class="bi bi-pencil-square"></i></button>{% endif %}
           </td>
           <td style="max-width: 18rem;">{{ q.benchmark|linebreaksbr }}</td>
-          <td style="max-width: 22rem;">{{ q.estimate|linebreaksbr }}</td>
+          <td style="min-width: 22rem; width: 26rem; max-width: 32rem;">{{ q.estimate|linebreaksbr }}</td>
         </tr>
 	        {% endfor %}
           <tr id="pcs-qf-empty" style="display:none;">
