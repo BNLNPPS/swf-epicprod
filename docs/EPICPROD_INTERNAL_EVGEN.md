@@ -520,9 +520,10 @@ scope.
 | `130to177deg` | e±, π±, K±, p, n, γ, π⁰ | 100 MeV to 20 GeV, as above | 80 |
 | `eta<η>`, η ∈ {−1.7, −1.4, 0.0, 0.5, 1.3} | e⁻ 1, 2, 10 GeV; γ 100 MeV, 1 GeV; μ⁻ 10 GeV | | 30 |
 
-274 configurations, which the composer covers; what 26.07.1 still
-needs of them is far fewer (Trials and the 26.07 datasets, below). The
-eta points are a change: the legacy `etaScan`
+274 configurations, all produced fresh in 26.07.3 on e37 (Trials and
+the 26.07.3 datasets, below), so the campaign has one clean set and no
+output overlaps the 26.07.1 single-particle samples. The eta points are
+a change: the legacy `etaScan`
 sample put every eta point of a (particle, energy) in one dataset, one
 steering stem per point; here each eta point is its own dataset, so a
 dataset holds one gun configuration and like is with like. That breaks
@@ -681,44 +682,33 @@ their own streams, a retried chunk regenerates its events, and the
 seed is written into the evgen stage log and the npsim stage note.
 Rows without the switch, and every non-gun row, keep `chunk + 1`.
 
-### Trials and the 26.07 datasets
+### Trials and the 26.07.3 datasets
 
-Two payload canaries with the switch set, one per template: π⁺ 1 GeV
-`3to50deg`, and e⁻ 1 GeV `eta-1.7`, the point that is new. Acceptance:
+Two payload canaries with the switch set, one per template: π⁺ 100 MeV
+`3to50deg` and e⁻ 1 GeV `eta-1.7`, the point that is new. Acceptance:
 every stage ok; the geometry stage on `epic_craterlake_5x41.xml`; the
 composed steering in the stage log identical to the volatile-area file
 (for the eta point, to the e⁻ 2 GeV η −1.7 file with the energy
-changed); the RECO output registered with its event count and gun
-metadata; no `/EVGEN` dataset. Then the switch on by default in a
-follow-up pull request, and the 26.07.1 configurations that are
-missing, and only those, so no existing sample is redone. On
-2026-10-24 (r9, matched by particle, gun energy and sample name):
+changed); the RECO output registered under `/TEST/canary/<stamp>` with
+its event count and gun metadata; no `/EVGEN` dataset. The canary
+reports one job's wall time and RECO size, from which the production
+config's events per job is set before production. Then the switch on by
+default in a follow-up pull request, and the 274 configurations
+composed and produced in 26.07.3.
 
-| Configurations | State in 26.07.1 | Gun production |
-|---|---|---|
-| 234 angle ranges | produced | none |
-| 9 angle ranges, all 100 MeV: e⁻, γ, K⁻, n, π⁻, π⁰, p at `3to50deg`; K⁻, π⁰ at `130to177deg` | submitted from steering files | only those whose tasks fail |
-| π⁺ 100 MeV `3to50deg` | nothing | composed and produced |
-| 30 eta points | nothing | composed and produced |
-
-The gun production is therefore the 30 eta points and π⁺ 100 MeV
-`3to50deg`, with the nine 100 MeV angle ranges as fallbacks. They are
-composed on e37, the explicit `particle_gun` EvGen tag. The produced
-26.07.1 siblings sit on e52, whose parameters read `unrecorded`; e52
-is not reused or redefined (the gun resolver would rightly refuse it),
-and "produced" above is matched by particle, gun energy and sample
-name, not by tag, so the e52 outputs are not rerun. Each new dataset
-records the legacy output it continues in its lineage. The angle
-ranges' second 26.07.1 edition, s9.r0 (simulation only, 84 `3to50deg`
-configurations, all produced), is not affected. The 26.02.0 `etaScan`
-heads have no 26.07.1 counterpart; they are superseded through the
-audited lifecycle, keeping their identities and history, and no
-historical edition is rewritten into a new one. None of the 251
-input-edition drafts is submitted; where one dataset holds two (p1108
-`45to135deg`), neither has a PanDA task. Three submitted 100 MeV tasks, one per angle range, sit on a physics tag
-whose particle reads `kaon_plus`, outside the dataset list and
-duplicates of K⁺ 100 MeV, which is produced in all three; they are a
-mis-entered tag, to be withdrawn separately.
+The 26.07.3 production config is `26.07.3 Particle Gun` (config 23):
+`internal_evgen`, `copy_evgen` off, eic_xl:26.07.3-stable, RECO to
+BNL-XRD, a fixed `events_per_job` (100 to begin, the standard
+production's, so 10,000 chunks per dataset). The canary tasks are its
+first two editions, `group.EIC.26.07.3.epic_craterlake.p1108.e37.s11.r11.3to50deg`
+and `group.EIC.26.07.3.epic_craterlake.p1067.e37.s11.r11.eta-1.7`, each
+with a 1,000,000 included target. A first pair on the same two
+configurations at 26.07.1 (config 22, tasks 8460 and 8461, PanDA 41087
+and 41088) was sent before the scope moved to 26.07.3; those drafts are
+kept as that canary's record and are not submitted. The 26.02.0
+`etaScan` heads are superseded through the audited lifecycle, keeping
+their identities and history; no historical edition is rewritten into a
+new one.
 
 ### Not in this plan
 
