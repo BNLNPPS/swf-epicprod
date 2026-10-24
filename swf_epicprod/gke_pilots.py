@@ -198,7 +198,7 @@ def _clients(cfg):
     return client.CoreV1Api(api), client.BatchV1Api(api)
 
 
-def pod_supply(core, batch, cfg):
+def pod_supply(core, batch, cfg, observation=None):
     """Count live Jobs even before Kubernetes has created their pods."""
     pods = core.list_namespaced_pod(cfg['namespace'], label_selector=f'app={LABEL}').items
     jobs = batch.list_namespaced_job(cfg['namespace'], label_selector=f'app={LABEL}').items
@@ -216,6 +216,44 @@ def pod_supply(core, batch, cfg):
             working.add(owner)
     running = len(working)
     pending = len(live) - running
+    if observation is not None:
+        records = []
+        failed = 0
+        for job in jobs:
+            conditions = job.status.conditions or []
+            ended = next((c for c in conditions if c.status == 'True'
+                          and c.type in ('Complete', 'Failed')), None)
+            phase = ('Failed' if ended.type == 'Failed' else 'Succeeded') if ended else 'Pending'
+            failed += phase == 'Failed'
+            at = getattr(job.metadata, 'creation_timestamp', None)
+            records.append({'name': job.metadata.name, 'phase': phase,
+                            'at': at.isoformat() if at else '',
+                            'failed': phase == 'Failed',
+                            'reason': getattr(ended, 'reason', None) or phase,
+                            'detail': str(getattr(ended, 'message', None) or '')[:400]})
+        for pod in pods:
+            at = getattr(pod.metadata, 'creation_timestamp', None)
+            state = {'name': pod.metadata.name, 'phase': pod.status.phase,
+                     'at': at.isoformat() if at else '',
+                     'failed': pod.status.phase == 'Failed',
+                     'reason': getattr(pod.status, 'reason', None) or pod.status.phase,
+                     'detail': str(getattr(pod.status, 'message', None) or '')[:400]}
+            statuses = (getattr(pod.status, 'init_container_statuses', None) or []) + (
+                getattr(pod.status, 'container_statuses', None) or [])
+            for container in statuses:
+                terminated = getattr(container.state, 'terminated', None)
+                waiting = getattr(container.state, 'waiting', None)
+                problem = (terminated if terminated and terminated.exit_code else
+                           waiting if waiting and waiting.reason not in
+                           ('ContainerCreating', 'PodInitializing') else None)
+                if problem:
+                    state.update(failed=True, reason=problem.reason,
+                                 detail=str(problem.message or '')[:400])
+                    break
+            records.append(state)
+        observation.update(pending=pending, running=running,
+                           failed_retained=failed,
+                           latest=max(records, key=lambda r: r['at'], default=None))
     return pending, running
 
 
@@ -265,6 +303,9 @@ def publish_capability(cfg, summary, template_text):
     from monitor_app.cached_product import get_product
     cap = {'queue': cfg['queue'], 'mode': 'unknown', 'images': [],
            'source': cfg['native_runtime'], 'max_pods': int(cfg['max_pods']),
+           'enabled': bool(cfg['enabled']), 'cpus_per_worker': int(cfg['cpu']),
+           'outcome': summary['outcome'], 'reason': summary['reason'],
+           'workers': summary.get('workers'),
            'template_sha256': hashlib.sha256(template_text.encode()).hexdigest()}
     if summary['outcome'] == 'held':
         cap['error'] = summary['reason']
@@ -317,7 +358,9 @@ def _run_cycle(*, dry_run=False, created_by='gke_pilots'):
         summary.update(outcome='held', reason='; '.join(stop))
     else:
         core, batch = _clients(cfg)
-        pending, running = pod_supply(core, batch, cfg)
+        workers = {}
+        pending, running = pod_supply(core, batch, cfg, observation=workers)
+        summary['workers'] = workers
         n, reason = decide(summary['activated'], pending, running, cfg['max_pods'])
         summary.update(pending=pending, running=running, to_start=n, reason=reason,
                        outcome='started' if n else 'steady')
@@ -330,6 +373,13 @@ def _run_cycle(*, dry_run=False, created_by='gke_pilots'):
                 names.append(job['metadata']['name'])
             summary['started'] = len(names)
             summary['jobs'] = names
+            workers['pending'] += len(names)
+            if names:
+                from datetime import datetime, timezone
+                workers['latest'] = {'name': names[-1], 'phase': 'Pending',
+                                     'at': datetime.now(timezone.utc).isoformat(),
+                                     'failed': False, 'reason': 'Job created',
+                                     'detail': 'Waiting for the pilot pod'}
     if not dry_run and (summary['started'] or summary['reason'] != _last_reason()):
         log_epicprod_action(
             'gke_pilots', 'gke_pilot_cycle', username=created_by,

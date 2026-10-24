@@ -32,7 +32,7 @@ STATUSES = ('production', 'commissioning', 'off', 'retired', 'not_built')
 # place, submit, rerun, queue, trial or move work there.
 CLOSED = ('off', 'retired')
 # What the room shows for a status; None is the room's own reading of PanDA.
-ROOM_STATUS = {'production': None, 'commissioning': 'off', 'off': 'off',
+ROOM_STATUS = {'production': None, 'commissioning': 'commissioning', 'off': 'off',
                'not_built': 'not_built'}
 FIELDS = ('queue', 'status', 'reason', 'since', 'by', 'site', 'pool', 'front')
 CACHE_S = 10

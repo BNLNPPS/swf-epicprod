@@ -100,7 +100,11 @@ implementation; commissioning tasks and configuration remain separate.
 
 Each successful controller cycle publishes `gke_pilot_runtime`, a cached
 observation carrying the checked archive digest, runtime path, pod-template
-hash and bound image. Queue image admission reads this observation for the
+hash and bound image. It also carries pending/running worker counts, the latest
+worker phase and startup diagnostic, retained failed Jobs, the configured cap
+and CPUs per worker. Counts include newly created Jobs before their pods exist.
+The snapshot uses this observation for the commissioning boards; missing or
+stale worker evidence is unknown. Queue image admission reads this observation for the
 ES queue, which Harvester does not serve. A held or stale controller does
 not authorize image placement.
 
@@ -139,10 +143,11 @@ requested from the PanDA team, regenerates the ranges it left.
 | `es_channel` | `.../canary/es-channel-py313-debian13` | the channel matching Python 3.13 in that image |
 | `queuedata` | `.../canary/queuedata/BNL_ePIC_GOOGLE_es.json` | existing ES storage/cadence overrides, preserved from the previous launcher |
 
-The commissioning cap is five pilot Jobs, including workers still waiting
-for a pod. Each pilot runs one ES job at a time; its 14 harness slots are
-within that job. Five jobs therefore reserve at most 70 CPUs with the
-current resource settings. No automatic cap increase is configured.
+Commissioning is limited to one concurrent pilot Job until a job completes and
+its output registration is verified. Each pilot runs one ES job at a time;
+its 14 harness slots are within that job. The current limit therefore reserves
+at most 14 CPUs. The configured cap counts Jobs still waiting for a pod and
+has no automatic increase.
 
 The cycle refuses to start pods, and records why, while `enabled` is
 false, `namespace` is empty, `max_pods` is 0, the credential is

@@ -39,7 +39,7 @@ mapping's keys):
 | Status | Meaning | Closed to new work | In the room as |
 |---|---|---|---|
 | `production` | open to new work | no | PanDA's reading |
-| `commissioning` | not a production queue yet; work placed by hand (trials, canaries) is accepted | no | off |
+| `commissioning` | not a production queue yet; work placed by hand (trials, canaries) is accepted | no | commissioning |
 | `off` | closed for now, by an operator or by the NERSC balance | yes | off |
 | `retired` | closed for good; the work already there drains in place | yes | left out |
 | `not_built` | named, not yet usable | no | not built |
