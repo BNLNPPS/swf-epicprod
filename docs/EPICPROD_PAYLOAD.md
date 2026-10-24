@@ -155,7 +155,7 @@ production and canary jobs alike; the pilot ships `jobReport.json` as
 job metadata, which the server keeps for finished jobs. The canary
 verdict's events check reads the reconstructed count.
 
-**Scratch disk.** With `EPICPROD_SWITCH_SCRATCH_PEAK=1` the stage
+**Scratch disk.** Unless `EPICPROD_SWITCH_SCRATCH_PEAK=0`, the stage
 marker measures the scratch (`TMPDIR`, the batch system's job scratch
 where it has one) at every stage start and end, into
 `payload-scratch.log`: its size (`du -skx`) and its file count, the
@@ -183,8 +183,8 @@ payload removed only a scratch it made itself, so on OSG and GREX each
 job's FULL and RECO files stayed for the rest of the batch job: on
 2026-10-24 an OSG pilot's peak disk was 2.1 GB after one job and 4.1 GB
 after two (226 pilots), no pilot ran a third job in a 4.5 GB slot, and
-on GREX the leftovers of up to eight pilots shared one scratch. With
-`EPICPROD_SWITCH_OWN_SCRATCH=1` the payload works in
+on GREX the leftovers of up to eight pilots shared one scratch. Unless
+`EPICPROD_SWITCH_OWN_SCRATCH=0`, the payload works in
 `epicprod-payload-<pid>` under the batch scratch and removes it at exit,
 after the report has read it (`EPICPROD_KEEP_TMPDIR=1` keeps it, as for
 a scratch of its own). The stage, report and scratch logs are in the job
@@ -769,14 +769,18 @@ In order, each a committed step on the clone:
     scratch's size and file count at each stage boundary; the report's
     `scratch` carries the peaks (The payload report, Scratch disk). PanDA held no payload disk use before: the pilot's
     `workDirSize` measures its own job directory, not the scratch the
-    payload writes in.
+    payload writes in. On by default from payload 0.25.3 (2026-10-24),
+    after clean canaries on BNL_OSG_PanDA_1 and UM_GREX_PanDA_1 (tasks
+    41109, 41108: a 130 MB peak at registration, 203 files); `0` turns
+    it off.
 26. **Each job cleans up its scratch** (2026-10-24, payload 0.25.2
     behind `EPICPROD_SWITCH_OWN_SCRATCH=1`; Torre Wenaus: "we should clean
     up after each job"). The payload works in its own directory under the
     batch system's scratch and removes it at exit, so a pilot's next job,
     or another pilot in the same allocation, starts with the scratch as
     the batch system gave it (The payload report, Cleaning up after each
-    job).
+    job). On by default from payload 0.25.3, after the same canaries;
+    `0` turns it off.
 
 ## Multithreading
 

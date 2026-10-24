@@ -44,8 +44,10 @@ class ScratchPeak(unittest.TestCase):
         tmp = os.path.join(d, 'scratch'); os.mkdir(tmp)
         env = dict(os.environ, TMPDIR=tmp, PAYLOAD_STAGES_LOG=os.path.join(d, 'stages.log'),
                    PAYLOAD_SCRATCH_LOG=os.path.join(d, 'scratch.log'), TASKNAME='')
-        if switch:
-            env['EPICPROD_SWITCH_SCRATCH_PEAK'] = '1'
+        # on by default since payload 0.25.3: unset is on, 0 is off
+        env.pop('EPICPROD_SWITCH_SCRATCH_PEAK', None)
+        if not switch:
+            env['EPICPROD_SWITCH_SCRATCH_PEAK'] = '0'
         if failing_du:
             # du as it is on an unreadable file: the total printed, exit 1
             bindir = os.path.join(d, 'bin'); os.mkdir(bindir)
@@ -122,8 +124,10 @@ echo "$TMPDIR" > "%s/tmpdir"
 tmpdir_cleanup
 ''' % d
         env = dict(os.environ, _CONDOR_SCRATCH_DIR=batch)
-        if switch:
-            env['EPICPROD_SWITCH_OWN_SCRATCH'] = '1'
+        # on by default since payload 0.25.3: unset is on, 0 is off
+        env.pop('EPICPROD_SWITCH_OWN_SCRATCH', None)
+        if not switch:
+            env['EPICPROD_SWITCH_OWN_SCRATCH'] = '0'
         subprocess.run(['bash', '-c', script], env=env, check=True, stdout=subprocess.DEVNULL)
         return batch, open(os.path.join(d, 'tmpdir')).read().strip()
 
