@@ -758,6 +758,22 @@ the same steps as a tarball.
 
 ### Excluding what delivers nothing
 
+On 24 October at 14:25:04 UTC, the active pull template and 588 idle
+native pilots gained a temporary exclusion of the single Fir glidein
+`glidein_2038143_212390262` on `fc20524.int.fir.alliancecan.ca`.
+Nine workers there were held with code 21, disk usage 4,750,000 KiB
+against a 4,500,000 KiB request; those stopped workers were removed by
+an owner, queue, held-state, error and exact-glidein constraint. The
+exclusion matches the glidein in `TARGET.Name` together with its Fir
+site and full `TARGET.Machine` name. Other glideins on that host and
+all running workers were retained. This contains that allocation's
+refills without declaring the entire host bad or increasing disk
+requests; scratch sizing remains a separate investigation. The unique
+glidein clause ceases to match when that allocation disappears and can
+then be removed. The template backup ends
+`.before-fir-disk-20261024T142504Z`; worker evidence and the pre-edit idle
+ads are retained in `native-site-runtime-20261024`.
+
 Two levers, at two granularities, both in the submit description that
 `BNL_OSG_EPIC_PROD_1` and `BNL_OSG_PanDA_1` share. `+UNDESIRED_Sites`
 excludes a site. A `Requirements` clause excludes an individual worker
