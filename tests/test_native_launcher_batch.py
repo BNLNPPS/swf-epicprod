@@ -29,7 +29,7 @@ class BatchLaunch(unittest.TestCase):
                         'echo "X509_USER_PROXY=$X509_USER_PROXY" >> ' + str(self.record) + '\n')
         fake.chmod(0o755)
 
-    def run_launcher(self, batch=True):
+    def run_launcher(self, batch=True, launcher=LAUNCHER):
         env = {k: v for k, v in os.environ.items() if not k.startswith(('APPTAINER_', 'SINGULARITY_'))}
         env.update(PATH=str(self.bin) + os.pathsep + env['PATH'], EPICPROD_NATIVE_IMAGE=str(self.image),
                    EPICPROD_NATIVE_ARCHIVE='pilot3-native.tar.gz', EPICPROD_NATIVE_ASSETS=str(self.top),
@@ -37,7 +37,7 @@ class BatchLaunch(unittest.TestCase):
                    SLURM_TMPDIR=str(self.slurm), SLURM_JOB_ID='123')
         if batch:
             env['EPICPROD_NATIVE_BATCH'] = '1'
-        return subprocess.run(['bash', str(LAUNCHER), '-q', 'UM_GREX_PanDA_1'], cwd=self.here, env=env,
+        return subprocess.run(['bash', str(launcher), '-q', 'UM_GREX_PanDA_1'], cwd=self.here, env=env,
                               capture_output=True, text=True)
 
     def test_batch_starts_the_image_with_its_files_proxy_and_scratch(self):
@@ -59,6 +59,25 @@ class BatchLaunch(unittest.TestCase):
         self.assertEqual(result.returncode, 69)
         self.assertIn('not inside a container', result.stderr)
         self.assertFalse(self.record.exists())
+
+    def test_missing_session_is_created_before_runtime_exec(self):
+        session = self.root / 'private session'
+        launcher = self.root / 'launcher.sh'
+        launcher.write_text(LAUNCHER.read_text().replace(
+            'SESSION_DIR=/var/lib/apptainer/mnt/session', 'SESSION_DIR=' + repr(str(session))))
+        unshare = self.bin / 'unshare'
+        unshare.write_text('#!/bin/bash\nwhile [[ $1 != /bin/bash ]]; do shift; done\nexec "$@"\n')
+        unshare.chmod(0o755)
+        mount = self.bin / 'mount'
+        mount.write_text('#!/bin/bash\nexit 0\n')
+        mount.chmod(0o755)
+        result = self.run_launcher(launcher=launcher)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(session.is_dir())
+        args = self.record.read_text().splitlines()
+        self.assertEqual(args[:2], ['exec', '--no-home'])
+        self.assertIn(str(self.image), args)
+        self.assertIn(str(launcher), args)
 
 
 if __name__ == '__main__':
