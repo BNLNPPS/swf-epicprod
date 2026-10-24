@@ -61,9 +61,16 @@ def render(text, assets, image):
     # 55 of 62 wall failures in the first seven hours of direct-pilot
     # production, 23 October 2026, on Xeon E5-2660 v2 at SU-ITS; 5 percent
     # of the usable cores. The matchmaker leaves them to others.
+    # A glidein with under two hours of life left is skipped by the matchmaker
+    # instead of being declined by the launcher after landing (23 October
+    # 2026: 2,700 declines an hour, mostly Fir, whose glideins live 19,800 s
+    # in total). Two hours sits below every site's admission floor, so the
+    # launcher's per-site rule stays the exact gate.
     requirements = ('(HasSingularity =?= True) && '
                     '(HAS_CVMFS_singularity_opensciencegrid_org == True) && '
-                    '(Microarch =!= "x86_64-v2") && ' + requirements)
+                    '(Microarch =!= "x86_64-v2") && '
+                    '(GLIDEIN_ToDie =?= undefined || GLIDEIN_ToDie - time() > 7200) && '
+                    + requirements)
     text = replace_line(text, 'Requirements', requirements)
     inputs = ','.join(assets + '/' + x for x in
                       ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
