@@ -127,6 +127,13 @@ under the devcloud bucket's public `pilot/` prefix because the EIC CVMFS
 repository is unavailable on these nodes. A failed artifact check ends the
 launch before dispatch; it never selects the legacy pilot as a fallback.
 
+Image admission reads the same fixed public launcher URL through the cached
+product `perlmutter_pilot_runtime` (five-minute refresh, fifteen-minute maximum
+evidence age). It derives the exact image and pinned runtime hashes from the
+adapter. Missing, unreadable, ambiguous or stale evidence refuses submission.
+This establishes the launcher's capability; it does not assert that a worker
+has started or an ES payload has succeeded.
+
 The existing Slurm script can still start eighty copies of the adapter.
 Only rank zero continues, producing one pilot on the single-node allocation;
 all other ranks exit before staging anything. The pilot advertises the

@@ -92,6 +92,11 @@ def dispatch_capabilities(reports=None):
         else:
             result[queue] = {'mode': 'unknown', 'images': [], 'host': 'gke-pilots',
                              'error': 'no fresh GKE native runtime report'}
+        # Perlmutter's external Harvester fetches our public site adapter at
+        # each start. Observe that binding through the shared cached-product
+        # mechanism; missing or stale evidence still refuses admission.
+        from .perlmutter_pilots import QUEUE as perlmutter_queue, capability
+        result[perlmutter_queue] = capability(DISPATCH_MAX_AGE_S)
         _dispatch_cache.update(at=now, value=result)
     return result
 
