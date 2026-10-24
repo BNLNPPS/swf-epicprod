@@ -473,10 +473,10 @@ a FLUKA the collaboration may ship.
 
 ## Single-particle guns (plan)
 
-Status: proposed 2026-10-24 by Sakib Rahman, approved by Torre Wenaus
-the same day, not implemented. The single-particle configurations
-produced from their tags, the steering composed in the job as it is
-for every generator above, instead of read from a hand-written file.
+Status: proposed 2026-10-24, not implemented. The single-particle
+configurations produced from their tags, the steering composed in the
+job as it is for every generator above, instead of read from a
+hand-written file.
 
 ### What exists
 
@@ -520,13 +520,13 @@ scope.
 
 274 configurations, which the composer covers; what 26.07.1 still
 needs of them is far fewer (Trials and the 26.07 datasets, below). The
-eta points are a change: the legacy `etaScan` sample put every eta
-point of a (particle, energy) in one dataset, one steering stem per
-point; here each eta point is its own dataset, so a dataset holds one
-gun configuration and like is with like. That breaks the directory
-continuity with 25.x/26.06 etaScan outputs, accepted deliberately. The
-standard set is the five points; e⁻ 1 GeV, which the dataset list
-carries without −1.7, gains it.
+eta points are a change: the legacy `etaScan`
+sample put every eta point of a (particle, energy) in one dataset, one
+steering stem per point; here each eta point is its own dataset, so a
+dataset holds one gun configuration and like is with like. That breaks
+the directory continuity with 25.x/26.06 etaScan outputs, accepted
+deliberately. The standard set is the five points; e⁻ 1 GeV, which the
+dataset list carries without −1.7, gains it.
 
 ### The steering
 
@@ -583,13 +583,6 @@ reproduced every one byte for byte.
   and `eta0.0` pass the name grammar: periods are permitted in a sample
   name and neither segment is a reserved token
   (`name_tokens.sample_name_reserved_collision`).
-- The EvGen tag: the composed datasets are on e37 (`particle_gun`), the
-  tag the required list checks. The produced 26.07.1 siblings sit on
-  e52 (`unrecorded`), the anchor their import gave them; completion and
-  delivery key on the physics configuration, not the EvGen tag, so the
-  composed and the produced datasets of one configuration count
-  together. Rebinding the produced siblings to e37 is a record
-  correction outside this plan.
 - `internal_evgen_sample`: the SINGLE layout,
   `SINGLE/<particle>/<energy>/<sample>` and the stem
   `<particle>_<energy>_<sample>` (`pi+_1GeV_3to50deg`,
@@ -599,8 +592,10 @@ reproduced every one byte for byte.
   upward, as the legacy steering manifests were, rather than one
   `_run<NNN>` stem per job. The chunk count is the dataset's included
   expected-events target over the config's events per job, refused when
-  there is none. No single-particle dataset carries an included target
-  today (2026-10-24: 127 carry derived ones, of 100,000 to 1,000,000),
+  there is none. No single-particle dataset carries a target today
+  (2026-10-24: `expected_events` is empty on all 250 input-edition
+  heads; 127 inherit derived targets of 100,000 to 1,000,000 from their
+  production configs),
   so each dataset composed for the gun production records 1,000,000
   as included through the expected-events service before submission
   (no schema change); the completion record reads the same value as
@@ -608,29 +603,37 @@ reproduced every one byte for byte.
   these names, the eta stem's period included.
 - The geometry: every particle-gun production so far simulated with
   the 5×41 compact file, whose beam energies set the magnetic-field
-  configuration; the produced 26.07.1 outputs record it themselves (the
-  run metadata of `pi+_1GeV_3to50deg` chunks 0001 and 0003 carries
-  compactFile `epic_craterlake_5x41.xml`, read 2026-10-24 with
-  `parse_podio_metadata.py --gun`). A gun task keeps that:
-  `payload_beams` returns no physics beams for it, decided by the EvGen
-  generator `particle_gun` rather than by the tag's beam values, and the
-  environment carries `DETECTOR_BEAMS=5x41`, so the geometry stage
-  selects `<DETECTOR_CONFIG>_5x41.xml`. Of the 108 Single Particle tags,
-  89 carry `N/A` beam energies, which passed through today
+  configuration (the production team's convention; in the legacy
+  campaign scripts, `eic/simulation_campaign_hepmc3` at 3244c0a, the
+  singles test runs with `EBEAM=5 PBEAM=41` in
+  `.github/workflows/run_prod.yml`, and `scripts/backfill_metadata.py`
+  records singles as `geometry_config <base>_5x41`, "singles uses 5x41
+  default; beam fields are not included in metadata"; the produced
+  26.07.1 outputs record it in their own run metadata
+  (`pi+_1GeV_3to50deg` chunks 0001 and 0003: compactFile
+  `epic_craterlake_5x41.xml`, read 2026-10-24 with
+  `parse_podio_metadata.py --gun`)). A gun task keeps that: `payload_beams` returns no
+  physics beams for it, decided by the EvGen generator `particle_gun`
+  rather than by the tag's beam values, and the environment carries
+  `DETECTOR_BEAMS=5x41`, so the geometry stage selects
+  `<DETECTOR_CONFIG>_5x41.xml`; under the switch its stage note names
+  the gun default rather than a stand-in for beams `?x?`. Of the 108 Single Particle tags, 89 carry
+  `N/A` beam energies, which passed through today
   (`('N/A', 'N/A', '')`) name `<config>_N/AxN/A.xml` and exit 83; 19
   carry real ones (electron 5 to 18, hadron 41 to 275), which a gun
   must not read either. 20 of the 108 carry no `particle` and
   `gun_energy` and are refused by the required list.
 - The EVGEN record: a steering file is not an event sample, so a gun
   task never keeps one. `COPYEVGEN` is false for `particle_gun`,
-  trials included (which today force it true, `pcs/commands.py` trial
-  environment), and `output_datasets` creates no `/EVGEN` dataset for
-  it; both hold against the trial's forced flags. The composed steering
-  is written into the evgen stage log (`<task>.evgen.log`, which the
-  job's log archive keeps), the one durable record of the recipe, since
-  the payload report does not read the stage summary; the FULL file's
-  own gun metadata is the second. The seed reported is the one npsim
-  ran with (from `run.sh`), not a generator seed: the gun has none.
+  trials included (which today force it true,
+  `pcs/commands.py` trial environment), and `output_datasets` creates
+  no `/EVGEN` dataset for it; both hold against the trial's forced
+  flags. The composed steering is written into the evgen stage log
+  (`<task>.evgen.log`, which the job's log archive keeps) — the one
+  durable record of the recipe, since the payload report does not read
+  the stage summary; the FULL file's own gun metadata is the second.
+  The seed reported is the one npsim ran with (from `run.sh`), not a
+  generator seed: the gun has none.
 - `data.detector_beams` on the effective config, when set, replaces
   the 5×41 default for a gun task, the one declared way to simulate a
   gun in another field configuration; the effective config is read,
@@ -644,8 +647,8 @@ reproduced every one byte for byte.
   `ceil(target / events_per_job)`, the last carrying the remainder,
   refused above 9999 (the four-digit chunk grammar). A gun row skips no
   events, so a short last row is safe. A trial keeps today's sizing,
-  one small row (`submit-evgen-task.py` and the dispatcher's first-row
-  `TRIAL_EVENTS` path), and needs no production target.
+  one small row (`submit-evgen-task.py` and the dispatcher's
+  first-row `TRIAL_EVENTS` path), and needs no production target.
 
 ### Payload
 
@@ -656,19 +659,22 @@ composes the steering from the environment, writes it to `--out`
 writes the steering into the stage log and the summary with the
 requested events, and returns, with no generator, afterburner or event
 count. `run.sh`'s existing gun branches act on the row's `steer`
-extension; its one change is the seed, below. The branch is behind
-`EPICPROD_SWITCH_PARTICLE_GUN` (DEVELOPING_THE_PAYLOAD.md, Switches):
-unset, `particle_gun` is refused as an unknown generator, as it is
-today, and every other generator's path is unchanged with the switch
-set or unset.
+extension; its one change is the seed, below. The branch is behind `EPICPROD_SWITCH_PARTICLE_GUN`
+(DEVELOPING_THE_PAYLOAD.md, Switches): unset, `particle_gun` is refused
+as an unknown generator, as it is today, and every other generator's
+path is unchanged with the switch set or unset.
 
 The seed: npsim's `--random.seed` is the chunk plus one in every
 dataset, so the five eta-point datasets of one particle and energy
 would share random streams chunk for chunk. For a gun row under the
-switch, `run.sh` mixes the stem into the seed, as it already mixes the
-input name into the background seed (`BASENAME_HASH`), so each
-dataset's chunks draw their own streams and a retried chunk still
-regenerates its events.
+switch, `run.sh` derives the seed from the stem and the chunk, as it
+already derives the background seed from the input name: the first
+28 bits of the stem's SHA-256 (`sha256sum`, not a per-process hash)
+times 10,000 plus the chunk plus one, reduced modulo 2³¹ − 1 and kept
+positive, within npsim's integer seed. Each dataset's chunks then draw
+their own streams, a retried chunk regenerates its events, and the
+seed is written into the evgen stage log and the npsim stage note.
+Rows without the switch, and every non-gun row, keep `chunk + 1`.
 
 ### Trials and the 26.07 datasets
 
@@ -679,9 +685,9 @@ composed steering in the stage log identical to the volatile-area file
 (for the eta point, to the e⁻ 2 GeV η −1.7 file with the energy
 changed); the RECO output registered with its event count and gun
 metadata; no `/EVGEN` dataset. Then the switch on by default in a
-follow-up change, and the 26.07.1 configurations that are missing, and
-only those, so no existing sample is redone. On 2026-10-24 (r9,
-matched by particle, gun energy and sample name):
+follow-up pull request, and the 26.07.1 configurations that are
+missing, and only those, so no existing sample is redone. On
+2026-10-24 (r9, matched by particle, gun energy and sample name):
 
 | Configurations | State in 26.07.1 | Gun production |
 |---|---|---|
@@ -691,24 +697,29 @@ matched by particle, gun energy and sample name):
 | 30 eta points | nothing | composed and produced |
 
 The gun production is therefore the 30 eta points and π⁺ 100 MeV
-`3to50deg`, with the nine 100 MeV angle ranges as fallbacks. The angle
+`3to50deg`, with the nine 100 MeV angle ranges as fallbacks. They are
+composed on e37, the explicit `particle_gun` EvGen tag. The produced
+26.07.1 siblings sit on e52, whose parameters read `unrecorded`; e52
+is not reused or redefined (the gun resolver would rightly refuse it),
+and "produced" above is matched by particle, gun energy and sample
+name, not by tag, so the e52 outputs are not rerun. Each new dataset
+records the legacy output it continues in its lineage. The angle
 ranges' second 26.07.1 edition, s9.r0 (simulation only, 84 `3to50deg`
 configurations, all produced), is not affected. The 26.02.0 `etaScan`
 heads have no 26.07.1 counterpart; they are superseded through the
 audited lifecycle, keeping their identities and history, and no
 historical edition is rewritten into a new one. None of the 251
 input-edition drafts is submitted; where one dataset holds two (p1108
-`45to135deg`), neither has a PanDA task. Three submitted 100 MeV tasks,
-one per angle range, sit on a physics tag whose particle reads
-`kaon_plus`, outside the dataset list and duplicates of K⁺ 100 MeV,
-which is produced in all three; they are a mis-entered tag, to be
-withdrawn separately.
+`45to135deg`), neither has a PanDA task. Three submitted 100 MeV tasks, one per angle range, sit on a physics tag
+whose particle reads `kaon_plus`, outside the dataset list and
+duplicates of K⁺ 100 MeV, which is produced in all three; they are a
+mis-entered tag, to be withdrawn separately.
 
 ### Not in this plan
 
 - `parse_podio_metadata.py --gun` labels `gun.energy/1000` as
   `gun_momentum_min/max_gev`; the label is wrong for an energy gun and
-  is a separate fix (swf-3 suggests it before production; Sakib's call).
+  is a separate fix.
 - Hand-written steering for configurations the two templates do not
   express stays possible as an externally supplied input, once the
   manifest builder accepts a steering row with an explicit event count
