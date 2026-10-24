@@ -162,15 +162,15 @@ added evidence.
 
 ## Build order
 
-1. The tick in shadow: sources read, items opened and closed in the
-   state file, `watch_tick` records, and each escalation it would make
-   recorded without being sent. One day measures the item volume.
-2. The outcome and promise records, their writer script, and the Capcom
-   subscription on push outcomes.
-3. The watcher session: its unit, brief and topic, and the wake.
-4. Escalation in force.
-5. The live watch as reviewer.
-6. Queue drift as a source once the registry's drift check exists; the
+1. The tick, the outcome and promise records with their writer script,
+   the watcher session and the wake, together, so known items get
+   outcomes from the first day. Escalation runs in shadow for that day:
+   each escalation it would make is recorded, not sent, which measures
+   the volume before it posts.
+2. Escalation in force, and the Capcom subscriptions on push outcomes
+   and escalations.
+3. The live watch as reviewer.
+4. Queue drift as a source once the registry's drift check exists; the
    wake on the wrangler agent once that agent is built.
 
 ## Status
