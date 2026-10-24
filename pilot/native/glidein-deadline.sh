@@ -13,6 +13,11 @@
 # setup = 9000 s. The pilot applies the same number before every further job.
 deadline_now=$(date +%s)
 deadline_min=${EPICPROD_MIN_TIME_FOR_NEW_JOB:-}
+if [[ -r $HERE/runtime-policy.py ]]; then
+    deadline_min=$(python3 "$HERE/runtime-policy.py" \
+        --policy "${EPICPROD_RUNTIME_POLICY:-$HERE/queue-runtime-policy.json}" \
+        --queue "${PILOT_SITENAME:-}" --machine-ad "${_CONDOR_MACHINE_AD:-}")
+fi
 [[ $deadline_min =~ ^[1-9][0-9]*$ ]] || deadline_min=9000
 export EPICPROD_MIN_TIME_FOR_NEW_JOB=$deadline_min
 deadline_todie=""

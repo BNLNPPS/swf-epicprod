@@ -67,6 +67,49 @@ Restoring it changes future submissions only; refresh its dynamic node-guard
 line through the existing guard updater. Keep the frozen native assets while
 any submitted direct workers still reference them.
 
+## Execution-queue admission headroom
+
+`pilot/native/queue-runtime-policy.json` carries the minimum time a new
+job needs, separately for each PanDA queue and exact execution queue.
+The execution key is `GLIDEIN_Site` from this execution's machine ad,
+which PanDA records as `destinationsite`; it is not inferred from a
+hostname or an institutional abbreviation.
+
+| PanDA queue | Execution queue | Minimum remaining time |
+|---|---|---|
+| BNL_OSG_PanDA_1 | SU-ITS | 18,900 s (5 h 15 min) |
+| BNL_OSG_PanDA_1 | OSG_US_FSU_HNPGRID | 24,300 s (6 h 45 min), initial floor |
+| Other combinations | Default | 9,000 s (2 h 30 min) |
+
+The SU-ITS value uses task 41051's admitted Haswell p99 of 281–285
+minutes plus the existing 1,800-second allowance for shutdown grace,
+delivery and setup, rounded up to fifteen minutes. The x86_64-v2
+exclusion remains in force. FSU has a censored sample: finishes reached
+342 minutes and old-limit failures reached 364 minutes. Its initial
+floor uses that observed lower bound plus the same allowance, rounded
+up; it is **not** a measured uncensored p99. Review FSU after a day of
+completions under the ten-hour limit. The comphy host's fast EPYC CPU
+does not establish why its jobs ran slowly.
+
+A positive explicit `EPICPROD_MIN_TIME_FOR_NEW_JOB` wins over the file.
+Otherwise precedence is execution queue, PanDA queue, then default.
+The reader logs the exact queue keys, selected seconds and source,
+exports the value before the first-job deadline decision, and the
+existing archive reads that same variable before every subsequent job.
+The pilot compares the smallest remaining budget: its own clock from
+pilot start, proxy validity, and MachineFeatures shutdowntime. This
+policy neither extends those clocks nor resizes any submitted manifest.
+A damaged shipped policy stops startup before work is acquired.
+
+The policy and `runtime-policy.py` travel with each pilot as frozen
+input files. Both the production renderer and cohort submitter include
+them. `render-native-production.py --retarget` changes an existing
+native template's asset paths and deployment tag, retaining its image,
+Harvester identity, resource requests, runtime, CPU restrictions and
+node guard. A cohort must explicitly resolve a Harvester runtime
+placeholder with `--runtime-minutes`; it must not silently reuse the
+former six-hour value. Existing workers keep their transferred assets.
+
 ## 23 October: image-aware dispatch verification
 
 The server on pandaserver01 gained the optional `container_name` filter
@@ -87,7 +130,33 @@ the negative pilots use the real 26.07.3 image, which cannot match these
 tasks. Task binding keeps every probe away from long production jobs;
 the negative probes also bind a trial task, testing that task and image
 constraints intersect. Logs are under `condor_logs/native-image-dispatch-20261023`.
-The production template has not yet switched to this candidate.
+Two initial trials were acquired by ordinary production pilots and are
+controls, not declaring-pilot evidence. Replacement ten-event trials
+41077 and 41078 used the test work queue and declaring pilots 27617.0 and
+27618.0. Three declaring jobs finished with registered physics outputs,
+ready logs and zero payload, pilot or DDM errors:
+
+| Trial | Job | Pilot | Site | Log bytes |
+|---|---|---|---|---|
+| 41074 | 5856208 | 27599.0 | SU-ITS | 144811 |
+| 41077 | 5856309 | 27617.0 | ComputeCanada-Fir | 145636 |
+| 41078 | 5856308 | 27618.0 | ComputeCanada-Fir | 141600 |
+
+The decisive negative probes were 27620.0 and 27621.0 on SU-ITS: neither
+bound a task, both declared the full 26.07.3 path, and both received
+“No jobs in PanDA” twice before exiting zero. At that time 3,196 activated
+jobs all carried 26.07.1. Their stdout records the request and response;
+the server's INFO log does not print the DEBUG parameter line. A negative
+answer from an empty bound task was not counted as image-filter proof.
+
+On Torre's go, the production template switched at **16:41:50 UTC** to
+these frozen assets and tag `production-image-dispatch-20261023`. Only
+the executable, input asset paths and tag changed; Harvester identity,
+worker reporting, image, node guard and ramp settings were preserved.
+The backup is `submit_pilot2_pull_bnl_osg.sdf.before-image-dispatch-20261023T164150Z`.
+The first declaring production cluster was **27675**, submitted at
+16:41:54 UTC; worker 2366068 is 27675.0. The three-hour observation window
+before the upstream PanDA PR ends at 19:41:50 UTC.
 
 Deployment order: server first, then declaring pilots. Before introducing
 another image to production, all old direct pilots that acquire without a

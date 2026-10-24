@@ -10,8 +10,8 @@ the ATLAS CVMFS and host RHEL 9 requirements are dropped, unprivileged user
 namespaces are kept. Pilots carry the tag in PANDA_JSID, GTAG (their stdout
 URL) and the ad attribute EpicprodNative; with --task they acquire only that
 task's jobs (the baseline pilot's PanDA_TaskID with --allow-same-user=True).
-+MaxRuntime = 360 and the running bound of periodic_remove are the production
-template's own values (requestWalltimeMinute resolves to 360 there); an idle
+The runtime and running bound of periodic_remove follow the production
+template; --runtime-minutes resolves a Harvester runtime placeholder. An idle
 trial pilot is removed after twelve hours. Without --submit the description is
 written and printed, nothing is submitted.
 docs/NATIVE_PILOT_CANARY.md § Staged trial, 23 October.
@@ -48,6 +48,13 @@ def line(text, key):
     if len(found) != 1:
         raise ValueError(f'expected one {key} line in the production template, found {len(found)}')
     return found[0].strip()
+
+
+def runtime_minutes(text, override=None):
+    value = line(text, '+MaxRuntime') if override is None else str(override)
+    if not re.fullmatch(r'[1-9][0-9]*', value):
+        raise ValueError('give --runtime-minutes to resolve the production runtime placeholder')
+    return int(value)
 
 
 def describe(template, args):
@@ -101,6 +108,7 @@ def describe(template, args):
     disk = line(text, 'request_disk')
     category = line(text, '+JobDurationCategory')
     periodic_remove = line(text, 'periodic_remove')  # the production running bound; healthy jobs finish
+    runtime = runtime_minutes(text, getattr(args, 'runtime_minutes', None))
     pilot_args = PILOT_ARGS.format(queue=args.queue, same_user='True' if args.task else 'False')
     environment = [f'EPICPROD_NATIVE_IMAGE={args.image}', 'EPICPROD_NATIVE_ARCHIVE=' + args.archive,
                    f'EPICPROD_NATIVE_PREFLIGHT_IMAGE={"" if args.direct else args.preflight_image}',
@@ -111,7 +119,8 @@ def describe(template, args):
         environment += ['APPTAINER_BINDPATH=' + SESSION_BIND, 'SINGULARITY_BINDPATH=' + SESSION_BIND]
     binds = '' if args.direct else f'+SingularityBind = "{SESSION_BIND}"\n'
     inputs = ','.join(f'{args.dir}/{name}' for name in (args.archive, 'certificates.tar.gz', 'rucio.cfg',
-                                                         'glidein-deadline.sh', 'job-user.sh'))
+                                                         'glidein-deadline.sh', 'job-user.sh',
+                                                         'runtime-policy.py', 'queue-runtime-policy.json'))
     if args.task:
         environment.append(f'PanDA_TaskID={args.task}')
     return f'''# Native ePIC pilot cohort {args.tag}, generated {datetime.datetime.now(datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ}
@@ -135,7 +144,7 @@ request_cpus = 1
 request_memory = {memory}
 request_disk = {disk}
 priority = {args.priority}
-+MaxRuntime = 360
++MaxRuntime = {runtime}
 +ProjectName = "EIC"
 +WantSingularity = True
 +SingularityImage = "{args.image}"
@@ -164,6 +173,8 @@ def main():
     parser.add_argument('--archive', default='pilot3-native.tar.gz')
     parser.add_argument('--proxy', default='/var/data/atlpan/proxy/x509up_u1000')
     parser.add_argument('--priority', type=int, default=2, help='above the production pilots\' 1')
+    parser.add_argument('--runtime-minutes', type=int,
+                        help='actual allocation budget when the production template uses a Harvester placeholder')
     parser.add_argument('--template', default='/var/data/atlpan/harvester_common/submit_pilot2_pull_bnl_osg.sdf')
     parser.add_argument('--submit', action='store_true', help='condor_submit the description as atlpan')
     parser.add_argument('--preflight-image', help='another campaign image the pilot must nest '
@@ -192,7 +203,8 @@ def main():
         if not os.path.isdir(args.image):
             sys.exit(f'image is not a directory on this host: {args.image}')
         for required in (Path(args.dir) / 'epic-native-pilot.sh', Path(args.dir) / 'glidein-deadline.sh',
-                         Path(args.dir) / 'job-user.sh', Path(args.dir) / args.archive):
+                         Path(args.dir) / 'job-user.sh', Path(args.dir) / args.archive,
+                         Path(args.dir) / 'runtime-policy.py', Path(args.dir) / 'queue-runtime-policy.json'):
             if not required.is_file():
                 sys.exit(f'missing {required}')
         # The CA bundle this host keeps current, and rucio.cfg, travel with the

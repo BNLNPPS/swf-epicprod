@@ -83,6 +83,8 @@ echo "ePIC native pilot: user $USER (uid $(id -u))"
 # The glidein's death time, from this execution's machine ad, as the HEPiX
 # MachineFeatures shutdowntime the pilot plans against before every further job
 # (glidein-deadline.sh, transferred with the pilot). The first job is decided here.
+QUEUE=""; prev=""; for a in "$@"; do [[ $prev == -q ]] && QUEUE=$a; prev=$a; done
+export PILOT_SITENAME=$QUEUE
 source "$HERE/glidein-deadline.sh"
 case $DEADLINE_VERDICT in
     ok)    echo "ePIC native pilot: deadline $(date -u -d @"$DEADLINE_AT" +%FT%TZ), $DEADLINE_LEFT s left, minimum for a job $EPICPROD_MIN_TIME_FOR_NEW_JOB s" ;;
@@ -91,7 +93,6 @@ case $DEADLINE_VERDICT in
 esac
 # The node guard, before the first job: the pilot's own check covers every
 # further one (allow_timefloor). The queue is pilot.py's -q argument.
-QUEUE=""; prev=""; for a in "$@"; do [[ $prev == -q ]] && QUEUE=$a; prev=$a; done
 PILOT_SITENAME=$QUEUE python3 - <<'PY' || { echo "node guard excludes this node; no job taken" >&2; exit 72; }
 import json, os, sys, urllib.request
 from datetime import datetime, timezone

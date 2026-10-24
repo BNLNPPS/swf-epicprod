@@ -67,7 +67,8 @@ def render(text, assets, image):
     text = replace_line(text, 'Requirements', requirements)
     inputs = ','.join(assets + '/' + x for x in
                       ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
-                       'glidein-deadline.sh', 'job-user.sh'))
+                       'glidein-deadline.sh', 'job-user.sh',
+                       'runtime-policy.py', 'queue-runtime-policy.json'))
     additions = ('transfer_input_files = ' + inputs + '\ntransfer_output_files = ""\n'
                  '+WantSingularity = True\n+SingularityImage = "' + image + '"\n'
                  '+EpicprodNative = "production-20261023"\n'
@@ -77,11 +78,50 @@ def render(text, assets, image):
     return re.sub(r'(?m)^queue\s+1\s*$', lambda _: additions + '\nqueue 1\n', text)
 
 
+def retarget(text, assets, tag):
+    """Move an existing native template to frozen assets, preserving policy."""
+    if (not assets.startswith('/') or any(c in assets for c in '\n\r\"{} ')
+            or not re.fullmatch(r'[A-Za-z0-9._-]+', tag)):
+        raise ValueError('absolute asset directory and simple deployment tag required')
+    executable = re.search(r'(?m)^executable\s*=\s*(.*)$', text)
+    if not executable or Path(executable.group(1)).name != 'epic-native-pilot.sh':
+        raise ValueError('expected an existing native pilot template')
+    old = Path(executable.group(1)).parent
+    inputs = re.search(r'(?m)^transfer_input_files\s*=\s*(.*)$', text)
+    if not inputs:
+        raise ValueError('native template has no input list')
+    files = [item.strip() for item in inputs.group(1).split(',')]
+    names = ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
+             'glidein-deadline.sh', 'job-user.sh',
+             'runtime-policy.py', 'queue-runtime-policy.json')
+    for name in names[:5]:
+        if files.count(str(old / name)) != 1:
+            raise ValueError('expected exactly one frozen input: ' + name)
+    files = [str(Path(assets) / Path(item).name)
+             if Path(item).parent == old and Path(item).name in names else item
+             for item in files]
+    for name in names[5:]:
+        if str(Path(assets) / name) not in files:
+            files.append(str(Path(assets) / name))
+    text = replace_line(text, 'executable', assets + '/epic-native-pilot.sh')
+    text = replace_line(text, 'transfer_input_files', ','.join(files))
+    return replace_line(text, '+EpicprodNative', '"' + tag + '"')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--template', required=True)
     parser.add_argument('--assets', required=True)
-    parser.add_argument('--image', required=True)
+    parser.add_argument('--image')
+    parser.add_argument('--retarget', action='store_true', help='keep the existing native template policy')
+    parser.add_argument('--tag', default='production-runtime-policy')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
-    Path(args.out).write_text(render(Path(args.template).read_text(), args.assets, args.image))
+    text = Path(args.template).read_text()
+    if args.retarget:
+        result = retarget(text, args.assets, args.tag)
+    else:
+        if not args.image:
+            parser.error('--image is required unless --retarget is used')
+        result = render(text, args.assets, args.image)
+    Path(args.out).write_text(result)
