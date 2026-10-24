@@ -155,6 +155,22 @@ production and canary jobs alike; the pilot ships `jobReport.json` as
 job metadata, which the server keeps for finished jobs. The canary
 verdict's events check reads the reconstructed count.
 
+**Scratch disk.** With `EPICPROD_SWITCH_SCRATCH_PEAK=1` the stage
+marker measures the scratch (`du -skx` of `TMPDIR`, the batch system's
+job scratch where it has one) at every stage start and end, into
+`payload-scratch.log`. The payload's files only grow until the
+closeout, so the largest sample is its peak disk use: on a
+simulation-and-reconstruction job, the FULL and RECO files together at
+the end of reconstruction. The report carries it as `scratch` (the
+peak in KB, the stage and time it was measured at, each stage's
+largest, the sample count) and the job metrics as
+`payloadScratchPeakMB`, so the job record keeps it on every queue,
+including those whose batch system records none. A `du` that fails or
+runs over a minute leaves its line out and never marks a stage. On
+OSG, HTCondor's own peak (`DiskUsage` in the job's terminate event) is
+the cross-check. The peak is what a task's disk request is to be set
+from: its bytes per event times its events per job.
+
 ### Reporting from a job that fails
 
 Simulation and reconstruction run through `fatal_watch.py` outside their
@@ -728,6 +744,14 @@ In order, each a committed step on the clone:
     datasets do not share random streams, and the evgen stage log
     records the steering. With the switch at 0 the gun is refused at the
     evgen stage (exit 82).
+25. **The scratch peak in the job record** (2026-10-24, payload 0.25.2
+    behind `EPICPROD_SWITCH_SCRATCH_PEAK=1`, Torre Wenaus: "we should
+    record peak payload disk usage"). The stage marker measures the
+    scratch at each stage boundary; the report's `scratch` and the job
+    metric `payloadScratchPeakMB` carry the peak (The payload report,
+    Scratch disk). PanDA held no payload disk use before: the pilot's
+    `workDirSize` measures its own job directory, not the scratch the
+    payload writes in.
 
 ## Multithreading
 

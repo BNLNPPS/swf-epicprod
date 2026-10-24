@@ -7,6 +7,20 @@ CURRENT_STAGE=""
 stage() {
   CURRENT_STAGE=$1
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 $2${3:+ $3}" >> "${PAYLOAD_STAGES_LOG:-payload-stages.log}"
+  # With EPICPROD_SWITCH_SCRATCH_PEAK=1, the scratch's size at every stage
+  # start and end, in KB (EPICPROD_PAYLOAD.md, Scratch disk): the payload's
+  # files only grow until the closeout, so the largest of these is its peak
+  # disk use, which the report carries and the job metrics name. A du that
+  # fails or takes over a minute leaves the line out; it never fails a stage.
+  if [ "${EPICPROD_SWITCH_SCRATCH_PEAK:-0}" = "1" ] && [ -n "${TMPDIR:-}" ] && [ -d "${TMPDIR}" ]; then
+    local scratch_kb
+    # "|| true" inside the substitution: the ERR trap is inherited there
+    # (set -E), and du exits 1 on any unreadable file while still printing
+    # the total, which must not mark the stage failed.
+    scratch_kb=$(timeout 60 du -skx "${TMPDIR}" 2>/dev/null | cut -f1 || true)
+    [ -n "${scratch_kb}" ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 $2 ${scratch_kb}" \
+      >> "${PAYLOAD_SCRATCH_LOG:-payload-scratch.log}"
+  fi
   # As each stage starts and ends, refresh the report, so the metrics the
   # pilot sends on its next heartbeat say where the payload has got to. A
   # job that dies with its worker, or is killed at the wall inside a long
@@ -182,6 +196,7 @@ payload_report() {
     --reco "${RECO_TEMP:+${RECO_TEMP}/${TASKNAME:-}.eicrecon.edm4eic.root}" \
     --full-events "${FULL_EVENTS}" --reco-events "${RECO_EVENTS}" --note "${REPORT_NOTE}" \
     --pool-sample "${EPICPROD_POOL_SAMPLE:-}" \
+    --scratch "${PAYLOAD_SCRATCH_LOG:-payload-scratch.log}" \
     || echo "payload report not written (payload_report.py exit $?)"
   report_send || true
 }

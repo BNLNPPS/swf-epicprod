@@ -80,6 +80,32 @@ def read_stage_log(path):
     return entries
 
 
+def scratch_record(path):
+    """The scratch's size through the job, from the scratch log that
+    ``EPICPROD_SWITCH_SCRATCH_PEAK`` writes (one line per stage start and
+    end: time, stage, start or status, KB): the peak with the stage it
+    was measured at, each stage's largest, and the count of samples. None
+    when there is no log."""
+    peak, by_stage, samples = None, {}, 0
+    try:
+        with open(path) as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) != 4 or not parts[3].isdigit():
+                    continue
+                kb, name = int(parts[3]), parts[1]
+                samples += 1
+                by_stage[name] = max(by_stage.get(name, 0), kb)
+                if peak is None or kb > peak["kb"]:
+                    peak = {"kb": kb, "stage": name, "at": parts[0], "mark": parts[2]}
+    except OSError:
+        return None
+    if peak is None:
+        return None
+    return {"peak_kb": peak["kb"], "peak_stage": peak["stage"], "peak_at": peak["at"],
+            "peak_mark": peak["mark"], "by_stage_kb": by_stage, "samples": samples}
+
+
 def stage_summary(entries):
     """Per stage, in first-seen order: the final status, first start,
     last end, wall seconds between them, and the details recorded. A
@@ -332,6 +358,9 @@ def job_metrics(report):
         metrics["payloadThreads"] = report["threads"]
     if report.get("exit_code") is not None:
         metrics["payloadExit"] = report["exit_code"]
+    scratch = report.get("scratch") or {}
+    if isinstance(scratch.get("peak_kb"), int):
+        metrics["payloadScratchPeakMB"] = (scratch["peak_kb"] + 1023) // 1024
     fatal = report.get("fatal") or {}
     if fatal.get("signal") in (6, 7, 8, 11):
         metrics["payloadFatalSignal"] = fatal["signal"]
@@ -418,6 +447,9 @@ def build_report(args):
     pool = pool_sample(args.pool_sample)
     if pool is not None:
         report["pool"] = pool
+    scratch = scratch_record(args.scratch) if args.scratch else None
+    if scratch is not None:
+        report["scratch"] = scratch
     for path in sorted(glob.glob(os.path.join(args.prmon_dir, glob.escape(args.taskname) + '.*.fatal.json'))):
         try:
             with open(path) as handle:
@@ -450,6 +482,8 @@ def main():
     ap.add_argument("--full-events", default="")
     ap.add_argument("--reco-events", default="")
     ap.add_argument("--note", default="")
+    ap.add_argument("--scratch", default="",
+                    help="the scratch log EPICPROD_SWITCH_SCRATCH_PEAK writes")
     ap.add_argument("--pool-sample", default="",
                     help="the batch pool sample the pilot launch took, if "
                          "any (EPICPROD_POOL_SAMPLE); a pool-sample.json in "
