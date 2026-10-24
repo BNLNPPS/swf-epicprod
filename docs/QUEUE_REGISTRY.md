@@ -112,17 +112,32 @@ it:
 
 ## The drift check
 
-A doer of the production operations agent, every cycle: it reads the
-three copies and compares each with the record. A disagreement is a
-finding: a `queue_drift` action naming the queue, the copy and both
-values, posted to epicprod-live as a finding at its first appearance and
-at each hour it persists, and cleared when the copy matches. It changes
-nothing. It is the watcher's first item (EPICPROD_WATCHER.md).
+The host reporters carry the copies: the harvester reporter each queue's
+`queueStatus` from its host's queue configuration (`queue_status`), the
+PanDA server reporter the installed overrides' statuses
+(`queue_overrides`) and each pool the throttler last read with its member
+queues, from the throttler's own log lines (`jedi_regulation.pools`). On
+each build the room compares them with the record
+(`swf_epicprod.queues.drift`):
+
+- A retired queue must be offline in harvester and off in PanDA
+  (`brokeroff`, `offline` or `test`).
+- A production queue must be neither.
+- A pool the throttler read must hold exactly the members the record
+  gives it (`queue-status.py --jedi-pools`); a pool it has not read
+  lately, such as an idle drain, is not judged.
+
+Other statuses are not judged. Each disagreement is a red line on the
+room's report, "Queue drift, <queue>: <copy> holds <value>, the queue
+registry says <value>", and stays until the copy is put right. The check
+changes nothing; the watcher (EPICPROD_WATCHER.md) reads the report.
 
 ## Status
 
-Plan of record, 2026-10-23 (Torre Wenaus: "yes", the queue status as one
-record that the front, the throttler, harvester's configuration, the
-monitor and the room all read). Built in this order: the record and its
-readers, then adoption once both repositories are deployed; the drift
-check; the command's installation of the external copies.
+Torre Wenaus, 2026-10-23: "yes", the queue status as one record that the
+front, the throttler, harvester's configuration, the monitor and the room
+all read. Live since 2026-10-24 04:00 UTC: the record, adopted with the
+room's queue lists dropped; its readers in swf-epicprod 0fc7614 and
+swf-monitor e7857c1; the drift check in swf-monitor ab30d3c with
+reporters 1.5 and 1.2. Open: the command installing the outside copies
+itself (today `queue-status.py` prints what they must hold).

@@ -216,14 +216,7 @@ def jedi_pools():
     """The JEDI throttler's ``POOLS`` the record implies: each pool's
     retired queues generate apart, in ``<pool>_drain``, so a drain's
     backlog never holds back the open queues' refill (PROD_1_DRAIN.md)."""
-    parts = []
-    for pool, members in pools().items():
-        by = {e['queue']: e['status'] for e in entries()}
-        live = [q for q in members if by.get(q) != 'retired']
-        drain = [q for q in members if by.get(q) == 'retired']
-        parts += [f"{pool}:{','.join(live)}"] if live else []
-        parts += [f"{pool}_drain:{','.join(drain)}"] if drain else []
-    return ';'.join(parts)
+    return jedi_pools_of(entries())
 
 
 def room_queues():
@@ -367,3 +360,85 @@ def _log_adoption(by):
         message=(f'sysconfig_edit ok — adopted {KEY} from {", ".join(REPLACED_KEYS)} and the '
                  f'retirement constants; the replaced settings are kept under {ARCHIVE_KEY} '
                  '(docs/QUEUE_REGISTRY.md)'))
+
+
+# The copies outside the monitor (docs/QUEUE_REGISTRY.md, The drift check)
+
+DRIFT_REPORTS = ('osgsub01-harvester', 'pandaharvester01', 'pandaharvester02', 'pandaserver01')
+OFF_IN_PANDA = ('brokeroff', 'offline', 'test')
+
+
+def _pool_members(spec):
+    out = {}
+    for part in (spec or '').split(';'):
+        pool, _, members = part.partition(':')
+        if pool.strip():
+            out[pool.strip()] = {m.strip() for m in members.split(',') if m.strip()}
+    return out
+
+
+def drift(reports, record=None):
+    """Where a copy of a queue's status disagrees with the record. Pure.
+
+    ``reports`` {host key: host_reports.latest(...)}: the harvester
+    reporters' ``queue_status`` (harvester ``queueStatus``; none set reads
+    online), the PanDA server reporter's ``queue_overrides`` (the installed
+    schedconfig overrides) and its ``jedi_regulation.pools`` (each pool the
+    JEDI throttler last read, with its members). A retired queue must be
+    offline in harvester and off in PanDA; a production queue must be
+    neither; a pool must hold exactly the members the record gives it.
+    Other statuses are not judged. Returns [{queue, copy, holds, expected}]."""
+    record = entries() if record is None else record
+    by = {e['queue']: e for e in record}
+    out = []
+
+    def add(queue, copy_, holds, expected):
+        out.append({'queue': queue, 'copy': copy_, 'holds': holds, 'expected': expected})
+
+    for host, found in sorted((reports or {}).items()):
+        rec = (found or {}).get('record') or {}
+        harvester = (rec.get('queue_status') or {}).get('status')
+        for queue, value in sorted((harvester or {}).items()):
+            e, value = by.get(queue), str(value or 'online').lower()
+            if not e:
+                continue
+            if e['status'] == 'retired' and value != 'offline':
+                add(queue, f'harvester on {host}', value, 'offline (retired)')
+            elif e['status'] == 'production' and value == 'offline':
+                add(queue, f'harvester on {host}', value, 'online (production)')
+        overrides = (rec.get('queue_overrides') or {}).get('status')
+        if overrides is not None:
+            for queue, e in by.items():
+                value = overrides.get(queue)
+                if e['status'] == 'retired' and value not in OFF_IN_PANDA:
+                    add(queue, f'PanDA schedconfig override on {host}', value or 'none',
+                        'brokeroff (retired)')
+                elif e['status'] == 'production' and value in OFF_IN_PANDA:
+                    add(queue, f'PanDA schedconfig override on {host}', value, 'online (production)')
+        pools = (rec.get('jedi_regulation') or {}).get('pools') or {}
+        if pools:
+            want = _pool_members(jedi_pools_of(record))
+            for vo, read in sorted(pools.items()):
+                for pool, seen in sorted(read.items()):
+                    have = set(seen.get('members') or [])
+                    expected = want.get(pool)
+                    if expected is not None and have != expected:
+                        add(','.join(sorted(have ^ expected)), f'JEDI throttler pool {pool} ({vo})',
+                            ','.join(sorted(have)), ','.join(sorted(expected)))
+    return out
+
+
+def jedi_pools_of(record):
+    """``jedi_pools`` for a given record."""
+    by = {e['queue']: e['status'] for e in record}
+    pools = {}
+    for e in record:
+        if e.get('pool'):
+            pools.setdefault(e['pool'], []).append(e['queue'])
+    parts = []
+    for pool, members in pools.items():
+        live = [q for q in members if by.get(q) != 'retired']
+        drain = [q for q in members if by.get(q) == 'retired']
+        parts += [f"{pool}:{','.join(live)}"] if live else []
+        parts += [f"{pool}_drain:{','.join(drain)}"] if drain else []
+    return ';'.join(parts)

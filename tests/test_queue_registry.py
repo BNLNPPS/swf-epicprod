@@ -134,5 +134,31 @@ class NerscSwitches(unittest.TestCase):
         self.assertEqual((e['status'], e['reason']), ('off', 'NERSC allocation: m3763 CPU 90% or more used'))
 
 
+class Drift(unittest.TestCase):
+    def test_copies_that_disagree_with_the_record_are_named(self):
+        record = registry.derive(LIVE)
+        ok = {
+            'osgsub01-harvester': {'record': {'queue_status': {'status': {
+                'BNL_OSG_PanDA_1': None, 'BNL_OSG_EPIC_PROD_1': 'offline', 'OTHER': 'offline'}}}},
+            'pandaserver01': {'record': {
+                'queue_overrides': {'status': {'BNL_OSG_PanDA_1': None, 'UM_GREX_PanDA_1': None,
+                                               'BNL_OSG_EPIC_PROD_1': 'brokeroff',
+                                               'JLAB_PanDA_1': 'brokeroff'}},
+                'jedi_regulation': {'pools': {'wlcg': {'osg': {'members': ['BNL_OSG_PanDA_1']}}}}}},
+        }
+        self.assertEqual(registry.drift(ok, record), [])
+        bad = copy.deepcopy(ok)
+        bad['osgsub01-harvester']['record']['queue_status']['status']['BNL_OSG_EPIC_PROD_1'] = 'online'
+        bad['osgsub01-harvester']['record']['queue_status']['status']['BNL_OSG_PanDA_1'] = 'offline'
+        bad['pandaserver01']['record']['queue_overrides']['status'].pop('BNL_OSG_EPIC_PROD_1')
+        bad['pandaserver01']['record']['jedi_regulation']['pools']['wlcg']['osg']['members'].append(
+            'BNL_OSG_EPIC_PROD_1')
+        found = {(d['queue'], d['copy'].split(' on ')[0].split(' (')[0]) for d in registry.drift(bad, record)}
+        self.assertEqual(found, {
+            ('BNL_OSG_EPIC_PROD_1', 'harvester'), ('BNL_OSG_PanDA_1', 'harvester'),
+            ('BNL_OSG_EPIC_PROD_1', 'PanDA schedconfig override'),
+            ('BNL_OSG_EPIC_PROD_1', 'JEDI throttler pool osg')})
+
+
 if __name__ == '__main__':
     unittest.main()
