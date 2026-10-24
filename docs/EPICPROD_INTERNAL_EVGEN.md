@@ -478,8 +478,11 @@ Status: proposed 2026-10-24; built the same day (payload 0.25.0;
 `tests/test_particle_gun.py`); the two canaries passed on GREX at
 26.07.3 (PanDA 41093 and 41094: every check, 5×41 geometry, 100 of 100
 events, RECO under `/TEST/canary`), and the gun is on by default since
-payload 0.25.1. The 274 configurations wait on the production
-`events_per_job`. The single-particle configurations produced from
+payload 0.25.1. On 2026-10-24 the production team set config 23's
+`events_per_job` to 2,000 (the canaries' fixed start-up is about 300 s
+a job) and the 274 configurations were composed as draft tasks (Trials
+and the 26.07.3 datasets, below); submission waits on a gun canary and
+a first batch. The single-particle configurations produced from
 their tags, the steering composed in the job as it is for every
 generator above, instead of read from a hand-written file.
 
@@ -701,8 +704,14 @@ composed and produced in 26.07.3.
 
 The 26.07.3 production config is `26.07.3 Particle Gun` (config 23):
 `internal_evgen`, `copy_evgen` off, eic_xl:26.07.3-stable, RECO to
-BNL-XRD, a fixed `events_per_job` (100 to begin, the standard
-production's, so 10,000 chunks per dataset). The canary tasks are its
+BNL-XRD, a fixed `events_per_job`: 100 to begin, the standard
+production's, then 2,000 from 2026-10-24, the production team's choice
+after the canaries (500 chunks per dataset). Four slow configurations
+carry `max_events_per_job` on their tasks, from the production team's
+reading of the 26.07.1 wall times on OSG (a cap of
+`floor((4 h − 300 s) / s per event / 100) × 100`): γ and π⁰ 40 GeV
+`3to50deg` 1,900, γ 60 GeV `3to50deg` 1,400, π⁰ 60 GeV `3to50deg`
+1,200. The canary tasks are its
 first two editions, `group.EIC.26.07.3.epic_craterlake.p1108.e37.s11.r11.3to50deg`
 and `group.EIC.26.07.3.epic_craterlake.p1067.e37.s11.r11.eta-1.7`, each
 with a 1,000,000 included target. A first pair on the same two
@@ -712,6 +721,23 @@ kept as that canary's record and are not submitted. The 26.02.0
 `etaScan` heads are superseded through the audited lifecycle, keeping
 their identities and history; no historical edition is rewritten into a
 new one.
+
+Composed 2026-10-24, as drafts on config 23: the two canary editions
+and 272 more. Each angle-range task lands on its existing campaign-plan
+row, the physics configuration of its 26.07.1 and 26.02.0 editions
+(requestor TRACKING, priority 1 from TRACKING's anchored requests). The
+30 eta points are new rows: their configurations carry TRACKING and
+their tasks priority 1, both from the `etaScan` rows, and the six
+26.02.0 `etaScan` heads are `final`, their five successors named in the
+propagation comment (`replaced_by` holds one name and there are five).
+Targets: an included 1,000,000 on 257 editions. 17 plan rows carry a
+different derived target (100,000 to 500,000, from older production
+configurations); their editions have no target until the production
+team chooses one, and their tasks refuse to build without it. The
+Single Particle rows of the campaign that take no 26.07.3 task are the
+six `etaScan` rows, five rows on duplicate tags with underscore particle
+names (`kaon_plus`, `pi_plus`, `e_plus` at 100 MeV) and one EDT row with
+no particle or energy.
 
 ### Not in this plan
 
