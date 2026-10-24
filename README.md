@@ -140,6 +140,9 @@ Production operations:
 - [DEVELOPING_THE_PAYLOAD.md](docs/DEVELOPING_THE_PAYLOAD.md) —
   developing the payload: new behaviour behind an `EPICPROD_SWITCH_*`
   switch, tested with payload canaries from a pull request or branch.
+- [EPIC_DETECTOR_REFERENCE.md](docs/EPIC_DETECTOR_REFERENCE.md) — the
+  ePIC detector reference: the Preliminary Design Report as the place to
+  learn about a detector, DD4hep names to its sections, and a lookup tool.
 - [EPICPROD_INTERNAL_EVGEN.md](docs/EPICPROD_INTERNAL_EVGEN.md) —
   internal EVGEN: event generation as a payload stage, the steering
   derived from the tags, and the first trial.
