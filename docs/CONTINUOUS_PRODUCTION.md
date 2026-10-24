@@ -235,8 +235,9 @@ is false at their seeded defaults, so every queue reads `held
 decision records `would_feed` and submits nothing; `shadow` is the only
 mode the cycle accepts until the feed is built, and any other value is
 recorded as an error and decided as shadow. The settings are the
-SysConfig keys named above plus `front.queues`, `front.max_per_cycle`
-and `front.activation_window_s`; the census is
+SysConfig keys named above plus `front.max_per_cycle`
+and `front.activation_window_s`, and the regulated queues are the
+queue registry's (QUEUE_REGISTRY.md); the census is
 `monitor_app/panda/census.py`, which also carries each queue's
 non-terminal production tasks (the task cap's count) and p90 start
 latency (the idle rule's clock); the decision records are the
@@ -336,9 +337,8 @@ where the operator put it.
 Production brokerage is never delegated to PanDA, and so never to CRIC.
 Every submission names a production queue, which JEDI's brokerage takes
 as pre-assigned. The production queues are the set the front
-regulates, `front.queues`: BNL_OSG_EPIC_PROD_1, UM_GREX_PanDA_1,
-NERSC_Perlmutter_epic, BNL_ePIC_GOOGLE and BNL_OSG_PanDA_1 (added
-2026-09-30). The front places work automatically; a person places and
+regulates, the queue registry's queues with the front flag
+(QUEUE_REGISTRY.md). The front places work automatically; a person places and
 moves it by hand through the Site control. Both use the same
 recommendation and the same calls.
 
@@ -413,22 +413,21 @@ A queue whose feed switch is off is never recommended. A person may
 still choose it explicitly, and work a person places there is fed;
 `front.enabled` governs only the front's own feeding.
 
-**Closed queues.** `front.closed_queues`, a SysConfig mapping of queue
-to reason, closes a production queue to production work outright: the
-recommendation shows it with its reason and never ranks it, and PCS
-refuses to place, submit, rerun, queue, trial or move work there
+**Closed queues.** A queue whose status in the queue registry
+(QUEUE_REGISTRY.md) is `off` or `retired` is closed to production work
+outright: the recommendation shows it with its reason and never ranks it,
+and PCS refuses to place, submit, rerun, queue, trial or move work there
 (`pcs.services.refuse_closed_queue`). Canary probes do not pass through
-PCS submission and still run. Healthy gates do not show capacity: on
-2026-10-06 the recommendation named NERSC_Perlmutter_epic, canary
-healthy and nothing queued, while the m3763 allocation was exhausted;
-both Perlmutter queues were closed "no allocation" until the balance is
-read automatically.
+PCS submission and still run, except on a retired queue. Healthy gates do
+not show capacity: on 2026-10-06 the recommendation named
+NERSC_Perlmutter_epic, canary healthy and nothing queued, while the m3763
+allocation was exhausted; both Perlmutter queues were closed "no
+allocation" until the balance is read automatically, which now sets them
+off and back.
 
-Permanent retirements are also recorded in `regulation.RETIRED_QUEUES`.
-They are excluded even from a restored front list, remain closed if the
-SysConfig closure is lost, and are refused again by the submission doer
-after resolving the final destination. Site probes honor the same
-retirement policy. Existing tasks keep generating jobs, retrying and
+A retired queue is excluded from the front, refused again by the
+submission doer after resolving the final destination, and refused by
+the site probes. Existing tasks keep generating jobs, retrying and
 running: closing admission is not a task pause or pilot shutdown.
 See [PROD_1_DRAIN.md](PROD_1_DRAIN.md) for the 22 October OSG drain.
 

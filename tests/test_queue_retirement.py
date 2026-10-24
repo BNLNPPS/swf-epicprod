@@ -13,14 +13,22 @@ ACTIVE = 'BNL_OSG_PanDA_1'
 
 class RetirementTests(unittest.TestCase):
     def test_restored_and_malformed_front_settings_cannot_reopen(self):
-        with patch.object(front, 'setting', return_value=[OLD, ACTIVE, 'UM_GREX_PanDA_1']):
+        from swf_epicprod import queues as registry
+        self.addCleanup(registry.invalidate)
+        for config in ({'front.queues': [OLD, ACTIVE, 'UM_GREX_PanDA_1']},
+                       {'front.queues': 'bad config'},
+                       {'front.closed_queues': {'Q': 'operator closed'}}):
+            registry.invalidate()
+            with patch.object(registry, '_config', return_value=config):
+                self.assertNotIn(OLD, front.regulated_queues())
+                self.assertIn(OLD, front.closed_queues())
+        registry.invalidate()
+        with patch.object(registry, '_config', return_value={'front.queues': [OLD, ACTIVE, 'UM_GREX_PanDA_1']}):
             self.assertEqual(front.regulated_queues(), [ACTIVE, 'UM_GREX_PanDA_1'])
-        with patch.object(front, 'setting', return_value='bad config'):
-            self.assertNotIn(OLD, front.regulated_queues())
-            self.assertIn(OLD, front.closed_queues())
-        with patch.object(front, 'setting', return_value={'Q': 'operator closed'}):
+        registry.invalidate()
+        with patch.object(registry, '_config', return_value={'front.closed_queues': {'Q': 'operator closed'}}):
             self.assertEqual(front.closed_queues()['Q'], 'operator closed')
-            self.assertIn(OLD, front.closed_queues())
+        registry.invalidate()
         with self.assertRaisesRegex(ValueError, 'existing tasks drain in place'):
             require_task_destination(OLD)
         require_task_destination(ACTIVE)

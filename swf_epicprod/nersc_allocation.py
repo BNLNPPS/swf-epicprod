@@ -23,8 +23,9 @@ Settings in SysConfig, seeded at their defaults on first read:
   node-hours used at which its queues close.
 
 Each readable balance sets the queues (Torre, 2026-10-08): a queue whose
-project has used ``close_at_used`` or more is closed in
-``front.closed_queues`` with a reason starting ``NERSC allocation:``; a
+project has used ``close_at_used`` or more is set off in the queue
+registry (docs/QUEUE_REGISTRY.md) with a reason starting
+``NERSC allocation:``, and back to production when it reopens; a
 queue closed for allocation (that reason, or an operator's reason naming
 the allocation) reopens when a new balance brings usage below it. A
 queue an operator closed for any other reason is left alone, and an
@@ -162,7 +163,7 @@ def queue_switches(record, queues, close_at, closed):
     """The queue changes a balance calls for. Pure.
 
     ``queues`` {queue: project}; ``closed`` the current
-    ``front.closed_queues``. Returns [{queue, project, used, action,
+    closed queues, {queue: reason}. Returns [{queue, project, used, action,
     reason}] with action 'close' or 'open', only where the state
     changes; a project without a readable CPU balance decides nothing."""
     out = []
@@ -186,12 +187,12 @@ def queue_switches(record, queues, close_at, closed):
 
 
 def apply_queue_switches(record, created_by):
-    """Close or reopen the NERSC queues from the balance, under a row
-    lock so a concurrent operator edit of the closed queues is not lost;
+    """Close or reopen the NERSC queues from the balance in the queue
+    registry, under its row lock so a concurrent operator edit is not lost;
     each change is a ``nersc_queue_switch`` action. Returns the changes."""
-    from django.db import transaction
     from monitor_app.epicprod_logging import log_epicprod_action
     from monitor_app.models import SysConfig
+    from swf_epicprod import queues as registry
 
     queues = SysConfig.get_setting('nersc.queues', DEFAULT_QUEUES)
     close_at = SysConfig.get_setting('nersc.close_at_used', DEFAULT_CLOSE_AT_USED)
@@ -202,25 +203,21 @@ def apply_queue_switches(record, created_by):
         logger.error('nersc.close_at_used is not a fraction in (0, 1]: %r; using %s',
                      close_at, DEFAULT_CLOSE_AT_USED)
         close_at = DEFAULT_CLOSE_AT_USED
-    with transaction.atomic():
-        obj, _ = SysConfig.objects.select_for_update().get_or_create(
-            id=1, defaults={'config_data': {}})
-        closed = obj.config_data.get('front.closed_queues')
-        if not isinstance(closed, dict):
-            logger.error('front.closed_queues is not a mapping: %r; queues left unchanged', closed)
-            return []
+    def switch(entries):
+        closed = {e['queue']: e['reason'] for e in entries if e['status'] in registry.CLOSED}
         changes = queue_switches(record, queues, close_at, closed)
-        if not changes:
-            return []
-        closed = dict(closed)
         for c in changes:
             if c['action'] == 'close':
-                closed[c['queue']] = c['reason']
+                registry.change(entries, c['queue'], 'off', reason=c['reason'], by=created_by)
             else:
-                closed.pop(c['queue'], None)
-        obj.config_data['front.closed_queues'] = closed
-        obj.updated_by = created_by
-        obj.save()
+                registry.change(entries, c['queue'], 'production', by=created_by)
+        return changes
+
+    try:
+        changes = registry.write(switch, created_by) or []
+    except ValueError as exc:
+        logger.error('NERSC queues left unchanged: %s', exc)
+        return []
     for c in changes:
         verb = 'closed' if c['action'] == 'close' else 'reopened'
         log_epicprod_action(

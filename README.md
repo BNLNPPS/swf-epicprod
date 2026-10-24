@@ -94,6 +94,8 @@ Campaigns:
   plugin and its handling of absent and failed files.
 - [REGULATION_AUDIT_2026-10-22.md](docs/REGULATION_AUDIT_2026-10-22.md) —
   the October regulation audit, corrective changes and deployment evidence.
+- [QUEUE_REGISTRY.md](docs/QUEUE_REGISTRY.md) — each production queue's
+  status as one record that every reader takes; retiring a queue is one act
 - [PROD_1_DRAIN.md](docs/PROD_1_DRAIN.md) — closing the retired OSG queue
   and moving remaining work while its running jobs finish in place.
 - [JEV.md](docs/JEV.md) — Jev, a decision model: the client, the

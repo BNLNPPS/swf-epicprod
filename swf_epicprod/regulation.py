@@ -1,15 +1,14 @@
 """Shared identities and evidence checks for production regulation."""
 from datetime import datetime, timezone
 
-# Admission and accounting are separate. PROD_1's existing tasks drain in
-# place; their jobs must still share OSG's generation and capacity budget.
-RETIRED_QUEUES = {
-    'BNL_OSG_EPIC_PROD_1': (
-        'closed to new tasks; existing tasks drain in place. '
-        'Use BNL_OSG_PanDA_1 for new work (Torre Wenaus, 2026-10-22)'
-    ),
-}
-CAPACITY_POOLS = {'osg': ('BNL_OSG_PanDA_1', 'BNL_OSG_EPIC_PROD_1')}
+from swf_epicprod import queues as _registry
+
+# Admission and accounting are separate. A retired queue's existing tasks
+# drain in place; their jobs still share their pool's capacity budget. Both
+# are live views of the queue registry (docs/QUEUE_REGISTRY.md), read on
+# each use: {queue: reason} and {pool: (queue, ...)}.
+RETIRED_QUEUES = _registry.LiveMapping(_registry.retired)
+CAPACITY_POOLS = _registry.LiveMapping(_registry.pools)
 PILOTS_PER_WORKER = {'UM_GREX_PanDA_1': 8}
 THROTTLER_EVIDENCE_MAX_AGE_S = 600
 

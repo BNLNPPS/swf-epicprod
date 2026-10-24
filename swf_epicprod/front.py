@@ -21,7 +21,8 @@ defaults on first read, so every knob is visible on the System page:
 - ``front.jedi_throttled`` (False): phase two, once the ePIC job
   throttler paces generation in JEDI: committed depth counts the
   queue's ungenerated rows, and the job cap and oversize hold retire.
-- ``front.queues``: the regulated queues.
+- The regulated queues and the closed ones are the queue registry's
+  (``swf_epicprod.queues``, docs/QUEUE_REGISTRY.md), not ``front.*``.
 - ``front.max_per_cycle`` (2): feeds per queue per cycle.
 - ``front.activation_window_s`` (600): a feed counts as committed depth
   for this long before the census is expected to show it.
@@ -47,12 +48,11 @@ from datetime import datetime, timedelta
 
 from django.core.cache import cache
 from django.utils import timezone
+from swf_epicprod import queues as registry
 from swf_epicprod.regulation import CAPACITY_POOLS, RETIRED_QUEUES, throttler_verdict
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_QUEUES = ['BNL_OSG_PanDA_1', 'UM_GREX_PanDA_1',
-                  'NERSC_Perlmutter_epic', 'BNL_ePIC_GOOGLE']
 QUEUE_DEFAULTS = {'feed': False, 'h_low': 8.0, 'h_high': 24.0,
                   'j_max': 0, 't_max': 0, 'breaker': 'closed'}
 MODES = ('shadow', 'active')
@@ -96,29 +96,18 @@ def queue_settings(queue):
 
 
 def regulated_queues():
-    """``front.queues`` as a list of names; anything else falls back to
-    the defaults with an error logged."""
-    value = setting('front.queues', DEFAULT_QUEUES)
-    if isinstance(value, (list, tuple)) and all(isinstance(v, str) for v in value):
-        return [v for v in value if v and v not in RETIRED_QUEUES]
-    logger.error('front.queues is not a list of queue names: %r; using the defaults', value)
-    return list(DEFAULT_QUEUES)
+    """The queues the front regulates, in the queue registry's order
+    (docs/QUEUE_REGISTRY.md); a retired queue never among them."""
+    return registry.regulated()
 
 
 def closed_queues():
-    """``front.closed_queues``: {queue: reason} for the production queues
-    closed to production submission by an operator, or by the NERSC
-    balance (``swf_epicprod.nersc_allocation``). A closed queue is never recommended,
-    and PCS refuses to place, submit, rerun, trial or move work there.
-    Canary probes do not pass through PCS submission and still run."""
-    value = setting('front.closed_queues', {})
-    if not isinstance(value, dict):
-        logger.error('front.closed_queues is not a {queue: reason} mapping: %r', value)
-        value = {}
-    closed = {str(k): str(v or 'closed by the operator') for k, v in value.items() if k}
-    # A stale/restored SysConfig must not reopen a retired destination.
-    closed.update(RETIRED_QUEUES)
-    return closed
+    """{queue: reason} for the queues closed to new work in the queue
+    registry: off, by an operator or by the NERSC balance
+    (``swf_epicprod.nersc_allocation``), or retired. A closed queue is never
+    recommended, and PCS refuses to place, submit, rerun, trial or move work
+    there. Canary probes do not pass through PCS submission and still run."""
+    return registry.closed()
 
 
 # Gates
