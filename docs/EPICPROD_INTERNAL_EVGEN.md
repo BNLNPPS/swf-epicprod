@@ -608,11 +608,14 @@ reproduced every one byte for byte.
   singles test runs with `EBEAM=5 PBEAM=41` in
   `.github/workflows/run_prod.yml`, and `scripts/backfill_metadata.py`
   records singles as `geometry_config <base>_5x41`, "singles uses 5x41
-  default; beam fields are not included in metadata"; the produced
+  default; beam fields are not included in metadata"; and the produced
   26.07.1 outputs record it in their own run metadata
   (`pi+_1GeV_3to50deg` chunks 0001 and 0003: compactFile
   `epic_craterlake_5x41.xml`, read 2026-10-24 with
-  `parse_podio_metadata.py --gun`)). A gun task keeps that: `payload_beams` returns no
+  `parse_podio_metadata.py --gun`). The choice matters beyond the field:
+  in epic 26.07.1 the plain `epic_craterlake.xml` also includes the
+  barrel and forward flux-return geometry, which the 5×41 file does
+  not). A gun task keeps that: `payload_beams` returns no
   physics beams for it, decided by the EvGen generator `particle_gun`
   rather than by the tag's beam values, and the environment carries
   `DETECTOR_BEAMS=5x41`, so the geometry stage selects
