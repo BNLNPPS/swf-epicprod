@@ -27,6 +27,7 @@ ARCHIVE=${EPICPROD_NATIVE_ARCHIVE:?transferred pilot archive required}
 HERE=$(pwd -P)
 SELF=$(readlink -f "$0")
 ASSETS=$(readlink -f "${EPICPROD_NATIVE_ASSETS:-$HERE}")
+SESSION_DIR=/var/lib/apptainer/mnt/session
 if [[ $ASSETS != "$HERE" ]]; then
     for f in "$ARCHIVE" certificates.tar.gz rucio.cfg glidein-deadline.sh job-user.sh \
              runtime-policy.py queue-runtime-policy.json ${EPICPROD_NATIVE_PROXY:-}; do
@@ -55,7 +56,13 @@ if [[ -z $ACTUAL && ${EPICPROD_NATIVE_BATCH:-0} == 1 ]]; then
         [[ -d $d && $d != / ]] && binds+=(--bind "$d:$d")
     done
     echo "ePIC native pilot: batch host $(hostname), runtime $RUNTIME, image $IMAGE"
-    exec "$RUNTIME" exec --no-home "${binds[@]}" --pwd "$HERE" "$IMAGE" /bin/bash "$SELF" "$@"
+    launch=("$RUNTIME" exec --no-home "${binds[@]}" --pwd "$HERE" "$IMAGE" /bin/bash "$SELF" "$@")
+    if [[ -d $SESSION_DIR ]]; then exec "${launch[@]}"; fi
+    # A grid pod may lack the CVMFS runtime's compiled session directory.
+    # Carry one in a private namespace, as the nested-image path does.
+    exec unshare --user --map-current-user --keep-caps --mount --propagation private \
+        /bin/bash -c 'session=$1; shift; mount -t tmpfs -o size=1m,nodev,nosuid tmpfs /var/lib && mkdir -p "$session" && exec "$@"' \
+        native-batch "$SESSION_DIR" "${launch[@]}"
 fi
 [[ -n $ACTUAL ]] || { echo "not inside a container: the slot ignored +SingularityImage $IMAGE" >&2; exit 69; }
 [[ $(readlink -f "$ACTUAL") == $(readlink -f "$IMAGE") ]] || {
@@ -90,7 +97,6 @@ print(json.dumps({'epic_native_pilot': '20261023', 'python': sys.version.split()
 PY
 echo "ePIC native pilot: image $IMAGE, host $(hostname), $(date -u +%FT%TZ), nesting ${EPICPROD_NATIVE_NESTING:-on}"
 OSG_APPTAINER=/cvmfs/oasis.opensciencegrid.org/mis/apptainer/1.4.5/bin/apptainer
-SESSION_DIR=/var/lib/apptainer/mnt/session
 nest() {
     # nest IMAGE CMD...: CMD inside IMAGE through the OSG runtime. When the
     # outer container has no session directory, a private namespace carries

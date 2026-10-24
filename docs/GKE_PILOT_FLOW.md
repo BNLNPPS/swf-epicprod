@@ -90,6 +90,10 @@ payload's harness takes its slots from the same number
 Runtime files are copied without preserving the source directory's
 ownership or timestamps: Kubernetes owns the destination volume root,
 and preserving those attributes aborts setup before the pilot starts.
+If the grid pod lacks `/var/lib/apptainer/mnt/session`, the shared native
+batch launcher supplies it in a private user/mount namespace, using the
+same mechanism as its nested-image path. Existing session directories
+are used directly.
 
 The initial runtime is
 `/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/native-runtime-e8cc102`:
