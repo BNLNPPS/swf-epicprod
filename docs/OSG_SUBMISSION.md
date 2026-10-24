@@ -101,6 +101,20 @@ pilot start, proxy validity, and MachineFeatures shutdowntime. This
 policy neither extends those clocks nor resizes any submitted manifest.
 A damaged shipped policy stops startup before work is acquired.
 
+On 24 October the same policy also sets the pilot maximum: 57,600 seconds
+at `OSG_US_FSU_HNPGRID`, 36,000 at other OSG execution queues, including
+an unknown execution queue. The launcher copies the current server queue
+record, changes only `maxtime`, and gives the pilot that local file. This
+pins both the pilot monitor and its repeated-job admission clock even when
+the shared PanDA queue advertises the higher ceiling. The existing admission
+minimums, including Fir's live 7,800 seconds, are retained.
+
+The submit template records `GLIDEIN_Site` into `MachineAttrGLIDEIN_Site0`
+at match time. Its `MaxRuntime` is 960 minutes for FSU and 600 otherwise;
+`periodic_remove` enforces that duration on the running worker, alongside
+the existing safeguard. The renderer derives these values from the same
+policy as the launcher. Existing workers retain their transferred assets.
+
 The policy and `runtime-policy.py` travel with each pilot as frozen
 input files. Both the production renderer and cohort submitter include
 them. `render-native-production.py --retarget` changes an existing

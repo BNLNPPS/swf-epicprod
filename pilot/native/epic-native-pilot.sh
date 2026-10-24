@@ -91,6 +91,25 @@ case $DEADLINE_VERDICT in
     short) echo "glidein life $DEADLINE_LEFT s is under the $EPICPROD_MIN_TIME_FOR_NEW_JOB s a job needs; no job taken" >&2; exit 73 ;;
     *)     echo "ePIC native pilot: no usable deadline in the machine ad or MachineFeatures; the pilot's own clocks apply" ;;
 esac
+# Pin the pilot's actual clock by execution queue, independently of the
+# shared queue's ceiling. Keep every other queue-data field unchanged.
+if [[ -r $HERE/runtime-policy.py ]]; then
+    source_url="http://pandaserver01.sdcc.bnl.gov:25080/cache/schedconfig/$QUEUE.all.json"
+    pilot_args=(); expecting_url=0
+    for argument in "$@"; do
+        if (( expecting_url )); then source_url=$argument; expecting_url=0
+        elif [[ $argument == --queuedata-url ]]; then expecting_url=1
+        elif [[ $argument == --queuedata-url=* ]]; then source_url=${argument#*=}
+        else pilot_args+=("$argument"); fi
+    done
+    (( expecting_url == 0 )) || { echo 'missing --queuedata-url value' >&2; exit 66; }
+    local_url=$(python3 "$HERE/runtime-policy.py" --policy "${EPICPROD_RUNTIME_POLICY:-$HERE/queue-runtime-policy.json}" \
+        --queue "$QUEUE" --machine-ad "${_CONDOR_MACHINE_AD:-}" \
+        --prepare-queuedata "$source_url" --output "$HERE/queuedata.json")
+    if [[ -n $local_url ]]; then
+        set -- "${pilot_args[@]}" --queuedata-url "$local_url"
+    fi
+fi
 # The node guard, before the first job: the pilot's own check covers every
 # further one (allow_timefloor). The queue is pilot.py's -q argument.
 PILOT_SITENAME=$QUEUE python3 - <<'PY' || { echo "node guard excludes this node; no job taken" >&2; exit 72; }

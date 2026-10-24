@@ -24,20 +24,37 @@ render_spec.loader.exec_module(renderer)
 
 
 class RuntimePolicyTests(unittest.TestCase):
+    def test_pilot_maximum_is_site_specific_and_preserves_other_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory) / 'source.json', Path(directory) / 'queuedata.json'
+            source.write_text(json.dumps({'panda_queue': 'BNL_OSG_PanDA_1', 'maxtime': 57600,
+                                          'timefloor': 120, 'maxrss': 4096}))
+            for site, expected in [('OSG_US_FSU_HNPGRID', 57600), ('SU-ITS', 36000),
+                                   ('ComputeCanada-Fir', 36000), ('', 36000)]:
+                policy_module.prepare_queuedata(POLICY, 'BNL_OSG_PanDA_1', site, str(source), str(output))
+                record = json.loads(output.read_text())
+                self.assertEqual(record, {'panda_queue': 'BNL_OSG_PanDA_1', 'maxtime': expected,
+                                          'timefloor': 120, 'maxrss': 4096})
+            source.write_text('{"panda_queue":"different"}')
+            with self.assertRaises(ValueError):
+                policy_module.prepare_queuedata(POLICY, 'BNL_OSG_PanDA_1', 'SU-ITS', str(source), str(output))
+            self.assertEqual(policy_module.prepare_queuedata(POLICY, 'UM_GREX_PanDA_1', '', str(source), str(output)), '')
+
     def test_native_retarget_keeps_runtime_image_and_exclusions(self):
         files = ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
                  'glidein-deadline.sh', 'job-user.sh')
-        unchanged = ('+MaxRuntime = {requestWalltimeMinute}\n'
-                     'Requirements = (Microarch =!= "x86_64-v2") && (MY.EpicprodNodeGuard =!= False)\n'
+        unchanged = ('Requirements = (Microarch =!= "x86_64-v2") && (MY.EpicprodNodeGuard =!= False)\n'
                      '+SingularityImage = "/cvmfs/existing-image"\n'
                      'environment = "HARVESTER_ID=existing"\n')
         text = ('executable = /old/epic-native-pilot.sh\n'
                 'transfer_input_files = ' + ','.join('/old/' + name for name in files) + '\n'
-                '+EpicprodNative = "old"\n' + unchanged)
+                '+EpicprodNative = "old"\n+MaxRuntime = {requestWalltimeMinute}\nperiodic_remove = False\n' + unchanged)
         result = renderer.retarget(text, '/new', 'headroom-test')
         self.assertIn(unchanged, result)
         self.assertIn('/new/runtime-policy.py,/new/queue-runtime-policy.json', result)
         self.assertNotIn('/old/', result)
+        self.assertIn('+MaxRuntime = ifThenElse(MachineAttrGLIDEIN_Site0 =?= "OSG_US_FSU_HNPGRID", 960, 600)', result)
+        self.assertIn('job_machine_attrs = GLIDEIN_Site', result)
 
     def test_cohort_does_not_silently_reintroduce_the_old_six_hour_budget(self):
         self.assertEqual(cohort.runtime_minutes('+MaxRuntime = 600\n'), 600)
@@ -49,7 +66,7 @@ class RuntimePolicyTests(unittest.TestCase):
         choose = policy_module.select
         self.assertEqual(choose(POLICY, 'BNL_OSG_PanDA_1', 'SU-ITS')[0], 18900)
         self.assertEqual(choose(POLICY, 'BNL_OSG_PanDA_1', 'OSG_US_FSU_HNPGRID')[0], 24300)
-        self.assertEqual(choose(POLICY, 'BNL_OSG_PanDA_1', 'ComputeCanada-Fir')[0], 9000)
+        self.assertEqual(choose(POLICY, 'BNL_OSG_PanDA_1', 'ComputeCanada-Fir')[0], 7800)
         self.assertEqual(choose(POLICY, 'UM_GREX_PanDA_1', 'SU-ITS')[0], 9000)
         self.assertEqual(choose(POLICY, 'BNL_OSG_PanDA_1', 'SU-ITS', '20000')[0], 20000)
         self.assertEqual(choose(POLICY, 'BNL_OSG_PanDA_1', 'SU-ITS', 'soon')[0], 18900)
@@ -75,7 +92,7 @@ class RuntimePolicyTests(unittest.TestCase):
                    '_CONDOR_MACHINE_AD': str(ad)}
             probe = ('set -euo pipefail; HERE="$1"; source "$2"; '
                      'echo "$DEADLINE_VERDICT|$EPICPROD_MIN_TIME_FOR_NEW_JOB"')
-            for site, expected in [('SU-ITS', 'short|18900'), ('ComputeCanada-Fir', 'ok|9000')]:
+            for site, expected in [('SU-ITS', 'short|18900'), ('ComputeCanada-Fir', 'ok|7800')]:
                 ad.write_text(f'GLIDEIN_Site = "{site}"\nGLIDEIN_ToDie = {int(time.time()) + 16000}\n')
                 result = subprocess.run(['bash', '-c', probe, 'probe', str(here),
                                          str(NATIVE / 'glidein-deadline.sh')],

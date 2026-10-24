@@ -3,12 +3,18 @@
   "default_seconds": 9000,
   "queues": {
     "BNL_OSG_PanDA_1": {
+      "maximum_seconds": 36000,
       "execute_queues": {
         "SU-ITS": {
           "minimum_seconds": 18900,
           "_basis": "2026-10-23 task 41051 on admitted Haswell slots: p99 281-285 min plus 1800 s allowance, rounded up to 15 min. The x86_64-v2 exclusion remains required."
         },
+        "ComputeCanada-Fir": {
+          "minimum_seconds": 7800,
+          "_basis": "Preserve the live 23 October Fir policy: p90 97 minutes plus 1800 seconds, rounded up to 15 minutes; the glidein lifetime is 19800 seconds."
+        },
         "OSG_US_FSU_HNPGRID": {
+          "maximum_seconds": 57600,
           "minimum_seconds": 24300,
           "_basis": "Initial floor, not an uncensored p99: task 41051 finishes reached 342 min and pilot-1213 failures reached 364 min. That observed lower bound plus 1800 s allowance, rounded up to 15 min, is 405 min.",
           "_review": "Re-estimate from jobs admitted under the 10-hour limit after 2026-10-24. comphy.fsu.edu is a fast EPYC host; CPU speed alone does not explain its tail."

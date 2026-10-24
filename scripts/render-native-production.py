@@ -6,6 +6,8 @@ live ALRB template. The operator verifies queue image compatibility before
 installing the result. Assets must be staged in an immutable directory.
 """
 import argparse
+import importlib.util
+import json
 from pathlib import Path
 import re
 
@@ -16,6 +18,24 @@ def replace_line(text, key, value):
     if count != 1:
         raise ValueError('expected exactly one ' + key)
     return result
+
+
+def runtime_limits(text):
+    native = Path(__file__).resolve().parents[1] / 'pilot/native'
+    spec = importlib.util.spec_from_file_location('osg_runtime_policy', native / 'runtime-policy.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    expression = module.condor_maximum(json.loads((native / 'queue-runtime-policy.json').read_text()), 'BNL_OSG_PanDA_1')
+    if expression is None:
+        return text
+    if re.search(r'(?m)^job_machine_attrs\s*=', text):
+        raise ValueError('review existing job_machine_attrs before installing site runtime limits')
+    text = replace_line(text, '+MaxRuntime', expression + '\njob_machine_attrs = GLIDEIN_Site\njob_machine_attrs_history_length = 1')
+    old = re.search(r'(?m)^periodic_remove\s*=\s*(.*)$', text)
+    if old is None:
+        raise ValueError('missing existing periodic_remove safeguard')
+    cap = '(JobStatus == 2 && (CurrentTime - EnteredCurrentStatus) > (60 * MaxRuntime))'
+    return replace_line(text, 'periodic_remove', '(' + old.group(1) + ') || ' + cap)
 
 
 def render(text, assets, image):
@@ -82,7 +102,7 @@ def render(text, assets, image):
                  '+EpicprodNativeMode = "direct"\n+EpicprodNativeImage = "' + image + '"\n')
     if len(re.findall(r'(?m)^queue\s+1\s*$', text)) != 1:
         raise ValueError('expected one worker per Harvester submission')
-    return re.sub(r'(?m)^queue\s+1\s*$', lambda _: additions + '\nqueue 1\n', text)
+    return runtime_limits(re.sub(r'(?m)^queue\s+1\s*$', lambda _: additions + '\nqueue 1\n', text))
 
 
 def retarget(text, assets, tag):
@@ -112,7 +132,7 @@ def retarget(text, assets, tag):
             files.append(str(Path(assets) / name))
     text = replace_line(text, 'executable', assets + '/epic-native-pilot.sh')
     text = replace_line(text, 'transfer_input_files', ','.join(files))
-    return replace_line(text, '+EpicprodNative', '"' + tag + '"')
+    return runtime_limits(replace_line(text, '+EpicprodNative', '"' + tag + '"'))
 
 
 if __name__ == '__main__':
