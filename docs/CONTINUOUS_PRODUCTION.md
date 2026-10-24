@@ -196,6 +196,9 @@ action-stream event with its editor:
   what is committed to a queue, in hours rather than tasks.
 - `feed`, the per-queue switch; `front.enabled`, the global switch.
 
+`scripts/front-feed.py QUEUE on|off --by NAME --reason TEXT --decision-ref REF`
+changes one feed switch atomically and records its previous and new values.
+
 In hours at capacity the queues differ mainly in scale: eight hours is
 roughly 16,000 jobs at the OSG production queue at its burst capacity,
 34,000 at Perlmutter, 3,800 at GREX. At sustained rates the same pools
