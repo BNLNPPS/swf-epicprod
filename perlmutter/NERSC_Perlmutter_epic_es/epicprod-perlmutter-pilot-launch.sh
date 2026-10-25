@@ -15,7 +15,7 @@ RUNTIME_SHA256=3293f3cf3317af8d90266684ef71506c0d6b8272866d30e410e0324da628fbf2
 PILOT_SHA256=9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2
 ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py313-debian13.tar.gz
 ES_CHANNEL_SHA256=0993145fb66b52fc759fafe01bd5cef80ead0f3fb47d721feae6aa2a61a0d0ae
-IMAGE=/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.1-stable
+IMAGE=/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable
 # Initial commissioning: at most twenty minutes, including staging. This
 # bounds the worker even while the site's Slurm template has a longer limit.
 DEADLINE_AT=$(( $(date +%s) + 1200 ))

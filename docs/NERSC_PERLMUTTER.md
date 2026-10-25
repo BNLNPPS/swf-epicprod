@@ -169,6 +169,12 @@ and the campaign's ordinary PODIO reader read all 20 distinct event identities
 and all 387 collections. This establishes the short native ES path on
 Perlmutter; it does not establish 26.07.3 gun execution or worker-loss recovery.
 
+Native ES canaries use `submit-evgen-task.py --es-worker-proxy`: the sandbox
+names a local proxy path, and the dispatcher copies the native pilot's existing
+credential into that path on the worker with mode 0600. The live credential is
+not uploaded in the task sandbox. The normal canary output namespace and
+lifetime are unchanged.
+
 The adapter also samples `squeue` and `sinfo` before entering the container,
 writing `pool-sample.json` above its work directory (`pool-sample/1`). It
 exports that path as `EPICPROD_POOL_SAMPLE` and its Apptainer equivalent so
