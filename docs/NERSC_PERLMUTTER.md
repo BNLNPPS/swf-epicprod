@@ -161,6 +161,14 @@ Slurm template is unchanged; the adapter bounds actual worker lifetime.
 Native worker completion, output registration and normal-reader validation
 remain required before advancing to production-shaped tests.
 
+The first native ES smoke passed on 25 October at 00:40:56 UTC:
+task 41126, job 5904471, worker 21934 (Slurm 60232318), using
+`26.07.1-stable`. All 20 ranges completed without failed units; two RECO closes
+registered 5 and 15 events. Independent JLab Rucio reads confirmed both files,
+and the campaign's ordinary PODIO reader read all 20 distinct event identities
+and all 387 collections. This establishes the short native ES path on
+Perlmutter; it does not establish 26.07.3 gun execution or worker-loss recovery.
+
 The adapter also samples `squeue` and `sinfo` before entering the container,
 writing `pool-sample.json` above its work directory (`pool-sample/1`). It
 exports that path as `EPICPROD_POOL_SAMPLE` and its Apptainer equivalent so
