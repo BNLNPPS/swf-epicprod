@@ -63,11 +63,12 @@ def render(text, assets, image, tag):
             raise ValueError('missing from the environment: ' + key)
     env += (' EPICPROD_STANDARD_WRAPPER=epic-native-pilot.sh EPICPROD_NATIVE_BATCH=1'
             ' EPICPROD_NATIVE_IMAGE=' + image + ' EPICPROD_NATIVE_ARCHIVE=pilot3-native.tar.gz'
-            ' EPICPROD_NATIVE_NESTING=off EPICPROD_NATIVE_PROXY=' + Path(PROXY).name)
+            ' EPICPROD_NATIVE_DISPATCH=per-job EPICPROD_NATIVE_NESTING=on'
+            ' EPICPROD_NATIVE_PROXY=' + Path(PROXY).name)
     text = replace_line(text, 'environment', '"' + env + '"')
     if len(re.findall(r'(?m)^queue\s+1\s*$', text)) != 1:
         raise ValueError('expected one worker per Harvester submission')
-    additions = ('+EpicprodNative = "' + tag + '"\n+EpicprodNativeMode = "direct"\n'
+    additions = ('+EpicprodNative = "' + tag + '"\n+EpicprodNativeMode = "per-job"\n'
                  '+EpicprodNativeImage = "' + image + '"\n')
     return re.sub(r'(?m)^queue\s+1\s*$', lambda _: additions + '\nqueue 1\n', text)
 

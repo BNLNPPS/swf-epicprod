@@ -72,10 +72,19 @@ fi
 if [[ -n ${EPICPROD_ES_CHANNEL:-} ]]; then
     export PYTHONPATH=$EPICPROD_ES_CHANNEL/python${PYTHONPATH:+:$PYTHONPATH}
 fi
-# Dispatch uses the catalog spelling, not the resolved filesystem path.
-# The server must support container_name before deploying this launcher.
-export PILOT_CONTAINER_NAME="$IMAGE"
-echo "ePIC native pilot: dispatch container_name=$PILOT_CONTAINER_NAME"
+# OSG binds a pilot to the image selected by its glidein. Batch queues can
+# dispatch any job image and let native_container launch that payload image.
+case ${EPICPROD_NATIVE_DISPATCH:-bound} in
+    bound)
+        export PILOT_CONTAINER_NAME="$IMAGE"
+        echo "ePIC native pilot: dispatch container_name=$PILOT_CONTAINER_NAME" ;;
+    per-job)
+        [[ ${EPICPROD_NATIVE_NESTING:-on} != off ]] || {
+            echo 'per-job image dispatch requires payload container launching' >&2; exit 66; }
+        unset PILOT_CONTAINER_NAME
+        echo "ePIC native pilot: dispatch per-job images; bootstrap image $IMAGE" ;;
+    *) echo 'invalid native image dispatch mode' >&2; exit 66 ;;
+esac
 # The proxy HTCondor transferred (x509userproxy): absolute, readable, kept for the payload.
 if [[ -n ${X509_USER_PROXY:-} && $X509_USER_PROXY != /* ]]; then
     export X509_USER_PROXY=$HERE/$X509_USER_PROXY

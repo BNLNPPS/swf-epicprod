@@ -17,6 +17,13 @@ queue configuration, or server was changed by these tests.
 
 ## Standard-pilot rollout, 24 October
 
+GREX uses per-job image dispatch: the campaign image used to bootstrap
+the pilot supplies its Python dependencies, while each payload runs in
+its own declared image. `EPICPROD_NATIVE_DISPATCH=per-job` omits the
+dispatch image filter and requires payload container launching. OSG keeps
+its image-bound dispatch, because the glidein selects its outer image.
+The queue capability report distinguishes these two modes.
+
 Native execution is the standard pilot architecture. Event Service adds
 its channel dependency and job configuration to that pilot; it is not a
 reason to keep the standard rollout on the older bootstrap.
