@@ -390,4 +390,7 @@ def _run_cycle(*, dry_run=False, created_by='gke_pilots'):
             **{k: v for k, v in summary.items() if k not in ('jobs', 'outcome')})
     if not dry_run:
         publish_capability(cfg, summary, text)
+        if summary['outcome'] != 'held':
+            from .google_production import replenish
+            summary['production'] = replenish(cfg)
     return summary

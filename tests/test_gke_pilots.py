@@ -36,7 +36,7 @@ class BlockersTest(unittest.TestCase):
     def test_defaults_are_held(self):
         with open(TEMPLATE_DEFAULT) as f:
             text = f.read()
-        cfg = dict(DEFAULTS, credential='/nonexistent')
+        cfg = dict(DEFAULTS, credential='/nonexistent', native_runtime='/nonexistent')
         reasons = blockers(cfg, text + PLACEHOLDER)
         self.assertIn('gke_pilots.enabled is false', reasons)
         self.assertIn('gke_pilots.max_pods is 0', reasons)

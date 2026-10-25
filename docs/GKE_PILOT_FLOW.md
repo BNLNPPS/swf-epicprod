@@ -17,6 +17,33 @@ preemptions and the recovery of completed/unfinished ranges. Controlled worker
 termination or a request to another person requires Torre's explicit approval.
 Expansion also requires his explicit approval.
 
+On 25 October, after complete `gES3` output and recovery validation, Torre
+promoted Google to steady production at the same five-node limit (decision
+`01a174ee-0d98-7656-a327-ddb85cde212d`). `BNL_ePIC_GOOGLE_es` is `production`
+in the queue registry. The ordinary `BNL_ePIC_GOOGLE` queue remains off.
+The dedicated particle-gun feeder supplies this ES queue; the general pressure
+front remains disabled for it.
+
+`swf_epicprod.google_production` runs under the existing five-minute controller
+lock after runtime/image capability publication. With
+`google_production.enabled=true`, it keeps two finite whole production tasks
+committed, adding at most one per cycle. Each has 500,000 fresh neutron-gun
+events, ten initial 50,000-event jobs, automatic 14-core harness slots,
+250-event units, 300-second closes, a two-hour harness ceiling and a five-minute
+drain margin. The worker cap independently limits execution to five nodes
+(70 payload cores). Successful tasks are replenished through normal PCS
+composition, admission and submission; registered RECO has normal retention.
+
+PCS sample identities `gOP000001` onward are the persistent seed ledger.
+Allocation checks every possible range-start seed against the original source
+production and all existing ES samples, including unfinished and paused work
+on Perlmutter. Draft reservations are reused after staging failures and pending
+submissions count against the two-task limit. Unknown PanDA state, paused,
+failed or incomplete terminal tasks hold replenishment for operator review;
+storage headroom and image admission still apply. `google_production` cached
+state and action records show each decision. Setting the feeder switch false
+stops additions while existing work drains.
+
 Bounded real-production ES samples use the normal PCS submission path and their
 own sample identity. Each whole task has a fixed event budget, is placed wholly
 on Google, and retains normal RECO output without a trial expiry. The controller
@@ -81,7 +108,7 @@ The cut evidence and reader manifests are retained under
 `/data/wenauseic/swf-incident-archives/es-preemption-gES3-20261025/`.
 This controlled pod loss establishes abrupt worker-loss behavior; it does not
 identify a cloud Spot-reclamation cause or test delivery of a shutdown notice.
-The five-worker cap and commissioning status are unchanged.
+The five-worker cap is unchanged. The later operating transition is described above.
 
 Task and job pages show the same per-core harness timeline. Running snapshots
 stop at their observation timestamp; observations older than ten minutes carry
@@ -308,10 +335,10 @@ denied"), so the pilot container runs with AppArmor `Unconfined`; a
 debug pod with that setting started the payload image as uid 1000
 (2026-10-01).
 
-## Commissioning limits
+## Operating limits
 
 Cron enqueue (`*/5`) is installed and enabled. Preserve the authorized five-worker
-cap and shared native runtime while commissioning continues. The one approved
+cap and shared native runtime during steady production. The one approved
 controlled loss has been consumed; another controlled termination or capacity
 expansion needs separate explicit authorization. Delivery of a natural
 preemption notice to the pod remains unvalidated by the abrupt-loss demonstration.
