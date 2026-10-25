@@ -113,7 +113,7 @@ def render(text, assets, image):
     inputs = ','.join(assets + '/' + x for x in
                       ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
                        'glidein-deadline.sh', 'job-user.sh',
-                       'runtime-policy.py', 'queue-runtime-policy.json'))
+                       'runtime-policy.py', 'queue-runtime-policy.json', 'queuedata-source.json'))
     additions = ('transfer_input_files = ' + inputs + '\ntransfer_output_files = ""\n'
                  '+WantSingularity = True\n+SingularityImage = "' + image + '"\n'
                  '+EpicprodNative = "production-20261023"\n'
@@ -138,7 +138,7 @@ def retarget(text, assets, tag):
     files = [item.strip() for item in inputs.group(1).split(',')]
     names = ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
              'glidein-deadline.sh', 'job-user.sh',
-             'runtime-policy.py', 'queue-runtime-policy.json')
+             'runtime-policy.py', 'queue-runtime-policy.json', 'queuedata-source.json')
     for name in names[:5]:
         if files.count(str(old / name)) != 1:
             raise ValueError('expected exactly one frozen input: ' + name)

@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import re
 import sys
-import urllib.request
 
 
 def positive(value):
@@ -80,10 +79,8 @@ def prepare_queuedata(policy, queue, execute_queue, source, output):
     if seconds is None:
         return ''
     if '://' in source:
-        with urllib.request.urlopen(source, timeout=30) as response:
-            record = json.load(response)
-    else:
-        record = json.loads(Path(source).read_text())
+        raise ValueError('schedconfig must be transferred as a local file; worker URL fetch disabled')
+    record = json.loads(Path(source).read_text())
     if record.get('panda_queue', record.get('nickname')) != queue:
         raise ValueError('queue data does not belong to ' + queue)
     record['maxtime'] = seconds

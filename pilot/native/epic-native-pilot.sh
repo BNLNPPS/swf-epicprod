@@ -30,7 +30,7 @@ ASSETS=$(readlink -f "${EPICPROD_NATIVE_ASSETS:-$HERE}")
 SESSION_DIR=/var/lib/apptainer/mnt/session
 if [[ $ASSETS != "$HERE" ]]; then
     for f in "$ARCHIVE" certificates.tar.gz rucio.cfg glidein-deadline.sh job-user.sh \
-             runtime-policy.py queue-runtime-policy.json ${EPICPROD_NATIVE_PROXY:-}; do
+             runtime-policy.py queue-runtime-policy.json queuedata-source.json ${EPICPROD_NATIVE_PROXY:-}; do
         [[ -e $ASSETS/$f && ! -e $HERE/$f ]] && ln -s "$ASSETS/$f" "$HERE/$f"
     done
 fi
@@ -178,12 +178,12 @@ esac
 # Pin the pilot's actual clock by execution queue, independently of the
 # shared queue's ceiling. Keep every other queue-data field unchanged.
 if [[ -r $HERE/runtime-policy.py ]]; then
-    source_url="http://pandaserver01.sdcc.bnl.gov:25080/cache/schedconfig/$QUEUE.all.json"
+    source_url="$HERE/queuedata-source.json"
     pilot_args=(); expecting_url=0
     for argument in "$@"; do
-        if (( expecting_url )); then source_url=$argument; expecting_url=0
+        if (( expecting_url )); then expecting_url=0
         elif [[ $argument == --queuedata-url ]]; then expecting_url=1
-        elif [[ $argument == --queuedata-url=* ]]; then source_url=${argument#*=}
+        elif [[ $argument == --queuedata-url=* ]]; then :
         else pilot_args+=("$argument"); fi
     done
     (( expecting_url == 0 )) || { echo 'missing --queuedata-url value' >&2; exit 66; }

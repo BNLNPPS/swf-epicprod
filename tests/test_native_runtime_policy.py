@@ -24,6 +24,15 @@ render_spec.loader.exec_module(renderer)
 
 
 class RuntimePolicyTests(unittest.TestCase):
+    def test_runtime_preparation_never_fetches_a_worker_url(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('urllib.request.urlopen') as fetch:
+                with self.assertRaisesRegex(ValueError, 'worker URL fetch disabled'):
+                    policy_module.prepare_queuedata(POLICY, 'BNL_OSG_PanDA_1', '',
+                        'http://example.invalid/queue.json', str(Path(directory) / 'out.json'))
+                fetch.assert_not_called()
+
     def test_pilot_maximum_is_site_specific_and_preserves_other_fields(self):
         with tempfile.TemporaryDirectory() as directory:
             source, output = Path(directory) / 'source.json', Path(directory) / 'queuedata.json'

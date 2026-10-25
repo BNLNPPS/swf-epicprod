@@ -15,7 +15,8 @@ CODE = (
     'pilot/native/runtime-policy.py',
     'pilot/native/queue-runtime-policy.json',
 )
-ASSETS = ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg')
+ASSETS = ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
+          'queuedata-source.json')
 
 
 def stage(baseline, output, archive_sha256):
@@ -29,6 +30,9 @@ def stage(baseline, output, archive_sha256):
     digest = hashlib.sha256(assets['pilot3-native.tar.gz']).hexdigest()
     if digest != archive_sha256:
         raise ValueError('pilot archive differs from the approved digest')
+    queuedata = json.loads(assets['queuedata-source.json'])
+    if not isinstance(queuedata, dict) or not (queuedata.get('panda_queue') or queuedata.get('nickname')):
+        raise ValueError('queuedata-source.json must identify its PanDA queue')
     output.mkdir()  # An existing version must never be overwritten.
     files = {**assets, **code}
     for name, content in files.items():

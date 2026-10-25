@@ -120,7 +120,7 @@ def describe(template, args):
     binds = '' if args.direct else f'+SingularityBind = "{SESSION_BIND}"\n'
     inputs = ','.join(f'{args.dir}/{name}' for name in (args.archive, 'certificates.tar.gz', 'rucio.cfg',
                                                          'glidein-deadline.sh', 'job-user.sh',
-                                                         'runtime-policy.py', 'queue-runtime-policy.json'))
+                                                         'runtime-policy.py', 'queue-runtime-policy.json', 'queuedata-source.json'))
     if args.task:
         environment.append(f'PanDA_TaskID={args.task}')
     return f'''# Native ePIC pilot cohort {args.tag}, generated {datetime.datetime.now(datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ}
@@ -204,7 +204,8 @@ def main():
             sys.exit(f'image is not a directory on this host: {args.image}')
         for required in (Path(args.dir) / 'epic-native-pilot.sh', Path(args.dir) / 'glidein-deadline.sh',
                          Path(args.dir) / 'job-user.sh', Path(args.dir) / args.archive,
-                         Path(args.dir) / 'runtime-policy.py', Path(args.dir) / 'queue-runtime-policy.json'):
+                         Path(args.dir) / 'runtime-policy.py', Path(args.dir) / 'queue-runtime-policy.json',
+                         Path(args.dir) / 'queuedata-source.json'):
             if not required.is_file():
                 sys.exit(f'missing {required}')
         # The CA bundle this host keeps current, and rucio.cfg, travel with the

@@ -21,6 +21,7 @@ class RuntimeBundle(unittest.TestCase):
             baseline = root / 'baseline'; baseline.mkdir()
             for name in stage_runtime.ASSETS:
                 (baseline / name).write_bytes(b'frozen asset')
+            (baseline / 'queuedata-source.json').write_text('{"nickname":"BNL_OSG_PanDA_1"}')
             (baseline / 'runtime-policy.py').write_text('obsolete helper')
             (baseline / 'private-key').write_text('must not be copied')
             bundle = root / 'bundle'
@@ -34,7 +35,7 @@ class RuntimeBundle(unittest.TestCase):
             result = subprocess.run([
                 sys.executable, str(bundle / 'runtime-policy.py'), '--policy',
                 str(bundle / 'queue-runtime-policy.json'), '--queue', 'BNL_OSG_PanDA_1',
-                '--prepare-queuedata', queuedata.as_uri(), '--output', str(root / 'out.json'),
+                '--prepare-queuedata', str(queuedata), '--output', str(root / 'out.json'),
             ], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads((root / 'out.json').read_text()),

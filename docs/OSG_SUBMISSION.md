@@ -112,8 +112,10 @@ expressions require review rather than silently adding another rule.
 
 On 24 October the same policy also sets the pilot maximum: 57,600 seconds
 at `OSG_US_FSU_HNPGRID`, 36,000 at other OSG execution queues, including
-an unknown execution queue. The launcher copies the current server queue
-record, changes only `maxtime`, and gives the pilot that local file. This
+an unknown execution queue. The submission host supplies the queue record
+as `queuedata-source.json` with the frozen pilot assets. The launcher
+reads that transferred file, changes only `maxtime`, and gives the pilot
+the resulting local file. Runtime preparation performs no worker URL pull. This
 pins both the pilot monitor and its repeated-job admission clock even when
 the shared PanDA queue advertises the higher ceiling. The existing admission
 minimums, including Fir's live 7,800 seconds, are retained.
