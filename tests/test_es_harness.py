@@ -23,6 +23,39 @@ def ranges(events, lfn='f'):
 
 
 class TestStreamingStart(unittest.TestCase):
+    def test_initial_cohort_waits_for_all_slots_then_releases_together(self):
+        class Slot:
+            def __init__(self):
+                self.spec = None
+                self.at = None
+
+            def free(self):
+                return self.spec is None
+
+            def give(self, spec):
+                self.spec, self.at = spec, time.monotonic()
+
+        class Pool:
+            exhausted = False
+
+            def __init__(self):
+                self.units = [ranges(range(1, 5))]
+
+            def take_unit(self, *args, **kwargs):
+                return self.units.pop(0) if self.units else []
+
+            def want(self):
+                pass
+
+        pool, slots, buffered = Pool(), [Slot() for _ in range(4)], []
+        self.assertFalse(h.dispatch_initial(slots, pool, buffered, 4, 4, 'p', 'steer', 's'))
+        self.assertTrue(all(slot.spec is None for slot in slots))
+        pool.units = [ranges(range(i, i + 4)) for i in (5, 9, 13)]
+        self.assertTrue(h.dispatch_initial(slots, pool, buffered, 4, 4, 'p', 'steer', 's'))
+        self.assertLess(max(s.at for s in slots) - min(s.at for s in slots), 0.05)
+        self.assertEqual(sorted(r['startEvent'] for s in slots for r in s.spec['ranges']),
+                         list(range(1, 17)))
+
     def test_free_slot_takes_a_partial_block_of_min_events(self):
         """A free slot starts on the contiguous run it has (at least min_events)."""
         feed = h.FileFeed.__new__(h.FileFeed)

@@ -30,6 +30,8 @@ def definition(settings):
     if slots != 'auto' and (not slots.isdigit() or int(slots) <= 0):
         raise ValueError('production ES slots must be auto or a positive integer')
     cfg['slots'] = slots
+    if 'parallel_start' in cfg and type(cfg['parallel_start']) is not bool:
+        raise ValueError('production ES parallel_start must be a boolean')
     return cfg
 
 
@@ -57,6 +59,8 @@ def apply(spec, settings):
         'ES_DEADLINE_S': str(cfg['deadline_s']), 'ES_MARGIN_S': str(cfg['margin_s']),
         'ES_OUTPUT_DATASET': dataset,
     }
+    if cfg.get('parallel_start'):
+        prefix['EPICPROD_SWITCH_ES_COHORT_START'] = '1'
     command = ' '.join(k + '=' + shlex.quote(v) for k, v in prefix.items())
     command += (' python3 evgen_job_dispatcher.py es-production '
                 + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])

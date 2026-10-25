@@ -127,8 +127,8 @@ os.execvp(args[i+3], args[i+3:])
             self.assertEqual((work / 'harvesterproxy').read_text(), 'PRIVATE_PROXY_MARKER')
             deadline = int((work / 'sitefeatures/shutdowntime').read_text())
             import time
-            self.assertGreater(deadline - time.time(), 14350)
-            self.assertLessEqual(deadline - time.time(), 14400)
+            self.assertGreater(deadline - time.time(), 2650)
+            self.assertLessEqual(deadline - time.time(), 2700)
             self.assertIn('--getjobrequests=1', invocation['args'])
             self.assertIn('--getjobfailures=1', invocation['args'])
             self.assertNotIn('PRIVATE_CONSOLE_MARKER', result.stdout)
@@ -139,7 +139,7 @@ os.execvp(args[i+3], args[i+3:])
     def test_earlier_slurm_deadline_is_preserved(self):
         import time
         with tempfile.TemporaryDirectory() as directory:
-            slurm_end = int(time.time()) + 3600
+            slurm_end = int(time.time()) + 1800
             result, work = self.run_adapter(directory, slurm_end=slurm_end)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(int((work / 'sitefeatures/shutdowntime').read_text()), slurm_end)

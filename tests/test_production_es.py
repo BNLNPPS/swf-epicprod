@@ -22,6 +22,13 @@ def spec():
 
 
 class ProductionES(unittest.TestCase):
+    def test_cohort_start_is_opt_in_for_the_commissioning_task(self):
+        self.assertNotIn('EPICPROD_SWITCH_ES_COHORT_START', apply(spec(), settings())['exec'])
+        result = apply(spec(), dict(settings(), parallel_start=True))
+        self.assertIn('EPICPROD_SWITCH_ES_COHORT_START=1', result['exec'])
+        with self.assertRaises(ValueError):
+            definition(dict(settings(), parallel_start='1'))
+
     def test_budget_and_production_identity_are_preserved(self):
         result = apply(spec(), settings())
         self.assertEqual(result['nJobs'] * result['nEventsPerJob'], 10000)

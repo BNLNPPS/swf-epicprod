@@ -16,9 +16,9 @@ PILOT_SHA256=9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2
 ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py313-debian13.tar.gz
 ES_CHANNEL_SHA256=0993145fb66b52fc759fafe01bd5cef80ead0f3fb47d721feae6aa2a61a0d0ae
 IMAGE=/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable
-# Production-shaped commissioning: use the site's four-hour allocation,
+# Thirty-minute commissioning payloads: allow staging and final pilot handling,
 # including staging, and always respect an earlier Slurm end time.
-DEADLINE_AT=$(( $(date +%s) + 14400 ))
+DEADLINE_AT=$(( $(date +%s) + 2700 ))
 if [[ ${SLURM_JOB_END_TIME:-} =~ ^[0-9]+$ ]] && (( SLURM_JOB_END_TIME < DEADLINE_AT )); then
     DEADLINE_AT=$SLURM_JOB_END_TIME
 fi

@@ -37,6 +37,7 @@ outputs went to the catalog from the payload), "ERR_ATHENAMP_PROCESS
 <range>: <why>" for a failed one.
 """
 import argparse
+import bisect
 import json
 import os
 import shutil
@@ -308,8 +309,8 @@ class Pool:
             if rng is None:
                 break
             with self.lock:
-                self.ranges.append(rng)
-                self.ranges.sort(key=lambda r: (r.get('LFN', ''), int(r['startEvent'])))
+                bisect.insort(self.ranges, rng,
+                              key=lambda r: (r.get('LFN', ''), int(r['startEvent'])))
 
     @property
     def exhausted(self):
@@ -380,6 +381,27 @@ class Pool:
                     return members
                 i += run
             return []
+
+
+def dispatch_initial(slots, pool, buffered, per_unit, min_events, file_path, ext, stamp):
+    """Release the first cohort together after its ranges have arrived.
+
+    Containers can initialize while ranges arrive. Feeding a core at each
+    small arrival serializes the start across a large node.
+    """
+    available = [s for s in slots if s.free()]
+    while len(buffered) < len(available):
+        members = pool.take_unit(per_unit, min_events=min_events, max_events=min_events)
+        if not members:
+            pool.want()
+            if not pool.exhausted:
+                return False
+            break
+        buffered.append(members)
+    for slot, members in zip(available, buffered):
+        slot.give(unit_spec(members, per_unit, file_path, ext, stamp))
+    buffered.clear()
+    return True
 
 
 def take_unit(pool, per_unit):
@@ -489,6 +511,8 @@ def main():
     pool = Pool(feed, lookahead=lookahead)
     pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
     taking = True                                          # False past the deadline's margin
+    initial_units = []
+    initial_released = os.environ.get('EPICPROD_SWITCH_ES_COHORT_START') != '1'
     log(f"harness up: {args.slots} slots, image {args.image}, row {row[:2]}, "
         f"unit {args.events_per_unit or 'one range'} events, "
         f"close every {args.close_s or 'unit'} s, "
@@ -535,6 +559,10 @@ def main():
             'kind': 'es_record', 'version': 2, 'stamp': args.stamp, 'ended_at': ended.get('at'),
             'payload_version': payload_version,
             'pandaid': os.environ.get('PANDAID', ''), 'slots': args.slots,
+            'mem_available_kb': meminfo_kb('MemAvailable'),
+            'loadavg': os.getloadavg(),
+            'initial_cohort_released': initial_released,
+            'initial_units_buffered': len(initial_units),
             'started_at': started, 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
             'taking': taking,
             'done': [trim_unit(r) for r in list(summary['done'])],
@@ -688,6 +716,14 @@ def main():
             slots = [Slot(i, args, input_path) for i in range(args.slots)]
             log(f"{len(slots)} slots started")
         if taking and slots:
+            if not initial_released:
+                initial_released = dispatch_initial(
+                    slots, pool, initial_units, args.events_per_unit,
+                    args.min_unit_events, file_path, ext, args.stamp)
+                if not initial_released:
+                    time.sleep(0.05)
+                    continue
+                log(f"initial cohort released to {sum(s.unit is not None for s in slots)} slots")
             # Feed every free slot what the pool has now.
             # Near the deadline a slot's last unit is cut to what fits before
             # the margin, so every slot ends together there rather than

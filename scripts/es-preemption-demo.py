@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Submit a fresh bounded gun sample and execute one previously approved cut.
+"""Submit a fresh bounded gun sample; optionally execute an approved Google cut.
 
 The existing generation plan, PCS composer and submit API supply the workload.
 The cut is armed before dispatch and happens after thirty minutes, several
@@ -32,7 +32,19 @@ def main():
     ap.add_argument('--sample', required=True)
     ap.add_argument('--artifacts', type=Path, required=True)
     ap.add_argument('--approval-ref', required=True)
+    ap.add_argument('--site', choices=('BNL_ePIC_GOOGLE_es', 'NERSC_Perlmutter_epic_es'),
+                    default='BNL_ePIC_GOOGLE_es')
+    ap.add_argument('--events', type=int, default=30000)
+    ap.add_argument('--unit-events', type=int, default=250)
+    ap.add_argument('--deadline-s', type=int, default=2400)
+    ap.add_argument('--margin-s', type=int, default=300)
+    ap.add_argument('--parallel-start', action='store_true')
+    ap.add_argument('--priority', type=int)
+    ap.add_argument('--observe-only', action='store_true',
+                    help='submit and observe normal completion, without any worker removal')
     args = ap.parse_args()
+    if args.site != 'BNL_ePIC_GOOGLE_es' and not args.observe_only:
+        ap.error('controlled worker removal is implemented only for Google')
     own_token = os.environ['SWF_API_TOKEN']
     for raw in Path('/opt/swf-monitor/config/env/production.env').read_text().splitlines():
         raw = raw.strip().removeprefix('export ')
@@ -60,9 +72,10 @@ def main():
     user = Token.objects.select_related('user').get(key=own_token).user
     if not user.is_active or user.username != 'wenaus':
         raise RuntimeError('The submission token must identify the approving operator')
-    cfg = gke_settings()
-    if not cfg['enabled'] or int(cfg['max_pods']) != 5:
-        raise RuntimeError('The existing five-worker Google commissioning configuration changed')
+    if args.site == 'BNL_ePIC_GOOGLE_es':
+        cfg = gke_settings()
+        if not cfg['enabled'] or int(cfg['max_pods']) != 5:
+            raise RuntimeError('The existing five-worker Google commissioning configuration changed')
     from monitor_app import payload_reports
     payload_reports.SWEEPER_ENV = '/eic/u/wenauseic/.epic-report-sweeper.env'
     store = payload_reports.sweeper_client()
@@ -71,17 +84,21 @@ def main():
     args.artifacts.mkdir(parents=True, exist_ok=True)
     plan = json.loads((args.template / 'gun-generation-plan.json').read_text())
     es = json.loads((args.template / 'event-service.json').read_text())
-    sample, events = args.sample, 30000
+    sample, events = args.sample, args.events
     stem = 'neutron_5GeV_3to50deg.' + sample
     previous = set()
-    for old, n in [('gES1', 10000), ('pES1', 1000), ('gES2', 100000), ('pES2', 1000000)]:
+    for old, n in [('gES1', 10000), ('pES1', 1000), ('gES2', 100000),
+                   ('pES2', 1000000), ('gES3', 30000)]:
+        if old == sample:
+            continue
         previous.update(gun_seed('neutron_5GeV_3to50deg.' + old, i) for i in range(n))
     if any(gun_seed(stem, i) in previous for i in range(events)):
         raise RuntimeError('The proposed sample overlaps an existing random stream')
     plan.update(events=events, sample=sample, seed_stem=stem)
     dataset = 'group.EIC.esplan.26.07.3.p1107.' + sample
     es.update(events=events, input_events=events, events_per_job=events,
-              close_s=300, deadline_s=2400, margin_s=300,
+              close_s=300, deadline_s=args.deadline_s, margin_s=args.margin_s,
+              unit_events=args.unit_events, parallel_start=args.parallel_start,
               input_dataset='group.EIC:' + dataset,
               row=f'SINGLE/neutron/5GeV/3to50deg.{sample}/{stem},steer,{events},0000')
     write_json(args.artifacts / 'gun-generation-plan.json', plan)
@@ -130,14 +147,29 @@ def main():
     task = ProdTask.objects.filter(name=name).first()
     if task is None:
         task = compose(ProdTask.objects.get(pk=8524), sample=sample, event_service=es,
-                       site='BNL_ePIC_GOOGLE_es', created_by=user.username)
+                       site=args.site, created_by=user.username)
+    if args.priority is not None and not task.panda_task_id and not task.panda_tasks.exists():
+        overrides = dict(task.overrides or {}, task_priority=args.priority)
+        url = ('https://pandaserver02.sdcc.bnl.gov/swf-monitor/pcs/api/prod-tasks/'
+               + quote(task.composed_name, safe='') + '/')
+        response = requests.patch(url, headers={'Authorization': 'Token ' + own_token},
+                                  json={'overrides': overrides}, timeout=40,
+                                  allow_redirects=False)
+        response.raise_for_status()
+        if response.is_redirect:
+            raise RuntimeError('Task priority update redirected')
+        task.refresh_from_db()
     spec = build_evgen_task_params(task)
     if spec['nJobs'] != 1 or spec['event_service']['close_s'] != 300:
         raise RuntimeError('The composed task does not match the approved shape')
     write_json(args.artifacts / 'submission-spec.json', spec)
     evidence = {'operator': user.username, 'approval_ref': args.approval_ref,
                 'task': task.composed_name, 'sample': sample, 'events': events,
-                'close_s': 300, 'cut_after_s': 1800, 'worker_cap': 5,
+                'site': args.site, 'close_s': 300,
+                'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
+                'parallel_start': args.parallel_start,
+                'cut_after_s': None if args.observe_only else 1800,
+                'observe_only': args.observe_only,
                 'armed_at': datetime.now(timezone.utc).isoformat()}
     write_json(args.artifacts / 'armed.json', evidence)
     print(json.dumps(evidence), flush=True)
@@ -145,7 +177,7 @@ def main():
         url = ('https://pandaserver02.sdcc.bnl.gov/swf-monitor/pcs/api/prod-tasks/'
                + quote(task.composed_name, safe='') + '/submit/')
         response = requests.post(url, headers={'Authorization': 'Token ' + own_token},
-                                 json={'now': True, 'site': 'BNL_ePIC_GOOGLE_es'}, timeout=40,
+                                 json={'now': True, 'site': args.site}, timeout=40,
                                  allow_redirects=False)
         response.raise_for_status()
         if response.is_redirect or 'application/json' not in response.headers.get('Content-Type', ''):
@@ -167,6 +199,9 @@ def main():
             continue
         evidence['jedi_task_id'] = taskid
         write_json(args.artifacts / 'armed.json', evidence)
+        if args.observe_only:
+            print(json.dumps({'task': taskid, 'observe_only': True}), flush=True)
+            return 0
         with connections['panda'].cursor() as cursor:
             cursor.execute('SELECT pandaid FROM doma_panda.jobsactive4 '
                            'WHERE jeditaskid=%s AND jobstatus=%s ORDER BY pandaid', [taskid, 'running'])
