@@ -101,7 +101,10 @@ case ${EPICPROD_NATIVE_DISPATCH:-bound} in
     per-job)
         [[ ${EPICPROD_NATIVE_NESTING:-on} != off ]] || {
             echo 'per-job image dispatch requires payload container launching' >&2; exit 66; }
-        unset PILOT_CONTAINER_NAME
+        # Apptainer exports the outer launch's generated bind list. Its
+        # CE-spool paths can disappear under the payload's private /var/lib;
+        # each payload already declares its own work, scratch and proxy roots.
+        unset PILOT_CONTAINER_NAME APPTAINER_BIND SINGULARITY_BIND
         echo "ePIC native pilot: dispatch per-job images; bootstrap image $IMAGE" ;;
     *) echo 'invalid native image dispatch mode' >&2; exit 66 ;;
 esac

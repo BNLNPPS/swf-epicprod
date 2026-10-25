@@ -136,16 +136,18 @@ class InsideTheImage(unittest.TestCase):
         self.bin = self.root / 'bin'; self.bin.mkdir()
         self.calls = self.root / 'python3-calls'
         fake = self.bin / 'python3'
-        fake.write_text('#!/bin/bash\nprintf "%s " "$@" >> ' + str(self.calls) + '\necho >> '
+        fake.write_text('#!/bin/bash\necho "outer-binds=${APPTAINER_BIND-unset}|${SINGULARITY_BIND-unset}" >> '
+                        + str(self.calls) + '\nprintf "%s " "$@" >> ' + str(self.calls) + '\necho >> '
                         + str(self.calls) + '\ncat >/dev/null\nexit 0\n')
         fake.chmod(0o755)
 
-    def run_launcher(self, *args):
+    def run_launcher(self, *args, extra_env=None):
         env = {k: v for k, v in os.environ.items() if not k.startswith(('APPTAINER_', 'SINGULARITY_'))}
         env.update(PATH=str(self.bin) + os.pathsep + env['PATH'], APPTAINER_CONTAINER=str(self.image),
                    EPICPROD_NATIVE_IMAGE=str(self.image), EPICPROD_NATIVE_ARCHIVE='pilot3-native.tar.gz',
                    EPICPROD_NATIVE_ASSETS=str(self.top), EPICPROD_NATIVE_PROXY='x509up_u1000',
                    EPICPROD_NATIVE_BATCH='1', X509_USER_PROXY='/ce/spool/elsewhere')
+        env.update(extra_env or {})
         return subprocess.run(['bash', str(LAUNCHER), '-q', 'UM_GREX_PanDA_1', *args], cwd=self.here,
                               env=env, capture_output=True, text=True)
 
@@ -162,3 +164,11 @@ class InsideTheImage(unittest.TestCase):
         last = self.calls.read_text().strip().splitlines()[-1]
         self.assertIn('--queuedata-url http://elsewhere/q.json', last)
         self.assertEqual(last.count('--queuedata-url'), 1)
+
+    def test_per_job_payloads_do_not_inherit_outer_container_bind_lists(self):
+        result = self.run_launcher(extra_env={
+            'EPICPROD_NATIVE_DISPATCH': 'per-job', 'EPICPROD_NATIVE_NESTING': 'on',
+            'APPTAINER_BIND': '/var/lib/condor-ce/outer',
+            'SINGULARITY_BIND': '/var/lib/condor-ce/outer'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('outer-binds=unset|unset', self.calls.read_text())
