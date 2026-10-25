@@ -50,7 +50,7 @@ if [[ -z $ACTUAL && ${EPICPROD_NATIVE_BATCH:-0} == 1 ]]; then
     done
     [[ -x $RUNTIME ]] || { echo "Apptainer unavailable: $RUNTIME" >&2; exit 69; }
     binds=(--bind /cvmfs:/cvmfs --bind "$HERE:$HERE" --bind "$ASSETS:$ASSETS" --bind "$SELF:$SELF")
-    for d in "${SLURM_TMPDIR:-}" "/scratch/slurm/${SLURM_JOB_ID:-}" "${_CONDOR_SCRATCH_DIR:-}" \
+    for d in "${SLURM_TMPDIR:-}" "/scratch/slurm/${SLURM_JOB_ID:-}" "${OSG_WN_TMP:-}" "${_CONDOR_SCRATCH_DIR:-}" \
              "$(dirname "$(readlink -f "${X509_USER_PROXY:-/nonexistent}")")"; do
         [[ -n ${SLURM_JOB_ID:-} || $d != /scratch/slurm/ ]] || continue
         [[ -d $d && $d != / ]] && binds+=(--bind "$d:$d")
@@ -66,6 +66,10 @@ if [[ -z $ACTUAL && ${EPICPROD_NATIVE_BATCH:-0} == 1 ]]; then
                 --bind "$SELF:$container_self")
         container_env=(--env EPICPROD_NATIVE_ASSETS=/epicprod-assets
                        --env _CONDOR_SCRATCH_DIR=/srv)
+    fi
+    if [[ -n ${EPICPROD_CE_SANDBOX:-} && -d $EPICPROD_CE_SANDBOX ]]; then
+        binds+=(--bind "$EPICPROD_CE_SANDBOX:/epicprod-ce:ro")
+        container_env+=(--env EPICPROD_CE_SANDBOX=/epicprod-ce)
     fi
     launch=("$RUNTIME" exec --no-home "${binds[@]}" "${container_env[@]}"
             --pwd "$container_here" "$IMAGE" /bin/bash "$container_self" "$@")
@@ -164,6 +168,13 @@ export PILOT_HOME=$HERE
 # A user name for the Rucio client (job-user.sh, transferred with the pilot).
 source "$HERE/job-user.sh"
 echo "ePIC native pilot: user $USER (uid $(id -u))"
+if [[ -n ${SLURM_JOB_ID:-} ]]; then
+    PYTHONPATH="$HERE/pilot3${PYTHONPATH:+:$PYTHONPATH}" python3 - <<'PY'
+import os
+from pilot.user.epic.native_container import scratch_base
+print('Worker scratch selected before job acquisition: ' + scratch_base(os.getcwd()))
+PY
+fi
 # The glidein's death time, from this execution's machine ad, as the HEPiX
 # MachineFeatures shutdowntime the pilot plans against before every further job
 # (glidein-deadline.sh, transferred with the pilot). The first job is decided here.

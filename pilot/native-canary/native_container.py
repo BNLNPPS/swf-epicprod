@@ -47,6 +47,15 @@ SAMPLE_S = 60
 def scratch_base(workdir):
     """Where the batch system keeps a job's scratch: HTCondor's, Slurm's, else
     beside the pilot's job directories."""
+    # A Condor-CE Slurm job can inherit its small shared CE spool as
+    # _CONDOR_SCRATCH_DIR. Prefer the worker storage advertised by the site.
+    slurm_job = os.environ.get('SLURM_JOB_ID', '')
+    if slurm_job:
+        for value in (os.environ.get('EPICPROD_WORKER_SCRATCH'), os.environ.get('SLURM_TMPDIR'),
+                      '/scratch/slurm/' + slurm_job, os.environ.get('OSG_WN_TMP')):
+            if value and os.path.isdir(value) and os.access(value, os.W_OK):
+                return os.path.abspath(value)
+        raise RuntimeError('Slurm worker has no writable site scratch; refusing CE spool fallback')
     for key in ('_CONDOR_SCRATCH_DIR', 'SLURM_TMPDIR'):
         value = os.environ.get(key, '')
         if value and os.path.isdir(value):
@@ -55,6 +64,31 @@ def scratch_base(workdir):
     if os.environ.get('SLURM_JOB_ID') and os.path.isdir(slurm):
         return slurm
     return os.path.dirname(os.path.abspath(workdir))
+
+
+def disk_headroom(workdir):
+    """Unprivileged available bytes/inodes, carried by the normal heartbeat."""
+    import time
+    values = {'diskSample': int(time.time())}
+    paths = []
+    ce = os.environ.get('EPICPROD_CE_SANDBOX')
+    if ce:
+        paths.append(('ce', ce))
+    paths.append(('pilot', workdir))
+    try:
+        paths.append(('scratch', scratch_base(workdir)))
+    except RuntimeError:
+        pass  # Still report the pilot volume when no safe scratch exists.
+    for label, path in paths:
+        try:
+            stat = os.statvfs(path)
+        except OSError:
+            continue
+        values.update({label + 'FreeMB': stat.f_bavail * stat.f_frsize // 2**20,
+                       label + 'TotalMB': stat.f_blocks * stat.f_frsize // 2**20,
+                       label + 'IFree': stat.f_favail,
+                       label + 'ITotal': stat.f_files})
+    return values
 
 
 def keep_scratch():

@@ -411,7 +411,7 @@ if [ ! "${INPUT_DIR/\.\.\//}" = "${INPUT_DIR}" ] ; then
 fi
 INPUT_PREFIX=${INPUT_DIR/\/*/}
 TAG=${INPUT_DIR/${INPUT_PREFIX}\//}
-INPUT_DIR=${BASEDIR}/EVGEN/${TAG}
+INPUT_DIR=${TMPDIR}/EVGEN/${TAG}
 mkdir -p ${INPUT_DIR}
 # The sample's own path below EVGEN/, before the detector segments join
 # it: where a generated sample registers (docs/EPICPROD_INTERNAL_EVGEN.md).

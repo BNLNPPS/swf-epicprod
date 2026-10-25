@@ -52,6 +52,25 @@ ALLOCATION=${EPICPROD_ALLOCATION_SECONDS:-18000}
 RESERVE=${EPICPROD_DRAIN_RESERVE_SECONDS:-7200}
 MARGIN=${EPICPROD_STARTUP_MARGIN_SECONDS:-300}
 TOP=$(pwd)
+if [[ -n ${SLURM_JOB_ID:-} && $TOP == /var/lib/condor-ce/* ]]; then
+  # The CE sandbox is a small shared spool, not worker storage. Keep pilot
+  # extraction, job directories and logs on the batch worker's filesystem.
+  export EPICPROD_CE_SANDBOX=$TOP
+  worker_tmp=${SLURM_TMPDIR:-/tmp}
+  [[ -d $worker_tmp && -w $worker_tmp ]] || { echo 'No writable worker temporary directory' >&2; exit 66; }
+  [[ $(stat -c %d "$worker_tmp") != $(stat -c %d "$TOP") ]] || {
+    echo 'Worker temporary directory is on the CE spool; refusing to launch' >&2; exit 66; }
+  TOP=$(mktemp -d "$worker_tmp/epicprod-pilots.${SLURM_JOB_ID}.XXXXXX") || exit 66
+  for name in epic-native-pilot.sh pilot3-native.tar.gz certificates.tar.gz rucio.cfg \
+              glidein-deadline.sh job-user.sh runtime-policy.py queue-runtime-policy.json \
+              queuedata.json x509up_u1000; do
+    [[ ! -f $EPICPROD_CE_SANDBOX/$name ]] || cp "$EPICPROD_CE_SANDBOX/$name" "$TOP/$name" || exit 66
+  done
+  chmod 600 "$TOP/x509up_u1000" 2>/dev/null || true
+  cd "$TOP" || exit 66
+  export _CONDOR_SCRATCH_DIR=$TOP EPICPROD_WORKER_SCRATCH=$TOP
+  echo "epicprod-multipilot: worker directory $TOP; CE sandbox $EPICPROD_CE_SANDBOX"
+fi
 WRAPPER=${EPICPROD_STANDARD_WRAPPER:-${TOP}/bnlpanda.runpilot2-wrapper.sh}
 [[ -r ${WRAPPER} ]] || WRAPPER=/cvmfs/eic.opensciencegrid.org/panda/bnlpanda.runpilot2-wrapper.sh
 # Each wrapper runs in its own subdirectory: the path must be absolute, and the

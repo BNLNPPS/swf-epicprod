@@ -206,7 +206,9 @@ def patch_job_metrics(content):
 """, ""),
         ("""    # is there a detected rucio trace service error?
 """, """    # ePIC: the job's scratch peaks, sampled by the native container wrapper
-    from pilot.user.epic.native_container import scratch_peak
+    from pilot.user.epic.native_container import scratch_peak, disk_headroom
+    for name, value in disk_headroom(job.workdir).items():
+        job_metrics += get_job_metrics_entry(name, value)
     peak = scratch_peak(job.workdir)
     if peak:
         job_metrics += get_job_metrics_entry("scratchPeakMB", (peak[0] + 1023) // 1024)
