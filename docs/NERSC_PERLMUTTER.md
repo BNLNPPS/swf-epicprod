@@ -262,6 +262,16 @@ momenta. That run predates the ES gun event-number correction: its headers
 contain only five distinct IDs, so it is not the acceptance proof for new
 production event identity.
 
+Task 41157 / job 5911833 subsequently proved the event-number correction on
+Perlmutter: all 20 events finished and registered, with 20 unique event IDs,
+20 distinct generated-truth records and all 387 collections readable. The
+next operator-authorized whole production sample is task 41159 (`pES1`):
+1,000 additional neutron-gun events in one job, 50-event units, a 20-minute
+deadline and five-minute drain margin. Its sample stem separates its random
+streams from both the source production and Google's `gES1` sample. It uses
+the existing Harvester/Slurm path and normal RECO retention; the site remains
+commissioning and automatic feeding remains disabled.
+
 ## Related
 
 - [NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md): the design the

@@ -20,6 +20,16 @@ cap limits concurrent workers independently of that budget. A 26.07.3 sample
 must use the matching native image and fresh advertised capability; validation
 with 26.07.1 does not establish that worker result.
 
+On 25 October UTC, task 41154 / job 5911534 proved the gun ES event-number
+correction: 20 registered events, 20 unique event IDs and distinct generated
+truth records, and all 387 collections readable with normal 26.07.3 PODIO.
+The bounded production successor is task 41158, sample `gES1`: 10,000 new
+neutron-gun events, 5 GeV, 3–50 degrees, assigned wholly to Google. Five jobs
+use the existing five-worker cap. Its initial 56 registered events passed the
+same reader, identity and truth checks, including the requested particle and
+angular range. This initial readback does not establish complete 10,000-event
+coverage or worker-loss recovery.
+
 Decided with Torre on 2026-09-30, after Harvester was found starting
 empty workers for the queue (below). The request to the PanDA team
 went out the same day.
