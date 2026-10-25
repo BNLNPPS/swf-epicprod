@@ -71,8 +71,25 @@ def reserve_sample():
 
 def register_plan(task, proxy):
     """Idempotently stage the generation ledger through the proven BNL path."""
-    # This controller runs in its own doer process. The in-process XRootD
-    # client needs the same explicit credential environment as xrdcp below.
+    # GSI refuses the group-readable service proxy. Keep its private copy
+    # scoped to this upload, as in the validated commissioning submitter.
+    keys = ('X509_USER_PROXY', 'X509_CERT_DIR')
+    previous = {key: os.environ.get(key) for key in keys}
+    try:
+        with tempfile.TemporaryDirectory(prefix='google-proxy-', dir='/data/swf-tmp') as temp:
+            private = Path(temp) / 'proxy'
+            private.write_bytes(Path(proxy).read_bytes())
+            private.chmod(0o600)
+            _register_plan(task, str(private))
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _register_plan(task, proxy):
     os.environ.update(X509_USER_PROXY=proxy,
                       X509_CERT_DIR='/etc/grid-security/certificates')
     from django.conf import settings
