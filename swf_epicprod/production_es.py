@@ -32,6 +32,10 @@ def definition(settings):
     cfg['slots'] = slots
     if 'parallel_start' in cfg and type(cfg['parallel_start']) is not bool:
         raise ValueError('production ES parallel_start must be a boolean')
+    if 'fast_merge' in cfg and type(cfg['fast_merge']) is not bool:
+        raise ValueError('production ES fast_merge must be a boolean')
+    if 'close_max_files' in cfg and (type(cfg['close_max_files']) is not int or cfg['close_max_files'] <= 0):
+        raise ValueError('production ES close_max_files must be a positive integer')
     return cfg
 
 
@@ -61,6 +65,10 @@ def apply(spec, settings):
     }
     if cfg.get('parallel_start'):
         prefix['EPICPROD_SWITCH_ES_COHORT_START'] = '1'
+    if cfg.get('fast_merge'):
+        prefix['EPICPROD_SWITCH_ES_FAST_MERGE'] = '1'
+    if cfg.get('close_max_files'):
+        prefix['ES_CLOSE_MAX_FILES'] = str(cfg['close_max_files'])
     command = ' '.join(k + '=' + shlex.quote(v) for k, v in prefix.items())
     command += (' python3 evgen_job_dispatcher.py es-production '
                 + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])

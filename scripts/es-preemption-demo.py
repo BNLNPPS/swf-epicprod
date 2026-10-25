@@ -41,6 +41,9 @@ def main():
     ap.add_argument('--deadline-s', type=int, default=2400)
     ap.add_argument('--margin-s', type=int, default=300)
     ap.add_argument('--parallel-start', action='store_true')
+    ap.add_argument('--fast-merge', action='store_true')
+    ap.add_argument('--close-s', type=int, default=300)
+    ap.add_argument('--close-max-files', type=int)
     ap.add_argument('--priority', type=int)
     ap.add_argument('--observe-only', action='store_true',
                     help='submit and observe normal completion, without any worker removal')
@@ -64,7 +67,6 @@ def main():
     from pcs.models import ProdTask
     from pcs.production_samples import compose
     from pcs.commands import build_evgen_task_params
-    from swf_epicprod.production_es import gun_seed
     from swf_epicprod.gke_pilots import settings as gke_settings
     from rucio.client import Client
     from rucio.common.exception import DataIdentifierNotFound
@@ -88,24 +90,35 @@ def main():
     es = json.loads((args.template / 'event-service.json').read_text())
     sample, events = args.sample, args.events
     stem = 'neutron_5GeV_3to50deg.' + sample
-    previous = set()
-    for old, n in [('gES1', 10000), ('pES1', 1000), ('gES2', 100000),
-                   ('pES2', 1000000), ('gES3', 30000)]:
-        if old == sample:
-            continue
-        previous.update(gun_seed('neutron_5GeV_3to50deg.' + old, i) for i in range(n))
-    if any(gun_seed(stem, i) in previous for i in range(events)):
-        raise RuntimeError('The proposed sample overlaps an existing random stream')
+    from swf_epicprod.google_production import seed_intervals, overlaps
+    from pcs.commands import internal_evgen_sample, prodtask_events_per_job
+
+    def check_streams(source):
+        _, original_stem = internal_evgen_sample(source)
+        chunks = -(-int(source.dataset.expected_events) // prodtask_events_per_job(source))
+        reserved = seed_intervals(original_stem, chunks)
+        for prior in ProdTask.objects.filter(overrides__has_key='event_service'):
+            if prior.overrides.get('production_sample_prefix') == sample:
+                continue
+            old = prior.overrides['event_service']
+            reserved.extend(seed_intervals(old['row'].split(',')[0].rsplit('/', 1)[1], int(old['events'])))
+        if overlaps(seed_intervals(stem, events), reserved):
+            raise RuntimeError('The proposed sample overlaps an existing PCS random stream')
+
+    check_streams(ProdTask.objects.get(pk=8524))
     plan.update(events=events, sample=sample, seed_stem=stem)
     dataset = 'group.EIC.esplan.26.07.3.p1107.' + sample
     es.update(events=events, input_events=events, events_per_job=events,
-              close_s=300, deadline_s=args.deadline_s, margin_s=args.margin_s,
+              close_s=args.close_s, deadline_s=args.deadline_s, margin_s=args.margin_s,
               unit_events=args.unit_events, parallel_start=args.parallel_start,
+              fast_merge=args.fast_merge,
               slots=args.slots,
               input_dataset='group.EIC:' + dataset,
               row=f'SINGLE/neutron/5GeV/3to50deg.{sample}/{stem},steer,{events},0000')
     if args.memory_mb_per_core is not None:
         es['memory_mb_per_core'] = args.memory_mb_per_core
+    if args.close_max_files is not None:
+        es['close_max_files'] = args.close_max_files
     write_json(args.artifacts / 'gun-generation-plan.json', plan)
     write_json(args.artifacts / 'event-service.json', es)
     data = (args.artifacts / 'gun-generation-plan.json').read_bytes()
@@ -151,8 +164,12 @@ def main():
     name = 'group.EIC.26.07.3.epic_craterlake.p1107.e37.s11.r11.3to50deg.' + sample
     task = ProdTask.objects.filter(name=name).first()
     if task is None:
-        task = compose(ProdTask.objects.get(pk=8524), sample=sample, event_service=es,
-                       site=args.site, created_by=user.username)
+        from django.db import transaction
+        with transaction.atomic():
+            source = ProdTask.objects.select_for_update().get(pk=8524)
+            check_streams(source)
+            task = compose(source, sample=sample, event_service=es,
+                           site=args.site, created_by=user.username)
     if args.priority is not None and not task.panda_task_id and not task.panda_tasks.exists():
         overrides = dict(task.overrides or {}, task_priority=args.priority)
         url = ('https://pandaserver02.sdcc.bnl.gov/swf-monitor/pcs/api/prod-tasks/'
@@ -165,12 +182,13 @@ def main():
             raise RuntimeError('Task priority update redirected')
         task.refresh_from_db()
     spec = build_evgen_task_params(task)
-    if spec['nJobs'] != 1 or spec['event_service']['close_s'] != 300:
+    if spec['nJobs'] != 1 or spec['event_service']['close_s'] != args.close_s:
         raise RuntimeError('The composed task does not match the approved shape')
     write_json(args.artifacts / 'submission-spec.json', spec)
     evidence = {'operator': user.username, 'approval_ref': args.approval_ref,
                 'task': task.composed_name, 'sample': sample, 'events': events,
-                'site': args.site, 'close_s': 300,
+                'site': args.site, 'close_s': args.close_s,
+                'fast_merge': args.fast_merge, 'close_max_files': args.close_max_files,
                 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
                 'parallel_start': args.parallel_start,
                 'slots': args.slots,

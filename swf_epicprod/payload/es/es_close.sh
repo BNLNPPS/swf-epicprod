@@ -14,12 +14,30 @@
 # units' files are removed after a registration that stands.
 set -uo pipefail
 CLOSE_DIR=$1; NAME=$2; shift 2
+if [ "${1:-}" == --handoffs ]; then
+  mapfile -t HANDOFFS < "$2"
+  set -- "${HANDOFFS[@]}"
+fi
 HERE=$(realpath "$(dirname "$0")")
 PAYLOAD=$(realpath "${HERE}/..")
 mkdir -p "${CLOSE_DIR}"
 LOG=${CLOSE_DIR}/close.log
 exec > >(tee -a "${LOG}") 2>&1
 echo "close: $(date -u +%FT%TZ) ${NAME}, $# unit file(s)"
+
+stage() {
+  python3 - "$CLOSE_DIR" "$1" "${EVENTS:-0}" "${#FILES[@]}" <<'PY'
+import json, os, sys, time
+d, stage, events, files = sys.argv[1:]
+path = os.path.join(d, 'progress.json')
+with open(path + '.tmp', 'w') as f:
+    json.dump({'stage': stage, 'started_at': time.time(),
+               'events': int(events), 'files': int(files)}, f)
+os.replace(path + '.tmp', path)
+PY
+}
+FILES=(); EVENTS=0
+stage environment
 
 if ls environment*.sh >/dev/null 2>&1; then
   source environment*.sh
@@ -33,6 +51,7 @@ source ${PAYLOAD}/test_jlab_unreachable.sh
 
 record() {
   # record <outcome> <did> <events> <rc> <message>
+  stage "$1"
   python3 - "$CLOSE_DIR" "$1" "$2" "$3" "$4" "$5" ${FILES[@]+"${FILES[@]}"} <<'PY'
 import json, sys, time
 d, outcome, did, events, rc, message, *files = sys.argv[1:]
@@ -53,14 +72,20 @@ for h in "$@"; do
 done
 MERGED=${CLOSE_DIR}/${NAME}
 DID=$(echo "${DATASET}/${NAME}" | sed 's#//*#/#g')     # one slash: the registrar's metadata writes take the name as given
+stage merge
 
 if [ ${#FILES[@]} -eq 1 ]; then
   # One unit since the last close: its file is the close's file.
   cp "${FILES[0]}" "${MERGED}"
 else
-  echo "merge: podio-merge-files over ${#FILES[@]} files"
+  MERGE=(podio-merge-files --output "${MERGED}" "${FILES[@]}")
+  if [ "${EPICPROD_SWITCH_ES_FAST_MERGE:-0}" == 1 ]; then
+    printf '%s\n' "${FILES[@]}" > "${CLOSE_DIR}/merge-inputs.txt"
+    MERGE=(python3 "${HERE}/merge_root.py" --inputs-file "${CLOSE_DIR}/merge-inputs.txt" --output "${MERGED}")
+  fi
+  echo "merge: ${MERGE[0]} over ${#FILES[@]} files"
   # Its progress bars go to their own file; the log keeps the last lines.
-  if ! podio-merge-files --output "${MERGED}" "${FILES[@]}" > "${CLOSE_DIR}/merge.out" 2>&1; then
+  if ! "${MERGE[@]}" > "${CLOSE_DIR}/merge.out" 2>&1; then
     tail -c 2000 "${CLOSE_DIR}/merge.out" | tr '\r' '\n' | grep -vE '^\s*$|it/s' | tail -5
     echo "ERROR: podio-merge-files failed"; record failed "$DID" "$EVENTS" 3 "podio-merge-files failed"; exit 3
   fi
@@ -69,6 +94,7 @@ fi
 [ -s "${MERGED}" ] || { echo "ERROR: merged file missing"; record failed "$DID" "$EVENTS" 3 "merged file missing"; exit 3; }
 
 echo "validate: ${MERGED}"
+stage validate
 EVENTS_FILE=${CLOSE_DIR}/events.txt
 if ! python "${PAYLOAD}/validate_rootfile.py" "${MERGED}" --events-file "${EVENTS_FILE}"; then
   echo "ERROR: the merged file failed validation"; record failed "$DID" "$EVENTS" 4 "merged file failed validation"; exit 4
@@ -83,6 +109,7 @@ ARGS=(-f "${MERGED}" -d "${DID}" -s epic -r "${RSE}" --metadata-json "${META}" -
 [ -n "${LIFETIME}" ] && ARGS+=(--lifetime "${LIFETIME}")
 [ "${PRESERVE}" == "yes" ] && ARGS+=(--preserve-door "${PDOOR}" --preserve-prefix "${PPREFIX}" --preserve-timeout "${PTIMEOUT}")
 echo "register: ${DID} (${EVENTS} events, $(stat -c %s "${MERGED}") bytes) at ${RSE}"
+stage register
 export REGISTRATION_STAGGER_MAX_S=0
 rucio_auth
 python "${PAYLOAD}/register_to_rucio.py" "${ARGS[@]}"; RC=$?

@@ -18,6 +18,12 @@ switch.
 
 ## Testing a change with a payload canary
 
+The opt-in Event Service fast close additionally checks the merge in the
+campaign's image before site commissioning: split a registered file into
+disjoint inputs, merge with and without an input metadata category, and
+read the result with normal PODIO. Verify exact event identities, generated
+truth, every collection's size, and the rewritten merged-input metadata.
+
 A payload canary (site-canary
 [IMPLEMENTATION.md](https://github.com/BNLNPPS/site-canary/blob/main/docs/IMPLEMENTATION.md),
 Payload canaries) runs the payload on one manifest row of a chosen PCS

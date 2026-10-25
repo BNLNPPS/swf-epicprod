@@ -40,6 +40,7 @@ import argparse
 import bisect
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -166,13 +167,32 @@ class Close:
         first = units[0][2]['handoff']
         self.name = f"{first['name']}.{os.environ.get('PANDAID') or 'loopback'}.{index:04d}.eicrecon.edm4eic.root"
         handoffs = [u[2]['handoff']['handoff_file'] for u in units]
-        inner = (f"cd {args.sandbox} && bash {args.payload}/es/es_close.sh {self.dir} {self.name} "
-                 + " ".join(handoffs))
+        manifest = os.path.join(self.dir, 'handoffs.txt')
+        with open(manifest, 'w') as f:
+            f.write(''.join(path + '\n' for path in handoffs))
+        merge_env = ('EPICPROD_SWITCH_ES_FAST_MERGE=1 '
+                     if os.environ.get('EPICPROD_SWITCH_ES_FAST_MERGE') == '1' else '')
+        inner = (f"cd {shlex.quote(args.sandbox)} && {merge_env}bash {shlex.quote(args.payload)}/es/es_close.sh "
+                 f"{shlex.quote(self.dir)} {shlex.quote(self.name)} --handoffs {shlex.quote(manifest)}")
         self.started = time.time()
         self.proc = subprocess.Popen(container_command(args, inner),
                                      stdout=open(os.path.join(self.dir, 'container.log'), 'w'),
                                      stderr=subprocess.STDOUT, start_new_session=args.preempt_at_s > 0)
         log(f"close {index}: {len(units)} unit(s), {sum(int(u[2]['handoff'].get('events') or 0) for u in units)} events -> {self.name} (pid {self.proc.pid})")
+
+    def snapshot(self):
+        rec = {'index': self.index, 'started_at': self.started,
+               'units': [u[1] for u in self.units]}
+        try:
+            with open(os.path.join(self.dir, 'progress.json')) as f:
+                rec['progress'] = json.load(f)
+        except FileNotFoundError:
+            rec['progress'] = {'stage': 'container_start'}
+        try:
+            rec['merged_bytes'] = os.path.getsize(os.path.join(self.dir, self.name))
+        except FileNotFoundError:
+            rec['merged_bytes'] = 0
+        return rec
 
     def result(self):
         """The close's record when it has ended, else None."""
@@ -475,6 +495,8 @@ def main():
                     help='consecutive events per unit for a fine-grained task (one event per range); 0 = one range per unit')
     ap.add_argument('--close-s', type=float, default=float(os.environ.get('ES_CLOSE_S', '0')),
                     help='seconds between closes: the units since the last close merged into one file and registered; 0 = each unit registers its own')
+    ap.add_argument('--close-max-files', type=int, default=int(os.environ.get('ES_CLOSE_MAX_FILES', '0')),
+                    help='maximum unit files per close; 0 retains an unbounded batch')
     ap.add_argument('--min-unit-events', type=int, default=int(os.environ.get('ES_MIN_UNIT_EVENTS', '16')),
                     help='a free slot starts on this many contiguous events rather than wait for its whole block')
     ap.add_argument('--preempt-at-s', type=float, default=float(os.environ.get('ES_PREEMPT_AT_S', '0')),
@@ -483,6 +505,8 @@ def main():
                          'or reported; the units cut off and the units whose output never left the '
                          'node are recorded as what was lost')
     args = ap.parse_args()
+    if args.close_max_files < 0:
+        ap.error('--close-max-files must be nonnegative')
     args.sandbox = os.path.abspath(args.sandbox)
     args.work = os.path.abspath(args.work)
     args.payload = os.path.abspath(args.payload or os.path.join(args.sandbox, 'payload'))
@@ -561,6 +585,7 @@ def main():
             'pandaid': os.environ.get('PANDAID', ''), 'slots': args.slots,
             'mem_available_kb': meminfo_kb('MemAvailable'),
             'loadavg': os.getloadavg(),
+            'cpu_affinity': sorted(os.sched_getaffinity(0)),
             'initial_cohort_released': initial_released,
             'initial_units_buffered': len(initial_units),
             'started_at': started, 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
@@ -570,8 +595,7 @@ def main():
             'closes': [{k: c.get(k) for k in ('index', 'ok', 'outcome', 'events', 'started_at',
                                                'ended_at', 'wall_s', 'did')}
                        for c in list(summary['closes'])],
-            'closing': [{'index': c.index, 'started_at': c.started,
-                         'units': [u[1] for u in c.units]} for c in running],
+            'closing': [c.snapshot() for c in running],
             'awaiting_close': [trim_unit(dict(u[2], slot=u[0].index))
                                for u in list(pending) + [u for c in running for u in c.units]],
             'in_flight': [{'unit_id': s.unit, 'slot': s.index, 'started_at': s.taken_at,
@@ -747,7 +771,9 @@ def main():
                     break
                 slot.give(unit_spec(members, args.events_per_unit, file_path, ext, args.stamp))
                 fed = True
-            if fed:
+            # A bounded close must be considered even while the slots keep
+            # accepting units, otherwise a busy node can starve stage-out.
+            if fed and not args.close_max_files:
                 continue
         elif taking:
             pool.want()                         # nothing pooled yet
@@ -761,9 +787,11 @@ def main():
         # credited, with the first units done at about 6 minutes).
         if pending and not closes and (not summary['closes']
                                        or time.time() - last_close >= args.close_s
+                                       or (args.close_max_files and len(pending) >= args.close_max_files)
                                        or (drained and not in_flight)):
-            closes.append(Close(len(summary['closes']) + len(closes) + 1, args, pending))
-            pending, last_close = [], time.time()
+            count = args.close_max_files or len(pending)
+            closes.append(Close(len(summary['closes']) + len(closes) + 1, args, pending[:count]))
+            pending, last_close = pending[count:], time.time()
         if drained and not in_flight and not pending and not closes:
             break
         time.sleep(2)

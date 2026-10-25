@@ -22,6 +22,17 @@ def spec():
 
 
 class ProductionES(unittest.TestCase):
+    def test_fast_close_is_opt_in_and_has_a_validated_batch_bound(self):
+        ordinary = apply(spec(), settings())['exec']
+        self.assertNotIn('EPICPROD_SWITCH_ES_FAST_MERGE', ordinary)
+        self.assertNotIn('ES_CLOSE_MAX_FILES', ordinary)
+        result = apply(spec(), dict(settings(), fast_merge=True, close_max_files=64))['exec']
+        self.assertIn('EPICPROD_SWITCH_ES_FAST_MERGE=1', result)
+        self.assertIn('ES_CLOSE_MAX_FILES=64', result)
+        for changes in ({'fast_merge': '1'}, {'close_max_files': 0}, {'close_max_files': True}):
+            with self.assertRaises(ValueError):
+                definition(dict(settings(), **changes))
+
     def test_cohort_start_is_opt_in_for_the_commissioning_task(self):
         self.assertNotIn('EPICPROD_SWITCH_ES_COHORT_START', apply(spec(), settings())['exec'])
         result = apply(spec(), dict(settings(), parallel_start=True))

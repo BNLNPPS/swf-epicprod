@@ -782,6 +782,28 @@ In order, each a committed step on the clone:
     job). On by default from payload 0.25.3, after the same canaries;
     `0` turns it off.
 
+## Event Service closes
+
+Event Service closes can opt into fast ROOT merging with
+`EPICPROD_SWITCH_ES_FAST_MERGE=1` (payload 0.25.7). The payload carries
+PODIO's upstream TFileMerger implementation at dabf374, adapted to finish
+writers in the older campaign images. It preserves the input compression,
+copies event data through ROOT, and rewrites the metadata category with
+the input-file list. The ordinary validation and registration follow.
+`ES_CLOSE_MAX_FILES` bounds each batch and makes a full batch eligible for
+immediate closing; unset retains the existing cadence and batch behavior.
+Close input paths travel in a manifest rather than one shell argument.
+The shipped ES record includes the active close's stage and merged bytes,
+so a stalled merge can be distinguished from validation or registration.
+
+Perlmutter task 41215 established parallel startup in 128 execution slots,
+with the first processing starts spread over 1.18 seconds, but did not
+establish sustained saved work: only its first 32 events were registered.
+Its second close held 255 unit files and 11,515 events until the worker
+ended; the last snapshot still lacked a normal harness end. No cause is
+assigned from the pilot's batch-time-limit label alone. The opt-in merge
+path is under commissioning and is not the default production path.
+
 ## Multithreading
 
 Resident Event Service reconstruction startup uses a PID-based wait by
