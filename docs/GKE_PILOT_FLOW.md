@@ -27,8 +27,14 @@ The bounded production successor is task 41158, sample `gES1`: 10,000 new
 neutron-gun events, 5 GeV, 3–50 degrees, assigned wholly to Google. Five jobs
 use the existing five-worker cap. Its initial 56 registered events passed the
 same reader, identity and truth checks, including the requested particle and
-angular range. This initial readback does not establish complete 10,000-event
-coverage or worker-loss recovery.
+angular range. Full readback subsequently verified all 10,000 registered and
+credited events in 15 files: exact event IDs 0–9,999 with no holes or duplicates,
+10,000 distinct neutron truth records in the requested angular range, and all
+387 collections readable. Job 5911934 received SIGTERM when its Spot node
+reported Shutdown at 02:19:38Z. Its 19 registered events survived; replacement
+job 5912562 recovered the remaining 1,981. The exact cloud shutdown cause is
+unconfirmed, so this establishes worker-loss recovery without claiming a
+specific preemption cause. No controlled termination or expansion was requested.
 
 Decided with Torre on 2026-09-30, after Harvester was found starting
 empty workers for the queue (below). The request to the PanDA team

@@ -272,6 +272,12 @@ streams from both the source production and Google's `gES1` sample. It uses
 the existing Harvester/Slurm path and normal RECO retention; the site remains
 commissioning and automatic feeding remains disabled.
 
+Task 41159 / job 5912564 registered and credited all 1,000 events in two
+production RECO files. Independent 26.07.3 readback verified event IDs 0–999
+exactly once, 1,000 distinct neutron truth records at 3–50 degrees, and all
+387 collections readable. The sample's output checks are recorded in its PCS
+metadata; this is separate from the physics-validation service's verdict.
+
 ## Related
 
 - [NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md): the design the
