@@ -92,6 +92,20 @@ The evidence, backup and verification belong in the outcome. Every wake
 instructs the existing session to reread its current brief, so updated
 authority takes effect without a session restart.
 
+Routine service recovery is also standing authority. The watcher weighs
+the production cost of waiting against the bounded risk of a reversible
+remedy and acts when the benefit is greater. It may move disposable caches,
+preserve and verify closed logs before reclaiming their space, rerun an
+existing credential-renewal recipe, and restart a failed service through
+its documented controls after correcting the cause. Job/spool data,
+science outputs and active logs are preserved. Recovery is verified through
+space, service health and actual communication or new work, then recorded
+as `act`. An approval request for a riskier deletion does not justify
+leaving a shared outage unmitigated when a safer remedy is available.
+Destructive or uncertain recovery, campaign decisions, new credential
+identities, security-policy changes, resource expansion and outreach keep
+their existing gates.
+
 ## The wake
 
 A tick wakes the watcher session when it finds a new item, an item

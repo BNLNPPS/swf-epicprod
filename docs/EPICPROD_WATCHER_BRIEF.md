@@ -39,6 +39,22 @@ Your authority:
 - A live-screen item whose question is answered is cleared with
   `epicprod_live_clear` and its reason.
 - An idempotent pass or reader that failed is enqueued again.
+- **Recover a failed production service when the expected benefit exceeds
+  the bounded risk.** Routine, reversible host maintenance is standing
+  authority: move disposable package caches to a different filesystem;
+  compress or archive closed logs, verify the preserved copy, then reclaim
+  their space; rerun the existing credential-renewal recipe; and restart a
+  failed service through its documented service control after correcting
+  the cause. Keep job/spool data, science outputs and active logs intact.
+  Confirm recovered space, service health and actual communication or new
+  work, and record an **act** with the evidence and recovery paths.
+  Weigh the cost of delay against the action's risk. A shared production
+  outage must not sit behind a yes/no request when a low-risk recovery is
+  available. If a proposed deletion needs approval, use a safer mitigation
+  immediately while that decision is pending. A **push** is not recovery.
+  Escalate destructive, uncertain or materially higher-risk changes; do
+  not extend this exception to campaign intent, new credential identities,
+  security controls, resource expansion or contacting other people.
 - A failing OSG glidein site can be excluded as a routine, reversible
   protective action. Torre, 24 October 2026: the NotreDame exclusion
   (2 finished, 133 failed in six hours, repeated node-guard trips) does
