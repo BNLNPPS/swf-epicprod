@@ -512,8 +512,8 @@ images through its allocator. A GREX bootstrap on 26.07.3 therefore does
 not restrict the queue to that edition.
 
 The 25 October correction installs
-`/data/atlpan/harvester_common/native-grex-per-job-4d99437` on
-pandaharvester01. Its code and helpers all come from commit `4d99437`;
+`/data/atlpan/harvester_common/native-grex-per-job-369f6d6` on
+pandaharvester01. Its code and helpers all come from commit `369f6d6`;
 the unchanged archive is
 `9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`.
 Allocation resources, CE identity and running workers are unchanged. The
@@ -524,9 +524,16 @@ advertising per-job image capability. PCS then accepts the 26.07.1 task
 Environment probe 27395.0 exposed an old host `unshare` without
 `--map-current-user`. The launcher now preserves the established direct
 Apptainer startup on those older batch hosts, while grid pods with modern
-namespace tools retain their private-session setup. Probe 27400.0 checks
-the corrected startup and a nested 26.07.1 execution from 26.07.3 without
-acquiring a PanDA job; its submission alone is not a worker-success claim.
+namespace tools retain their private-session setup. Probe 27400.0 entered
+26.07.3, then exposed the CE sandbox being hidden by the nested session's
+`/var/lib` tmpfs. The batch launcher now gives that sandbox and its inputs
+stable `/srv` and `/epicprod-assets` aliases. Per-job mode clears the outer
+runtime's generated bind lists; each payload declares its own work,
+scratch and proxy directories. The live template SHA-256 is
+`4e9852f723e6bc4a6c8b4824baeced8b09afede223e13e96f410025beb5793d3`.
+Probe 27404.0 checks the corrected startup and a nested 26.07.1 execution
+from 26.07.3 without acquiring a PanDA job. It replaces the still-idle
+27403.0 probe; submission alone is not a worker-success claim.
 
 ## GREX Event Service channel
 
