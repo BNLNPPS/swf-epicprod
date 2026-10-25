@@ -1,8 +1,35 @@
 # Worker-state uncertainty and dispatch safety
 
-This is a prepared repair, not an installation record. The preparation tools
-write copies, diffs and SHA-256 manifests outside their input package. They
-cannot install a patch, restart a service or change worker or job records.
+The reviewed repair was installed on Torre's direct instruction, "INSTALL IT",
+on 25 October 2026. Harvester was active at 17:20:54 UTC and PanDA HTTP at
+17:21:32 UTC. The preparation tools themselves only write copies, diffs and
+SHA-256 manifests outside their input package.
+
+## Installation and rollback record
+
+The installed content is source commit e7d5eb9. Exact input hashes were checked
+before any writes; output hashes match the independent review. Dated copies of
+each original file remain beside that file, ending
+`.before-worker-safety-20261025T172038Z` for Harvester and
+`.before-worker-safety-20261025T172111Z` for PanDA.
+
+- Harvester audit: osgsub01,
+  /opt/harvester/worker-safety-20261025T172038Z/installation.json.
+  Activated through the documented panda_harvester-uwsgi service.
+- PanDA audit: pandaserver01,
+  /opt/panda/worker-safety-20261025T172111Z/installation.json.
+  Only panda_httpd was restarted; JEDI and the daemon were not restarted.
+- The API health endpoint returned 200. Fresh Harvester monitor and HTCondor
+  cycles appeared without tracebacks in the sampled post-activation log tails.
+  At 17:23:24 UTC the central join contained 52 running, two starting and one
+  sent OSG job started since HTTP activation, all with running parent records.
+  This establishes continuing valid dispatch, not complete incident recovery.
+- No worker/job state resurrection or worker removal accompanied this repair.
+
+To roll back, restore these exact dated source copies, preserve their modes and
+owners, and restart only the affected service above. Keep the failed patched
+copies and audit records for diagnosis. Neither rollback nor an upstream package
+upgrade should silently discard the other installed compatibility patches.
 
 ## Incident evidence
 
