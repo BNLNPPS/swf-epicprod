@@ -108,8 +108,7 @@ class ResidualExclusionTest(TestCase):
                 patch('pcs.commands._residual_rows', side_effect=Reached) as builder:
             with self.assertRaises(Reached):
                 commands.build_evgen_task_params(self.task, panda_tasks=submitted, residual=True)
-        self.assertEqual(builder.call_args.kwargs['exclude'],
-                         {self.formatted[1], self.formatted[3]})
+        self.assertEqual(builder.call_args.kwargs['exclude'], {2, 4})
         self.assertEqual(self.choose.call_args.args[1], 40857)
 
     def test_queue_snapshot_is_saved_once_with_fresh_locked_overrides(self):
@@ -203,3 +202,17 @@ class ResidualExclusionTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(queue.call_args.kwargs['residual_exclusion']['seq_numbers'], [2, 4])
         self.assertEqual(queue.call_args.kwargs['residual_exclusion']['by'], 'operator')
+
+    def test_duplicate_row_content_does_not_expand_the_confirmed_selection(self):
+        duplicate = list(self.rows)
+        duplicate[2] = duplicate[1]
+        selection = {'of': 40857, 'manifest_rows': len(duplicate),
+                     'manifest_sha256': exclusions.manifest_identity(duplicate),
+                     'seq_numbers': [2]}
+        formatted = manifests.format_rows(duplicate)
+        with patch('pcs.commands._evgen_env', return_value={}):
+            residual, coverage = commands._residual_rows(self.task, formatted,
+                (set(), ['d'], {'d': {'registered': 0, 'unarrived': 0}}),
+                exclusions.excluded_rows(self.attempt, duplicate, selection))
+        self.assertEqual(coverage['rows_excluded'], 1)
+        self.assertEqual(residual.count(formatted[1]), 1)

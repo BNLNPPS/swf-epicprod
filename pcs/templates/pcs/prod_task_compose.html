@@ -382,7 +382,7 @@
             const current = pt.current ? ' <span class="pcs-ptask-muted">(current)</span>' : '';
             const exclusion = pt.metadata && pt.metadata.residual_exclusion;
             const exclusionLabel = exclusion
-                ? `<div class="small text-muted">${exclusion.seq_numbers.length} selected row exclusions · ${exclusion.classification === 'suspected' ? 'suspected simulation failures' : 'explicit row list'}</div>`
+                ? `<div class="small text-muted">${exclusion.seq_numbers.length} selected row exclusions · ${exclusion.evidence_kind === 'suspected' ? 'suspected simulation failures' : 'explicit row list'}</div>`
                 : '';
             const attemptLabel = pandaAttemptLabel(pt, rows);
             const submittedAt = pt.created_at_display || pt.created_at || '';

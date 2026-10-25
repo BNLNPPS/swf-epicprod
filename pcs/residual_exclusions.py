@@ -35,7 +35,7 @@ def preview(task, attempt, rows, info, undelivered):
                'manifest_sha256': manifest_identity(rows),
                'manifest_rows': len(rows), 'candidates': candidates}
     result = {'rows': len(candidates), 'evidence': evidence,
-              'classification': 'suspected', 'jedi_task_id': attempt.jedi_task_id,
+              'evidence_kind': 'suspected', 'jedi_task_id': attempt.jedi_task_id,
               'token': signing.dumps(context, salt=SALT, compress=True)}
     if seqs is None:
         result['unavailable'] = evidence
@@ -96,7 +96,7 @@ def snapshot(task, token, *, bad_input=False, listed=None, changed_by=''):
             'manifest_rows': len(rows), 'seq_numbers': sorted(selected),
             'source': ('suspected_simulation_exit1+explicit_list' if bad_input and listed
                        else 'suspected_simulation_exit1' if bad_input else 'explicit_list'),
-            'classification': 'suspected' if bad_input else 'operator_selected',
+            'evidence_kind': 'suspected' if bad_input else 'operator_selected',
             'by': changed_by or '', 'at': timezone.now().isoformat()}
 
 
@@ -117,4 +117,4 @@ def excluded_rows(attempt, rows, selection):
     seqs = selection.get('seq_numbers') or []
     if any(type(s) is not int or not 1 <= s <= len(rows) for s in seqs):
         raise ValueError('Residual exclusion contains invalid sequence numbers.')
-    return set(manifests.format_rows([rows[s - 1] for s in seqs]))
+    return set(seqs)

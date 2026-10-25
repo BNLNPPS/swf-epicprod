@@ -1072,11 +1072,11 @@ def _residual_rows(task, csv_rows, delivered=None, exclude=None):
     exclude = exclude or set()
     residual = []
     excluded = 0
-    for row in csv_rows:
+    for seq, row in enumerate(csv_rows, 1):
         file_col, _ext, _nev, chunk = row.rsplit(',', 3)
         head, _, stem = file_col.rpartition('/')
         if (head, stem, chunk) not in keys:
-            if row in exclude:
+            if seq in exclude:
                 excluded += 1
             else:
                 residual.append(row)
