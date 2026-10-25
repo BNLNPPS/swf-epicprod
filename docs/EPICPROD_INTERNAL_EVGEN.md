@@ -473,6 +473,23 @@ a FLUKA the collaboration may ship.
 
 ## Single-particle guns (plan)
 
+### Event Service commissioning workload
+
+Torre selected particle-gun production on 24 October 2026 as the preferred
+workload for ES commissioning. Generation is part of the workflow, so a small
+whole task can produce new events and contribute useful production statistics
+after validation. This applies to Google and Perlmutter commissioning with
+the common native pilot and the current production software.
+
+Allocate disjoint random streams and record their provenance before starting
+additional statistics. Repeating the same stem and chunk indices repeats the
+gun's deterministic seeds; a new task name alone does not create new events.
+Credit outputs only after execution, exact event coverage, registration and
+normal-reader validation. Reconstructing previously used external EVGEN input
+remains a validation exercise and contributes no additional statistics.
+
+### Implementation and validation
+
 Status: proposed 2026-10-24; built the same day (payload 0.25.0;
 `pcs/commands.py` `gun_config` and its readers;
 `tests/test_particle_gun.py`); the two canaries passed on GREX at
