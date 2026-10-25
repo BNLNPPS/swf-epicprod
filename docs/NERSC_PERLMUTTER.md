@@ -151,15 +151,15 @@ CVMFS Apptainer can resolve the account even without the site's NSS service.
 The host account files and numeric identity remain unchanged. A failed host
 lookup stops the launch before dispatch.
 
-Initial commissioning workers have a twenty-minute ceiling including staging,
-clamped to an earlier Slurm end time. HEPiX `shutdowntime` exposes the same
+Production-shaped commissioning workers use the four-hour allocation ceiling
+including staging, clamped to an earlier Slurm end time. HEPiX `shutdowntime` exposes the same
 deadline to the common pilot; its first-job admission minimum is ten minutes.
 A worker takes at most one job and then exits. The initial ES smoke shape is
 20 events, four explicit execution slots and 1,500 MB/core, so whole-node
 memory accounting remains below the node's capacity. The site's existing
 Slurm template is unchanged; the adapter bounds actual worker lifetime.
-Native worker completion, output registration and normal-reader validation
-remain required before advancing to production-shaped tests.
+The original twenty-minute ceiling was for startup and output-path smoke tests;
+those passed and no longer bound the production-shaped commissioning workers.
 
 The first native ES smoke passed on 25 October at 00:40:56 UTC:
 task 41126, job 5904471, worker 21934 (Slurm 60232318), using
@@ -277,6 +277,14 @@ production RECO files. Independent 26.07.3 readback verified event IDs 0–999
 exactly once, 1,000 distinct neutron truth records at 3–50 degrees, and all
 387 collections readable. The sample's output checks are recorded in its PCS
 metadata; this is separate from the physics-validation service's verdict.
+
+The 1,000-event sample exhausted its input in minutes and occupied only 7.9%
+of its logical core-time. It proves the output path, not sustained ES slot use.
+The next bounded production sample supplies two long consumers, fresh random
+streams, rolling one-minute closes and enough events to stay busy through the
+allocation. Acceptance requires the observed per-core timeline, repeated
+registered closes during processing, and complete independently readable event
+coverage. A declared deadline or successful tiny task is not that evidence.
 
 ## Related
 

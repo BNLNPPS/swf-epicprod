@@ -32,7 +32,7 @@ class PerlmutterNativeLauncher(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(list(Path(directory).iterdir()), [])
 
-    def run_adapter(self, directory, bad_checksum=False):
+    def run_adapter(self, directory, bad_checksum=False, slurm_end=None):
         root = Path(directory)
         fixtures = root / 'fixtures'; fixtures.mkdir()
         pilot = b'fixture pilot archive'
@@ -98,11 +98,13 @@ os.execvp(args[i+3], args[i+3:])
         env = dict(os.environ, PATH=str(bin_dir) + ':' + os.environ['PATH'], SLURM_PROCID='0',
                    SLURM_JOBID='123', SLURM_CPUS_ON_NODE='256', HARVESTER_WORKER_ID='456')
         env.pop('SLURM_JOB_END_TIME', None)
+        if slurm_end is not None:
+            env['SLURM_JOB_END_TIME'] = str(slurm_end)
         result = subprocess.run(['bash', str(script), 'NERSC_Perlmutter_epic_es', str(access)],
                                 cwd=root, env=env, capture_output=True, text=True, timeout=15)
         return result, access / '123/0'
 
-    def test_common_launcher_gets_site_identity_channel_and_short_deadline(self):
+    def test_common_launcher_gets_site_identity_channel_and_production_deadline(self):
         with tempfile.TemporaryDirectory() as directory:
             result, work = self.run_adapter(directory)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -125,14 +127,22 @@ os.execvp(args[i+3], args[i+3:])
             self.assertEqual((work / 'harvesterproxy').read_text(), 'PRIVATE_PROXY_MARKER')
             deadline = int((work / 'sitefeatures/shutdowntime').read_text())
             import time
-            self.assertGreater(deadline - time.time(), 1150)
-            self.assertLessEqual(deadline - time.time(), 1200)
+            self.assertGreater(deadline - time.time(), 14350)
+            self.assertLessEqual(deadline - time.time(), 14400)
             self.assertIn('--getjobrequests=1', invocation['args'])
             self.assertIn('--getjobfailures=1', invocation['args'])
             self.assertNotIn('PRIVATE_CONSOLE_MARKER', result.stdout)
             self.assertNotIn('PRIVATE_PROXY_MARKER', result.stdout)
             self.assertIn('PRIVATE_CONSOLE_MARKER', (work / 'native-pilot-console.log').read_text())
             self.assertEqual((work / 'native-pilot-console.log').stat().st_mode & 0o777, 0o600)
+
+    def test_earlier_slurm_deadline_is_preserved(self):
+        import time
+        with tempfile.TemporaryDirectory() as directory:
+            slurm_end = int(time.time()) + 3600
+            result, work = self.run_adapter(directory, slurm_end=slurm_end)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(int((work / 'sitefeatures/shutdowntime').read_text()), slurm_end)
 
     def test_checksum_failure_never_runs_a_fallback_pilot(self):
         with tempfile.TemporaryDirectory() as directory:
