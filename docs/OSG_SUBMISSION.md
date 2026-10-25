@@ -208,6 +208,12 @@ them unmatched until work exists. This does not create held workers or a
 second submission stream. Fresh Harvester refills wait for the allocator's
 first decision before matching.
 
+After a scheduler restart, formerly running workers can return to idle and
+temporarily exceed the waiting limit. The allocator still enables at most
+600 waiting workers, parks the excess with the same readiness gate, and
+continues publishing fresh state. It does not remove those workers or
+increase the shared budget.
+
 The demand endpoint is one active-job aggregate, with the native SCORE
 profile's memory and core limits. The pilot still checks actual free disk
 space: its job requirement cannot be compared to Condor's minimum disk

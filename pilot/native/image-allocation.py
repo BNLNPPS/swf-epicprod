@@ -150,11 +150,13 @@ def run(args):
     ads = list(classad2.parseAds(raw))
     waiting = sorted((a for a in ads if a['JobStatus'] == 1),
                      key=lambda a: (a['QDate'], a['ClusterId'], a['ProcId']))
-    if len(waiting) > policy['waiting_limit']:
-        raise ValueError('waiting workers exceed the shared 600 budget; no edits made')
     running = Counter(worker_image(a, images) for a in ads if a['JobStatus'] == 2)
     protected = Counter(worker_image(a, images) for a in waiting if a.get('EpicprodImageTrial'))
-    desired = targets(images, demand, running, len(waiting), protected)
+    # A schedd restart can return previously running workers to idle. Keep
+    # the matching budget bounded and park the surplus instead of refusing
+    # every subsequent allocation cycle while the queue is above the cap.
+    budget = min(len(waiting), policy['waiting_limit'])
+    desired = targets(images, demand, running, budget, protected)
     remaining = {i: max(0, desired[i] - protected[i]) for i in images}
     edits = []
     movable = [a for a in waiting if not a.get('EpicprodImageTrial')]
