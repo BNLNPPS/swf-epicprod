@@ -93,6 +93,20 @@ class BatchLaunch(unittest.TestCase):
         self.assertIn('older host unshare', result.stdout)
         self.assertIn(str(self.image), self.record.read_text())
 
+    def test_ce_sandbox_has_stable_paths_outside_the_private_varlib(self):
+        launcher = self.root / 'ce-launcher.sh'
+        # Exercise the CE-path branch with an unprivileged sandbox fixture.
+        launcher.write_text(LAUNCHER.read_text().replace(
+            '[[ $HERE == /var/lib/* ]]', '[[ $HERE == ' + str(self.here) + ' ]]'))
+        result = self.run_launcher(launcher=launcher)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = self.record.read_text()
+        for value in (str(self.here) + ':/srv', str(self.top) + ':/epicprod-assets',
+                      'EPICPROD_NATIVE_ASSETS=/epicprod-assets', '_CONDOR_SCRATCH_DIR=/srv'):
+            self.assertIn(value, args)
+        self.assertIn('--pwd\n/srv\n', args)
+        self.assertIn('/bin/bash\n/epicprod-launcher.sh\n', args)
+
 
 if __name__ == '__main__':
     unittest.main()

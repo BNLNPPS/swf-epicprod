@@ -56,7 +56,19 @@ if [[ -z $ACTUAL && ${EPICPROD_NATIVE_BATCH:-0} == 1 ]]; then
         [[ -d $d && $d != / ]] && binds+=(--bind "$d:$d")
     done
     echo "ePIC native pilot: batch host $(hostname), runtime $RUNTIME, image $IMAGE"
-    launch=("$RUNTIME" exec --no-home "${binds[@]}" --pwd "$HERE" "$IMAGE" /bin/bash "$SELF" "$@")
+    container_here=$HERE; container_self=$SELF; container_env=()
+    if [[ $HERE == /var/lib/* ]]; then
+        # CE sandboxes live under /var/lib. The payload's private session
+        # setup mounts a tmpfs there, so give the pilot and its assets
+        # stable aliases outside that tree before entering the image.
+        container_here=/srv; container_self=/epicprod-launcher.sh
+        binds+=(--bind "$HERE:$container_here" --bind "$ASSETS:/epicprod-assets"
+                --bind "$SELF:$container_self")
+        container_env=(--env EPICPROD_NATIVE_ASSETS=/epicprod-assets
+                       --env _CONDOR_SCRATCH_DIR=/srv)
+    fi
+    launch=("$RUNTIME" exec --no-home "${binds[@]}" "${container_env[@]}"
+            --pwd "$container_here" "$IMAGE" /bin/bash "$container_self" "$@")
     if [[ -d $SESSION_DIR ]]; then exec "${launch[@]}"; fi
     # Older batch hosts lack the namespace mapping options used by grid
     # pods. Keep their established Apptainer startup path; the runtime
@@ -119,11 +131,13 @@ nest() {
     # outer container has no session directory, a private namespace carries
     # one on a tmpfs over /var/lib, as native_container.py does for payloads.
     local image=$1; shift
+    local launch=("$OSG_APPTAINER" exec --no-home --bind /cvmfs:/cvmfs
+                  --bind "$HERE:$HERE" --pwd "$HERE" "$image" "$@")
     if [[ -d $SESSION_DIR ]]; then
-        timeout 120 "$OSG_APPTAINER" exec --no-home --bind /cvmfs:/cvmfs "$image" "$@"
+        timeout 120 "${launch[@]}"
     else
         timeout 120 unshare --user --map-current-user --keep-caps --mount --propagation private /bin/bash -c \
-            "mount -t tmpfs -o size=1m,nodev,nosuid tmpfs /var/lib && mkdir -p $SESSION_DIR && exec $(printf '%q ' "$OSG_APPTAINER" exec --no-home --bind /cvmfs:/cvmfs "$image" "$@")"
+            "mount -t tmpfs -o size=1m,nodev,nosuid tmpfs /var/lib && mkdir -p $SESSION_DIR && exec $(printf '%q ' "${launch[@]}")"
     fi
 }
 PREFLIGHT=${EPICPROD_NATIVE_PREFLIGHT_IMAGE:-}
