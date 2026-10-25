@@ -24,7 +24,9 @@ def prepare(args):
         expected = set()
         for unit in evidence['record']['done']:
             span = unit['range']
-            expected.update(range(int(span['startEvent']), int(span['lastEvent']) + 1))
+            # PanDA spans are one-based and inclusive; EventHeader uses
+            # the payload's zero-based skip offset (es_slot.run_unit).
+            expected.update(range(int(span['startEvent']) - 1, int(span['lastEvent'])))
     else:
         scope, name = args.dataset.split(':', 1)
         result = catalog.list_files(name=name, scope=scope, page=1, limit=500)
@@ -95,6 +97,9 @@ def validate(args):
             raise RuntimeError('The readable event count differs from the registered count')
         observed.append({'name': entry['name'], 'events': count})
     if ids != set(manifest['expected_event_ids']):
+        diagnostic = args.output.with_name(args.output.stem + '-coverage-diagnostic.json')
+        diagnostic.write_text(json.dumps({'observed_event_ids': sorted(ids),
+            'expected_event_ids': manifest['expected_event_ids']}, indent=2) + '\n')
         raise RuntimeError('Readable event identities differ from the expected coverage')
     return {'events': len(ids), 'unique_event_ids': len(ids),
             'distinct_generated_truth': len(truth), 'collections': len(collections or []),

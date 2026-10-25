@@ -63,6 +63,11 @@ def main():
     cfg = gke_settings()
     if not cfg['enabled'] or int(cfg['max_pods']) != 5:
         raise RuntimeError('The existing five-worker Google commissioning configuration changed')
+    from monitor_app import payload_reports
+    payload_reports.SWEEPER_ENV = '/eic/u/wenauseic/.epic-report-sweeper.env'
+    store = payload_reports.sweeper_client()
+    if store is None:
+        raise RuntimeError('The record reader is unavailable; no task will be submitted')
     args.artifacts.mkdir(parents=True, exist_ok=True)
     plan = json.loads((args.template / 'gun-generation-plan.json').read_text())
     es = json.loads((args.template / 'event-service.json').read_text())
@@ -152,11 +157,6 @@ def main():
         'es_preempt_worker', Path(__file__).with_name('es-preempt-google-worker.py'))
     preempt = importlib.util.module_from_spec(module_spec)
     module_spec.loader.exec_module(preempt)
-    from monitor_app import payload_reports
-    payload_reports.SWEEPER_ENV = '/eic/u/wenauseic/.epic-report-sweeper.env'
-    store = payload_reports.sweeper_client()
-    if store is None:
-        raise RuntimeError('The record reader is unavailable')
     reader, bucket, prefix = store
     shown = None
     while time.monotonic() - watch_started < 3000:
