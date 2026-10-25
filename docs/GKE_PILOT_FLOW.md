@@ -38,16 +38,74 @@ specific preemption cause. No controlled termination or expansion was requested.
 
 That short run establishes recovery correctness and readable output, not an
 effective long-running production demonstration: only 19 events had been saved
-when the worker was lost. Task 41202 (`gES2`) is the production-shaped follow-up:
+when the worker was lost. Task 41202 (`gES2`) was the production-shaped follow-up:
 100,000 fresh neutron-gun events, two initial consumers, four-hour ES deadlines
 and one-minute rolling closes instead of five minutes. Existing worker capacity
-is unchanged. Sustained per-core occupancy, actual registered-close cadence and
-the saved-versus-unfinished work at a real worker loss are the evidence still
-required; the new settings and submission alone do not validate them.
+is unchanged. Its four-hour ceiling did not meet the subsequent requirement for
+a roughly thirty-minute demonstration. New demonstration tasks use the normal
+300-second close interval.
+
+Task 41207 (`gES3`) uses 30,000 fresh neutron-gun events, one initial consumer,
+250-event units, 300-second closes and a 2,400-second harness ceiling with a
+300-second drain margin. Its random stream is disjoint from `gES1`, `pES1`,
+`gES2` and `pES2`. Torre approved one controlled Google worker loss in advance;
+the armed controller deleted job 5966142's whole worker pod at
+2026-10-25T18:55:33.964281Z, after 1,805 seconds of harness execution. It checked
+the fresh record and independently verified all six registered files before
+the cut. At that point 17,482 events were saved, 3,260 completed events awaited
+shipping, and 13 units containing 1,688 assigned events were in flight. The
+last observation preceded the cut by 3.3 seconds. The saved files passed normal
+26.07.3 PODIO readback: exact saved event IDs, no duplicates, distinct neutron
+truth within the requested angles, and all 387 collections readable.
+The 14 payload slots were 96.3% occupied over the observed job span. Registered
+close completion times were 2.6, 9.0, 13.8, 18.7, 23.6 and 28.8 minutes after
+harness startup. Occupancy counts unit execution, including the unfinished work;
+it is separate from productive efficiency after worker loss.
+
+Normal ES closeout archived the lost job as `finished/fg_partial` with all
+17,482 events credited. Replacement job 5970551 started at 19:05:16Z and began
+registering the unfinished ranges without overlap with the credited events.
+The cut evidence and reader manifests are retained under
+`/data/wenauseic/swf-incident-archives/es-preemption-gES3-20261025/`.
+This controlled pod loss establishes abrupt worker-loss behavior; it does not
+identify a cloud Spot-reclamation cause or test delivery of a shutdown notice.
+The five-worker cap and commissioning status are unchanged.
+
+Task and job pages show the same per-core harness timeline. Running snapshots
+stop at their observation timestamp; observations older than ten minutes carry
+a stale warning. An ended job whose harness did not end normally marks its
+unsaved work and worker-loss boundary. A snapshot alone is never a preemption.
+The task page includes active and archived jobs, including Perlmutter's
+256-core jobs.
 
 Decided with Torre on 2026-09-30, after Harvester was found starting
 empty workers for the queue (below). The request to the PanDA team
 went out the same day.
+
+## Controlled demonstration tools
+
+`scripts/es-preemption-demo.py` composes and submits a fresh production gun
+sample through PCS as the approving operator, then waits for thirty minutes of
+harness execution and a recent successful save before invoking the cut helper.
+It requires an explicit `--approval-ref`; permission and the reader credential
+must be ready before dispatch. It preserves the existing worker cap. The
+mechanical controller has a fifty-minute watchdog and removes no worker when a
+prerequisite fails.
+
+`scripts/es-preempt-google-worker.py` verifies the running job/pod identity,
+fresh harness record, registered closes and output event counts. It writes the
+full evidence before deleting one whole pod with a UID precondition and zero
+termination grace. Its default is read-only; `--apply` requires the separately
+approved controlled loss. PanDA closeout and replacement generation then run
+normally, without a manual finish or range reset.
+
+`scripts/es-readback.py --prepare CUT_JSON --output MANIFEST` resolves saved
+files to available ROOT replicas and derives exact expected event IDs from the
+credited ranges. `--dataset DID --events N --output MANIFEST` instead prepares
+the complete task output. Run `--validate MANIFEST --output REPORT` inside the
+matching campaign image. It checks exact coverage, duplicate IDs, generated
+truth and the readable collection schema. PanDA's one-based inclusive ranges
+map to zero-based EventHeader IDs through the payload's `startEvent - 1` offset.
 
 ## Why the agent, not Harvester
 
@@ -244,9 +302,9 @@ debug pod with that setting started the payload image as uid 1000
 
 ## Still to do
 
-- Observe sustained registered closes and preemption/range recovery under the
-  authorized five-job cap. A controlled worker termination needs separate explicit authorization; no
-  request to another person is authorized or pending.
+- Complete the exact whole-task output and recovery check for `gES3` under the
+  authorized five-worker cap. The one approved controlled loss has been consumed;
+  another controlled termination needs separate explicit authorization.
 - Cron enqueue (`*/5`) is installed and enabled; preserve the cap and shared
   native runtime while commissioning continues.
 - Whether preemption notices reach the pod.
