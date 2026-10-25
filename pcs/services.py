@@ -7175,9 +7175,17 @@ def prodtask_place(task, site, *, changed_by='', placement=None):
     site = str(site or '').strip()
     queues = regulated_queues()
     if site not in queues:
-        raise ServiceError(
-            f'{site or "(none)"} is not a production queue; the production '
-            'queues are ' + ', '.join(queues) + '.', status=400)
+        # A manually placed, bounded ES production sample may commission an
+        # ES queue without adding it to the pressure front or promoting it.
+        from swf_epicprod import queues as registry
+        es = (task.overrides or {}).get('event_service')
+        if es and registry.status(site) == 'commissioning':
+            from swf_epicprod.production_es import definition
+            definition(es)
+        else:
+            raise ServiceError(
+                f'{site or "(none)"} is not a production queue; the production '
+                'queues are ' + ', '.join(queues) + '.', status=400)
     refuse_closed_queue(site, task=task)
     before = pinned_site(task)
     ds = task.dataset

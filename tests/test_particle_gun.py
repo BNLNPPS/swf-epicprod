@@ -68,6 +68,20 @@ class Resolver(unittest.TestCase):
         self.assertEqual(internal_evgen_sample(t),
                          ('SINGLE/pi+/1GeV/3to50deg', 'pi+_1GeV_3to50deg'))
 
+    def test_new_statistics_keep_physics_and_change_seed_stem(self):
+        t = task(sample='3to50deg.gES1')
+        t.dataset.metadata = {'production_sample': {'gun_sample': '3to50deg', 'sample': 'gES1'}}
+        self.assertEqual(gun_config(t)['theta_max'], '50')
+        self.assertTrue(internal_evgen_sample(t)[1].endswith('.gES1'))
+        from swf_epicprod.production_es import gun_seed
+        old = {gun_seed('pi+_1GeV_3to50deg', i) for i in range(500)}
+        new = {gun_seed(internal_evgen_sample(t)[1], i) for i in range(10000)}
+        self.assertEqual(len(new), 10000)
+        self.assertFalse(old & new)
+        t.dataset.metadata['production_sample']['sample'] = 'other'
+        with self.assertRaises(ValueError):
+            gun_config(t)
+
     def test_eta_point(self):
         t = task(particle='e-', energy='100MeV', sample='eta-1.7')
         env = _internal_evgen_env(t)

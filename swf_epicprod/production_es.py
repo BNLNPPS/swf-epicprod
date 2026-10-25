@@ -1,0 +1,78 @@
+"""Bounded, whole production tasks using the proven fine-grained ES runner."""
+import re
+import hashlib
+import shlex
+
+
+def definition(settings):
+    """Validate the declared whole-task budget before building any submission."""
+    cfg = dict(settings)
+    for key in ('events', 'input_events', 'events_per_job', 'unit_events', 'close_s', 'deadline_s',
+                'margin_s', 'memory_mb_per_core'):
+        value = cfg.get(key)
+        if type(value) is not int or value <= 0:
+            raise ValueError('production ES ' + key + ' must be a positive integer')
+    if cfg['events'] % cfg['events_per_job']:
+        raise ValueError('production ES events must be divisible by events_per_job')
+    if cfg['events'] != cfg['input_events']:
+        raise ValueError('production ES generation plan and whole-task budget disagree')
+    if cfg['margin_s'] >= cfg['deadline_s']:
+        raise ValueError('production ES drain margin must precede its deadline')
+    if not re.fullmatch(r'[^\s,]+:[^\s,]+', str(cfg.get('input_dataset') or '')):
+        raise ValueError('production ES needs its registered PanDA input dataset')
+    row = str(cfg.get('row') or '').split(',')
+    if (len(row) != 4 or row[1] != 'steer' or row[3] != '0000'
+            or not row[0] or any(c.isspace() for c in row[0])):
+        raise ValueError('production ES needs one complete, zero-offset particle-gun steering row')
+    if int(row[2]) != cfg['events']:
+        raise ValueError('production ES row and whole-task event budgets disagree')
+    slots = str(cfg.get('slots', 'auto'))
+    if slots != 'auto' and (not slots.isdigit() or int(slots) <= 0):
+        raise ValueError('production ES slots must be auto or a positive integer')
+    cfg['slots'] = slots
+    return cfg
+
+
+def apply(spec, settings):
+    """Keep the ordinary PCS producer, provenance, outputs and recording path."""
+    cfg = definition(settings)
+    if spec.get('trial'):
+        raise ValueError('a production ES sample is a whole production task, not a trial')
+    outputs = spec.get('outputs') or []
+    if len(outputs) != 1 or outputs[0].get('level') != 'RECO':
+        raise ValueError('production ES currently requires one RECO output dataset')
+    dataset = outputs[0]['dataset']
+    if not dataset.startswith('/RECO/'):
+        raise ValueError('production ES output must use the production RECO namespace')
+    env = spec['env']
+    if env.get('EVGEN_GENERATOR') != 'particle_gun' or env.get('EVGEN_INTERNAL') != 'true':
+        raise ValueError('additional production statistics require an internal particle gun')
+    if str(env.get('COPYFULL', '')).lower() == 'true':
+        raise ValueError('production ES FULL retention is not supported')
+    env['EPICPROD_SWITCH_ES_GUN_EVENTS'] = '1'
+    prefix = {
+        'ES_WORKER_PROXY': '1',
+        'ES_PAYLOAD_IMAGE': spec['containerImage'], 'ES_SLOTS': cfg['slots'],
+        'ES_EVENTS_PER_UNIT': str(cfg['unit_events']), 'ES_CLOSE_S': str(cfg['close_s']),
+        'ES_DEADLINE_S': str(cfg['deadline_s']), 'ES_MARGIN_S': str(cfg['margin_s']),
+        'ES_OUTPUT_DATASET': dataset,
+    }
+    command = ' '.join(k + '=' + shlex.quote(v) for k, v in prefix.items())
+    command += (' python3 evgen_job_dispatcher.py es-production '
+                + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])
+                + ' $PILOT_EVENTRANGECHANNEL --accessmode=direct')
+    spec.update(exec=command, fineGrainedProc=True, directInput=True,
+                inputDataset=cfg['input_dataset'], nFilesPerJob=1,
+                nEventsPerWorker=cfg['unit_events'],
+                nEventsPerInputFile=cfg['input_events'], nEventsPerJob=cfg['events_per_job'],
+                nJobs=cfg['events'] // cfg['events_per_job'], nCore=1,
+                walltimeHours=cfg['deadline_s'] / 3600,
+                memory=cfg['memory_mb_per_core'], maxAttempt=10, maxFailure=3,
+                noLog=True, workerProxy=True, event_service=dict(cfg))
+    return spec
+
+
+def gun_seed(stem, offset):
+    """The payload's positive 31-bit seed for a gun range's absolute start."""
+    hashed = int(hashlib.sha256(stem.encode()).hexdigest()[:7], 16)
+    return (hashed * 10000 + offset + 1) % 2147483647 or 1

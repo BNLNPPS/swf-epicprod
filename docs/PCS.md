@@ -316,6 +316,28 @@ A tag composition that defines a variant list materializes as its variants, and 
 
 Generality is bounded: a variant is a single named sample with its parameters, not a set of independent dimensions the system multiplies out. Two production axes are expressed by naming each resulting sample, not by a composable key-and-value syntax in the name.
 
+A small ES production sample is a whole task with its own sample discriminator,
+event target and RECO namespace. `pcs.production_samples.compose` copies the
+source particle-gun configuration, fixes a finite event budget,
+and places the new task through normal image admission. The source task is
+unchanged. The first implementation accepts an internally generated particle
+gun without background mixing and retains RECO only. Its new sample stem gives
+it fresh random streams; all possible range-start seeds are checked against the
+source's original chunks. The sample metadata records the original angular
+setting separately from the new identity. A registered JSON generation plan
+supplies JEDI's event ledger and records the physics and seed provenance; it is
+not an EVGEN physics file. Its event metadata equals the whole-task budget.
+Fine-grained ES uses the native worker credential; no live proxy is uploaded in
+its sandbox. Explicit bounded placement may commission an ES queue while its
+registry state stays commissioning and its automatic front remains disabled.
+
+Outputs have normal production metadata and no trial lifetime. Range reports
+and registered event totals establish coverage; there is no fixed CSV-row output
+inventory because ES closes aggregate ranges. Row-based residual reruns are
+refused. Unfinished ranges remain with the task's ES recovery. Commissioning
+acceptance requires exact event coverage, registration and normal-reader checks
+before accepting the sample as usable production.
+
 **Parsing.** The name is read positionally, not by splitting on `.`. The tag run `.p<n>.e<n>.s<n>.r<n>` occurs once and anchors the name; a `.k<n>` segment follows when present; the remainder is the sample name, taken verbatim and permitted to contain periods (`ma_0.1`). Registered terminal suffixes such as `.try<n>` and `.b<n>` are stripped first by the central suffix utility. Two reserved-token rules keep the parse unambiguous: a sample name's first segment must not match `k<n>` (the background tag) and its last segment must not match a terminal suffix token such as `try<n>` or `b<n>`. Discriminator values satisfy both.
 
 Within one tag composition a sample name is unique. Identity, the duplicate check, and the completion unit all key on the tags together with the sample name; that unit is what completes and triggers validation (see [Validation](EPICPROD_VALIDATION.md)).

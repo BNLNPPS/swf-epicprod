@@ -714,6 +714,9 @@ def _evgen_env(task):
                               or (GUN_DEFAULT_BEAMS if is_particle_gun(task) else '')),
     }
     _add_background_env(env, task)
+    prefix = (task.overrides or {}).get('production_sample_prefix')
+    if prefix:
+        env['TAG_PREFIX'] = str(prefix)
     # The doer writes these into the sandbox under the BG_FILES name and
     # leaves them out of the environment file.
     sources = bg_files_sources(task) if env.get('BG_FILES') else None
@@ -759,14 +762,20 @@ def gun_config(task):
     particle = str(physics.get('particle') or '').strip()
     energy = str(physics.get('gun_energy') or '').strip()
     sample = str(ds.sample_name or '').strip()
+    production = (ds.metadata or {}).get('production_sample') or {}
+    angular_sample = str(production.get('gun_sample') or sample)
+    if production.get('gun_sample'):
+        variant = str(production.get('sample') or '')
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,19}', variant) or sample != angular_sample + '.' + variant:
+            raise ValueError('particle-gun production sample identity disagrees with its provenance')
     problems = []
     if not GUN_PARTICLE_RE.fullmatch(particle):
         problems.append(f'physics tag particle (got {particle!r})')
     m_energy = GUN_ENERGY_RE.fullmatch(energy)
     if not m_energy or float(m_energy.group(1)) <= 0:
         problems.append(f'physics tag gun_energy as <number>MeV or <number>GeV (got {energy!r})')
-    m_angle = GUN_ANGLE_RE.fullmatch(sample)
-    m_eta = GUN_ETA_RE.fullmatch(sample)
+    m_angle = GUN_ANGLE_RE.fullmatch(angular_sample)
+    m_eta = GUN_ETA_RE.fullmatch(angular_sample)
     if m_angle:
         if not 0 <= float(m_angle.group(1)) < float(m_angle.group(2)) <= 180:
             problems.append(f'theta bounds 0 <= N < M <= 180 (got {sample!r})')
@@ -1098,6 +1107,10 @@ def prodtask_events_per_job(task, cfg=None):
     and the configuration's target job length (the production team's own
     formula), bounded by the task's own override where it carries one.
     0 when nothing sizes it."""
+    es = (task.overrides or {}).get('event_service')
+    if es:
+        from swf_epicprod.production_es import definition
+        return definition(es)['events_per_job']
     if cfg is None:
         cfg = task.get_effective_config()
     data = cfg.get('data') or {}
@@ -1123,6 +1136,11 @@ def prodtask_manifest_rows(task, cfg=None):
     rows of its per-job manifest over the matched inputs (one row per
     job for an internal-EVGEN task). None when the task cannot be sized
     or has no input."""
+    es = (task.overrides or {}).get('event_service')
+    if es:
+        from swf_epicprod.production_es import definition
+        bounded = definition(es)
+        return bounded['events'] // bounded['events_per_job']
     if cfg is None:
         cfg = task.get_effective_config()
     n_events = prodtask_events_per_job(task, cfg=cfg)
@@ -1238,6 +1256,14 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
     ds = task.dataset
     cfg = task.get_effective_config()
     data = cfg.get('data') or {}
+
+    event_service = (task.overrides or {}).get('event_service')
+    if event_service:
+        if residual:
+            raise ValueError('production ES uses native event retries; row-based residual rerun is not supported')
+        from swf_epicprod.production_es import definition
+        event_service = definition(event_service)
+        rows = [event_service['row']]
 
     residual_coverage = None
     if rows:
@@ -1400,9 +1426,15 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
                            COPYLOG='true', COPYEVGEN='false' if gun else 'true',
                            USERUCIO='true')
     spec['outputs'] = output_datasets(spec, cfg)
+    if event_service:
+        from swf_epicprod.production_es import apply
+        apply(spec, event_service)
     # Rucio refuses a name past its limit, and a job whose outputs cannot
     # be registered runs for nothing: refuse the spec instead.
     length, name = longest_output_did(spec, spec['outputs'])
+    if event_service:
+        # ES closes append the PanDA id and close number to the base name.
+        length += 32
     if length > DID_NAME_MAX:
         raise ValueError(
             f'an output file name would be {length} characters, past '

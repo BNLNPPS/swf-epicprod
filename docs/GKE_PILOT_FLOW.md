@@ -9,9 +9,16 @@ Harvester (`BNL_harvester_2`).
 
 Torre resumed Google ES commissioning on 24 October 2026: at most five
 concurrent ES jobs, using the production native pilot. Evaluate natural
-preemptions and the recovery of completed/unfinished ranges. If no natural
-preemption is observed, request one controlled worker termination after
-registered progress is available. Expansion requires his explicit approval.
+preemptions and the recovery of completed/unfinished ranges. Controlled worker
+termination or a request to another person requires Torre's explicit approval.
+Expansion also requires his explicit approval.
+
+Bounded real-production ES samples use the normal PCS submission path and their
+own sample identity. Each whole task has a fixed event budget, is placed wholly
+on Google, and retains normal RECO output without a trial expiry. The controller
+cap limits concurrent workers independently of that budget. A 26.07.3 sample
+must use the matching native image and fresh advertised capability; validation
+with 26.07.1 does not establish that worker result.
 
 Decided with Torre on 2026-09-30, after Harvester was found starting
 empty workers for the queue (below). The request to the PanDA team
