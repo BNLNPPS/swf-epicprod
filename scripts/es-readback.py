@@ -101,6 +101,9 @@ def validate(args):
         diagnostic.write_text(json.dumps({'observed_event_ids': sorted(ids),
             'expected_event_ids': manifest['expected_event_ids']}, indent=2) + '\n')
         raise RuntimeError('Readable event identities differ from the expected coverage')
+    if args.fingerprints:
+        args.fingerprints.write_text(json.dumps({
+            'event_ids': sorted(ids), 'generated_truth_sha256': sorted(truth)}, indent=2) + '\n')
     return {'events': len(ids), 'unique_event_ids': len(ids),
             'distinct_generated_truth': len(truth), 'collections': len(collections or []),
             'particle_pdg': 2112, 'theta_degrees': [3, 50],
@@ -116,9 +119,13 @@ def main():
     mode.add_argument('--validate', type=Path, help='prepared readback manifest')
     ap.add_argument('--events', type=int, help='complete task event count')
     ap.add_argument('--output', type=Path, required=True)
+    ap.add_argument('--fingerprints', type=Path,
+                    help='retain checked identities for combining separately read closes')
     args = ap.parse_args()
     if args.dataset and not args.events:
         ap.error('--dataset requires --events')
+    if args.fingerprints and not args.validate:
+        ap.error('--fingerprints requires --validate')
     result = validate(args) if args.validate else prepare(args)
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps({k: v for k, v in result.items() if k not in ('files', 'expected_event_ids')}))
