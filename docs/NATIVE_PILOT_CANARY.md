@@ -531,9 +531,11 @@ stable `/srv` and `/epicprod-assets` aliases. Per-job mode clears the outer
 runtime's generated bind lists; each payload declares its own work,
 scratch and proxy directories. The live template SHA-256 is
 `4e9852f723e6bc4a6c8b4824baeced8b09afede223e13e96f410025beb5793d3`.
-Probe 27404.0 checks the corrected startup and a nested 26.07.1 execution
-from 26.07.3 without acquiring a PanDA job. It replaces the still-idle
-27403.0 probe; submission alone is not a worker-success claim.
+Probe 27404.0 passed on n339 at 14:23:56 UTC: the pilot entered 26.07.3
+with Python 3.13.12, advertised per-job dispatch, and executed `/bin/true`
+successfully in 26.07.1 through the private namespace. It acquired no
+PanDA job. This establishes worker image startup, not a new physics-output
+registration. It replaces the still-idle 27403.0 probe, which was cancelled.
 
 ## GREX Event Service channel
 
