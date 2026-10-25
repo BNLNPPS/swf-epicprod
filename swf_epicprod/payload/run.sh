@@ -336,6 +336,12 @@ GUN_SEED_NOTE=""
 if [ "${EPICPROD_SWITCH_PARTICLE_GUN:-1}" = "1" ] && [ "${EVGEN_GENERATOR:-}" = "particle_gun" ] && [ ${#} -ge 4 ]; then
   GUN_STEM_HASH=$(printf '%s' "$(basename ${BASENAME})" | sha256sum | cut -c1-7)
   SEED=$(( (16#${GUN_STEM_HASH} * 10000 + 10#${4} + 1) % 2147483647 ))
+  # ES ranges carry their absolute start. A recovered partial block must
+  # not restart the full block's random stream, and each range's event
+  # headers must survive a close without restarting at zero.
+  if [ "${EPICPROD_SWITCH_ES_GUN_EVENTS:-0}" = 1 ] && [ -n "${EPICPROD_SKIP_EVENTS:-}" ]; then
+    SEED=$(( (16#${GUN_STEM_HASH} * 10000 + SKIP_N_EVENTS + 1) % 2147483647 ))
+  fi
   [ ${SEED} -gt 0 ] || SEED=1
   GUN_SEED_NOTE=", seed ${SEED}"
 fi
@@ -885,6 +891,9 @@ stage simulation start "${EVENTS_PER_TASK:-?} events${GUN_SEED_NOTE}"
     --compactFile ${DETECTOR_COMPACT}
     --outputFile ${FULL_TEMP}/${TASKNAME}.edm4hep.root
   )
+  if [ "${EPICPROD_SWITCH_ES_GUN_EVENTS:-0}" = 1 ] && [ "${EVGEN_GENERATOR:-}" = particle_gun ] && [ -n "${EPICPROD_SKIP_EVENTS:-}" ]; then
+    common_flags+=(--meta.eventNumberOffset "${SKIP_N_EVENTS}")
+  fi
   # Uncommon flags based on EXTENSION
   if [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
     uncommon_flags=(
