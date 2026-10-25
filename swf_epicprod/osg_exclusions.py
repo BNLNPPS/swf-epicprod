@@ -1,7 +1,7 @@
 """What the OSG submission excludes, and the evidence for each entry.
 
-The operative control is the submit description both production OSG
-queues share on the submit host, `submit_pilot2_push_bnl_osg.sdf`:
+The operative control for active production OSG pilots is the submit
+description `submit_pilot2_pull_bnl_osg.sdf` on the submit host:
 `+UNDESIRED_Sites` excludes a site and a `Requirements` clause excludes
 a worker node named together with its site (docs/OSG_SUBMISSION.md,
 Excluding what delivers nothing). That file cannot be read on a
@@ -16,19 +16,24 @@ the pool advertises bare names such as `compute05`, `n358` and
 `fc20621` alongside fully qualified ones, and a name on its own would
 ban a healthy machine at another site with nothing to show it had.
 
-Evidence is the job record over the thirty days ending on `AS_OF`:
-every entry finished nothing at all in that window.
+The original entries use thirty-day job records ending on `AS_OF`.
+Later entries carry their own measurement window and application date.
 """
 
 AS_OF = '2026-09-07'
 APPLIED = '2026-09-07'
-SUBMIT_FILE = '/var/data/atlpan/harvester_common/submit_pilot2_push_bnl_osg.sdf'
+SUBMIT_FILE = '/var/data/atlpan/harvester_common/submit_pilot2_pull_bnl_osg.sdf'
 QUEUES = ('BNL_OSG_EPIC_PROD_1', 'BNL_OSG_PanDA_1')
 
-# Sites excluded whole, by +UNDESIRED_Sites. The ePIC entries carry the
+# Sites excluded whole, by +UNDESIRED_Sites or an exact-site Requirements
+# clause. The ePIC entries carry the
 # measurement that put them there; the rest predate this record and are
 # kept as they stand.
 EXCLUDED_SITES = [
+    {'site': 'NotreDame', 'applied': '2026-10-24',
+     'reason': '2 finished and 133 failed in six hours; repeated node-guard '
+               'black holes across the site; excluded from new and idle '
+               'production OSG pilot matchmaking'},
     {'site': 'Alabama-CHPC', 'failed': 13218, 'finished': 0,
      'core_hours': 8052, 'nodes': 19, 'applied': '2026-09-07',
      'reason': 'every node in the record finished nothing; where trial '

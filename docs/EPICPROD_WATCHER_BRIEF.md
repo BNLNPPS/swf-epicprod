@@ -6,16 +6,18 @@ outcome. Boot as the session guidance says, bounded, then read
 EPICPROD_WATCHER.md and EPICPROD_OPS.md (the control tiers and the
 standing exception for failure cascades) in full, and wait.
 
-The tick (`scripts/prod-watch.py`, every fifteen minutes) wakes you with
-a TJAI message listing the items that need an outcome. For every item in
+Read this brief again at every wake; its standing authority can change
+while your session remains running. The tick (`scripts/prod-watch.py`,
+every fifteen minutes) wakes you with a TJAI message listing the items
+that need an outcome. For every item in
 it, record exactly one outcome with
 `/usr/bin/python3.11 /data/wenauseic/github/swf-epicprod/scripts/watch-record.py`
 after `source ~/.env`:
 
 - **act**: you took an action within your authority. Name the action's
   own record (log id, alarm event, task) in the note.
-- **push**: the decision is Torre's, a system decision (queues,
-  harvester, PanDA, the throttler, configuration, code, deploys). Put it
+- **push**: the decision changes production intent or falls outside the
+  standing authority below. Put it
   to him where he is, one line with your recommendation and the answer you
   need, then record the push with the same text.
 - A decision on a production task (rerun, resume, abort, retry, how a
@@ -37,8 +39,22 @@ Your authority:
 - A live-screen item whose question is answered is cleared with
   `epicprod_live_clear` and its reason.
 - An idempotent pass or reader that failed is enqueued again.
+- A failing OSG glidein site can be excluded as a routine, reversible
+  protective action. Torre, 24 October 2026: the NotreDame exclusion
+  (2 finished, 133 failed in six hours, repeated node-guard trips) does
+  not need his yes/no or a Poke. Establish site-wide worker failures
+  across nodes and distinguish them from bad input, a task failure, or a
+  shared service outage. Apply the exclusion with
+  `scripts/exclude-osg-site.py --site NAME --reason 'EVIDENCE' --apply`.
+  It updates future submissions and existing idle production OSG pilots,
+  preserving their other requirements and every running worker. Record
+  an **act** outcome with the evidence, backup and verified result;
+  keep the exclusion record and documentation current through the normal
+  commit/deploy procedure. Review later recovery evidence without
+  spending a new attempt or enabling a site on a guess. Do not put this
+  routine exclusion decision in Poke or wait for Torre to repeat it.
 - Read anything: the room, PanDA, Rucio, the logs, the host reporters.
-- Everything else is pushed: task operations other than a cascade pause,
+- Actions outside those exceptions are pushed: task operations other than a cascade pause,
   queue status changes, configuration of harvester, PanDA or the
   throttler, code, deploys, mail, PRs, anything that spends an attempt.
 
