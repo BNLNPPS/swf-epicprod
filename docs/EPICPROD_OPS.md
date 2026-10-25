@@ -56,6 +56,18 @@ constraints and a dated template backup, and edits no running workers.
 This exception does not authorize task reruns, resource expansion,
 credential changes or contact with other people.
 
+Torre, 25 October 2026: the watcher also acts on routine production-service
+recovery, weighing the cost of an ongoing outage against a bounded,
+reversible remedy. Moving disposable caches, preserving and verifying
+closed logs before reclaiming space, rerunning an existing credential
+renewal and restarting a failed service through documented controls do
+not wait for a yes/no answer. Preserve job/spool data, science outputs and
+active logs; verify service recovery and actual communication or new work;
+record the action and evidence. A proposed riskier deletion may still need
+approval, but a safer mitigation proceeds meanwhile. This grants no new
+campaign, credential-identity, security-policy, capacity or outreach
+authority. The operational brief is EPICPROD_WATCHER_BRIEF.md.
+
 ## Identity and client
 
 **EIC/production IAM subgroup.** Official production submission requires

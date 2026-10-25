@@ -66,7 +66,8 @@ class BatchLaunch(unittest.TestCase):
         launcher.write_text(LAUNCHER.read_text().replace(
             'SESSION_DIR=/var/lib/apptainer/mnt/session', 'SESSION_DIR=' + repr(str(session))))
         unshare = self.bin / 'unshare'
-        unshare.write_text('#!/bin/bash\nwhile [[ $1 != /bin/bash ]]; do shift; done\nexec "$@"\n')
+        unshare.write_text('#!/bin/bash\nif [[ $1 == --help ]]; then echo --map-current-user; exit 0; fi\n'
+                           'while [[ $1 != /bin/bash ]]; do shift; done\nexec "$@"\n')
         unshare.chmod(0o755)
         mount = self.bin / 'mount'
         mount.write_text('#!/bin/bash\nexit 0\n')
@@ -78,6 +79,19 @@ class BatchLaunch(unittest.TestCase):
         self.assertEqual(args[:2], ['exec', '--no-home'])
         self.assertIn(str(self.image), args)
         self.assertIn(str(launcher), args)
+
+    def test_old_batch_unshare_keeps_the_established_runtime_path(self):
+        launcher = self.root / 'launcher.sh'
+        launcher.write_text(LAUNCHER.read_text().replace(
+            'SESSION_DIR=/var/lib/apptainer/mnt/session',
+            'SESSION_DIR=' + repr(str(self.root / 'absent-session'))))
+        unshare = self.bin / 'unshare'
+        unshare.write_text('#!/bin/bash\nif [[ $1 == --help ]]; then echo old-unshare; exit 0; fi\nexit 99\n')
+        unshare.chmod(0o755)
+        result = self.run_launcher(launcher=launcher)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('older host unshare', result.stdout)
+        self.assertIn(str(self.image), self.record.read_text())
 
 
 if __name__ == '__main__':

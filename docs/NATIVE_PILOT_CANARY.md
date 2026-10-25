@@ -502,6 +502,32 @@ build now casts it; the upstream pilot bug is to be reported.
   PanDA for its log alone while its output is registered, and task 41043
   allows one attempt: what becomes of that output is Torre's question.
 
+## GREX production image dispatch
+
+GREX uses a campaign image to bootstrap the native pilot, then selects the
+payload image per job. Its template sets `EPICPROD_NATIVE_DISPATCH=per-job`
+and enables payload container launching; it does not send a bootstrap-image
+filter to PanDA. OSG remains bound to its glidein image and serves multiple
+images through its allocator. A GREX bootstrap on 26.07.3 therefore does
+not restrict the queue to that edition.
+
+The 25 October correction installs
+`/data/atlpan/harvester_common/native-grex-per-job-4d99437` on
+pandaharvester01. Its code and helpers all come from commit `4d99437`;
+the unchanged archive is
+`9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`.
+Allocation resources, CE identity and running workers are unchanged. The
+host reporter checks both the actual template and its launcher before
+advertising per-job image capability. PCS then accepts the 26.07.1 task
+41039 residual for GREX again.
+
+Environment probe 27395.0 exposed an old host `unshare` without
+`--map-current-user`. The launcher now preserves the established direct
+Apptainer startup on those older batch hosts, while grid pods with modern
+namespace tools retain their private-session setup. Probe 27400.0 checks
+the corrected startup and a nested 26.07.1 execution from 26.07.3 without
+acquiring a PanDA job; its submission alone is not a worker-success claim.
+
 ## GREX Event Service channel
 
 The Python 3.13 channel is published beside the existing Python 3.11

@@ -154,7 +154,9 @@ raised, and the retry proceeds.
 The nightly `panda_sandbox_keepalive` step of the `catalog_sync` chain
 (EPICPROD_OPS.md) touches the sandbox tarball of every task worth
 keeping retryable, which resets the modification time the purge reads.
-Candidates are epic-VO tasks in a non-final state, plus tasks
+Candidates are EIC tasks — the epic VO, or working group `EIC` under
+any VO (production runs as `vo='wlcg'`, `workinggroup='EIC'`) — in a
+non-final state, plus tasks
 `finished`, `failed` or `exhausted` within SysConfig
 `panda_sandbox_keepalive_final_days` (default 30). So native retry is
 dependable for 30 days after a task goes final, not seven.
@@ -162,6 +164,10 @@ dependable for 30 days after a task goes final, not seven.
 Detail worth knowing:
 
 - `aborted` and `broken` tasks are deliberately not kept alive.
+- The former `vo = 'epic'` filter omitted EIC production tasks submitted
+  as `vo='wlcg'`, allowing their sandboxes to age out under the seven-day
+  cache policy. Task 40857 was paused after executor 5303 sandbox-download
+  failures on 25 October 2026.
 - One sandbox can serve several tasks; each tarball is touched once.
 - A tarball already purged is recorded per task in the run inventory:
   that task is not natively retryable. This is established state, not
