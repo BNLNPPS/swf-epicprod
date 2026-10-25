@@ -58,6 +58,14 @@ if [[ -z $ACTUAL && ${EPICPROD_NATIVE_BATCH:-0} == 1 ]]; then
     echo "ePIC native pilot: batch host $(hostname), runtime $RUNTIME, image $IMAGE"
     launch=("$RUNTIME" exec --no-home "${binds[@]}" --pwd "$HERE" "$IMAGE" /bin/bash "$SELF" "$@")
     if [[ -d $SESSION_DIR ]]; then exec "${launch[@]}"; fi
+    # Older batch hosts lack the namespace mapping options used by grid
+    # pods. Keep their established Apptainer startup path; the runtime
+    # manages its session directory. Inside the campaign image, the newer
+    # namespace tools remain available for per-job payload containers.
+    if ! unshare --help 2>&1 | grep -q -- --map-current-user; then
+        echo 'ePIC native pilot: batch runtime manages its session (older host unshare)'
+        exec "${launch[@]}"
+    fi
     # A grid pod may lack the CVMFS runtime's compiled session directory.
     # Carry one in a private namespace, as the nested-image path does.
     exec unshare --user --map-current-user --keep-caps --mount --propagation private \
