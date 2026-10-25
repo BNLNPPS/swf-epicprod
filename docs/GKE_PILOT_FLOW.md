@@ -21,8 +21,9 @@ On 25 October, after complete `gES3` output and recovery validation, Torre
 promoted Google to steady production at the same five-node limit (decision
 `01a174ee-0d98-7656-a327-ddb85cde212d`). `BNL_ePIC_GOOGLE_es` is `production`
 in the queue registry. The ordinary `BNL_ePIC_GOOGLE` queue remains off.
-The dedicated particle-gun feeder supplies this ES queue; the general pressure
-front remains disabled for it.
+The dedicated particle-gun feeder supplies this ES queue. It is included in
+the front's queue list for normal PCS placement, while its general
+`front.queue.BNL_ePIC_GOOGLE_es.feed` switch stays false.
 
 `swf_epicprod.google_production` runs under the existing five-minute controller
 lock after runtime/image capability publication. With
