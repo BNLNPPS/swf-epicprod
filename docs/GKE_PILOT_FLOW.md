@@ -7,6 +7,10 @@ step with the queue's Event Service backlog. PanDA's Harvester does not
 serve this queue. `BNL_ePIC_GOOGLE` stays with the PanDA team's
 Harvester (`BNL_harvester_2`).
 
+The agent-owned pilot flow was agreed on 2026-09-30 after Harvester was found
+starting empty workers for the queue (below). The request to the PanDA team
+went out the same day.
+
 Torre resumed Google ES commissioning on 24 October 2026: at most five
 concurrent ES jobs, using the production native pilot. Evaluate natural
 preemptions and the recovery of completed/unfinished ranges. Controlled worker
@@ -65,6 +69,14 @@ it is separate from productive efficiency after worker loss.
 Normal ES closeout archived the lost job as `finished/fg_partial` with all
 17,482 events credited. Replacement job 5970551 started at 19:05:16Z and began
 registering the unfinished ranges without overlap with the credited events.
+It completed the remaining 12,518 events, including all 3,260 previously
+unshipped events and all 1,688 interrupted assignments. The two records cover
+exactly 30,000 events with no overlap or missing IDs, and PanDA credits all
+30,000. Complete output registration reached 30,000 events in 12 files at
+19:31:44Z. Independent normal 26.07.3 PODIO readback then passed for all files:
+exact IDs 0–29,999, no duplicates, 30,000 distinct neutron truth records within
+the requested angular range, and all 387 collections readable. The replacement
+harness ended normally with no failed units or remaining work.
 The cut evidence and reader manifests are retained under
 `/data/wenauseic/swf-incident-archives/es-preemption-gES3-20261025/`.
 This controlled pod loss establishes abrupt worker-loss behavior; it does not
@@ -77,10 +89,6 @@ a stale warning. An ended job whose harness did not end normally marks its
 unsaved work and worker-loss boundary. A snapshot alone is never a preemption.
 The task page includes active and archived jobs, including Perlmutter's
 256-core jobs.
-
-Decided with Torre on 2026-09-30, after Harvester was found starting
-empty workers for the queue (below). The request to the PanDA team
-went out the same day.
 
 ## Controlled demonstration tools
 
@@ -300,11 +308,10 @@ denied"), so the pilot container runs with AppArmor `Unconfined`; a
 debug pod with that setting started the payload image as uid 1000
 (2026-10-01).
 
-## Still to do
+## Commissioning limits
 
-- Complete the exact whole-task output and recovery check for `gES3` under the
-  authorized five-worker cap. The one approved controlled loss has been consumed;
-  another controlled termination needs separate explicit authorization.
-- Cron enqueue (`*/5`) is installed and enabled; preserve the cap and shared
-  native runtime while commissioning continues.
-- Whether preemption notices reach the pod.
+Cron enqueue (`*/5`) is installed and enabled. Preserve the authorized five-worker
+cap and shared native runtime while commissioning continues. The one approved
+controlled loss has been consumed; another controlled termination or capacity
+expansion needs separate explicit authorization. Delivery of a natural
+preemption notice to the pod remains unvalidated by the abrupt-loss demonstration.
