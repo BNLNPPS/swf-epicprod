@@ -71,6 +71,10 @@ def reserve_sample():
 
 def register_plan(task, proxy):
     """Idempotently stage the generation ledger through the proven BNL path."""
+    # This controller runs in its own doer process. The in-process XRootD
+    # client needs the same explicit credential environment as xrdcp below.
+    os.environ.update(X509_USER_PROXY=proxy,
+                      X509_CERT_DIR='/etc/grid-security/certificates')
     from django.conf import settings
     from rucio.client import Client
     from rucio.common.exception import DataIdentifierAlreadyExists, DataIdentifierNotFound
