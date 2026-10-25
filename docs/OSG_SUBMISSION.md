@@ -821,6 +821,16 @@ machine elsewhere with no indication that it had. The regular
 expression anchors each name with `([.]|$)` so it binds whether the
 host is advertised bare or fully qualified; both forms occur.
 
+On 24 October 2026 NotreDame was excluded after 2 finished and 133 failed
+jobs in six hours and repeated node-guard black holes across its hosts.
+`scripts/exclude-osg-site.py --site NotreDame --reason 'EVIDENCE' --apply`
+adds the hard exact-site requirement to the active production pull
+description and each already-idle production pilot, retaining all other
+requirements and a dated template backup. It never edits or removes a
+running worker. The same helper is available to the watcher under the
+standing operational authority in EPICPROD_WATCHER_BRIEF.md; routine
+protective exclusions do not require an operator Poke.
+
 Applied 2026-09-07 on the evidence of thirty days of job records: every
 node listed had zero finished jobs and at least fifty failures, and
 together they account for 14,480 failed jobs and 9,997 core-hours. The

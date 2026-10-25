@@ -175,6 +175,20 @@ credential into that path on the worker with mode 0600. The live credential is
 not uploaded in the task sandbox. The normal canary output namespace and
 lifetime are unchanged.
 
+Both `X509_USER_PROXY` and `PILOT_X509_USER_PROXY` must name that worker-local
+file in the sandbox environment. ES closes start under `--cleanenv` and source
+the environment afresh. The second name lets the registrar exchange the pilot
+identity for PanDA-issued Rucio and storage write tokens. Catalog authentication
+with a proxy does not establish write permission at the output door.
+
+The first 26.07.3 gun ES checks (Google 41140 and Perlmutter 41141) exposed this
+handoff requirement: reconstruction and merged-file validation passed, but the
+close lacked `PILOT_X509_USER_PROXY`, fell back to X.509 and was denied by the
+output door. A controlled reproduction with a registered neutron file failed
+in the same way; retaining the pilot reference obtained the tokens, transferred
+and checksum-verified the file, and registered it. Actual worker reruns remain
+the acceptance gate for the correction.
+
 The adapter also samples `squeue` and `sinfo` before entering the container,
 writing `pool-sample.json` above its work directory (`pool-sample/1`). It
 exports that path as `EPICPROD_POOL_SAMPLE` and its Apptainer equivalent so
