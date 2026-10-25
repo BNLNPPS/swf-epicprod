@@ -498,12 +498,13 @@ refresh.
 
 ## Production notices
 
-`scripts/prod-notify.py` speaks production activity and health into the
-operators' working sessions when something changes, so that an operator
-and the AI session at the prompt see it at the moment it appears and act
-in context. It is not the alarm engine or the action stream, which write
-the record for later reading; it is the sparse, deliberate delivery into
-the session that TeamComms Notify LLM defines.
+`scripts/prod-notify.py` records production changes in the retained cron
+activity log, `/opt/swf-monitor/shared/logs/prod-notify-cron.log`.
+Routine task starts, ends and failure counts, supply changes, arrivals
+and node-guard trips do not interrupt working terminals. The production
+watcher independently triages operational problems and escalates those
+needing attention. Only platform errors and credential-expiry notices
+use the notifier's terminal delivery routes below.
 
 A cron script with no Django. Every five minutes it reads the record
 through the monitor's MCP tools over the loopback endpoint (the task

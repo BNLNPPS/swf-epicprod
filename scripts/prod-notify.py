@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""prod-notify.py: production activity and health, spoken into the working
-session when something changes (EPICPROD_OPS.md, Production notices).
+"""prod-notify.py: production activity log and urgent terminal notices
+(EPICPROD_OPS.md, Production notices).
 
 A cron script with no Django. It reads the production record through the
 monitor's MCP tools over the loopback endpoint, keeps a small state file
 so that each condition speaks once when it appears and once when it
-clears, and delivers each notice to the operators' working sessions:
+clears. All notices go to stdout (the retained cron activity log). Only
+platform errors and credential-expiry notices interrupt working sessions:
 through TJAI messaging to the sessions on this host, and through
 TeamComms Notify LLM to the `prod-notify` topic when a connector
 configuration is given. Silence otherwise; no heartbeat.
@@ -67,6 +68,11 @@ TJAI_RESOURCE = f'host:{LOCATION}'
 FACE = 'https://epic-devcloud.org/prod'
 STATE_DEFAULT = '/data/wenauseic/swf-epicprod/prod-notify-state.json'
 SOURCE = 'swf-epicprod:prod-notify'
+
+# Routine production progress belongs in the activity record. The watcher
+# independently triages task, supply and node problems and escalates work
+# needing attention; broadcasting those events buries operator dialog.
+TERMINAL_TRIGGERS = frozenset({'platform.error', 'credential.expiry'})
 
 FAIL_FRACTION = 0.10
 FAIL_MIN_JOBS = 200
@@ -498,7 +504,7 @@ def main(argv):
     for trigger, key, text, link in notices:
         line = f'[prod-notify {trigger}] {text} {link}'
         print(line)
-        if args.dry_run:
+        if args.dry_run or trigger not in TERMINAL_TRIGGERS:
             continue
         try:
             deliver_tjai(line)
