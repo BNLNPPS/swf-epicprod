@@ -36,6 +36,8 @@ def main():
                     default='BNL_ePIC_GOOGLE_es')
     ap.add_argument('--events', type=int, default=30000)
     ap.add_argument('--unit-events', type=int, default=250)
+    ap.add_argument('--slots', default='auto')
+    ap.add_argument('--memory-mb-per-core', type=int)
     ap.add_argument('--deadline-s', type=int, default=2400)
     ap.add_argument('--margin-s', type=int, default=300)
     ap.add_argument('--parallel-start', action='store_true')
@@ -99,8 +101,11 @@ def main():
     es.update(events=events, input_events=events, events_per_job=events,
               close_s=300, deadline_s=args.deadline_s, margin_s=args.margin_s,
               unit_events=args.unit_events, parallel_start=args.parallel_start,
+              slots=args.slots,
               input_dataset='group.EIC:' + dataset,
               row=f'SINGLE/neutron/5GeV/3to50deg.{sample}/{stem},steer,{events},0000')
+    if args.memory_mb_per_core is not None:
+        es['memory_mb_per_core'] = args.memory_mb_per_core
     write_json(args.artifacts / 'gun-generation-plan.json', plan)
     write_json(args.artifacts / 'event-service.json', es)
     data = (args.artifacts / 'gun-generation-plan.json').read_bytes()
@@ -168,6 +173,7 @@ def main():
                 'site': args.site, 'close_s': 300,
                 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
                 'parallel_start': args.parallel_start,
+                'slots': args.slots,
                 'cut_after_s': None if args.observe_only else 1800,
                 'observe_only': args.observe_only,
                 'armed_at': datetime.now(timezone.utc).isoformat()}

@@ -302,6 +302,10 @@ collects the first cohort's ranges, then all healthy slots receive their first
 units together. The unset switch preserves existing tasks' behavior. Fresh
 commissioning samples use 300-second closes, a 2,100-second harness deadline
 with a 180-second drain margin, and the forty-five-minute worker ceiling.
+The CPU-node shape uses 128 execution slots, one per physical core; the 256
+logical CPUs include two hardware threads per core. This keeps the simultaneous
+simulation and resident-reconstruction processes within the node's memory
+budget. See [NERSC affinity](https://docs.nersc.gov/jobs/affinity/).
 
 ## Related
 
