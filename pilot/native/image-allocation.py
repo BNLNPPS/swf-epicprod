@@ -107,6 +107,12 @@ def edit_image(ad, image, ready, base):
     done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           universal_newlines=True, timeout=30)
     if done.returncode:
+        # Condor also returns an error when the idle-only constraint stops
+        # matching because this worker has just started or left the queue.
+        # Confirm that race; a failed edit of a still-idle worker stays fatal.
+        status = command(['condor_q', '-allusers', job, '-af', 'JobStatus']).strip()
+        if not status or (status.isdigit() and int(status) != 1):
+            return False
         raise RuntimeError('condor_qedit failed for ' + job + ': ' + done.stderr[:300])
     result = done.stdout
     if 'for 1 matching jobs' not in result:

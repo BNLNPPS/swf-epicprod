@@ -75,6 +75,19 @@ class ImageAllocationTests(unittest.TestCase):
         self.assertEqual(sum(ready is False for ready in changes.values()), 5)
         self.assertTrue(all(call.args[0]['JobStatus'] == 1 for call in edit.call_args_list))
 
+    def test_edit_handles_a_worker_starting_but_preserves_real_errors(self):
+        ad = dict(ClusterId=7, ProcId=1, Environment='EPICPROD_NATIVE_IMAGE=/cvmfs/one',
+                  EpicprodNativeImage='/cvmfs/one')
+        failed = SimpleNamespace(returncode=1, stdout='', stderr='Queue transaction failed')
+        with patch.object(module.subprocess, 'run', return_value=failed), \
+                patch.object(module, 'command') as read_status:
+            for status in ('2\n', ''):
+                read_status.return_value = status
+                self.assertFalse(module.edit_image(ad, '/cvmfs/three', True, 'Owner == "atlpan"'))
+            read_status.return_value = '1\n'
+            with self.assertRaisesRegex(RuntimeError, 'condor_qedit failed'):
+                module.edit_image(ad, '/cvmfs/three', True, 'Owner == "atlpan"')
+
 
 if __name__ == '__main__':
     unittest.main()
