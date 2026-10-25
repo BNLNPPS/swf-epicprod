@@ -821,7 +821,7 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         task = self.get_object()
         from .commands import build_evgen_task_params
         try:
-            spec = build_evgen_task_params(task, residual=True)
+            spec = build_evgen_task_params(task, residual=True, bad_input_preview=True)
         except ValueError as e:
             return Response({'refusal': str(e)})
         except ServiceError as e:
@@ -834,16 +834,27 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
         remainder (docs/JEDI_INTEGRATION.md § Residual rerun)."""
         task = self.get_object()
         user = getattr(request.user, 'username', '') or ''
+        exclusion = None
+        if request.data.get('exclude_bad_input') or request.data.get('exclude_rows'):
+            from .residual_exclusions import snapshot
+            try:
+                exclusion = snapshot(
+                    task, request.data.get('exclusion_preview'),
+                    bad_input=request.data.get('exclude_bad_input') is True,
+                    listed=request.data.get('exclude_rows'), changed_by=user)
+            except ServiceError as exc:
+                return Response({'detail': exc.detail}, status=exc.status)
         try:
             if request.data.get('now'):
                 services.prodtask_rerun_residual_request(
                     task=task, site=request.data.get('site') or '',
-                    placement=request.data.get('placement'), changed_by=user)
+                    placement=request.data.get('placement'), changed_by=user,
+                    residual_exclusion=exclusion)
             else:
                 services.prodtask_queue_submission(
                     task=task, kind='rerun_residual', changed_by=user,
                     site=request.data.get('site') or '',
-                    placement=request.data.get('placement'))
+                    placement=request.data.get('placement'), residual_exclusion=exclusion)
                 task.refresh_from_db()
         except ServiceError as e:
             return Response({'detail': e.detail}, status=e.status)

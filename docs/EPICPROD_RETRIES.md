@@ -285,6 +285,24 @@ established, so every surface can state it.
   the delivered outputs contradict or that the definition cannot
   supply. The attempt's job logs remain as evidence in that case.
 
+**Explicit exclusions apply to one rerun.** The preview identifies
+undelivered rows whose latest job failed in simulation with payload exit 1.
+These are suspected bad inputs, not individual FATAL diagnoses. The person
+can tick **Exclude suspected bad-input rows for this rerun** before
+confirming, or supply file/chunk records through `exclude_rows` on the
+REST action or `pcs-submit.py residual --exclude-rows CSV`.
+
+The preview signs its exact candidate set, source attempt and ordered
+manifest identity. Submission accepts that set rather than querying a
+new one after confirmation. A changed manifest or expired preview is
+refused. The queued operation holds an independent exclusion snapshot,
+which is copied to the submitted attempt; it includes the actor, source,
+sequence numbers and manifest identity. Coverage reports `rows_excluded`.
+No task-wide exclusion persists into a later rerun. An exclusion that
+leaves no residual is refused, and cancelling confirmation does nothing.
+Reconstructed manifests cannot establish sequence-to-row identity, so
+row exclusions require an exact manifest.
+
 **Rerun Residual** is preview-then-confirm: the preview
 (`residual-preview`) performs the JLab listing on demand and returns
 the coverage or the refusal, never in a page render.

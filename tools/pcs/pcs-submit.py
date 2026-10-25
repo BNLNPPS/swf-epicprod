@@ -8,14 +8,19 @@ in the action stream under that name.
 
     pcs-submit.py trial  <task> [--events N] [--site QUEUE] [--input-did DID]   compose a trial of <task> and submit it
     pcs-submit.py submit <task>                                                 submit <task> (a composed task or trial)
-    pcs-submit.py residual <task>                                               queue a residual .tryN rerun of <task>
+    pcs-submit.py residual <task> [--exclude-bad-input] [--exclude-rows CSV]
+                                                                                queue a residual .tryN rerun of <task>
     pcs-submit.py status <task>                                                 the task's status and PanDA tasks
+
+Exclusions apply to this rerun only. --exclude-rows reads file and chunk
+columns; --exclude-bad-input selects suspected simulation exit-1 rows.
 
 <task> is a composed name (group.EIC.26.07.1.epic_craterlake.p2445.e49.s9.r9)
 or a trial name. SWF_MONITOR_URL overrides the base
 (default https://localhost/swf-monitor, the host's own face).
 """
 import argparse
+import csv
 import json
 import os
 import ssl
@@ -102,6 +107,8 @@ def main():
     t.add_argument('--input-did', default='')
     s = sub.add_parser('submit'); s.add_argument('task')
     r = sub.add_parser('residual'); r.add_argument('task')
+    r.add_argument('--exclude-bad-input', action='store_true')
+    r.add_argument('--exclude-rows', metavar='CSV')
     st = sub.add_parser('status'); st.add_argument('task')
     a = ap.parse_args()
     if a.cmd == 'status':
@@ -109,7 +116,20 @@ def main():
     elif a.cmd == 'submit':
         submit(a.task)
     elif a.cmd == 'residual':
-        code, d = call('POST', task_path(a.task, 'rerun-residual'))
+        body = {}
+        if a.exclude_bad_input or a.exclude_rows:
+            code, preview = call('GET', task_path(a.task, 'residual-preview'))
+            bi = preview.get('bad_input') or {}
+            if code >= 300 or preview.get('refusal') or not bi.get('token'):
+                sys.exit(f'Residual exclusion preview unavailable: {preview}')
+            body['exclusion_preview'] = bi['token']
+            if a.exclude_bad_input:
+                body['exclude_bad_input'] = True
+            if a.exclude_rows:
+                with open(a.exclude_rows, newline='') as fh:
+                    body['exclude_rows'] = [{'file': row['file'], 'chunk': row['chunk']}
+                                            for row in csv.DictReader(fh)]
+        code, d = call('POST', task_path(a.task, 'rerun-residual'), body)
         if code >= 300:
             sys.exit(f'residual {a.task}: HTTP {code} {d.get("detail", d)}')
         print(f'{a.task}: residual rerun queued to the ops agent')

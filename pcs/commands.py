@@ -1049,7 +1049,7 @@ def _delivered_row_keys(task):
     return keys, dids, arrival
 
 
-def _residual_rows(task, csv_rows, delivered=None):
+def _residual_rows(task, csv_rows, delivered=None, exclude=None):
     """The manifest rows whose RECO output is not delivered — not
     registered, or registered without an available replica — with the
     coverage record. ``delivered`` is the precomputed
@@ -1069,15 +1069,22 @@ def _residual_rows(task, csv_rows, delivered=None):
         raise ValueError(
             'no recorded RECO outputs to diff against — run the Rucio '
             'update first, or rerun the entire task')
+    exclude = exclude or set()
     residual = []
+    excluded = 0
     for row in csv_rows:
         file_col, _ext, _nev, chunk = row.rsplit(',', 3)
         head, _, stem = file_col.rpartition('/')
         if (head, stem, chunk) not in keys:
-            residual.append(row)
+            if row in exclude:
+                excluded += 1
+            else:
+                residual.append(row)
     files_registered = sum(a['registered'] for a in arrival.values())
     files_unarrived = sum(a['unarrived'] for a in arrival.values())
     if not residual:
+        if excluded:
+            raise ValueError(f'zero residual: all undelivered rows are excluded ({excluded}); nothing to rerun')
         raise ValueError(
             f'zero residual: all {len(csv_rows)} manifest rows have '
             f'RECO outputs registered and arrived at JLab; nothing to '
@@ -1085,6 +1092,7 @@ def _residual_rows(task, csv_rows, delivered=None):
     return residual, {
         'rows_total': len(csv_rows),
         'rows_residual': len(residual),
+        'rows_excluded': excluded,
         'checked_dids': dids,
         'files_registered': files_registered,
         'files_unarrived': files_unarrived,
@@ -1237,7 +1245,8 @@ def task_container_image(cfg, override=None):
 
 
 def build_evgen_task_params(task, panda_tasks=None, residual=False,
-                            residual_of=None, rows=None, container=None):
+                            residual_of=None, rows=None, container=None,
+                            bad_input_preview=False, residual_exclusion=None):
     """Build the client-API EVGEN production submission spec from a ProdTask.
 
     This is the production reproduction of the proven condor-side recipe
@@ -1265,6 +1274,10 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         event_service = definition(event_service)
         rows = [event_service['row']]
 
+    if residual_exclusion is None and panda_tasks is not None:
+        residual_exclusion = (getattr(panda_tasks, 'metadata', None) or {}).get('residual_exclusion')
+    if residual_exclusion:
+        residual_of = residual_exclusion['of']
     residual_coverage = None
     if rows:
         # Explicit rows: a reproduction runs a crashed job's own manifest
@@ -1297,9 +1310,17 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
                 task, attempt, delivered_keys=delivered[0])
         except manifests.ManifestUnavailable as e:
             raise ValueError(str(e))
+        from . import residual_exclusions
+        exclude = residual_exclusions.excluded_rows(attempt, rows, residual_exclusion)
         csv_rows, residual_coverage = _residual_rows(
-            task, manifests.format_rows(rows), delivered)
+            task, manifests.format_rows(rows), delivered, exclude=exclude)
         residual_coverage['manifest'] = manifests.to_json(info)
+        if residual_exclusion:
+            residual_coverage['exclusion'] = {
+                k: v for k, v in residual_exclusion.items() if k != 'seq_numbers'}
+        if bad_input_preview:
+            residual_coverage['bad_input'] = residual_exclusions.preview(
+                task, attempt, rows, info, csv_rows)
         # The rerun reruns the attempt's own chunks, so its walltime is
         # measured from that attempt's finished jobs, not taken from the
         # configuration's target (JEDI_INTEGRATION.md § Residual rerun).

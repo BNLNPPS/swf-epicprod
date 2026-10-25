@@ -380,6 +380,10 @@
                 ? `<a href="/swf-monitor/panda/tasks/${pt.jedi_task_id}/">${pt.jedi_task_id}</a>`
                 : '<span class="pcs-ptask-muted">pending</span>';
             const current = pt.current ? ' <span class="pcs-ptask-muted">(current)</span>' : '';
+            const exclusion = pt.metadata && pt.metadata.residual_exclusion;
+            const exclusionLabel = exclusion
+                ? `<div class="small text-muted">${exclusion.seq_numbers.length} selected row exclusions · ${exclusion.classification === 'suspected' ? 'suspected simulation failures' : 'explicit row list'}</div>`
+                : '';
             const attemptLabel = pandaAttemptLabel(pt, rows);
             const submittedAt = pt.created_at_display || pt.created_at || '';
             const datasets = [
@@ -388,7 +392,7 @@
             return `<tr>
                 <td>${jedi}</td>
                 <td class="${pandaStatusCellClass(pt.status_snapshot)}">${htmlEscape(pt.status_snapshot || '-')}</td>
-                <td class="pcs-ptask-name">${htmlEscape(pt.task_name || '')}</td>
+                <td class="pcs-ptask-name">${htmlEscape(pt.task_name || '')}${exclusionLabel}</td>
                 <td class="pcs-ptask-datasets">${datasets || '<span class="pcs-ptask-muted">-</span>'}</td>
                 <td>${submittedAt ? htmlEscape(submittedAt) : '<span class="pcs-ptask-muted">-</span>'}</td>
                 ${showAttempt ? `<td>${htmlEscape(attemptLabel)}${current}</td>` : ''}
@@ -785,6 +789,7 @@
             <button type="button" class="btn pcs-reset-submit-btn btn-sm pcs-panda-op" data-panda-op="rerun_entire_task">Rerun Entire Task</button>
             <button type="button" class="btn pcs-reset-submit-btn btn-sm pcs-panda-op" data-panda-op="rerun_residual"
                     title="Resubmit only the manifest rows with no registered RECO output, as a new try (a preview of the coverage confirms first)">Rerun Residual</button>
+            <label class="small ms-2"><input type="checkbox" data-residual-exclude> Exclude suspected bad-input rows for this rerun</label>
         </div>`;
     }
     // Legacy import rows carry an opaque csv_import.<hash> / past.<…> key and a
@@ -2208,6 +2213,26 @@
                 + `each over the same input chunk `
                 + `(${preview.files_unarrived} of ${preview.files_registered} registered files `
                 + `not yet arrived). ${basis} Delivered jobs are not regenerated.`;
+            const bi = preview.bad_input || {};
+            if (wrap.querySelector('[data-residual-exclude]')?.checked) {
+                if (bi.unavailable || !bi.token) {
+                    alert(bi.unavailable || 'Row-exclusion preview is unavailable.');
+                    return;
+                }
+                if (!bi.rows) {
+                    alert('No suspected simulation-failure rows are present in this residual.');
+                    return;
+                }
+                body.exclude_bad_input = true;
+                body.exclusion_preview = bi.token;
+                confirmText += ` Leave out exactly ${bi.rows} suspected bad-input rows from this preview, for this rerun only.`
+                    + ` The remaining ${preview.rows_residual - bi.rows} rows will run.`
+                    + ` These candidates last failed in simulation with payload exit 1; their individual FATAL logs have not all been read.`;
+            } else if (bi.rows) {
+                confirmText += ` This includes ${bi.rows} suspected bad-input rows (simulation exit 1).`
+                    + ` Cancel and tick the exclusion option to leave them out for this rerun.`;
+            }
+
         } else {
             return;
         }

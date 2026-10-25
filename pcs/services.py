@@ -570,6 +570,45 @@ def panda_attempt_walltime_hours(jedi_task_id, margin=1.5, floor_hours=2.0,
         float(longest) / 3600.0
 
 
+def panda_attempt_bad_input_seqs(jedi_task_id):
+    """Candidate simulation exit-1 sequences from each row's latest job.
+
+    This query does not establish a per-row DDSim FATAL diagnosis.
+    """
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    sql = f'''
+        SELECT DISTINCT ON (c."lfn") c."lfn", j."jobstatus",
+               j."transexitcode", j."jobmetrics"
+        FROM "{PANDA_SCHEMA}"."jedi_dataset_contents" c
+        JOIN "{PANDA_SCHEMA}"."jedi_datasets" d
+          ON d."datasetid" = c."datasetid" AND d."jeditaskid" = c."jeditaskid"
+        LEFT JOIN "{PANDA_SCHEMA}"."jobsarchived4" j ON j."pandaid" = c."pandaid"
+        WHERE c."jeditaskid" = %s AND d."type" = 'pseudo_input'
+          AND d."datasetname" = 'seq_number' AND c."pandaid" IS NOT NULL
+        ORDER BY c."lfn", c."pandaid" DESC
+    '''
+    try:
+        with connections['panda'].cursor() as cursor:
+            cursor.execute(sql, [int(jedi_task_id)])
+            records = cursor.fetchall()
+    except Exception as e:                                    # noqa: BLE001
+        _log.warning('bad-input fetch failed for task %s: %s', jedi_task_id, e)
+        return None, f'PanDA record unavailable: {e}'
+    if not records:
+        return None, f'no job record for the rows of PanDA task {jedi_task_id}'
+    seqs = set()
+    for lfn, jobstatus, exit_code, metrics in records:
+        metrics = dict(token.split('=', 1) for token in (metrics or '').split() if '=' in token)
+        if (str(lfn).isdigit() and jobstatus == 'failed'
+                and str(exit_code).strip() == '1'
+                and metrics.get('payloadStage') == 'simulation'
+                and metrics.get('payloadStageStatus') == 'fail'):
+            seqs.add(int(lfn))
+    return seqs, (f'{len(seqs)} of the {len(records)} rows of PanDA task '
+                  f'{jedi_task_id} last stopped in simulation with payload '
+                  f'exit 1')
+
+
 QUEUE_WALLTIME_MARGIN_HOURS = 0.1
 
 
@@ -6463,7 +6502,8 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
 
 
 def prodtask_submit_request(*, task, residual=False, residual_of=None,
-                            changed_by='', source=None, site='', placement=None):
+                            changed_by='', source=None, site='', placement=None,
+                            residual_exclusion=None):
     """Publish a submit_task request for a locked (ready) task to the prod-ops
     agent. The web tier holds no PanDA credential — it only asks the agent to
     run the submission, which records the jediTaskID back. Gates mirror
@@ -6512,6 +6552,9 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
         meta['submitted_by'] = changed_by
     if residual:
         meta['residual_of'] = residual_of
+        if residual_exclusion:
+            from copy import deepcopy
+            meta['residual_exclusion'] = deepcopy(residual_exclusion)
     if placement:
         meta['placement'] = _placement_record(site or pinned_site(task), placement,
                                               changed_by)
@@ -6616,7 +6659,7 @@ QUEUE_KINDS = ('submit', 'rerun_residual', 'rerun_entire')
 
 
 def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by='',
-                              confirm_produced=False):
+                              confirm_produced=False, residual_exclusion=None):
     """Queue a person's submission for the pressure front instead of
     sending it to PanDA (CONTINUOUS_PRODUCTION.md, Placement: a person's
     submission waits in line). ``kind`` is ``submit``, ``rerun_residual``
@@ -6641,7 +6684,8 @@ def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by
     rows = None
     if kind == 'rerun_residual':
         try:
-            spec = build_evgen_task_params(task, residual=True)
+            spec = build_evgen_task_params(task, residual=True,
+                                            residual_exclusion=residual_exclusion)
         except ValueError as e:
             raise ServiceError(f'Residual rerun refused: {e}', status=409)
         rows = int(((spec.get('residual') or {}).get('rows_residual')) or 0)
@@ -6651,11 +6695,21 @@ def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by
         prodtask_place(task, site, changed_by=changed_by, placement=placement)
         task.refresh_from_db()
     refuse_closed_queue(pinned_site(task), task=task)
-    mark = {'kind': kind, 'by': changed_by or '', 'at': _timezone.now().isoformat(),
-            'site': pinned_site(task) or '', 'rows': rows,
-            'placement': placement or None}
-    task.overrides = dict(task.overrides or {}, queued=mark)
-    task.save(update_fields=['overrides', 'updated_at'])
+    # The queue mark and its exclusion snapshot are one atomic write. Read
+    # fresh overrides while locked so an unrelated concurrent edit survives.
+    with transaction.atomic():
+        locked = ProdTask.objects.select_for_update().get(pk=task.pk)
+        mark = {'kind': kind, 'by': changed_by or '', 'at': _timezone.now().isoformat(),
+                'site': pinned_site(locked) or '', 'rows': rows,
+                'placement': placement or None}
+        if residual_exclusion:
+            from copy import deepcopy
+            from .residual_exclusions import validate_snapshot
+            validate_snapshot(locked, residual_exclusion)
+            mark['residual_exclusion'] = deepcopy(residual_exclusion)
+        locked.overrides = dict(locked.overrides or {}, queued=mark)
+        locked.save(update_fields=['overrides', 'updated_at'])
+        task.overrides = locked.overrides
     log_epicprod_action(
         'pcs', 'prodtask_queued', outcome='ok', username=changed_by or '',
         subject_type='campaign_task', subject_key=task.name,
@@ -6795,8 +6849,11 @@ def prodtask_rerun_entire_task_request(*, task, site='', placement=None,
     return task
 
 
+_QUEUED_RESIDUAL_SELECTION = object()
+
+
 def prodtask_rerun_residual_request(*, task, site='', placement=None,
-                                    changed_by=''):
+                                    changed_by='', residual_exclusion=_QUEUED_RESIDUAL_SELECTION):
     """Queue a residual .tryN submission covering the undelivered
     remainder (docs/JEDI_INTEGRATION.md § Residual rerun), on ``site``
     when one is chosen. The spec builder computes the residual and
@@ -6805,6 +6862,13 @@ def prodtask_rerun_residual_request(*, task, site='', placement=None,
     if task.panda_task_id is None:
         raise ServiceError(
             'Task has no recorded PanDA submission; use Submit to PanDA.', status=409)
+    # The front consumes its queued operation. A fresh API request passes
+    # an explicit snapshot or None, never reusing a previous choice.
+    if residual_exclusion is _QUEUED_RESIDUAL_SELECTION:
+        residual_exclusion = ((task.overrides or {}).get('queued') or {}).get('residual_exclusion')
+    if residual_exclusion:
+        from .residual_exclusions import validate_snapshot
+        validate_snapshot(task, residual_exclusion)
     old_panda_task_id = task.panda_task_id
     old_status = task.status
     task.panda_task_id = None
@@ -6812,7 +6876,8 @@ def prodtask_rerun_residual_request(*, task, site='', placement=None,
     task.save(update_fields=['panda_task_id', 'status', 'updated_at'])
     try:
         prodtask_submit_request(task=task, residual=True,
-                                residual_of=old_panda_task_id,
+                                residual_of=(residual_exclusion['of'] if residual_exclusion else old_panda_task_id),
+                                residual_exclusion=residual_exclusion,
                                 site=site, placement=placement,
                                 changed_by=changed_by)
     except Exception:
