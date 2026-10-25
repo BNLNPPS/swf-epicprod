@@ -144,6 +144,13 @@ Local queue and storage configuration retain the `es_events` and
 record contains adapter messages and selected startup markers, without an
 environment dump.
 
+The adapter resolves the scheduler's uid/gid on the host and stages private
+passwd/group lookup files before entering a user and mount namespace. Those
+files are bound over the lookup paths only in that process namespace, so the
+CVMFS Apptainer can resolve the account even without the site's NSS service.
+The host account files and numeric identity remain unchanged. A failed host
+lookup stops the launch before dispatch.
+
 Initial commissioning workers have a twenty-minute ceiling including staging,
 clamped to an earlier Slurm end time. HEPiX `shutdowntime` exposes the same
 deadline to the common pilot; its first-job admission minimum is ten minutes.

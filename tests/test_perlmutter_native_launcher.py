@@ -70,6 +70,17 @@ name = ('runtime.tar.gz' if 'native-runtime-' in url else
 shutil.copyfile(Path({str(fixtures)!r}) / name, dest)
 ''')
         curl.chmod(0o755)
+        unshare = bin_dir / 'unshare'
+        unshare.write_text(f'''#!{sys.executable}
+import json, os, sys
+from pathlib import Path
+args = sys.argv[1:]
+Path('identity-invocation.json').write_text(json.dumps(args))
+i = args.index('native-site-identity')
+assert Path(args[i+1]).is_file() and Path(args[i+2]).is_file()
+os.execvp(args[i+3], args[i+3:])
+''')
+        unshare.chmod(0o755)
         for name in ('squeue', 'sinfo', 'sleep'):
             stub = bin_dir / name; stub.write_text('#!/bin/bash\nexit 0\n'); stub.chmod(0o755)
         source = LAUNCHER.read_text()
@@ -104,6 +115,12 @@ shutil.copyfile(Path({str(fixtures)!r}) / name, dest)
             self.assertEqual(env['EPICPROD_ES_CHANNEL'], str(work / 'es-channel'))
             self.assertIn('/global,/pscratch', env['APPTAINER_BINDPATH'])
             self.assertEqual(env['EPICPROD_MIN_TIME_FOR_NEW_JOB'], '600')
+            identity = json.loads((work / 'identity-invocation.json').read_text())
+            self.assertIn('--map-current-user', identity)
+            self.assertIn('--mount', identity)
+            self.assertIn('mount --bind "$1" /etc/passwd', identity[identity.index('-ceu')+1])
+            self.assertTrue(any(line.split(':')[2] == str(os.getuid())
+                                for line in (work / 'native-passwd').read_text().splitlines()))
             self.assertEqual((work / 'harvesterproxy').stat().st_mode & 0o777, 0o600)
             self.assertEqual((work / 'harvesterproxy').read_text(), 'PRIVATE_PROXY_MARKER')
             deadline = int((work / 'sitefeatures/shutdowntime').read_text())

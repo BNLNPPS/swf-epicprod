@@ -242,11 +242,32 @@ forward_host() {
 }
 for sig in INT QUIT USR1 TERM CONT XCPU; do trap "forward_host $sig" "$sig"; done
 log "native runtime $RUNTIME_SHA256; pilot $PILOT_SHA256; Python 3.13 channel $ES_CHANNEL_SHA256"
+# Preserve the scheduler's real identity before entering the common launcher's
+# private mount namespace. The CVMFS Apptainer cannot resolve Perlmutter's NSS
+# user there. Bind local lookup files in this process namespace only; neither
+# the host account files nor the uid/gid change.
+uid=$(id -u); gid=$(id -g)
+passwd_entry=$(getent passwd "$uid") \
+    || { log 'scheduler user lookup failed; no pilot started'; exit 67; }
+group_entry=$(getent group "$gid") \
+    || { log 'scheduler group lookup failed; no pilot started'; exit 67; }
+cp /etc/passwd native-passwd && cp /etc/group native-group \
+    || { log 'private identity staging failed; no pilot started'; exit 67; }
+if ! awk -F: -v uid="$uid" '$3 == uid {found=1} END {exit !found}' native-passwd; then
+    printf '%s\n' "$passwd_entry" >> native-passwd
+fi
+if ! awk -F: -v gid="$gid" '$3 == gid {found=1} END {exit !found}' native-group; then
+    printf '%s\n' "$group_entry" >> native-group
+fi
+log "staged scheduler identity uid=$uid gid=$gid for private container lookup"
 log "starting common native pilot in $IMAGE; ${SECONDS_LEFT}s left; one job maximum"
 # The public startup record contains only the adapter's own messages. Pilot
 # console and job diagnostics stay in the private worker file and normal
 # pilot-log route; never publish an environment or unfiltered debug output.
 timeout --signal=TERM --kill-after=60s "$SECONDS_LEFT" \
+    unshare --user --map-current-user --keep-caps --mount --propagation private -- \
+    /bin/bash -ceu 'mount --bind "$1" /etc/passwd; mount --bind "$2" /etc/group; shift 2; exec "$@"' \
+    native-site-identity "$WORKDIR/native-passwd" "$WORKDIR/native-group" \
     bash "$EPICPROD_NATIVE_ASSETS/epic-native-pilot.sh" \
     -q "$PQ" -i PR -j managed -w generic \
     --url https://pandaserver01.sdcc.bnl.gov -p 25443 \
