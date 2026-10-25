@@ -184,6 +184,10 @@ def main():
     spec = build_evgen_task_params(task)
     if spec['nJobs'] != 1 or spec['event_service']['close_s'] != args.close_s:
         raise RuntimeError('The composed task does not match the approved shape')
+    if args.fast_merge and 'EPICPROD_SWITCH_ES_FAST_MERGE=1' not in spec['exec']:
+        raise RuntimeError('The deployed producer has not enabled the requested fast close')
+    if args.close_max_files and f'ES_CLOSE_MAX_FILES={args.close_max_files}' not in spec['exec']:
+        raise RuntimeError('The deployed producer has not bounded the requested close batch')
     write_json(args.artifacts / 'submission-spec.json', spec)
     evidence = {'operator': user.username, 'approval_ref': args.approval_ref,
                 'task': task.composed_name, 'sample': sample, 'events': events,
