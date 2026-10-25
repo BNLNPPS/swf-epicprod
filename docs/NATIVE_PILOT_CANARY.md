@@ -524,7 +524,7 @@ advertising per-job image capability. PCS then accepts the 26.07.1 task
 Environment probe 27395.0 exposed an old host `unshare` without
 `--map-current-user`. The launcher now preserves the established direct
 Apptainer startup on those older batch hosts, while grid pods with modern
-namespace tools retain their private-session setup. Probe 27398.0 checks
+namespace tools retain their private-session setup. Probe 27400.0 checks
 the corrected startup and a nested 26.07.1 execution from 26.07.3 without
 acquiring a PanDA job; its submission alone is not a worker-success claim.
 
