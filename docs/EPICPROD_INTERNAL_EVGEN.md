@@ -766,6 +766,18 @@ no particle or energy.
   manifest builder accepts a steering row with an explicit event count
   (a steering file has none to size the work from).
 
+### Event Service event identity
+
+`EPICPROD_SWITCH_ES_GUN_EVENTS=1` uses the absolute range start in the
+gun seed and passes that start minus one as npsim's event-number offset.
+Without this switch, each gun unit restarts its event headers at zero;
+distinct generated physics alone does not establish unique event IDs in
+a merged close. A recovered partial block also needs its own seed rather
+than restarting the full block's stream. The switch is off by default.
+New production statistics require a distinct sample stem, whose hash
+separates its streams from the existing production sample; renaming only
+the PanDA task or the output prefix does not change the gun's seed.
+
 ## Related
 
 - [EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md) — the payload this stage
