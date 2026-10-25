@@ -261,8 +261,9 @@ wait "$native_pid"; rc=$?
 if (( rc != 0 )); then
     # Only the common launcher's startup markers are safe in the public
     # record; the complete console remains private.
-    grep -E '^ePIC native pilot(:| startup failed)|^ModuleNotFoundError:|^FATAL[ :]' \
-        native-pilot-console.log | tail -12 || true
+    sed -r 's/\x1B\[[0-9;]*[[:alpha:]]//g' native-pilot-console.log \
+        | grep -E '^ePIC native pilot(:| startup failed)|^ModuleNotFoundError:|^(FATAL|ERROR|WARNING)[ :]|^(unshare|mount|apptainer):' \
+        | tail -12 || true
 fi
 log "native pilot finished with code $rc"
 exit "$rc"
