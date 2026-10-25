@@ -36,6 +36,15 @@ job 5912562 recovered the remaining 1,981. The exact cloud shutdown cause is
 unconfirmed, so this establishes worker-loss recovery without claiming a
 specific preemption cause. No controlled termination or expansion was requested.
 
+That short run establishes recovery correctness and readable output, not an
+effective long-running production demonstration: only 19 events had been saved
+when the worker was lost. Task 41202 (`gES2`) is the production-shaped follow-up:
+100,000 fresh neutron-gun events, two initial consumers, four-hour ES deadlines
+and one-minute rolling closes instead of five minutes. Existing worker capacity
+is unchanged. Sustained per-core occupancy, actual registered-close cadence and
+the saved-versus-unfinished work at a real worker loss are the evidence still
+required; the new settings and submission alone do not validate them.
+
 Decided with Torre on 2026-09-30, after Harvester was found starting
 empty workers for the queue (below). The request to the PanDA team
 went out the same day.

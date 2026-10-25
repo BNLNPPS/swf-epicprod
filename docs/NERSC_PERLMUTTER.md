@@ -280,9 +280,12 @@ metadata; this is separate from the physics-validation service's verdict.
 
 The 1,000-event sample exhausted its input in minutes and occupied only 7.9%
 of its logical core-time. It proves the output path, not sustained ES slot use.
-The next bounded production sample supplies two long consumers, fresh random
-streams, rolling one-minute closes and enough events to stay busy through the
-allocation. Acceptance requires the observed per-core timeline, repeated
+Task 41203 (`pES2`) supplies 1,000,000 fresh neutron-gun events to two initial
+long consumers, rolling one-minute closes and enough work to stay busy through
+the allocation. Workers have a four-hour ceiling; the ES harness has a
+3-hour-45-minute deadline including its five-minute drain margin, reserving
+time for staging and final pilot output handling. Deferred ranges remain in
+the task's ES ledger for subsequent consumers. Acceptance requires the observed per-core timeline, repeated
 registered closes during processing, and complete independently readable event
 coverage. A declared deadline or successful tiny task is not that evidence.
 
