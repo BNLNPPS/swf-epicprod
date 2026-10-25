@@ -252,6 +252,16 @@ canary probes page; for `NERSC_Perlmutter_epic` it is 12 hours
 (2026-09-12). Between probes the queue's health reading comes from the
 production jobs on it, which a fed queue always has.
 
+### Native 26.07.3 gun registration proof (25 October UTC)
+
+Task 41148 / job 5910732 finished all 20 events at 01:49:06Z using the
+native worker and the corrected pilot-proxy token handoff. The JLab catalog
+independently lists one registered 20-event close. The normal 26.07.3 PODIO
+reader read all 387 collections and found 20 distinct generated-truth
+momenta. That run predates the ES gun event-number correction: its headers
+contain only five distinct IDs, so it is not the acceptance proof for new
+production event identity.
+
 ## Related
 
 - [NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md): the design the

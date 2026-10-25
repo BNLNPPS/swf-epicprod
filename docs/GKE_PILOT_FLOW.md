@@ -220,8 +220,8 @@ debug pod with that setting started the payload image as uid 1000
 ## Still to do
 
 - Observe sustained registered closes and preemption/range recovery under the
-  authorized five-job cap. If no natural preemption occurs, request one
-  controlled worker termination after registered progress.
+  authorized five-job cap. A controlled worker termination needs separate explicit authorization; no
+  request to another person is authorized or pending.
 - Cron enqueue (`*/5`) is installed and enabled; preserve the cap and shared
   native runtime while commissioning continues.
 - Whether preemption notices reach the pod.
