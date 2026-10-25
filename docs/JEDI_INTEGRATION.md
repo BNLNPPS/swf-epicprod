@@ -589,7 +589,8 @@ per manifest row.
   tarballs whose modification time is older than seven days, so a retry of
   an older task fails when each job's pre-process cannot download the
   tarball (executor error 5303). The server API `touch_cache_file` resets
-  the file's clock; this doer touches the tarball of every epic-VO task in
+  the file's clock; this doer touches the tarball of every EIC task (epic
+  VO, or working group EIC under any VO, as production runs) in
   a non-final state, plus tasks finished, failed, or exhausted within the
   retention window (SysConfig `panda_sandbox_keepalive_final_days`,
   default 30). Tarball names and their source server come from each task's
