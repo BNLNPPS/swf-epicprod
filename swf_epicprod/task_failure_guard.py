@@ -30,6 +30,7 @@ ROLLING_SOURCE = 'front_task_failure_guard_rolling'
 WORKER_LOSS = (('jobdispatchererrorcode', 100),   # lost heartbeat
                ('taskbuffererrorcode', 300),      # worker finished while the job ran
                ('piloterrorcode', 1213))          # reached maxtime
+INVALID_BATCH_ID = 'got an update request with invalid batchID='
 # Attempts read per task, newest first: the window and room for the
 # worker losses set aside within it.
 ROLLING_READ = 300
@@ -78,9 +79,10 @@ def judge_rolling(attempts, cfg=None):
     run = streak[:cfg['run_failed']]
     run_hosts = len({a['host'] for a in run})
     window_hosts = len({a['host'] for a in failures})
-    evidence = {'counted': len(counted), 'consecutive_failed': len(streak),
+    evidence = {**cfg, 'window_failed_threshold': cfg['window_failed'],
+                'counted': len(counted), 'consecutive_failed': len(streak),
                 'window_failed': len(failures), 'run_hosts': run_hosts,
-                'window_hosts': window_hosts, 'set_aside': set_aside, **cfg}
+                'window_hosts': window_hosts, 'set_aside': set_aside}
     if len(run) >= cfg['run_failed'] and run_hosts >= cfg['min_hosts']:
         return True, dict(evidence, trigger='consecutive')
     if (len(counted) >= cfg['window'] and len(failures) >= cfg['window_failed']
@@ -91,17 +93,23 @@ def judge_rolling(attempts, cfg=None):
 
 def attempt_rows(rows):
     """PanDA job rows (jobstatus, jobdispatchererrorcode,
-    taskbuffererrorcode, piloterrorcode, modificationhost), newest first,
+    taskbuffererrorcode, piloterrorcode, modificationhost, superrorcode,
+    superrordiag), newest first,
     as the judge's attempts: the host without its slot
     (``slot1_2@comphy.fsu.edu`` -> ``comphy.fsu.edu``)."""
     out = []
-    for status, dispatcher, taskbuffer, pilot, host in rows:
+    for status, dispatcher, taskbuffer, pilot, host, supervisor, supervisor_diag in rows:
         codes = {'jobdispatchererrorcode': int(dispatcher or 0),
                  'taskbuffererrorcode': int(taskbuffer or 0),
                  'piloterrorcode': int(pilot or 0)}
         failed = status == 'failed'
+        # A server rejection of the worker's batch identity is infrastructure,
+        # not a payload failure. Do not set aside unrelated supervisor errors.
+        invalid_batch = (int(supervisor or 0) == 1
+                         and str(supervisor_diag or '').startswith(INVALID_BATCH_ID))
         out.append({'failed': failed,
-                    'worker_loss': failed and any(codes[k] == v for k, v in WORKER_LOSS),
+                    'worker_loss': failed and (invalid_batch or any(
+                        codes[k] == v for k, v in WORKER_LOSS)),
                     'host': str(host or '').rsplit('@', 1)[-1]})
     return out
 
@@ -153,10 +161,10 @@ def observations(queues):
             # The rolling sample: the latest completed attempts in completion
             # order, each PandaID once.
             cols = ('pandaid, jobstatus, endtime, jobdispatchererrorcode, taskbuffererrorcode, '
-                    'piloterrorcode, modificationhost')
+                    'piloterrorcode, modificationhost, superrorcode, superrordiag')
             cursor.execute(
                 'SELECT jobstatus, jobdispatchererrorcode, taskbuffererrorcode, piloterrorcode, '
-                'modificationhost FROM ('
+                'modificationhost, superrorcode, superrordiag FROM ('
                 f'SELECT {cols} FROM "{PANDA_SCHEMA}".jobsactive4 WHERE {predicate} '
                 'UNION '
                 f'SELECT {cols} FROM "{PANDA_SCHEMA}".jobsarchived4 WHERE {predicate}'

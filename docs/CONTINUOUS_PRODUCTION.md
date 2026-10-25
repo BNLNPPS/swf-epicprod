@@ -788,7 +788,10 @@ order with each PandaID once. A failure whose worker ended under the job
 (dispatcher 100, lost heartbeat; taskbuffer 300, worker finished while the
 job ran) counts as neither failure nor success, and so does a job the pilot
 cut at the slot's time limit (pilot 1213, reached maxtime; Torre Wenaus,
-2026-10-24): the slot's clock, not the task's fault. The failures behind the
+2026-10-24): the slot's clock, not the task's fault. A supervisor 1 rejection
+whose diagnostic starts `got an update request with invalid batchID=` is
+also set aside: the server rejected a worker identity, not the task's
+payload. Other supervisor errors still count. The failures behind the
 trigger must span at least three hosts, since a run on one node is the node
 guard's. A verified resume starts a fresh sample, as above. Its mode is
 SysConfig `front.task_guard.mode` (`shadow` by default, `active`, `off`);
@@ -808,10 +811,14 @@ minutes earlier. 40431, at GREX, waits 277 minutes because GREX reports four
 host names and no run of ten spanned three of them, while the first rule
 paused it at once. On healthy tasks it tripped twice before time-limit kills
 were set aside: 41051 on 2026-10-23 at 23:04Z, on a wave of 83 jobs cut by
-the six-hour limit across 26 hosts, which no longer trips; and 40584 on
-2026-10-07 at 11:10Z, on 192 failures with no error code across 109 hosts at
-eight or more OSG sites, which still does and looked like a task fault on
-every count. 41035, 41043, 41044 and 41052 never trip.
+the six-hour limit across 26 hosts, which no longer trips. The activation
+review on 2026-10-25 also identified 40584's 2026-10-07 cascade as supervisor
+1 invalid-batch-ID rejections. They had no pilot/dispatcher/taskbuffer error
+code, but the supervisor diagnostic identifies a worker-identity fault;
+they are now set aside rather than pausing the task. 41035, 41043, 41044
+and 41052 never trip. The evidence records the observed failed count as
+`window_failed` and the configured threshold separately as
+`window_failed_threshold`.
 
 ### Breaker scopes
 
