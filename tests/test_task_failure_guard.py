@@ -108,13 +108,36 @@ class RollingRuleTest(unittest.TestCase):
         self.assertEqual(cfg['run_failed'], 5)
         self.assertTrue(guard.judge_rolling(attempts('F' * 5 + 'S' * 45), cfg)[0])
 
+    def test_evidence_keeps_observed_count_separate_from_threshold(self):
+        trip, ev = guard.judge_rolling(attempts('FS' * 20 + 'F' * 10))
+        self.assertTrue(trip)
+        self.assertEqual(ev['trigger'], 'window')
+        self.assertEqual(ev['window_failed'], 30)
+        self.assertEqual(ev['window_failed_threshold'], 25)
+
     def test_attempt_rows_read_panda_fields(self):
-        rows = [('failed', 100, 0, 0, 'slot1_2@comphy.fsu.edu'), ('failed', 0, 300, 0, 'a@x'),
-                ('failed', 0, 0, 1213, 'w@v'), ('failed', 0, 0, 1305, 'b@y'),
-                ('finished', 0, 0, 0, 'c@z')]
+        rows = [('failed', 100, 0, 0, 'slot1_2@comphy.fsu.edu', 0, ''),
+                ('failed', 0, 300, 0, 'a@x', 0, ''),
+                ('failed', 0, 0, 1213, 'w@v', 0, ''),
+                ('failed', 0, 0, 1305, 'b@y', 0, ''),
+                ('finished', 0, 0, 0, 'c@z', 0, '')]
         self.assertEqual([(a['failed'], a['worker_loss'], a['host']) for a in guard.attempt_rows(rows)],
                          [(True, True, 'comphy.fsu.edu'), (True, True, 'x'), (True, True, 'v'),
                           (True, False, 'y'), (False, False, 'z')])
+
+    def test_invalid_worker_batch_identity_is_not_a_task_failure(self):
+        diag = 'got an update request with invalid batchID=osgsub01#21141.816#1791357953'
+        rows = [('failed', 0, 0, 0, 'slot@host', 1, diag)] * 30
+        sample = guard.attempt_rows(rows)
+        self.assertTrue(all(a['worker_loss'] for a in sample))
+        self.assertFalse(guard.judge_rolling(sample + attempts('S' * 50))[0])
+        # Require both the supervisor code and the specific identity diagnostic.
+        other = guard.attempt_rows([
+            ('failed', 0, 0, 0, 'h1', 1, 'unrelated supervisor error'),
+            ('failed', 0, 0, 0, 'h2', 2, diag),
+            ('failed', 0, 0, 0, 'h3', 0, None),
+        ])
+        self.assertTrue(all(not a['worker_loss'] for a in other))
 
     def exercise(self, pattern, *, rolling_mode, mode='active', recorded=False):
         sample = dict(jeditaskid=7, taskname='group.EIC.t', site='Q', status='running',
