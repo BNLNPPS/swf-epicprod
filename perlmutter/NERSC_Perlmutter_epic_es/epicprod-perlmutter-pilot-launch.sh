@@ -10,9 +10,9 @@ PQ=${1:?panda queue}
 ACCESS_POINT=${2:?harvester access point}
 HARVESTER_DIR=/global/common/software/m3763/panda-harvester
 QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/$PQ
-RUNTIME_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/native-runtime-6d64079.tar.gz
-RUNTIME_SHA256=3293f3cf3317af8d90266684ef71506c0d6b8272866d30e410e0324da628fbf2
-PILOT_SHA256=9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2
+RUNTIME_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/native-runtime-perlmutter-es-batch-afeaebd.tar.gz
+RUNTIME_SHA256=9981543f9ba1e3afe5cdd2045dbe745c8a564d6bbbd86199777f66b28cc8eddf
+PILOT_SHA256=98a30c3237d742655faed267bb8f3dbb7ba634c10e08e3b68054e92899075028
 ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py313-debian13.tar.gz
 ES_CHANNEL_SHA256=0993145fb66b52fc759fafe01bd5cef80ead0f3fb47d721feae6aa2a61a0d0ae
 IMAGE=/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable
@@ -169,7 +169,7 @@ PY
 )
 if [[ -n "$EXCLUDED" ]]; then log "node guard excludes this node: $EXCLUDED; no pilot started"; exit 0; fi
 
-# Stage the same native runtime that Google uses. Perlmutter compute nodes
+# Stage the bounded Perlmutter batch runtime. Perlmutter compute nodes
 # cannot read eic.opensciencegrid.org, so immutable HTTPS objects carry it and
 # the matching Python 3.13 ES channel. Fail closed; never fall back to ALRB or
 # a different pilot after a failed download or verification.
@@ -191,6 +191,8 @@ from pathlib import Path
 root = Path(sys.argv[1])
 manifest = json.loads((root / 'manifest.json').read_text())
 assert manifest['pilot_archive_sha256'] == sys.argv[2], 'wrong pilot archive'
+assert manifest.get('es_batch_channel', {}).get('version') == 1, 'batch channel missing'
+assert manifest['es_batch_channel']['stageout_s'] == 300, 'wrong reporting cadence'
 for name, expected in manifest['files'].items():
     assert hashlib.sha256((root / name).read_bytes()).hexdigest() == expected, name
 CHECK
@@ -217,10 +219,13 @@ export EPICPROD_NATIVE_ARCHIVE=pilot3-native.tar.gz
 export EPICPROD_NATIVE_IMAGE=$IMAGE
 export EPICPROD_ES_CHANNEL=$WORKDIR/es-channel
 export PILOT_ES_EXECUTOR_TYPE=generic
+export EPICPROD_SWITCH_ES_BATCH_CHANNEL=1
+export EPICPROD_ES_STAGEOUT_GAP=300
 export STORAGEDATA_SERVER_URL=file://$WORKDIR/ddmendpoints.json
 export EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
 export APPTAINERENV_EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
-export ATHENA_PROC_NUMBER=${SLURM_CPUS_ON_NODE:-$(nproc)}
+# One payload thread per physical core; Slurm exposes 256 hardware threads.
+export ATHENA_PROC_NUMBER=128
 export APPTAINER_BINDPATH=${APPTAINER_BINDPATH:+$APPTAINER_BINDPATH,}/global,/pscratch
 export MACHINEFEATURES=$WORKDIR/sitefeatures
 mkdir -p "$MACHINEFEATURES"

@@ -47,6 +47,7 @@ echo 'PRIVATE_CONSOLE_MARKER'
 '''
         files = {'epic-native-pilot.sh': native, 'pilot3-native.tar.gz': pilot}
         manifest = {'pilot_archive_sha256': pilot_sha,
+                    'es_batch_channel': {'version': 1, 'stageout_s': 300},
                     'files': {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}}
         files['manifest.json'] = json.dumps(manifest).encode()
         runtime_sha = archive(fixtures / 'runtime.tar.gz', files)
@@ -111,7 +112,9 @@ os.execvp(args[i+3], args[i+3:])
             invocation = json.loads((work / 'invocation.json').read_text())
             env = invocation['env']
             self.assertEqual(env['EPICPROD_NATIVE_BATCH'], '1')
-            self.assertEqual(env['ATHENA_PROC_NUMBER'], '256')
+            self.assertEqual(env['ATHENA_PROC_NUMBER'], '128')
+            self.assertEqual(env['EPICPROD_SWITCH_ES_BATCH_CHANNEL'], '1')
+            self.assertEqual(env['EPICPROD_ES_STAGEOUT_GAP'], '300')
             self.assertEqual(env['HARVESTER_WORKER_ID'], '456')
             self.assertEqual(env['EPICPROD_NATIVE_ARCHIVE'], 'pilot3-native.tar.gz')
             self.assertEqual(env['EPICPROD_ES_CHANNEL'], str(work / 'es-channel'))

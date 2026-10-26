@@ -126,9 +126,9 @@ is served from `main`, as everything in this repository is: `main` is what
 runs.
 
 The launcher is a site adapter to the **common native pilot**, using the
-same `native-runtime-6d64079` bundle and archive
-`9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`
-as Google commissioning. It starts the campaign image's own Python through
+Perlmutter-only `native-runtime-perlmutter-es-batch-afeaebd` bundle and archive
+`98a30c3237d742655faed267bb8f3dbb7ba634c10e08e3b68054e92899075028`.
+It adds bounded batch IPC to the previously approved native baseline. It starts the campaign image's own Python through
 Apptainer, without ALRB. Event Service uses that pilot's generic executor
 and a matching Python 3.13 yampl channel; there is no separate ES pilot fork.
 The runtime and channel arrive over immutable, checksum-pinned HTTPS URLs
@@ -145,8 +145,7 @@ has started or an ES payload has succeeded.
 
 The existing Slurm script can still start eighty copies of the adapter.
 Only rank zero continues, producing one pilot on the single-node allocation;
-all other ranks exit before staging anything. The pilot advertises the
-node's CPU count, retains the Harvester identity and uses a mode-0600 copy
+all other ranks exit before staging anything. The pilot advertises 128 physical payload cores, retains the Harvester identity and uses a mode-0600 copy
 of the site's proxy. `/global`, `/pscratch` and `/cvmfs` remain accessible.
 Local queue and storage configuration retain the `es_events` and
 `es_failover` routes. Pilot console output stays private; the public launch
