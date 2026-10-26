@@ -8,10 +8,11 @@ from swf_epicprod.idle_move import choose, idle_targets
 OSG, GREX = 'BNL_OSG_PanDA_1', 'UM_GREX_PanDA_1'
 
 
-def _decision(state, committed_h, median, ceiling, canary='healthy', feed=True):
+def _decision(state, committed_h, median, ceiling, canary='healthy', feed=True,
+              finished=900, failed=100):
     return {'state': state, 'committed_h': committed_h, 'h_low': 8.0, 'h_high': 24.0,
             'median_walltime_h': median, 'ceiling': ceiling, 'canary': canary,
-            'feed_switch': feed}
+            'feed_switch': feed, 'gate_finished': finished, 'gate_failed': failed}
 
 
 def _task(tid, site=GREX, queued=0, ungenerated=500, started=0, priority=950,

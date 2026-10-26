@@ -14,6 +14,7 @@ not travel back and forth (docs/CONTINUOUS_PRODUCTION.md, Idle-queue move).
 SOURCE = 'front_idle_move'
 MODES = ('active', 'shadow', 'off')
 DEFAULTS = {'mode': 'active', 'max_per_cycle': 4, 'cooldown_h': 12.0}
+MOVE_FAILURE_LIMIT = 0.20       # an idle queue takes moved work only below this failure fraction
 # Paused tasks wait for an operator's resume, which is not ours to make.
 TASK_STATUSES = ('defined', 'ready', 'running', 'scouting', 'scouted', 'pending',
                  'assigning', 'throttled')
@@ -31,10 +32,39 @@ def settings(setting):
     return out
 
 
-def idle_targets(decisions):
+def failure_fraction(decision):
+    """The queue's failed jobs over its finished and failed in the front's
+    gate window, failures a finding explains included: a queue failing for
+    a known reason is failing. None when the window holds no outcome. Pure."""
+    d = decision or {}
+    if d.get('gate_finished') is None or d.get('gate_failed') is None:
+        return None
+    failed = int(d['gate_failed']) + int(d.get('gate_explained') or 0)
+    outcomes = int(d['gate_finished']) + failed
+    return failed / outcomes if outcomes else None
+
+
+def refused_for_failures(decision):
+    """Why an idle queue takes no moved work for its failures, or ''.
+    Torre Wenaus, 2026-10-26, after the front moved task 41349's 500 jobs to
+    GREX while 2,696 of its 7,343 jobs in the gate window had failed (37%,
+    under the front's 60% red): "NO MOVE UNLESS FAILURE FRACTION BELOW 20%".
+    A fraction that cannot be read does not establish it. Pure."""
+    fraction = failure_fraction(decision)
+    d = decision or {}
+    if fraction is None:
+        return 'no finished or failed job in the gate window to read its failure fraction'
+    if fraction >= MOVE_FAILURE_LIMIT:
+        failed = int(d['gate_failed']) + int(d.get('gate_explained') or 0)
+        return (f'failure fraction {fraction:.0%} ({failed} failed of {failed + int(d["gate_finished"])} '
+                f'in the gate window), not below {MOVE_FAILURE_LIMIT:.0%}')
+    return ''
+
+
+def idle_queues(decisions):
     """The queues that need work the ready pool cannot give them: the
-    front found nothing eligible, the queue is below its low mark and
-    its canary is healthy. Pure."""
+    front found nothing eligible, the queue is below its low mark, its
+    feed is on and its canary is healthy. Pure."""
     out = {}
     for queue, d in (decisions or {}).items():
         if (d.get('state') == 'no_work' and d.get('committed_h') is not None
@@ -42,6 +72,12 @@ def idle_targets(decisions):
                 and d.get('canary') == 'healthy' and d.get('feed_switch')):
             out[queue] = d
     return out
+
+
+def idle_targets(decisions):
+    """The idle queues that may take moved work: those whose failure
+    fraction is below MOVE_FAILURE_LIMIT. Pure."""
+    return {q: d for q, d in idle_queues(decisions).items() if not refused_for_failures(d)}
 
 
 def task_hours(rows, decision):
@@ -208,7 +244,9 @@ def run(queues, decisions, placement, *, enabled, front_mode, cfg, dry_run, crea
     from swf_epicprod.front import closed_queues
     from swf_epicprod.queues import dispatch_capabilities
 
-    out = {'mode': cfg['mode'], 'moves': [], 'skipped': []}
+    out = {'mode': cfg['mode'], 'moves': [], 'skipped': [],
+           'refused': [{'queue': q, 'why': refused_for_failures(d), 'failure_fraction': failure_fraction(d)}
+                       for q, d in sorted(idle_queues(decisions).items()) if refused_for_failures(d)]}
     if not enabled or cfg['mode'] not in ('active', 'shadow') or not idle_targets(decisions):
         return out
     state = {'queues': decisions, 'placement': placement}
