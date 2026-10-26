@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Atomically repair owned, still-pending CE launcher copies without requeueing."""
+import argparse
 import hashlib
 import json
 import os
@@ -11,11 +12,26 @@ import sys
 import uuid
 
 OLD = 'e72517516212a5c4bd3b6c621cbc9b39355d2fe567a9393855fceb7c4034b10f'
-rows = json.loads(Path(sys.argv[1]).read_text())
-replacement = Path(sys.argv[2]).read_bytes()
+PILOT_ARCHIVES = {
+    '9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2',
+    '250054c846255a7d9aa059a4e52d0de03eb07e6bc35e563f06e28697bfc0cc41',
+}
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('manifest', type=Path)
+parser.add_argument('launcher', type=Path)
+parser.add_argument('--pilot-archive', type=Path)
+parser.add_argument('--archive-sha256')
+parser.add_argument('--apply', action='store_true')
+args = parser.parse_args()
+rows = json.loads(args.manifest.read_text())
+replacement = args.launcher.read_bytes()
+replacement_hash = hashlib.sha256(replacement).hexdigest()
+archive = args.pilot_archive.read_bytes() if args.pilot_archive else None
+if archive and (not args.archive_sha256 or hashlib.sha256(archive).hexdigest() != args.archive_sha256):
+    raise RuntimeError('Headroom archive hash does not match')
 if b'export _CONDOR_SCRATCH_DIR=$TOP' not in replacement or b'EPICPROD_CE_SANDBOX' not in replacement:
     raise RuntimeError('Replacement does not carry the approved worker relocation')
-apply = '--apply' in sys.argv[3:]
+apply = args.apply
 uid = os.getuid()
 os.environ['PATH'] = '/opt/slurm/bin:' + os.environ.get('PATH', '')
 root = Path(os.environ['OSG_WN_TMP']) / ('epicprod-pending-fix-' + uuid.uuid4().hex)
@@ -49,7 +65,19 @@ for row in rows:
     if path.is_symlink() or not path.is_file() or path.lstat().st_uid != uid or sandbox.lstat().st_uid != uid:
         continue
     original = path.read_bytes()
-    if hashlib.sha256(original).hexdigest() != OLD:
+    original_hash = hashlib.sha256(original).hexdigest()
+    if original_hash not in (OLD, replacement_hash):
+        continue
+    archive_path = sandbox / 'pilot3-native.tar.gz'
+    original_archive, archive_hash = None, None
+    if archive:
+        if archive_path.is_symlink() or not archive_path.is_file() or archive_path.stat().st_uid != uid:
+            continue
+        original_archive = archive_path.read_bytes()
+        archive_hash = hashlib.sha256(original_archive).hexdigest()
+        if archive_hash not in PILOT_ARCHIVES | {args.archive_sha256}:
+            continue
+    if original_hash == replacement_hash and (not archive or archive_hash == args.archive_sha256):
         continue
     try:
         body = subprocess.check_output(['scontrol', 'write', 'batch_script', jid, '-'], universal_newlines=True, timeout=10)
@@ -58,9 +86,12 @@ for row in rows:
     if 'epicprod-multipilot.sh' not in body:
         print(json.dumps({'slurm': jid, 'skipped': 'Batch script does not reference launcher'}), flush=True)
         continue
-    record = dict(slurm=jid, path=str(path), before=OLD, after=hashlib.sha256(replacement).hexdigest(),
-                  slurm_before=fields, apply=apply)
+    record = dict(slurm=jid, path=str(path), before=original_hash, after=replacement_hash,
+                  slurm_before=fields, apply=apply, archive_before=archive_hash,
+                  archive_after=args.archive_sha256 if archive else None)
     (root / (jid + '.before.sh')).write_bytes(original)
+    if original_archive is not None:
+        (root / (jid + '.before.tar.gz')).write_bytes(original_archive)
     (root / (jid + '.json')).write_text(json.dumps(record))
     if apply:
         # Recheck immediately before an atomic single-file replacement. Assets
@@ -71,6 +102,11 @@ for row in rows:
             continue
         if 'JobState=PENDING ' not in current:
             continue
+        if archive and archive_hash != args.archive_sha256:
+            temp_archive = archive_path.with_name('.epicprod-pilot-' + uuid.uuid4().hex)
+            temp_archive.write_bytes(archive)
+            temp_archive.chmod(stat.S_IMODE(archive_path.stat().st_mode))
+            os.replace(str(temp_archive), str(archive_path))
         temp = path.with_name('.epicprod-launcher-' + uuid.uuid4().hex)
         temp.write_bytes(replacement); temp.chmod(stat.S_IMODE(path.stat().st_mode))
         os.replace(str(temp), str(path))
@@ -78,4 +114,7 @@ for row in rows:
         (root / (jid + '.json')).write_text(json.dumps(record))
     changed += 1
     print(json.dumps(record), flush=True)
-print(json.dumps({'summary': True, 'launchers': changed, 'apply': apply, 'journal': str(root)}), flush=True)
+statv = os.statvfs('/var/lib/condor-ce/spool')
+print(json.dumps({'summary': True, 'launchers': changed, 'apply': apply, 'journal': str(root),
+                  'ce_free_bytes': statv.f_bavail * statv.f_frsize,
+                  'ce_free_inodes': statv.f_favail}), flush=True)

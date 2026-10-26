@@ -11,10 +11,11 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
+import re
 import tarfile
 
 
-def build(baseline, expected_sha256, output, production=False):
+def build(baseline, expected_sha256, output, production=False, heartbeat_seconds=None):
     digest = hashlib.sha256(baseline.read_bytes()).hexdigest()
     if digest != expected_sha256:
         raise ValueError('Baseline hash mismatch; refusing to patch a different pilot')
@@ -29,6 +30,21 @@ def build(baseline, expected_sha256, output, production=False):
         archive.extractall(output)
     tree = output / 'pilot3'
     changes = []
+
+    if heartbeat_seconds is not None:
+        if not 60 <= heartbeat_seconds <= 900:
+            raise ValueError('Headroom heartbeat must be between 60 and 900 seconds')
+        path = tree / 'pilot/util/default.cfg'
+        before = path.read_bytes()
+        content, count = re.subn(r'^heartbeat: 1800$',
+                                 'heartbeat: ' + str(heartbeat_seconds),
+                                 before.decode(), flags=re.MULTILINE)
+        if count != 1:
+            raise ValueError('Unexpected pilot heartbeat baseline')
+        path.write_text(content)
+        changes.append({'path': 'pilot/util/default.cfg',
+                        'before': hashlib.sha256(before).hexdigest(),
+                        'after': hashlib.sha256(path.read_bytes()).hexdigest()})
 
     def write(relative, text):
         path = tree / relative
@@ -264,5 +280,8 @@ if __name__ == '__main__':
     parser.add_argument('--output', required=True, type=Path, help='new directory; never overwritten')
     parser.add_argument('--production', action='store_true',
                         help='no test-task guard: the archive serves ordinary jobs')
+    parser.add_argument('--heartbeat-seconds', type=int,
+                        help='explicit runtime heartbeat cadence for headroom monitoring')
     args = parser.parse_args()
-    print(json.dumps(build(args.baseline, args.sha256, args.output, args.production), indent=2))
+    print(json.dumps(build(args.baseline, args.sha256, args.output, args.production,
+                           args.heartbeat_seconds), indent=2))

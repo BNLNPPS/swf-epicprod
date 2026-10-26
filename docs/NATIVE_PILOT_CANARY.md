@@ -570,6 +570,25 @@ Evidence is under
 This validates the bounded worker and installs future-worker assets;
 subsequent normal Harvester production use remains observable separately.
 
+The first rollout left the archive's 1,800-second heartbeat unchanged,
+longer than the disk reader's 900-second freshness window. The GREX
+headroom archive can now be built with `--heartbeat-seconds 300`. Archive
+`7f3c68051b3950be84cd30d3f0d8c8c720cf7340f90a09b2e057726b2c31638a`
+differs from the validated `250054` archive only in that configuration
+value. Its immutable runtime is `native-grex-headroom-5min-20261025`.
+Fresh reporting, rather than a longer reader tolerance, establishes
+monitoring coverage.
+
+Already-transferred queued workers retain their old runtime. The bounded
+`scripts/grex-fix-pending-launchers.py` repair verifies fresh Slurm PENDING
+state, UID, sandbox, batch entry and exact original hashes. It replaces
+the launcher atomically; optional `--pilot-archive` and
+`--archive-sha256` add the verified headroom archive. Backups and before/
+after Slurm metadata go to private site project storage. It never
+cancels or requeues workers and preserves their submit/eligible times.
+Running sandboxes and unknown runtime hashes are excluded. In-place
+queued repair is distinct from proof that a repaired worker has started.
+
 ## GREX Event Service channel
 
 The Python 3.13 channel is published beside the existing Python 3.11
