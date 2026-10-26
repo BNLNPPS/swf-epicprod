@@ -125,6 +125,27 @@ class TestDrain(unittest.TestCase):
 
 
 class TestLookahead(unittest.TestCase):
+    def test_sparse_legacy_pool_drains_at_its_bound(self):
+        """A one-slot five-event unit must not stall on ten shuffled ranges."""
+        feed = h.FileFeed.__new__(h.FileFeed)
+        feed.ranges = ranges([1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20])
+        feed.exhausted, feed.reports = False, []
+        pool = h.Pool(feed, lookahead=5)
+        deadline = time.monotonic() + 3
+        taken = []
+        while time.monotonic() < deadline:
+            unit = pool.take_unit(5, min_events=16)
+            if unit:
+                taken.extend(r['startEvent'] for r in unit)
+            elif pool.exhausted and not len(pool):
+                break
+            else:
+                pool.want()
+                time.sleep(.01)
+        feed.exhausted = True
+        pool.thread.join(timeout=1)
+        self.assertEqual(sorted(taken), list(range(1, 21)))
+
     def test_pool_stops_at_the_lookahead_until_wanted(self):
         """The pool holds at most the lookahead, so "No more events" is not
         drawn from the pilot at the start (job 3618786)."""

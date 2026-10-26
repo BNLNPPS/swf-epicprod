@@ -379,7 +379,7 @@ class Pool:
                 return []
             if per_unit < 1:
                 return [self.ranges.pop(0)]
-            if self.demand_batch > 1 and self.lookahead and len(self.ranges) >= 2 * self.lookahead:
+            if self.lookahead and len(self.ranges) >= 2 * self.lookahead:
                 min_events = 1  # Drain already-owned sparse residuals at the hard buffer bound.
             # The pool is read as runs: consecutive ranges of one block, in
             # event order. The first run that can be cut is cut; a run that
