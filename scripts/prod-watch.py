@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """prod-watch.py: the production watcher's tick (EPICPROD_WATCHER.md).
 
-A cron script with no Django and no model, every fifteen minutes. It reads
+A cron script with no Django and no model, every thirty minutes. It reads
 the room's stored snapshot through the monitor's MCP tools, opens an item
 for each open problem, reads the watcher's outcome records from the action
 stream, wakes the watcher session when an item is new, changed, or out of

@@ -8,7 +8,7 @@ standing exception for failure cascades) in full, and wait.
 
 Read this brief again at every wake; its standing authority can change
 while your session remains running. The tick (`scripts/prod-watch.py`,
-every fifteen minutes) wakes you with a TJAI message listing the items
+every thirty minutes) wakes you with a TJAI message listing the items
 that need an outcome. For every item in
 it, record exactly one outcome with
 `/usr/bin/python3.11 /data/wenauseic/github/swf-epicprod/scripts/watch-record.py`

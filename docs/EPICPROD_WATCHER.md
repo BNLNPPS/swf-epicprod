@@ -1,7 +1,7 @@
 # Production Watcher
 
 The production watcher makes sure that every known open problem in ePIC
-production gets an outcome. Every fifteen minutes a mechanical tick reads
+production gets an outcome. Every thirty minutes a mechanical tick reads
 the production record and lists what is open. When something is new or
 has changed, it wakes one dedicated LLM session. That session gives each
 open item one of three outcomes: it acts, it puts the decision to the
@@ -28,7 +28,7 @@ leave a known problem unattended.
 
 ## The tick
 
-`scripts/prod-watch.py` runs from cron every fifteen minutes under the
+`scripts/prod-watch.py` runs from cron every thirty minutes under the
 operating account. Like the notifier, it boots no Django: it reads the
 record through the monitor's MCP tools over the loopback endpoint and
 its http face. The notifier's readers move into a module beside the two
@@ -150,7 +150,7 @@ built: a `watch_respond` worker per digest, with the same contract.
 ## Escalation
 
 The tick escalates an item that has no outcome at the second tick after
-it appeared, thirty minutes at most. The escalation is one
+it appeared, an hour at most. The escalation is one
 `watch_escalated` action at outcome error, importance high, live by
 default. It reaches epicprod-live at red level through the existing
 subscription, the Capcom feed through a subscription of its own, and the
@@ -211,7 +211,7 @@ added evidence.
 ## Status
 
 Torre Wenaus, 2026-10-23: "good plan, I like it! go". Built: the tick
-(`scripts/prod-watch.py`, cron every fifteen minutes) with the room's
+(`scripts/prod-watch.py`, cron every thirty minutes) with the room's
 report, live screen, recent pauses and promises as sources; the outcome
 and promise writer (`scripts/watch-record.py`); the watcher session and
 its brief; the wake. Escalation runs in shadow (`watch_escalated`
