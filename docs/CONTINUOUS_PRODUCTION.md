@@ -418,13 +418,21 @@ function over the front's stored state. Each cycle stores, per queue:
 
 A queue is not recommendable when its feed switch is off, when a gate
 is red, or when one job of the task exceeds a limit (walltime, memory
-per job as memory per core times cores, cores). The rest rank in three
+per job as memory per core times cores, cores). The rest rank in five
 steps:
 1. By canary standing, healthy first.
-2. By committed depth in hours, least first. An uncalibrated queue with
+2. By recent failures: a queue whose gate window (six hours) holds at
+   least 50 outcomes, 10% or more of them failed, ranks after the cleaner
+   queues, well before its failure-window gate (60%) holds it.
+3. By need, most first: the work the queue lacks to reach its low mark,
+   in slot-hours (the low mark less its committed depth, times its slot
+   ceiling), where idle slots come soonest. Until 26 October depth in
+   hours alone ranked, and put 0.5 h on GREX's 949 slots ahead of 0.29 h
+   on OSG's 4,425 while OSG ran out of work.
+4. By committed depth in hours, least first. An uncalibrated queue with
    nothing queued counts as empty; one with jobs queued ranks after
    every known depth.
-3. By p90 start latency, shortest first.
+5. By p90 start latency, shortest first.
 
 A queue whose feed switch is off is never recommended. A person may
 still choose it explicitly, and work a person places there is fed;

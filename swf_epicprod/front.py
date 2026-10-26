@@ -690,6 +690,8 @@ def hours_summary(backlog, latest):
 # page and the front read the same recommendation.
 
 CANARY_RANK = {'healthy': 0, 'insufficient': 1, 'unknown': 1, 'degraded': 2}
+RANK_FAILURE_SHARE = 0.10          # a queue failing this share of its gate window ranks after cleaner ones
+RANK_FAILURE_MIN_OUTCOMES = 50
 
 
 def queue_limits(queue):
@@ -874,11 +876,27 @@ def recommend(state, need, queues=None, closed=None, dispatch=None):
             row['depth_key'] = 0.0
         else:
             row['depth_key'] = None
+        # The work the queue lacks to reach its low mark, in slot-hours:
+        # where idle slots come soonest, in proportion to the queue's size.
+        # By depth in hours alone, 0.5 h on GREX's 949 slots ranked ahead
+        # of 0.29 h on OSG's 4,425 while OSG ran out of work (26 October).
+        h_low = float(d.get('h_low') or 0)
+        row['need_slot_h'] = (round(max(0.0, h_low - row['depth_key']) * ceiling, 1)
+                              if row['depth_key'] is not None and ceiling > 0 else None)
+        # The share of the gate window's outcomes that failed: a queue
+        # failing often ranks after the cleaner ones, well before its
+        # failure-window gate (60%) holds it.
+        finished, failed = int(d.get('gate_finished') or 0), int(d.get('gate_failed') or 0)
+        row['failed_share'] = round(failed / (finished + failed), 3) if finished + failed else None
+        row['failing'] = (finished + failed >= RANK_FAILURE_MIN_OUTCOMES
+                          and row['failed_share'] >= RANK_FAILURE_SHARE)
         rows.append(row)
 
     def key(r):
         p90 = r['p90_start_latency_h']
         return (CANARY_RANK.get(r['canary'], 1),
+                1 if r['failing'] else 0,
+                -(r['need_slot_h'] or 0.0),
                 r['depth_key'] if r['depth_key'] is not None else float('inf'),
                 p90 if p90 is not None else float('inf'))
     eligible = sorted((r for r in rows if not r['blockers'] and not r['fit']), key=key)
@@ -897,6 +915,10 @@ def recommend(state, need, queues=None, closed=None, dispatch=None):
             reason += '; ' + '; '.join(image_reasons)
         return {'rows': rows, 'recommended': '', 'reason': reason}
     bits = [_depth_line(best), f"canary {best['canary']}"]
+    if best['need_slot_h']:
+        bits.append(f"{best['need_slot_h']:,.0f} slot-hours short of its low mark")
+    if best['failed_share'] is not None:
+        bits.append(f"{best['failed_share']:.1%} of its recent outcomes failed")
     if best['p90_start_latency_h'] is not None:
         bits.append(f"p90 start latency {best['p90_start_latency_h']} h")
     if need:

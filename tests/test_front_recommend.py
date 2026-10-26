@@ -69,6 +69,26 @@ class RecommendTest(unittest.TestCase):
         self.assertEqual(r['recommended'], 'B')
         self.assertIn('1.0 h of queued work', r['reason'])
 
+    def test_the_queue_short_the_most_slot_hours_wins(self):
+        # 26 October: depth in hours alone put GREX (949 slots) ahead of OSG
+        # (4,425 slots) while OSG ran out of work.
+        state = _state(OSG=(_decision(committed_h=2.0, ceiling=4425), GREEN, LIMITS),
+                       GREX=(_decision(committed_h=0.5, ceiling=949), GREEN, LIMITS))
+        r = recommend(state, NEED, ['OSG', 'GREX'])
+        self.assertEqual(r['recommended'], 'OSG')
+        self.assertIn('26,550 slot-hours short of its low mark', r['reason'])
+
+    def test_a_failing_queue_ranks_after_a_clean_one(self):
+        failing = dict(_decision(committed_h=0.0, ceiling=4000), gate_finished=4597, gate_failed=2845)
+        clean = dict(_decision(committed_h=4.0, ceiling=1000), gate_finished=13062, gate_failed=69)
+        state = _state(GREX=(failing, GREEN, LIMITS), OSG=(clean, GREEN, LIMITS))
+        r = recommend(state, NEED, ['GREX', 'OSG'])
+        self.assertEqual(r['recommended'], 'OSG')
+        self.assertIn('0.5% of its recent outcomes failed', r['reason'])
+        rows = {row['queue']: row for row in r['rows']}
+        self.assertTrue(rows['GREX']['failing'])
+        self.assertEqual(rows['GREX']['failed_share'], 0.382)
+
     def test_canary_before_depth(self):
         degraded = dict(GREEN, canary={'status': 'degraded', 'red': False})
         state = _state(A=(_decision(committed_h=0.0), degraded, LIMITS),
