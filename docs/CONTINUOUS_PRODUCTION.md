@@ -538,6 +538,41 @@ carries the same mechanics and repayment as a single Move, paced and
 verified on one clock. Like the other bulk actions, it is available on
 the internal monitor.
 
+**Idle-queue move (2026-10-26).** A task waits at the queue it was placed
+on even when another production queue sits idle. On 2026-10-26 the ready
+pool was empty and BNL_OSG_PanDA_1 had nothing running. Meanwhile nine
+GREX tasks, 4,500 jobs, waited unstarted behind GREX's queue while GREX
+started no new allocations. Torre moved them by hand and ruled that such
+a move is automatic: the downside is nil, the upside large. Each front
+cycle (`swf_epicprod/idle_move.py`, after the queue decisions) now moves a
+task from its queue S to a queue T when all of these hold:
+- T is idle: the front found nothing in `ready` for it (`no_work`), it is
+  below its low mark, its feed switch is on and its canary is healthy;
+- the task has nothing started: no job sent, starting, running, holding,
+  transferring or merging, so no pilot loses a job;
+- the task is not paused (a resume is the operators'), not Event Service,
+  not a trial, and its PCS task's current attempt;
+- T is open to the task by the recommender's own reading: no red gate,
+  no limit the task exceeds, and pilots that serve its exact image
+  (QUEUE_REGISTRY.md, Pilot image compatibility; the Move rechecks it);
+- the move leaves T no deeper than S: `T + task at T <= S - task at S`,
+  in hours at each queue's capacity (The pressure measure). S may itself
+  read `no_work`; the depths give the direction, so the moved work has
+  no reason to come back;
+- the task has had no reassign within the cooldown.
+
+Tasks with no jobs generated go first, since moving one closes nothing;
+then lower priority, then newer, which is the work that would start last
+where it is. The move is the Site control's Move with the front as
+requester (operation source `front_idle_move`): the soft reassign, the
+attempt repayment, and the placement on T. Each move is an `idle_move`
+action on epicprod-live with both depths before and after. The cycle
+record and `front_state` carry the moves and the skips that matter (a
+cooldown, an uncalibrated source, an idle queue the task cannot use).
+Settings: `front.idle_move.mode` (`active`; `shadow` reports
+`would_move`, `off` skips it), `.max_per_cycle` (4) and `.cooldown_h` (12).
+It acts only when `front.enabled` is true and `front.mode` is active.
+
 **The record.**
 - Each placement is a `prodtask_place` action.
 - An attempt records the queue it went to (`PandaTasks.site`) and, in

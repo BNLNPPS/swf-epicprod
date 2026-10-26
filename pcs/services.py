@@ -7270,14 +7270,16 @@ def prodtask_place(task, site, *, changed_by='', placement=None):
     return record
 
 
-def prodtask_move_request(*, task, site, changed_by='', placement=None):
+def prodtask_move_request(*, task, site, changed_by='', placement=None, source='pcs-move'):
     """Move the remaining work of the task's current PanDA task to a
     production queue: PanDA's task reassign, mode soft (jobs not yet
     running regenerate there, running jobs finish in place, the attempt
     each killed job cost is repaid), queued as a durable operation for
     the prod-ops agent (swf-monitor monitor_app/panda/operations.py,
     scripts/panda-task-operation.py). The task is placed there too, so
-    its later submissions follow. Returns the operation record."""
+    its later submissions follow. ``source`` names the requester on the
+    operation record (the front's idle-queue move passes its own).
+    Returns the operation record."""
     from monitor_app.panda import operations
     from monitor_app.panda.queries import _get_task_record
     if not task.panda_task_id:
@@ -7293,7 +7295,7 @@ def prodtask_move_request(*, task, site, changed_by='', placement=None):
     try:
         record, created = operations.queue_task_operation(
             task=live, operation='reassign', site=site,
-            requested_by=changed_by or 'operator', source='pcs-move',
+            requested_by=changed_by or 'operator', source=source,
             evidence={'task_status': str(live.get('status') or '').lower(),
                       'previous_site': str(live.get('site') or ''),
                       'prod_task': task.name})

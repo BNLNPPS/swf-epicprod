@@ -28,6 +28,8 @@ defaults on first read, so every knob is visible on the System page:
   for this long before the census is expected to show it.
 - ``front.queue.<queue>.feed`` (False), ``.h_low`` (8), ``.h_high``
   (24), ``.j_max`` (0 = none), ``.t_max`` (0 = none), ``.breaker`` ('closed').
+- ``front.idle_move.mode`` ('active'), ``.max_per_cycle`` (4),
+  ``.cooldown_h`` (12): the idle-queue move (``swf_epicprod.idle_move``).
 
 Decision records: one ``front_decision`` per feed, one per queue when
 the queue's state or reason changed, and hourly as a heartbeat; one
@@ -1135,6 +1137,14 @@ def run_cycle(*, dry_run=False, created_by='front'):
     hours = _safe('hours summary', lambda: hours_summary(backlog, latest),
                   failed('hours summary'))
 
+    # A queue with no ready work takes unstarted tasks waiting at another
+    # (CONTINUOUS_PRODUCTION.md, Idle-queue move).
+    from swf_epicprod import idle_move
+    idle = _safe('idle-queue move', lambda: idle_move.run(
+        queues, latest, placement, enabled=enabled, front_mode=mode,
+        cfg=idle_move.settings(setting), dry_run=dry_run, created_by=created_by),
+        failed('idle-queue move')) or {}
+
     # Pilot-side regulation (CONTINUOUS_PRODUCTION.md), shadow mode: the
     # harvester limits each regulated queue would carry, recorded every
     # cycle for comparison with the realized running count.
@@ -1162,6 +1172,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
                'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
                'jedi_throttled': jedi_throttled,
                'task_failure_guard': task_guard,
+               'idle_move': idle,
                'queues': len(queues), 'decisions_recorded': written,
                'errors': errors,
                'states': {q: d['state'] for q, d in latest.items()},
@@ -1172,7 +1183,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
                          'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
                          'jedi_throttled': jedi_throttled,
                          'queues': latest, 'placement': placement,
-                         'pilots': pilot_decisions,
+                         'pilots': pilot_decisions, 'idle_move': idle,
                          'backlog': backlog, 'errors': errors,
                          'hours': hours, 'duration_s': summary['duration_s']}
         from monitor_app.cached_product import get_product
