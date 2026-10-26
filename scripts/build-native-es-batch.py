@@ -28,6 +28,9 @@ def build(baseline,output):
     put('pilot/user/epic/es_batch.py',module.read_text())
     key='pilot/eventservice/esprocess/esprocess.py';s=data['pilot3/'+key].decode()
     s=replace_once(s,'    def get_event_range_to_payload(self) -> list:', '    def get_event_range_to_payload(self, max_ranges=1) -> list:')
+    # An empty cache is refilled with several ranges per core in one server
+    # acquisition (es_batch.acquire_count), not one per core.
+    s=replace_once(s,'        if not self.event_ranges_cache:\n            event_ranges = self.get_event_ranges()\n','        if not self.event_ranges_cache:\n            from pilot.user.epic.es_batch import acquire_count\n            event_ranges = self.get_event_ranges(acquire_count(self.corecount))\n')
     s=replace_once(s,'            event_range = self.event_ranges_cache.pop(0)\n            return event_range','            if max_ranges == 1:\n                return self.event_ranges_cache.pop(0)\n            count = min(max_ranges, len(self.event_ranges_cache))\n            return [self.event_ranges_cache.pop(0) for _ in range(count)]')
     s=replace_once(s,"            if message.startswith('ERR'):","            if message.startswith('EPICPROD_ES_RESULT_V1 '):\n                from pilot.user.epic.es_batch import decode_result\n                return decode_result(message, self.__payload['job'].jobid)\n            if message.startswith('ERR'):")
     s=replace_once(s,'                event_ranges = self.get_event_range_to_payload()',"                from pilot.user.epic.es_batch import request_count\n                event_ranges = self.get_event_range_to_payload(request_count(message))")

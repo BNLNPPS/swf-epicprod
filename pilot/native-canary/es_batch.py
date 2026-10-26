@@ -8,11 +8,22 @@ from pathlib import Path
 
 RESULT_PREFIX = 'EPICPROD_ES_RESULT_V1 '
 MAX_MESSAGE_RANGES = 512
+# Ranges per core in one server acquisition, at most one every two seconds
+# (throttle_acquire). One per core held Perlmutter job 6071469 (256 cores)
+# to about 100 ranges a second, a fifth of what 128 slots of 0.26 s gun
+# events simulate; eight per core feed about 1,000 a second.
+ACQUIRE_PER_CORE = 8
 API_BATCH_RANGES = 10000
 
 
 def enabled():
     return os.environ.get('EPICPROD_SWITCH_ES_BATCH_CHANNEL') == '1'
+
+
+def acquire_count(corecount):
+    """The ranges one server acquisition asks for."""
+    cores = max(1, int(corecount or 1))
+    return ACQUIRE_PER_CORE * cores if enabled() else cores
 
 
 def request_count(message):
