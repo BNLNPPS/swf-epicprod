@@ -25,9 +25,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from report_out import put_object  # noqa: E402
 
 INTERVAL_S = 60
-# About one write a minute plus one per unit and close: some 500 for a
-# four-hour job on 64 cores' closes. The cap is not raisable by
+# Writes are at least SPACING_S apart, so a unit finishing every few seconds
+# on 128 slots coalesces into one write: at most about 1,000 for a four-hour
+# job (Perlmutter task 41262 wrote once every 5 s and would have reached the
+# cap at 2 h 11 min, its record then frozen). The cap is not raisable by
 # configuration.
+SPACING_S = 15
 MAX_WRITES = 1500
 UNIT_FIELDS = ('unit_id', 'slot', 'status', 'started_at', 'ended_at', 'wall_s',
                'simulation', 'reconstruction', 'phases', 'timing_error',
@@ -111,7 +114,10 @@ class RecordOut:
 
     def _run(self):
         while True:
-            self.wake.wait(self.interval)
+            nudged = self.wake.wait(self.interval)
+            if nudged and not self.stopping.is_set():
+                # Nudges inside the spacing join this write; a stop does not wait.
+                self.stopping.wait(SPACING_S)
             self.wake.clear()
             self.write()
             if self.stopping.is_set():
