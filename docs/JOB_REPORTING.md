@@ -323,14 +323,14 @@ A preempted job ends with its node, and the pilot's final report, which
 carries the harness's record in the job metadata, never reaches PanDA.
 The harness therefore ships its record off the node as it goes (payload
 0.23.0, `payload/es/es_record.py`): one object, `reports/<PanDA job
-id>/es.json`, overwritten after units finish and closes land, at most
-every 15 s, and at least every minute. It carries the units done, failed,
+id>/es.json`, overwritten once a minute; units that finish and closes that
+land in between join the next write. It carries the units done, failed,
 in flight with their start, and awaiting a close, and the closes finished
 and running. The last write is the record at the cut, and bounds the cut
-to within a minute. At most 1500 writes per job, a constant; the 15 s
-spacing keeps a four-hour job on 128 slots near 1,000 (payload 0.25.21;
-before, task 41262 wrote once every 5 s and would have reached the cap
-after 2 h 11 min, its record then frozen). For Event Service jobs
+to within a minute. At most 1500 writes per job, a constant; the one-minute
+spacing keeps a four-hour job on 128 slots near 240 (payload 0.25.22; 15 s
+from 0.25.21; before, task 41262 wrote once every 5 s and reached the cap
+after about 2 h 10 min, its record then frozen). For Event Service jobs
 this channel is always on, not gated on debug mode. From payload 0.23.1
 the record is version 2 and carries `ended_at`, set at the harness's own
 end before its last write: a record without it that has gone quiet on a

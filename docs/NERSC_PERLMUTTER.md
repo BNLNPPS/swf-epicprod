@@ -379,8 +379,8 @@ Two limits end a job without its pilot's final report:
   service removes each request's range file.
 - **The record.** The harness's shipped record allows 1,500 writes per job;
   at 128 slots one write per finished unit would reach it after about two
-  hours, and the record would then stand still to the end. Writes are now at
-  least 15 s apart (JOB_REPORTING.md, The Event Service record). The ES
+  hours, and the record would then stand still to the end. Writes are now
+  at least a minute apart (JOB_REPORTING.md, The Event Service record). The ES
   close-out does not act on a record at its write cap.
 
 ## Payload canaries and probes

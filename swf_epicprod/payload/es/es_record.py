@@ -26,11 +26,12 @@ from report_out import put_object  # noqa: E402
 
 INTERVAL_S = 60
 # Writes are at least SPACING_S apart, so a unit finishing every few seconds
-# on 128 slots coalesces into one write: at most about 1,000 for a four-hour
-# job (Perlmutter task 41262 wrote once every 5 s and would have reached the
-# cap at 2 h 11 min, its record then frozen). The cap is not raisable by
-# configuration.
-SPACING_S = 15
+# on 128 slots coalesces into one write a minute: about 240 for a four-hour
+# job (Perlmutter task 41262 wrote once every 5 s and reached the cap at
+# about 2 h 10 min, its record then frozen). A minute is well inside the ES
+# close-out's quiet limit and the dashboard's staleness limit. The cap is not
+# raisable by configuration.
+SPACING_S = 60
 MAX_WRITES = 1500
 UNIT_FIELDS = ('unit_id', 'slot', 'status', 'started_at', 'ended_at', 'wall_s',
                'simulation', 'reconstruction', 'phases', 'timing_error',
