@@ -81,6 +81,20 @@ renderer and retarget operation preserve the same policy. The retired
 PROD_1 queue and the separate CI/pilotest push templates are outside this
 change. No heartbeat timeout or vendor source is changed.
 
+Installed on osgsub01 at **2026-10-26 22:54:29 UTC (18:54:29 ET)** from
+`81fa9b8`. The backup beside the template is
+`submit_pilot2_pull_bnl_osg.sdf.before-no-restart-20261026T225429Z`.
+Condor accepted the rendered production SDF in dry-run; 24 ClassAd
+state/start-count cases and nine focused runtime-policy tests passed.
+Four new workers carried both clauses by 22:56 UTC and were enabled by
+the existing image allocator. Analysis of `35597.0` evaluated the fresh
+start guard true; the sampled JLab pool had no willing slot at that time.
+A real first execution and the first natural eviction/retry chain remain
+to be observed. Existing workers were not edited. Separately, the 22:54
+heartbeat scan failed old jobs 6096697 and 6097019, and JEDI generated
+replacement attempts 6111344 and 6111345 for task 41333 at 22:55 UTC.
+That verifies the existing timeout backstop, not the new eviction path.
+
 ## 23 October 2026: direct pilot in OSG production
 
 At **14:38:35 UTC (10:38:35 ET)**, on Torre's production Go after the
