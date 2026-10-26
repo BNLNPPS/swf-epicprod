@@ -34,12 +34,12 @@ class ShapeTest(unittest.TestCase):
 
 
 class HoldTest(unittest.TestCase):
-    def replenish(self, active=(), jobs=0, tasks=()):
+    def replenish(self, active=(), jobs=0, tasks=(), status='production'):
         with patch('monitor_app.models.SysConfig.get_setting', return_value=True), \
              patch('monitor_app.cached_product.get_product'), \
-             patch('monitor_app.epicprod_logging.log_epicprod_action'), \
+             patch('monitor_app.epicprod_logging.log_epicprod_action') as self.log, \
              patch('swf_epicprod.queues.entries',
-                   return_value=[{'queue': prod.QUEUE, 'status': 'production'}]), \
+                   return_value=[{'queue': prod.QUEUE, 'status': status, 'reason': 'r'}]), \
              patch.object(prod, 'task_inventory', return_value=(list(active), None)), \
              patch.object(prod, 'occupancy', return_value=(jobs, list(tasks))), \
              patch.object(prod, 'reserve_sample', side_effect=AssertionError('reserved')):
@@ -49,6 +49,11 @@ class HoldTest(unittest.TestCase):
         for kwargs in ({'active': [41300]}, {'jobs': 1}, {'tasks': [41262]}):
             with self.subTest(**kwargs):
                 self.assertEqual(self.replenish(**kwargs)['outcome'], 'steady')
+
+    def test_a_closed_queue_adds_nothing_and_posts_nothing(self):
+        result = self.replenish(status='off')
+        self.assertEqual((result['outcome'], result['reason']), ('closed', 'r'))
+        self.assertFalse(self.log.call_args.kwargs['live_default'])
 
     def test_an_empty_queue_reserves_a_sample(self):
         result = self.replenish()

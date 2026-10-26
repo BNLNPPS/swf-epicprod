@@ -21,6 +21,10 @@ Settings in SysConfig, seeded at their defaults on first read:
   project's CPU allocation pays for.
 - ``nersc.close_at_used`` (0.9): the fraction of a project's CPU
   node-hours used at which its queues close.
+- ``nersc.close_at_left_h`` ({'NERSC_Perlmutter_epic_es': 200}): a queue's
+  own floor, in CPU node-hours left, in place of ``close_at_used``. The ES
+  queue runs one node in production with the project above 90% used, and
+  closes at 200 node-hours left (Torre, 2026-10-26).
 
 Each readable balance sets the queues (Torre, 2026-10-08): a queue whose
 project has used ``close_at_used`` or more is set off in the queue
@@ -49,6 +53,7 @@ DEFAULT_TOKEN_FILE = '/data/wguan2/hpc_tokens/nersc_iri_config.yaml'
 DEFAULT_PROJECTS = ['m3763']
 DEFAULT_QUEUES = {'NERSC_Perlmutter_epic': 'm3763', 'NERSC_Perlmutter_epic_es': 'm3763'}
 DEFAULT_CLOSE_AT_USED = 0.9
+DEFAULT_CLOSE_AT_LEFT_H = {'NERSC_Perlmutter_epic_es': 200}
 RULE_PREFIX = 'NERSC allocation: '
 PRODUCT_KEY = 'nersc_allocation'
 PRODUCT_TTL_S = 7 * 24 * 3600
@@ -162,14 +167,17 @@ def _allocation_reason(reason):
     return reason.startswith(RULE_PREFIX) or 'allocation' in reason.lower()
 
 
-def queue_switches(record, queues, close_at, closed, *, commissioning=()):
+def queue_switches(record, queues, close_at, closed, *, commissioning=(), floors=None):
     """The queue changes a balance calls for. Pure.
 
     ``queues`` {queue: project}; ``closed`` the current
     closed queues, {queue: reason}. Returns [{queue, project, used, action,
     reason}] with action 'close' or 'open', only where the state
     changes; a project without a readable CPU balance decides nothing.
-    Explicit commissioning remains operator-controlled for bounded tests."""
+    Explicit commissioning remains operator-controlled for bounded tests.
+    ``floors`` {queue: node-hours}: that queue closes at its floor of CPU
+    node-hours left instead of at ``close_at`` used."""
+    floors = floors or {}
     out = []
     if not record or record.get('error'):
         return out
@@ -181,14 +189,22 @@ def queue_switches(record, queues, close_at, closed, *, commissioning=()):
             continue
         used = cpu['usage'] / cpu['allocation']
         current = closed.get(queue)
-        if used >= close_at:
+        floor = floors.get(queue)
+        if floor is not None:
+            spent = cpu.get('remaining', cpu['allocation'] - cpu['usage']) <= floor
+            rule = f'{floor:,} node-hours left'
+            reason = f'{RULE_PREFIX}{project} CPU {floor:,} node-hours or fewer left'
+        else:
+            spent = used >= close_at
+            rule = f'{close_at:.0%} used'
             reason = f'{RULE_PREFIX}{project} CPU {close_at:.0%} or more used'
+        if spent:
             if current is None or (_allocation_reason(current) and current != reason):
                 out.append({'queue': queue, 'project': project, 'used': used,
-                            'action': 'close', 'reason': reason})
+                            'action': 'close', 'reason': reason, 'rule': rule})
         elif current is not None and _allocation_reason(current):
             out.append({'queue': queue, 'project': project, 'used': used,
-                        'action': 'open', 'reason': current})
+                        'action': 'open', 'reason': current, 'rule': rule})
     return out
 
 
@@ -202,6 +218,7 @@ def apply_queue_switches(record, created_by):
 
     queues = SysConfig.get_setting('nersc.queues', DEFAULT_QUEUES)
     close_at = SysConfig.get_setting('nersc.close_at_used', DEFAULT_CLOSE_AT_USED)
+    floors = SysConfig.get_setting('nersc.close_at_left_h', DEFAULT_CLOSE_AT_LEFT_H)
     if not (isinstance(queues, dict) and all(isinstance(v, str) for v in queues.values())):
         logger.error('nersc.queues is not a {queue: project} mapping: %r; using the defaults', queues)
         queues = dict(DEFAULT_QUEUES)
@@ -209,11 +226,17 @@ def apply_queue_switches(record, created_by):
         logger.error('nersc.close_at_used is not a fraction in (0, 1]: %r; using %s',
                      close_at, DEFAULT_CLOSE_AT_USED)
         close_at = DEFAULT_CLOSE_AT_USED
+    if not (isinstance(floors, dict)
+            and all(isinstance(v, (int, float)) and v >= 0 for v in floors.values())):
+        logger.error('nersc.close_at_left_h is not a {queue: node-hours} mapping: %r; using the defaults',
+                     floors)
+        floors = dict(DEFAULT_CLOSE_AT_LEFT_H)
     def switch(entries):
         closed = {e['queue']: e['reason'] for e in entries if e['status'] in registry.CLOSED}
         changes = queue_switches(record, queues, close_at, closed,
                                  commissioning={e['queue'] for e in entries
-                                                if e['status'] == 'commissioning'})
+                                                if e['status'] == 'commissioning'},
+                                 floors=floors)
         for c in changes:
             if c['action'] == 'close':
                 registry.change(entries, c['queue'], 'off', reason=c['reason'], by=created_by)
@@ -232,7 +255,7 @@ def apply_queue_switches(record, created_by):
             'ops-agent', 'nersc_queue_switch', username=created_by, outcome='ok',
             sublevel='normal', subject_type='queue', subject_key=c['queue'],
             message=(f"{verb} {c['queue']}: {c['project']} CPU {c['used']:.1%} used "
-                     f"(closes at {close_at:.0%})"),
+                     f"(closes at {c['rule']})"),
             queue=c['queue'], project=c['project'], action_taken=c['action'],
             used_fraction=round(c['used'], 4), close_at_used=close_at,
             previous_reason=c['reason'] if c['action'] == 'open' else '')

@@ -27,6 +27,22 @@ class Balance(unittest.TestCase):
         changes = queue_switches(record, queues, 0.9, {})
         self.assertEqual({c['queue'] for c in changes}, {prod, es})
 
+    def test_a_floor_queue_runs_past_the_fraction_and_closes_at_its_floor(self):
+        prod, es = 'NERSC_Perlmutter_epic', 'NERSC_Perlmutter_epic_es'
+        queues, floors = {prod: 'm3763', es: 'm3763'}, {es: 200}
+        record = {'projects': {'m3763': {'cpu': {'allocation': 23609, 'usage': 21945,
+                                                 'remaining': 1664}}}}
+        changes = queue_switches(record, queues, 0.9, {}, floors=floors)
+        self.assertEqual([(c['queue'], c['action']) for c in changes], [(prod, 'close')])
+        record['projects']['m3763']['cpu'].update(usage=23409, remaining=200)
+        changes = queue_switches(record, {es: 'm3763'}, 0.9, {}, floors=floors)
+        self.assertEqual([(c['action'], c['reason']) for c in changes],
+                         [('close', 'NERSC allocation: m3763 CPU 200 node-hours or fewer left')])
+        record['projects']['m3763']['cpu'].update(remaining=5000)
+        changes = queue_switches(record, {es: 'm3763'}, 0.9, {es: changes[0]['reason']},
+                                 floors=floors)
+        self.assertEqual([c['action'] for c in changes], ['open'])
+
     def test_balance_recovery_does_not_promote_a_commissioning_queue(self):
         record = {'projects': {'m3763': {'cpu': {'allocation': 100, 'usage': 50}}}}
         es = 'NERSC_Perlmutter_epic_es'

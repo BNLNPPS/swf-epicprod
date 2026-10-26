@@ -16,8 +16,8 @@ precedes Perlmutter is [NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md).
 
 `NERSC_Perlmutter_epic_es` runs Event Service production on one node
 (Production, below). The ordinary production queue is closed while the m3763
-CPU allocation is above its close threshold (90% used); the ES queue is outside
-that rule (`nersc.queues`).
+CPU allocation is above its close threshold (90% used); the ES queue has its
+own floor instead and closes at 200 CPU node-hours left (`nersc.close_at_left_h`).
 
 | Queue | Role | Record |
 |---|---|---|
@@ -328,8 +328,10 @@ On 26 October Torre put `NERSC_Perlmutter_epic_es` into production at one
 node, running fresh particle-gun statistics as Google does (decision
 `01a17817-55fd-7551-be68-d05dbb102492`). The queue is `production` in the queue
 registry and in the front's queue list for normal PCS placement; its general
-`front.queue.NERSC_Perlmutter_epic_es.feed` switch stays false, and the m3763
-allocation rule no longer closes it. The ES close-out covers it
+`front.queue.NERSC_Perlmutter_epic_es.feed` switch stays false. The m3763
+balance closes it at 200 CPU node-hours left rather than at 90% used
+(Torre, 26 October), and reopens it above that; one node uses about 24
+node-hours a day. The ES close-out covers it
 (`es_closeout.queues`), so a job that loses its node is credited for its closes
 that stood.
 

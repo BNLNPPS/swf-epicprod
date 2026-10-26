@@ -21,6 +21,10 @@ LIVE_TASK_STATES = ('registered', 'defined', 'assigning', 'ready', 'pending', 's
                     'running', 'topreprocess', 'preprocessing', 'prepared', 'throttled')
 
 
+class Closed(Exception):
+    """The queue is closed: the cycle ends without a decision to post."""
+
+
 def reserve_sample():
     return reserve('pOP', EVENTS, SHAPE, QUEUE, MARKER, AUTHORITY)
 
@@ -52,7 +56,10 @@ def replenish(created_by='es-closeout'):
         from .queues import entries
         entry = next(e for e in entries() if e['queue'] == QUEUE)
         if entry['status'] != 'production':
-            raise RuntimeError('Perlmutter ES queue is not in production')
+            # Closed, by an operator or by the allocation floor
+            # (nersc_allocation): no additions, and nothing to post.
+            result.update(outcome='closed', reason=entry['reason'] or entry['status'])
+            raise Closed
         active, task = task_inventory(MARKER, 'Perlmutter')
         jobs, tasks = occupancy()
         result.update(active_tasks=active, queue_jobs=jobs, queue_tasks=tasks)
@@ -79,12 +86,14 @@ def replenish(created_by='es-closeout'):
             result.update(outcome='submitted', reason='replenished particle-gun work',
                           task=task.composed_name, events=EVENTS, jobs=1,
                           authority=AUTHORITY)
+    except Closed:
+        pass
     except Exception as exc:
         result['reason'] = f'{type(exc).__name__}: {exc}'
     get_product(MARKER, lambda: result, ttl_seconds=900, refresh=True)
     log_epicprod_action('ops-agent', MARKER, username=created_by,
                        outcome=result['outcome'], sublevel='normal',
-                       live_default=result['outcome'] not in ('steady', 'disabled'),
+                       live_default=result['outcome'] not in ('steady', 'disabled', 'closed'),
                        message=f"Perlmutter production: {result['outcome']}: {result['reason']}",
                        **{k: v for k, v in result.items() if k not in ('outcome', 'reason')})
     return result
