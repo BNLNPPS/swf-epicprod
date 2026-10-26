@@ -438,6 +438,15 @@ A queue whose feed switch is off is never recommended. A person may
 still choose it explicitly, and work a person places there is fed;
 `front.enabled` governs only the front's own feeding.
 
+**Feed guard.** A feed switched off with an automatic return
+(`front.queue.<queue>.feed_auto_on` = `exit78`, its reason in
+`front.queue.<queue>.feed_off_reason`) comes back on at the start of the first
+front cycle in which the queue has had no exit-78 failure for 90 minutes
+and at least 100 finished jobs over the same window (`swf_epicprod/feed_guard.py`).
+The return clears the reason, and with it the site panel's Pressure front OFF,
+and is posted live (`feed_auto_on`). GREX's feed was switched off this way on
+2026-10-26 while its output copies to BNL failed.
+
 **Closed queues.** A queue whose status in the queue registry
 (QUEUE_REGISTRY.md) is `off` or `retired` is closed to production work
 outright: the recommendation shows it with its reason and never ranks it,

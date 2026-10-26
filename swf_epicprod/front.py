@@ -1033,6 +1033,11 @@ def run_cycle(*, dry_run=False, created_by='front'):
         rolling_cfg=task_failure_guard.rolling_settings(setting),
         legacy=bool(setting('front.task_guard.legacy', True))),
         failed('task failure guard')) or []
+    # A feed switched off with an automatic return comes back on when its
+    # criterion holds, before this cycle reads the queue settings.
+    from swf_epicprod import feed_guard
+    feed_returns = _safe('feed guard', lambda: feed_guard.run(
+        queues, dry_run=dry_run, created_by=created_by), failed('feed guard')) or []
     max_per_cycle = max(1, int(setting('front.max_per_cycle', 2) or 1))
     activation_window_s = int(setting('front.activation_window_s', 600))
 
