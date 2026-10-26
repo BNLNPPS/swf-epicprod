@@ -804,6 +804,31 @@ ended; the last snapshot still lacked a normal harness end. No cause is
 assigned from the pilot's batch-time-limit label alone. The opt-in merge
 path is under commissioning and is not the default production path.
 
+## Resident particle-gun simulation
+
+`EPICPROD_SWITCH_RESIDENT_SIM=1` keeps one initialized simulation per Event
+Service slot for internal particle-gun workloads. It is off by default.
+The image's npsim entry point supplies its normal detector, optical physics
+and particle handling; a DDG4 kernel adapter accepts successive requests
+after initialization and terminates the kernel when the slot stops.
+Each request finishes a distinct EDM4hep file before the existing resident
+EICrecon request and output-validation and registration path proceed.
+
+The seed identifies a request's complete random stream. The stock event
+seeder is disabled for this path because it retains the first seed and
+mixes in the process's run history. The adapter resets the random engine
+and run ID for each request, sets the absolute event-number offset, and
+updates the run metadata. Replaying the same request is independent of
+which earlier requests the slot processed. The unit record carries the
+resident PID, sequence, initialization interval, request interval, seed,
+CPU time and process peak RSS. The latter is a resident-process peak,
+not a peak measured independently for each request.
+
+`scripts/validate-resident-gun.py`, run inside the matching campaign image,
+checks one PID across successive requests, exact event IDs, seeded replay,
+distinct generated truth, every collection's readability and size, and
+agreement with a cold npsim using the same request-stream seed mode.
+
 ## Multithreading
 
 Resident Event Service reconstruction startup uses a PID-based wait by

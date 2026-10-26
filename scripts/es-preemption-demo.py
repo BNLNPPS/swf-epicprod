@@ -32,7 +32,7 @@ def main():
     ap.add_argument('--sample', required=True)
     ap.add_argument('--artifacts', type=Path, required=True)
     ap.add_argument('--approval-ref', required=True)
-    ap.add_argument('--site', choices=('BNL_ePIC_GOOGLE_es', 'NERSC_Perlmutter_epic_es'),
+    ap.add_argument('--site', choices=('BNL_ePIC_GOOGLE_es', 'NERSC_Perlmutter_epic_es', 'BNL_NPPS_GPU'),
                     default='BNL_ePIC_GOOGLE_es')
     ap.add_argument('--events', type=int, default=30000)
     ap.add_argument('--unit-events', type=int, default=250)
@@ -42,6 +42,7 @@ def main():
     ap.add_argument('--margin-s', type=int, default=300)
     ap.add_argument('--parallel-start', action='store_true')
     ap.add_argument('--fast-merge', action='store_true')
+    ap.add_argument('--resident-sim', action='store_true')
     ap.add_argument('--batch-channel', action='store_true')
     ap.add_argument('--min-unit-events', type=int)
     ap.add_argument('--close-s', type=int, default=300)
@@ -114,6 +115,7 @@ def main():
               close_s=args.close_s, deadline_s=args.deadline_s, margin_s=args.margin_s,
               unit_events=args.unit_events, parallel_start=args.parallel_start,
               fast_merge=args.fast_merge,
+              resident_sim=args.resident_sim,
               slots=args.slots,
               input_dataset='group.EIC:' + dataset,
               row=f'SINGLE/neutron/5GeV/3to50deg.{sample}/{stem},steer,{events},0000')

@@ -118,6 +118,9 @@ def run_unit(spec_path, args):
         'EPICPROD_SKIP_EVENTS': str(start - 1),
         'EPICPROD_CHUNK_LABEL': label or '',
         'EPICPROD_RECO_SOCKET': sock_path(args),
+        'EPICPROD_SIM_SOCKET': f'/tmp/essim-{os.getpid()}.sock',
+        'EPICPROD_SIM_STATE': os.path.join(args.work, 'simulation'),
+        'EPICPROD_SIM_REPLY': os.path.join(out, 'simulation.json'),
         'REGISTRATION_STAGGER_MAX_S': '0',
         'EPICPROD_CALL_HOME': '0',          # the harness calls home for the job
         'EPICPROD_NTHREADS': '1',           # the slots are the job's parallelism
@@ -158,6 +161,9 @@ def run_unit(spec_path, args):
                   handoff=handed,
                   status='ok' if ok else 'error',
                   message='' if ok else f'payload exit {rc}' + ('' if (dids or handed) else ', nothing registered'))
+    if os.path.isfile(env['EPICPROD_SIM_REPLY']):
+        with open(env['EPICPROD_SIM_REPLY']) as stream:
+            record['simulation'] = json.load(stream)
     if not ok:
         # The payload's own account travels with the range's record, which
         # reaches the job report and the server: the pilot removes the
@@ -225,6 +231,13 @@ def main():
     sock = sock_path(args)
 
     def end_daemon(*_):
+        simulation_socket = f'/tmp/essim-{os.getpid()}.sock'
+        if os.path.exists(simulation_socket):
+            try:
+                from resident_sim import exchange
+                exchange(simulation_socket, {'command': 'stop'}, 10)
+            except (OSError, RuntimeError, ValueError) as error:
+                log(f'resident simulation shutdown failed: {error}')
         try:
             subprocess.run(['pkill', '-f', f'managed_socket_path={sock}'], check=False)
         except OSError:

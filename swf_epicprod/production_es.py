@@ -38,6 +38,8 @@ def definition(settings):
         raise ValueError('production ES parallel_start must be a boolean')
     if 'fast_merge' in cfg and type(cfg['fast_merge']) is not bool:
         raise ValueError('production ES fast_merge must be a boolean')
+    if 'resident_sim' in cfg and type(cfg['resident_sim']) is not bool:
+        raise ValueError('production ES resident_sim must be a boolean')
     if 'close_max_files' in cfg and (type(cfg['close_max_files']) is not int or cfg['close_max_files'] <= 0):
         raise ValueError('production ES close_max_files must be a positive integer')
     return cfg
@@ -60,6 +62,8 @@ def apply(spec, settings):
     if str(env.get('COPYFULL', '')).lower() == 'true':
         raise ValueError('production ES FULL retention is not supported')
     env['EPICPROD_SWITCH_ES_GUN_EVENTS'] = '1'
+    if cfg.get('resident_sim'):
+        env['EPICPROD_SWITCH_RESIDENT_SIM'] = '1'
     prefix = {
         'ES_WORKER_PROXY': '1',
         'ES_PAYLOAD_IMAGE': spec['containerImage'], 'ES_SLOTS': cfg['slots'],

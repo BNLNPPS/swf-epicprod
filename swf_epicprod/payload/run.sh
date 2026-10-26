@@ -911,13 +911,22 @@ stage simulation start "${EVENTS_PER_TASK:-?} events${GUN_SEED_NOTE}"
       --steeringFile ${INPUT_FILE}
     )
   fi
-  # Run npsim with both common and uncommon flags
-  guard_stage npsim prmon \
+  if [ "${EPICPROD_SWITCH_RESIDENT_SIM:-0}" = 1 ] && [ "${EVGEN_GENERATOR:-}" = particle_gun ] && [ -n "${EPICPROD_SIM_SOCKET:-}" ]; then
+    # One initialized EIC/DDG4 simulation per ES slot. The resident process
+    # finishes this unit's output before the existing reconstruction path.
+    python "${SCRIPT_DIR}/es/resident_sim.py" request \
+      --socket "${EPICPROD_SIM_SOCKET}" --state-dir "${EPICPROD_SIM_STATE}" \
+      --reply "${EPICPROD_SIM_REPLY}" -- \
+      "${common_flags[@]}" "${uncommon_flags[@]}"
+  else
+    # Run npsim with both common and uncommon flags
+    guard_stage npsim prmon \
     --filename ${LOG_TEMP}/${TASKNAME}.npsim.prmon.txt \
     --json-summary ${LOG_TEMP}/${TASKNAME}.npsim.prmon.json \
     --log-filename ${LOG_TEMP}/${TASKNAME}.npsim.prmon.log \
     -- \
-  npsim "${common_flags[@]}" "${uncommon_flags[@]}" ${thread_flags_npsim[@]+"${thread_flags_npsim[@]}"}
+    npsim "${common_flags[@]}" "${uncommon_flags[@]}" ${thread_flags_npsim[@]+"${thread_flags_npsim[@]}"}
+  fi
   ls -al ${FULL_TEMP}/${TASKNAME}.edm4hep.root
 } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.npsim.log | tail -n1000
 stage simulation ok
