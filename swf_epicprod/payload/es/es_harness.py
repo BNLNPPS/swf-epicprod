@@ -67,6 +67,7 @@ FINAL_REPORT_S = 120           # the last reports and the pilot's receipt, befor
 # events.
 REQUEST_RANGES = 512
 WORKDIR_HOLD = 0.7             # of the pilot's work-directory limit: no new unit; the closes go at once
+NOTICE_CLOSE_S = 30            # a preemption's notice: how long a running close has to stand
 WORKDIR_RESUME = 0.5           # units start again once the closes bring it under this
 WORKDIR_CHECK_S = 60           # the guard's measuring interval
 
@@ -330,29 +331,58 @@ def _cmdline(pid):
         return ''
 
 
-def lose_node():
-    """TEST AND DEMO ONLY (preemption with the pilot): the pilot above this
-    harness, then every process under it, this one last, SIGKILLed, as when a
-    preempted node is taken away: nothing more is reported and the pilot's
-    final update never goes. On Perlmutter no one outside the job can take
-    its node, so a job takes its own (es_closeout.py closes it out)."""
+def pilot_tree():
+    """(the pilot above this harness or None, every process under it)."""
     pid, pilot = os.getpid(), None
     while pid > 1 and pilot is None:
         pid = _parent(pid)
         if 'pilot.py' in _cmdline(pid):
             pilot = pid
     if pilot is None:
+        return None, []
+    children = {}
+    for name in os.listdir('/proc'):
+        if name.isdigit():
+            children.setdefault(_parent(int(name)), []).append(int(name))
+    tree, stack = [], [pilot]
+    while stack:
+        for child in children.get(stack.pop(), ()):
+            tree.append(child)
+            stack.append(child)
+    return pilot, tree
+
+
+def notify_node(notice_s):
+    """TEST AND DEMO ONLY (preemption with notice): SIGTERM to the pilot above
+    this harness and every process under it, this one included, as NERSC's
+    preempt QOS sends it to a job's processes, and SIGKILL to them all
+    ``notice_s`` later from a process of its own, as when the node is then
+    taken. Without a pilot above, the harness's own tree."""
+    pilot, tree = pilot_tree()
+    victims = [pilot] + tree if pilot else [os.getpid()]
+    killer = (f'import os, signal, time\ntime.sleep({float(notice_s)})\n'
+              f'for p in {victims!r}:\n    try:\n        os.kill(p, signal.SIGKILL)\n'
+              f'    except OSError:\n        pass\n')
+    subprocess.Popen([sys.executable, '-c', killer], start_new_session=True,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log(f'node notice: SIGTERM to {len(victims)} processes, SIGKILL in {notice_s:.0f} s')
+    for victim in victims:
+        try:
+            os.kill(victim, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def lose_node():
+    """TEST AND DEMO ONLY (preemption with the pilot): the pilot above this
+    harness, then every process under it, this one last, SIGKILLed, as when a
+    preempted node is taken away: nothing more is reported and the pilot's
+    final update never goes. On Perlmutter no one outside the job can take
+    its node, so a job takes its own (es_closeout.py closes it out)."""
+    pilot, tree = pilot_tree()
+    if pilot is None:
         log('node loss: no pilot among the harness ancestors; the harness alone ends')
     else:
-        children = {}
-        for name in os.listdir('/proc'):
-            if name.isdigit():
-                children.setdefault(_parent(int(name)), []).append(int(name))
-        tree, stack = [], [pilot]
-        while stack:
-            for child in children.get(stack.pop(), ()):
-                tree.append(child)
-                stack.append(child)
         log(f'node loss: SIGKILL to pilot {pilot} and {len(tree)} processes under it')
         for victim in [pilot] + [p for p in tree if p != os.getpid()]:
             try:
@@ -385,7 +415,7 @@ class Close:
         self.started = time.time()
         self.proc = subprocess.Popen(container_command(args, inner),
                                      stdout=open(os.path.join(self.dir, 'container.log'), 'w'),
-                                     stderr=subprocess.STDOUT, start_new_session=args.preempt_at_s > 0)
+                                     stderr=subprocess.STDOUT, start_new_session=args.own_sessions)
         log(f"close {index}: {len(units)} unit(s), {sum(int(u[2]['handoff'].get('events') or 0) for u in units)} events -> {self.name} (pid {self.proc.pid})")
 
     def snapshot(self):
@@ -450,7 +480,7 @@ class Slot:
         cmd = container_command(args, inner, extra_binds=[os.path.dirname(input_path)] if input_path else [])
         self.log = open(os.path.join(self.work, 'slot.log'), 'w')
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT,
-                                     start_new_session=args.preempt_at_s > 0)
+                                     start_new_session=args.own_sessions)
         log(f"slot {index} started (pid {self.proc.pid})")
 
     def free(self):
@@ -856,10 +886,22 @@ def main():
                     default=os.environ.get('ES_PREEMPT_FIRST_JOB') == '1',
                     help="TEST AND DEMO ONLY: only the job given the task's first event is cut, "
                          'so the jobs after it run whole')
+    ap.add_argument('--preempt-notice-s', type=float, default=float(os.environ.get('ES_PREEMPT_NOTICE_S', '0')),
+                    help='TEST AND DEMO ONLY: the cut is a preemption with this much notice: SIGTERM '
+                         'to the pilot and every process under it, SIGKILL this many seconds later')
     args = ap.parse_args()
     # The report key and a canary's switches ride in the sandbox's
     # environment file, which run.sh sources and this process does not.
     load_job_env(args.sandbox)
+    # A preemption's notice (EPICPROD_SWITCH_ES_NOTICE=1): NERSC's preempt QOS
+    # sends SIGTERM to the job's processes 60 to 120 s before SIGKILL. The
+    # handler only marks it; the loop below acts on it. Slots and closes run in
+    # sessions of their own, so the harness can end them whole.
+    notice = {}
+    args.own_sessions = args.preempt_at_s > 0
+    if os.environ.get('EPICPROD_SWITCH_ES_NOTICE') == '1':
+        signal.signal(signal.SIGTERM, lambda signum, frame: notice.setdefault('at', time.time()))
+        args.own_sessions = True
     if args.close_max_files < 0:
         ap.error('--close-max-files must be nonnegative')
     if args.close_concurrency < 1:
@@ -999,6 +1041,7 @@ def main():
             'queued_units': sum(s.queued is not None for s in slots),
             'started_at': started, 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
             'taking': taking,
+            'notice': summary.get('notice'),
             'workdir': guard.snapshot() if guard else None,
             'done': [trim_unit(r) for r in list(summary['done'])],
             'failed': [trim_unit(r) for r in list(summary['failed'])],
@@ -1086,13 +1129,50 @@ def main():
             log(f"close {rec['index']}: {rec.get('outcome')} {rec.get('did')} "
                 f"({rec.get('events')} events, {len(c.units)} units) in {rec['wall_s']} s"
                 + ('' if rec['ok'] else f"; {rec.get('message')}"))
+        if notice.get('at'):
+            # The node is about to go (a preemption's notice): nothing more
+            # starts. The units on the slots and those awaiting a close are
+            # given up, their ranges back to the server unreported, since
+            # none could merge and register within the notice. A close already
+            # running reports its units if it stands within NOTICE_CLOSE_S and
+            # is killed after, so nothing registers once its ranges are given up.
+            if taking:
+                taking = False
+                feed.exhausted = True
+                pool.clear()
+                for s in slots:
+                    if s.unit is not None:
+                        summary['interrupted'].append({
+                            'unit_id': s.unit, 'slot': s.index, 'status': 'interrupted',
+                            'started_at': s.taken_at, 'ended_at': notice['at'],
+                            'wall_s': round(notice['at'] - s.taken_at, 1), 'events': s.unit_events,
+                            'range': s.unit_range})
+                    s.kill()
+                    s.unit = s.queued = None
+                log(f"NOTICE at {notice['at'] - started:.0f} s: taking no further range; "
+                    f"{len(summary['interrupted'])} unit(s) given up, {len(closes)} close(s) running")
+            for _, _, record, _ in pending:
+                record['status'] = 'unshipped'
+                summary['unshipped'].append(record)
+            pending = []
+            if closes and time.time() - notice['at'] > NOTICE_CLOSE_S:
+                for c in closes:
+                    kill_group(c.proc)
+                    for _, _, record, _ in c.units:
+                        record['status'] = 'unshipped'
+                        summary['unshipped'].append(record)
+                log(f"notice: {len(closes)} close(s) not standing {NOTICE_CLOSE_S} s after it, killed")
+                closes = []
+            summary['notice'] = {'at': notice['at'], 'after_s': round(notice['at'] - started, 1),
+                                 'interrupted_units': len(summary['interrupted']),
+                                 'unshipped_units': len(summary['unshipped'])}
         # A slot whose container has exited takes no more units; each is
         # logged once with its log's tail. With none left nothing can run
         # here, so the harness stops taking ranges, lets a pending close
         # finish and ends nonzero, rather than holding its ranges idle to the
         # deadline (job 3809911: every slot refused by apptainer, 56 ranges
         # held for 15 minutes). Unreported ranges go back to the server.
-        for s in slots:
+        for s in slots if not notice.get('at') else ():
             if s.index not in exited and s.unit is None and s.proc.poll() is not None:
                 exited[s.index] = s.proc.returncode
                 log(f"slot {s.index} exited {s.proc.returncode}: {slot_log_tail(s)}")
@@ -1104,6 +1184,13 @@ def main():
             summary['slots_exited'] = dict(exited)
         if (args.preempt_at_s and time.time() - started >= args.preempt_at_s
                 and (pool.holds_first or not args.preempt_first_job)):
+            if args.preempt_notice_s:
+                # TEST AND DEMO ONLY: a preemption with notice, as NERSC's
+                # preempt QOS gives it; this harness hears it like any other
+                # process of the job (EPICPROD_SWITCH_ES_NOTICE).
+                args.preempt_at_s = 0
+                notify_node(args.preempt_notice_s)
+                continue
             # TEST AND DEMO ONLY: the node is taken away. What is lost is the
             # processing cut off in the slots, and the units finished since
             # the last close that stood, whose output never left the node
@@ -1252,7 +1339,12 @@ def main():
         result = {}
         waiter = threading.Thread(target=lambda: result.update(handed=feed.barrier()), daemon=True)
         waiter.start()
-        waiter.join(300.0)
+        # Under a notice the pilot, stopping too, has already sent "No more
+        # events", which can answer the barrier before it has taken the
+        # reports queued ahead of it: a short wait covers those few.
+        waiter.join(10.0 if notice.get('at') else 300.0)
+        if notice.get('at'):
+            time.sleep(2.0)
         if waiter.is_alive():
             log(f"report barrier: no answer from the pilot in 300 s; {reported[0]} reports sent")
         else:
@@ -1260,14 +1352,14 @@ def main():
                 f"{len(result.get('handed') or [])} range(s) handed at the barrier left untaken")
         summary['report_barrier_s'] = round(time.time() - waited, 1)
     else:
-        time.sleep(grace)
+        time.sleep(2.0 if notice.get('at') else grace)
     if guard:
         guard.stop()
         summary['workdir'] = guard.snapshot()
     for s in slots:
         s.stop()
     for s in slots:
-        s.wait(120)
+        s.wait(5 if notice.get('at') else 120)
     if reco_pool.enabled():
         ended_members = reco_pool.stop_all(reco_pool.job_pool(args.work))
         log(f'reco pool: {ended_members} members ended')

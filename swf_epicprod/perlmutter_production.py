@@ -18,7 +18,7 @@ SHAPE = dict(events_per_job=EVENTS, unit_events=500, close_s=120, close_concurre
              deadline_s=14100, margin_s=600, memory_mb_per_core=1350, slots='128',
              pilot_cores=256, resident_sim=True, resident_unit=True, fast_merge=True,
              batch_channel=True, parallel_start=True, reco_pool=48, reco_async=True,
-             report_barrier=True)
+             report_barrier=True, notice=True)
 # JEDI states in which a task has, or is about to make, a job. A paused task
 # makes none.
 LIVE_TASK_STATES = ('registered', 'defined', 'assigning', 'ready', 'pending', 'scouting',
@@ -33,7 +33,7 @@ def reserve_sample(extra=None):
     return reserve('pOP', EVENTS, dict(SHAPE, **(extra or {})), QUEUE, MARKER, AUTHORITY)
 
 
-TRIAL_KEYS = ('preempt_at_s', 'preempt_pilot', 'preempt_first_job')
+TRIAL_KEYS = ('preempt_at_s', 'preempt_notice_s', 'preempt_pilot', 'preempt_first_job')
 
 
 def trial():

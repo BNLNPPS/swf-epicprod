@@ -58,8 +58,15 @@ def definition(settings):
         raise ValueError('production ES reco_async needs resident_unit')
     if 'report_barrier' in cfg and type(cfg['report_barrier']) is not bool:
         raise ValueError('production ES report_barrier must be a boolean')
+    if 'notice' in cfg and type(cfg['notice']) is not bool:
+        raise ValueError('production ES notice must be a boolean')
     if 'preempt_at_s' in cfg and (type(cfg['preempt_at_s']) is not int or cfg['preempt_at_s'] <= 0):
         raise ValueError('production ES preempt_at_s must be a positive integer')
+    if 'preempt_notice_s' in cfg:
+        if type(cfg['preempt_notice_s']) is not int or cfg['preempt_notice_s'] <= 0:
+            raise ValueError('production ES preempt_notice_s must be a positive integer')
+        if not cfg.get('preempt_at_s') or not cfg.get('notice') or cfg.get('preempt_pilot'):
+            raise ValueError('production ES preempt_notice_s needs preempt_at_s and notice, not preempt_pilot')
     for key in ('preempt_pilot', 'preempt_first_job'):
         if key in cfg and type(cfg[key]) is not bool:
             raise ValueError(f'production ES {key} must be a boolean')
@@ -114,10 +121,15 @@ def apply(spec, settings):
         prefix['EPICPROD_SWITCH_ES_RECO_ASYNC'] = '1'
     if cfg.get('report_barrier'):
         prefix['EPICPROD_SWITCH_ES_REPORT_BARRIER'] = '1'
+    if cfg.get('notice'):
+        # A preemption's SIGTERM ends the job in its notice (es_harness.py).
+        prefix['EPICPROD_SWITCH_ES_NOTICE'] = '1'
     if cfg.get('preempt_at_s'):
         # A controlled preemption (es_harness.py --preempt-at-s): a test of
         # the close-out of a lost node, never a production shape by itself.
         prefix['ES_PREEMPT_AT_S'] = str(cfg['preempt_at_s'])
+        if cfg.get('preempt_notice_s'):
+            prefix['ES_PREEMPT_NOTICE_S'] = str(cfg['preempt_notice_s'])
         if cfg.get('preempt_pilot'):
             prefix['ES_PREEMPT_PILOT'] = '1'
         if cfg.get('preempt_first_job'):
