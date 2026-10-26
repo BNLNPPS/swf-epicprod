@@ -3,9 +3,44 @@
 How ePIC production jobs reach the Open Science Grid (OSG): the hosts,
 the harvester and HTCondor configuration that submits the pilots, the
 pool they run in, the container layering that results, and the levers
-that are under production operations control. Facts below were read
-from the live hosts and the pool on 2026-09-01; the dated snapshots
-should be refreshed when the configuration changes.
+that are under production operations control. Each section carries the
+date its facts were read; the current state comes first.
+
+## Current state (26 October 2026)
+
+`BNL_OSG_PanDA_1` runs only the native (direct) pilot, in production since
+2026-10-23 10:38 ET; no trial is outstanding. On 2026-10-26 every one of
+the queue's 489 running pilots executed
+`/var/data/atlpan/harvester_common/native-local-schedconfig-20261025T151524Z/epic-native-pilot.sh`
+from the live template `submit_pilot2_pull_bnl_osg.sdf`. The pilot runs
+directly in the task's `eic_xl` image (`+SingularityImage`, nesting off);
+there is no ALRB and no nested container. The sections dated 2026-09-01
+below (the submit description, the pool as advertised, the container
+layering) describe the retired ALRB pilot and are kept as history.
+
+The pilot asks for 1 core, 4,096 MB and 4,500,000 KB of disk. Its
+Requirements are `HasSingularity`, the image's CVMFS repository
+(`HAS_CVMFS_singularity_opensciencegrid_org`), `Microarch` not
+`x86_64-v2`, the node exclusions and dynamic node guard, the image
+readiness gate (`EpicprodImageReady`, Image allocation below), the
+glidein-lifetime headroom (Execution-queue admission headroom below), disk
+and memory. The ATLAS CVMFS, RHEL 9 and unprivileged-user-namespace
+requirements are gone.
+
+Free slots with at least 4 GB set the matching rate. The matchmaker's
+analysis of an idle pilot at 07:47 ET on 2026-10-26, ignoring user
+priority:
+
+| Pool | Slots | Memory >= 4,096 MB | All requirements | Willing now | If drained |
+|---|---|---|---|---|---|
+| JLab (`jlab-cm.osg.chtc.io`) | 2,493 | 215 | 192 | 0 | 10 |
+| OSPool (`cm-1.ospool.osg-htc.org`) | 10,337 | 4,025 | 529 | 35 | 1,718 |
+
+The JLab pool had 4,581 slots claimed: 4,462 by CLAS12's `gemc`, 80 by our
+pilots, 39 by GlueX's `mcwrap`. Its 1,043 unclaimed slots are mostly
+remnants under 4 GB. The queue still reached about 313 running within 40
+minutes of receiving work that morning; Harvester's waiting buffer stood at
+its 600 limit, so more waiting pilots would not have raised it.
 
 ## 23 October 2026: direct pilot in OSG production
 
@@ -459,7 +494,11 @@ limits are in [the implementation report](REGULATION_AUDIT_2026-10-22.md).
 
 ## The submit description
 
-The attributes of `submit_pilot2_push_bnl_osg.sdf` that shape the
+History: this and the next two sections describe the ALRB pilot as read on
+2026-09-01. It was retired on `BNL_OSG_PanDA_1` on 2026-10-23; Current
+state, above, has the live template.
+
+The attributes of `submit_pilot2_push_bnl_osg.sdf` that shaped the
 pilots (2026-09-01):
 
 ```
@@ -521,6 +560,9 @@ FSU.
 
 ## Container layering as implemented
 
+The ALRB pilot's layering, 2026-09-01; the native pilot removed steps 2
+and 3 (Current state, above).
+
 1. The glidein starts the pilot job inside the pool's default image
    (`osgvo-el9`), because the submit description names none.
 2. The BNL wrapper runs bare inside it. Its own apptainer step
@@ -581,9 +623,9 @@ Under production operations control now:
   `+JobDurationCategory`, resource requests.
 - Harvester queue configuration: worker limits, push versus pull
   (with the CRIC `workflow` field), the template and wrapper used.
-- The pilot (pilot3, `pilot/user/epic/`): a stand-down when the
-  requested image is already the running container, and independence
-  from ALRB.
+- The pilot (pilot3, `pilot/user/epic/`). The stand-down in the requested
+  image and the independence from ALRB listed here on 2026-09-01 shipped
+  as the native pilot (production 2026-10-23).
 - The payload and the submission spec on the production side.
 
 Not under local control: the pool's frontend policy and factory
@@ -928,15 +970,18 @@ probe.
 
 ## Plan
 
+The 2026-09-01 plan; all four steps are done.
+
 1. Baseline: a canary probe to the queue as configured, recording what
    the pilot sees (site-canary).
 2. `+SingularityImage = eic_xl` on the submit description together
    with the pilot stand-down, so the glidein's container is the only
-   one. Verified by probe.
+   one. Done with the native pilot, 2026-10-23.
 3. With nesting gone, drop the user-namespace requirement; with the
-   pilot off ALRB, drop the ATLAS CVMFS requirement. Each admits the
-   slots listed above.
-4. Trial pull mode for the queue.
+   pilot off ALRB, drop the ATLAS CVMFS requirement. Done in the same
+   switch.
+4. Trial pull mode for the queue. The queue runs in pull mode (Pull mode
+   on the OSG queues, above).
 
 ## 22 October: the fall from 3,000 to 300 running
 
@@ -999,13 +1044,15 @@ Changed as a result, installed by `scripts/configure-osg-regulation.py`:
 What would raise the level is capacity provisioned for us rather than
 passenger slots. The OSPool frontend provisions glideins for a flocked
 schedd's idle jobs only when it can match their requirements to its entries;
-`HAS_CVMFS_atlas_cern_ch` and the user-namespace requirement cannot be
-matched, and both exist only for the ALRB-nested pilot. The native pilot that
-passed its canaries on SU-ITS and GREX on 22 October needs neither (plan
-steps 2 and 3 above); its staged trial on the active queue began on 23
-October ([NATIVE_PILOT_CANARY.md](NATIVE_PILOT_CANARY.md)). The memory request is the next filter: at 23:36 ET
+on 22 October `HAS_CVMFS_atlas_cern_ch` and the user-namespace requirement
+could not be matched, and both existed only for the ALRB-nested pilot. The
+native pilot that passed its canaries on SU-ITS and GREX on 22 October needs
+neither (plan steps 2 and 3 above). Its trial on the active queue began on 23
+October and it became the queue's production pilot at 10:38 ET that day
+(first section; [NATIVE_PILOT_CANARY.md](NATIVE_PILOT_CANARY.md)), which
+removed both requirements. The memory request is the next filter: at 23:36 ET
 4,096 MB admitted 500 of 2,384 otherwise fitting OSPool slots and 206 of
-2,125 in the JLab pool.
+2,125 in the JLab pool; Current state, above, has the 26 October reading.
 
 Verified in the field at 06:40 ET on 23 October: the first ordinary
 production pilot submitted with the new arguments to end, 26692.1 (wall
