@@ -165,6 +165,28 @@ def clean_name(name):
     return '.'.join(parts)
 
 
+def structure_ok(ROOT, target, url, kept):
+    """The copy holds each of the source's objects once, every tree but
+    events at the source's newest entry count, and events at the kept count."""
+    source, copy = ROOT.TFile.Open(url), ROOT.TFile.Open(str(target))
+    try:
+        names = list(dict.fromkeys(key.GetName() for key in source.GetListOfKeys()))
+        copied = [key.GetName() for key in copy.GetListOfKeys()]
+        if sorted(copied) != sorted(names):
+            return f'objects {sorted(copied)} against the source {sorted(names)}'
+        for name in names:
+            original = source.Get(name)
+            if not original.InheritsFrom('TTree'):
+                continue
+            want = kept if name == 'events' else original.GetEntries()
+            if copy.Get(name).GetEntries() != want:
+                return f'{name}: {copy.Get(name).GetEntries()} entries, expected {want}'
+        return None
+    finally:
+        source.Close()
+        copy.Close()
+
+
 def skim(args):
     import ROOT
     from podio import root_io
@@ -176,18 +198,26 @@ def skim(args):
         target = args.workdir / clean_name(f['name']).rsplit('/', 1)[-1]
         done = args.workdir / (target.name + '.ok.json')
         if target.exists() and done.exists() and json.loads(done.read_text())['events'] == f['kept']:
-            continue
+            problem = structure_ok(ROOT, target, f['url'], f['kept'])
+            if problem is None:
+                continue
+            print(f'{target.name}: rewriting, {problem}', flush=True)
+            done.unlink()
         source = ROOT.TFile.Open(f['url'])
         if not source or source.IsZombie():
             raise RuntimeError('Cannot open ' + f['url'])
         out = ROOT.TFile(str(target) + '.tmp', 'RECREATE', '', source.GetCompressionSettings())
-        for key in source.GetListOfKeys():
-            obj = key.ReadObj()
+        # A file may keep older cycles of a tree beside the newest (ROOT's
+        # backup of a tree written in steps); each object is copied once,
+        # from its newest cycle, as a reader sees it.
+        names = list(dict.fromkeys(key.GetName() for key in source.GetListOfKeys()))
+        for name in names:
+            obj = source.Get(name)
             if not obj.InheritsFrom('TTree'):
                 out.cd()
-                obj.Write(key.GetName())
+                obj.Write(name)
                 continue
-            if key.GetName() == 'events':
+            if name == 'events':
                 entries = ROOT.TEntryList('keep', 'kept entries', obj)
                 for entry in f['keep_entries']:
                     entries.Enter(entry)
@@ -197,7 +227,7 @@ def skim(args):
             else:
                 out.cd()
                 copy = obj.CloneTree(-1, 'fast')
-            copy.Write(key.GetName(), ROOT.TObject.kOverwrite)
+            copy.Write(name, ROOT.TObject.kOverwrite)
         out.Close()
         source.Close()
         os.replace(str(target) + '.tmp', target)
@@ -219,6 +249,9 @@ def skim(args):
         source.Close()
         if ids != expected or len(ids) != f['kept']:
             raise RuntimeError(f'{target.name}: read back {len(ids)} events, expected {f["kept"]}')
+        problem = structure_ok(ROOT, target, f['url'], f['kept'])
+        if problem is not None:
+            raise RuntimeError(f'{target.name}: {problem}')
         (args.workdir / (target.name + '.ok.json')).write_text(json.dumps(
             {'events': len(ids), 'collections': len(collections or []), 'bytes': target.stat().st_size}) + '\n')
         print(f'{target.name}: {len(ids)} events, {len(collections or [])} collections', flush=True)
