@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import shlex
 import subprocess
 import sys
 import uuid
@@ -38,8 +39,14 @@ if args.pilot_archive:
     replacement = replacement.replace(b'for name in epic-native-pilot.sh ',
         b'for name in epic-native-pilot-headroom.sh pilot3-native-headroom.tar.gz epic-native-pilot.sh ', 1)
     replacement = replacement.replace(b'#!/bin/bash\n', b'#!/bin/bash\n'
+        b'export EPICPROD_REPAIR_SANDBOX=__REPAIR_SANDBOX__\n'
         b'export EPICPROD_STANDARD_WRAPPER=epic-native-pilot-headroom.sh\n'
         b'export EPICPROD_NATIVE_ARCHIVE=pilot3-native-headroom.tar.gz\n', 1)
+    replacement = replacement.replace(b'export EPICPROD_CE_SANDBOX=$TOP',
+        b'export EPICPROD_CE_SANDBOX=${EPICPROD_REPAIR_SANDBOX:-$TOP}', 1)
+    replacement = replacement.replace(
+        b'[[ -r ${WRAPPER} ]] || WRAPPER=/cvmfs/eic.opensciencegrid.org/panda/bnlpanda.runpilot2-wrapper.sh',
+        b'[[ -r ${WRAPPER} ]] || { echo "Missing repaired native wrapper" >&2; exit 66; }', 1)
 replacement_hash = hashlib.sha256(replacement).hexdigest()
 archive = args.pilot_archive.read_bytes() if args.pilot_archive else None
 if archive and (not args.archive_sha256 or hashlib.sha256(archive).hexdigest() != args.archive_sha256):
@@ -56,6 +63,7 @@ running = set(subprocess.check_output(['squeue', '-h', '-u', str(uid), '-t', 'R'
 pending = set(subprocess.check_output(['squeue', '-h', '-u', str(uid), '-t', 'PD', '-o', '%i'],
                                     universal_newlines=True, timeout=20).splitlines())
 seen, changed = set(), 0
+bootstrap_checked = False
 for row in rows:
     match = re.search(r' slurm/\d+/(\d+)$', row.get('GridJobId', ''))
     if row.get('Owner') != 'epicprod2' or row.get('Cmd') != 'epicprod-multipilot.sh' or not match:
@@ -65,6 +73,8 @@ for row in rows:
         continue
     if str(sandbox) in seen or str(sandbox) in running:
         continue
+    selected = replacement.replace(b'__REPAIR_SANDBOX__', shlex.quote(str(sandbox)).encode())
+    selected_hash = hashlib.sha256(selected).hexdigest()
     seen.add(str(sandbox)); jid = match[1]
     if jid not in pending:
         continue
@@ -81,7 +91,8 @@ for row in rows:
         continue
     original = path.read_bytes()
     original_hash = hashlib.sha256(original).hexdigest()
-    if original_hash not in (OLD, base_hash, replacement_hash):
+    if original_hash not in (OLD, base_hash, selected_hash,
+                            '4528bfdeaf285a0aaac76d8f21ba483fc21d76e7044904a30ed32e3a9331e019'):
         continue
     archive_path = sandbox / 'pilot3-native.tar.gz'
     original_archive, archive_hash = None, None
@@ -92,14 +103,14 @@ for row in rows:
         archive_hash = hashlib.sha256(original_archive).hexdigest()
         if archive_hash not in PILOT_ARCHIVES | {args.archive_sha256}:
             continue
-    if original_hash == replacement_hash and (not archive or archive_hash == args.archive_sha256):
+    if original_hash == selected_hash and (not archive or archive_hash == args.archive_sha256):
         continue
     if archive and original_hash == base_hash and archive_hash == args.archive_sha256:
         existing_helper = sandbox / 'epic-native-pilot.sh'
         if (existing_helper.is_file() and not existing_helper.is_symlink()
                 and existing_helper.read_bytes() == helper):
             continue
-    if archive and original_hash == replacement_hash:
+    if archive and original_hash == selected_hash:
         staged_archive = sandbox / 'pilot3-native-headroom.tar.gz'
         staged_helper = sandbox / 'epic-native-pilot-headroom.sh'
         if (staged_archive.is_file() and not staged_archive.is_symlink()
@@ -114,7 +125,7 @@ for row in rows:
     if 'epicprod-multipilot.sh' not in body:
         print(json.dumps({'slurm': jid, 'skipped': 'Batch script does not reference launcher'}), flush=True)
         continue
-    record = dict(slurm=jid, path=str(path), before=original_hash, after=replacement_hash,
+    record = dict(slurm=jid, path=str(path), before=original_hash, after=selected_hash,
                   slurm_before=fields, apply=apply, archive_before=archive_hash,
                   archive_after=args.archive_sha256 if archive else None)
     (root / (jid + '.before.sh')).write_bytes(original)
@@ -141,6 +152,26 @@ for row in rows:
                     staged = destination.with_name('.epicprod-asset-' + uuid.uuid4().hex)
                     staged.write_bytes(data); staged.chmod(0o555)
                     os.replace(str(staged), str(destination))
+            if not bootstrap_checked:
+                # Exercise the CE's original input-list layout: the newly
+                # named assets remain only in the shared sandbox, not cwd.
+                # --help exits before the pilot can request any PanDA job.
+                probe = Path.cwd() / ('.native-startup-' + uuid.uuid4().hex + '.sh')
+                probe.write_bytes(selected); probe.chmod(0o700)
+                env = dict(os.environ, EPICPROD_PILOTS_PER_SLOT='1',
+                           EPICPROD_PILOT_STAGGER='0', EPICPROD_TIMEFLOOR_SPREAD='0',
+                           EPICPROD_ALLOCATION_SECONDS='43200', EPICPROD_DRAIN_RESERVE_SECONDS='10800',
+                           EPICPROD_NATIVE_IMAGE='/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable',
+                           EPICPROD_NATIVE_BATCH='1', EPICPROD_NATIVE_DISPATCH='per-job',
+                           EPICPROD_NATIVE_NESTING='on', EPICPROD_NATIVE_PROXY='x509up_u1000')
+                env.pop('EPICPROD_NATIVE_ASSETS', None)
+                output = subprocess.check_output(['bash', str(probe), '-q', 'UM_GREX_PanDA_1', '--help'],
+                                                 env=env, stderr=subprocess.STDOUT, timeout=180)
+                (root / 'native-bootstrap.out').write_bytes(output)
+                if args.archive_sha256.encode() not in output or b'Worker scratch selected' not in output:
+                    raise RuntimeError('Native bootstrap did not select the approved worker runtime')
+                bootstrap_checked = True
+                print(json.dumps({'native_bootstrap': 'passed', 'job_acquisition': False}), flush=True)
             try:
                 current = subprocess.check_output(['scontrol', 'show', 'job', jid, '-o'], universal_newlines=True, timeout=10)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
@@ -148,7 +179,7 @@ for row in rows:
             if 'JobState=PENDING ' not in current:
                 continue
         temp = path.with_name('.epicprod-launcher-' + uuid.uuid4().hex)
-        temp.write_bytes(replacement); temp.chmod(stat.S_IMODE(path.stat().st_mode))
+        temp.write_bytes(selected); temp.chmod(stat.S_IMODE(path.stat().st_mode))
         os.replace(str(temp), str(path))
         record['applied'] = True
         try:
