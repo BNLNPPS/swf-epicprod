@@ -39,7 +39,10 @@ _spec.loader.exec_module(pn)
 
 STATE_DEFAULT = '/data/wenauseic/swf-epicprod/prod-watch-state.json'
 SESSION = 'swf-watch'
-TICK_MINUTES = 15
+TICK_MINUTES = 30
+# An item that clears and comes back within this time, with the same
+# evidence, is the same item: its first sighting and its outcome stand.
+GONE_HOURS = 2
 ESCALATE_TICKS = 2
 PUSH_REPEAT_HOURS = 24
 PAUSED_HOURS = 48
@@ -239,24 +242,30 @@ def tick(args):
     items = read_items(snapshot, promises(records, latest), now)
 
     for key in list(items_state):
-        if key not in items:
+        if key in items:
+            continue
+        gone = _parse(items_state[key].get('gone_at'))
+        if gone is None:
+            items_state[key]['gone_at'] = _iso(now)
+        elif (now - gone).total_seconds() > GONE_HOURS * 3600:
             items_state.pop(key)
-    open_items, changed = {}, False
+    open_items, reasons = {}, {'new': [], 'changed': [], 'reopened': []}
     for key, it in items.items():
         st = items_state.get(key)
         if st is None:
             st = items_state[key] = {'first_seen': _iso(now), 'changed_at': _iso(now),
                                      'digest': it['digest'], 'ticks_open': 0}
-            changed = True
+            reasons['new'].append(key)
         elif st.get('digest') != it['digest']:
             st.update(digest=it['digest'], changed_at=_iso(now), ticks_open=0, escalated_at=None)
-            changed = True
+            reasons['changed'].append(key)
+        st.pop('gone_at', None)
         if answered(it, st, latest.get(key), now):
             st['ticks_open'] = 0
             st['answered'] = True
             continue
         if st.get('answered'):
-            changed = True  # a wait expired or a push came round again
+            reasons['reopened'].append(key)  # a wait expired or a push came round again
         st['answered'] = False
         st['ticks_open'] = st.get('ticks_open', 0) + 1
         it['age_min'] = int((now - _parse(st['first_seen'])).total_seconds() // 60)
@@ -268,7 +277,13 @@ def tick(args):
     except Exception as exc:
         print(f'session lookup failed: {exc}', file=sys.stderr)
     woke = False
-    if open_items and (changed or not session_id or state.get('last_wake_keys') != sorted(open_items)):
+    # A wake carries news: an open item that is new, changed or reopened, or
+    # one the last wake did not list. Answering items only shrinks the open
+    # set, which wakes no one.
+    unlisted = sorted(set(open_items) - set(state.get('last_wake_keys') or []))
+    news = {k: [x for x in v if x in open_items] for k, v in reasons.items()}
+    news['unlisted'] = [k for k in unlisted if not any(k in v for v in news.values())]
+    if open_items and (any(news.values()) or not session_id):
         text = digest_text(open_items, now, bool(session_id))
         if args.dry_run:
             print(text)
@@ -294,7 +309,8 @@ def tick(args):
             st['escalated_at'] = _iso(now)
 
     summary = (f"tick: {len(items)} items, {len(open_items)} without an outcome, "
-               f"{'woke ' + (args.session if session_id else 'the host sessions') if woke else 'no wake'}, "
+               f"{'woke ' + (args.session if session_id else 'the host sessions') if woke else 'no wake'}"
+               f"{' (' + '; '.join(f'{k}: ' + ', '.join(v) for k, v in news.items() if v) + ')' if woke else ''}, "
                f"{len(escalations)} escalation(s){'' if args.escalate else ' (shadow)'}")
     if args.dry_run:
         print(summary)

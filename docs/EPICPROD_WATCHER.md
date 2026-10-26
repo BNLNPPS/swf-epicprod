@@ -120,7 +120,12 @@ their existing gates.
 
 A tick wakes the watcher session when it finds a new item, an item
 whose evidence changed, a wait that has expired, or a promise that has
-come due. A tick that finds none of these sends nothing. The wake is one
+come due, or an open item the last wake did not list. A tick that finds
+none of these sends nothing: answering items only shrinks the open set,
+and that wakes no one. An item that clears and returns within two hours
+with the same evidence is the same item, so its first sighting and its
+outcome stand. The tick summary names each wake's reasons (new, changed,
+reopened, unlisted). The wake is one
 TJAI message to the watcher session, found by its name `swf-watch` among
 the host's sessions; the session's inbox receiver delivers it as a turn.
 The content lists every open item without an outcome, with its key,
