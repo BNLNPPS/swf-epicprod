@@ -824,6 +824,14 @@ resident PID, sequence, initialization interval, request interval, seed,
 CPU time and process peak RSS. The latter is a resident-process peak,
 not a peak measured independently for each request.
 
+Listener readiness does not end simulation startup: Geant4 performs additional
+lazy physics setup on the first run. A DDG4 event action records the first event
+begin and last event end. Task and job plots count the first request's interval
+through that first event as initialization, and only the event interval as
+simulation processing. Output finalization and the remaining unit work stay
+separate. Subsequent requests retain the original initialization timestamps as
+process provenance without charging that initialization again.
+
 `scripts/validate-resident-gun.py`, run inside the matching campaign image,
 checks one PID across successive requests, exact event IDs, seeded replay,
 distinct generated truth, every collection's readability and size, and
