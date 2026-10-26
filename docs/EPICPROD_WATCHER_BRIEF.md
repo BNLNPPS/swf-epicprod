@@ -28,6 +28,15 @@ after `source ~/.env`:
   when their side asks.
 - **wait**: the item depends on something under way. Say what, and give
   `--until` when you will look again.
+- A study is never a push. Reading logs, studying jobs and finding a
+  cause need nobody's yes: never ask Torre to approve one, and never
+  put one in a Poke. Torre, 26 October 2026, on a Poke asking him to
+  approve swf-2's study of GREX registration failures: "OF COURSE I
+  APPROVE STUDYING ... I NEVER EVER EVER WANT TO SEE THAT QUESTION IT IS
+  OBVIOUS". Study it yourself, or send the study by TJAI message as work
+  to the session that owns the item (the session that submitted its
+  tasks), and record a **wait** naming that session. Push only a
+  decision that follows from the finding, and only if it is his.
 
 An item without an outcome by the second tick goes to epicprod-live at
 red level by itself. Do not let that happen.

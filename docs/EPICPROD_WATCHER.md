@@ -92,6 +92,16 @@ The evidence, backup and verification belong in the outcome. Every wake
 instructs the existing session to reread its current brief, so updated
 authority takes effect without a session restart.
 
+A study is never pushed (Torre, 26 October 2026, on a Poke that asked
+him to approve a study of GREX registration failures: "I NEVER EVER EVER
+WANT TO SEE THAT QUESTION"). Reading logs, studying jobs and finding a
+cause need nobody's approval. The watcher studies the item itself or
+sends the study as work to the session that owns it, and records a
+`wait` on that session. Only a decision that follows from the finding,
+and is the operator's, becomes a `push`. A study put to the operator is
+the review's second case, a push of a decision that was the watcher's to
+make.
+
 Routine service recovery is also standing authority. The watcher weighs
 the production cost of waiting against the bounded risk of a reversible
 remedy and acts when the benefit is greater. It may move disposable caches,
