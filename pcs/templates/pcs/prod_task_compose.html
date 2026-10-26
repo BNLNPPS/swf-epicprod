@@ -578,13 +578,18 @@
     function withSite(body) {
         // The options must be the selected task's; a queue is sent only
         // when it differs from where the task already goes, and the
-        // recommendation shown rides along either way.
+        // recommendation shown rides along either way. An unplaced task's
+        // preselected recommendation is not a choice: sent, it pinned the
+        // task by hand to the queue recommended at submission (GREX, 26
+        // October, while OSG ran out of work), where the front places an
+        // unplaced task on the best queue when it feeds it.
         const t = allTasks.find(x => x.id === selectedItemId);
         if (!t || !siteOptions || siteOptions.task !== taskComposedName(t)) return body;
         const site = siteChoice();
         body.placement = {recommended: siteOptions.data.recommended,
                           reason: siteOptions.data.reason};
-        if (site && site !== siteOptions.data.site) body.site = site;
+        if (site && site !== siteOptions.data.site
+                && (siteOptions.chosen || siteOptions.data.site)) body.site = site;
         return body;
     }
     function siteHours(v) { return (v === null || v === undefined) ? '—' : `${v} h`; }
@@ -615,7 +620,7 @@
         let head = d.site
             ? `Submissions go to <strong>${htmlEscape(d.site)}</strong> (${htmlEscape(SITE_SOURCE_LABEL[d.site_source] || d.site_source)})`
             : (d.recommended
-               ? 'Not placed yet: Submit puts the task in the ready buffer for the queue selected below, the recommended one unless you choose another'
+               ? 'Not placed yet: Submit puts the task in the ready buffer unplaced, and the pressure front places it on the best open queue when it feeds it (the recommendation below is the one it would make now). Choose a queue below only to pin the task there'
                : 'No production queue is open to this task right now. Submit puts it in the ready buffer with no queue yet, and the pressure front places and submits it when a queue is healthy and has room');
         if (d.site && !d.site_in_production_set) head += ', <span class="text-danger">not a production queue</span>';
         head += '.';
@@ -709,7 +714,10 @@
     // its declaration).
     function wireSiteControl() {
     browseContent.addEventListener('change', e => {
-        if (e.target && e.target.name === 'pcs-site') updateSiteButtons();
+        if (e.target && e.target.name === 'pcs-site') {
+            if (siteOptions) siteOptions.chosen = true;     // a person's choice, sent as a pin
+            updateSiteButtons();
+        }
     });
     browseContent.addEventListener('click', async e => {
         // Cancel the submission queued for the front.
@@ -1747,7 +1755,7 @@
                 ? cfgRow('PanDA Site', cfg.panda_site, 'panda_site')
                 : cfgRow('PanDA Site', t.trial_site
                     ? `${htmlEscape(t.trial_site)} <span style="font-size:.85em;">(from its configuration)</span>`
-                    : 'unplaced <span style="font-size:.85em;">(the recommended queue at submission; see Site)</span>');
+                    : 'unplaced <span style="font-size:.85em;">(placed by the pressure front when it feeds the task; see Site)</span>');
             if (cfg.panda_working_group) cfgRows += cfgRow('Working Group', cfg.panda_working_group, 'panda_working_group');
             if (cfg.data && Object.keys(cfg.data).length) {
                 Object.entries(cfg.data).forEach(([k,v]) => { cfgRows += cfgRow('data.'+k, textOrUrl(v)); });

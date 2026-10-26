@@ -355,8 +355,11 @@ recommendation and the same calls.
 
 A task with none of these is unplaced; the BNL_OSG_PanDA_1 default was
 retired on 2026-09-30. Submitting an unplaced task places it first:
-- from the page, on the queue selected in the Site control (the
-  recommended one unless another is chosen);
+- from the page, on a queue a person selects in the Site control; left
+  at the preselected recommendation, an unplaced task goes into the ready
+  buffer unplaced and the front places it when it feeds it (from 26
+  October: the page sent the preselected queue as a choice, which pinned
+  tasks to GREX while OSG ran out of work);
 - from REST or a rerun with no site given, on the recommendation;
 - if no production queue is open to it, the submission is refused with
   the reason.
