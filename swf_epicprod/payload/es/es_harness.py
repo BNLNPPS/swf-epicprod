@@ -481,7 +481,10 @@ def dispatch_available(slots, pool, per_unit, min_events, input_path, file_path,
     available.sort(key=lambda s: s.unit is not None)
     fed = False
     for slot in available:
-        members = pool.take_unit(per_unit, min_events=min_events, max_events=max_events)
+        # An idle slot starts on what it can have now; a slot's next unit has
+        # the current unit's run to wait for its whole block.
+        members = pool.take_unit(per_unit, min_events=min_events if slot.unit is None else 0,
+                                 max_events=max_events)
         if not members:
             pool.want()
             break
