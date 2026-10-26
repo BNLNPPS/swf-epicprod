@@ -382,6 +382,30 @@ or job cap is passed over while another fed queue can take the work. The feed pl
 records the recommendation. A task no such queue is open to stays in
 the ready pool marked unplaced, with the reason.
 
+**Reading and releasing a placement.** `pcs.services.prodtask_site_source(task)`
+says where a task's queue comes from: `trial`, `task` (the
+`panda_site` override placement wrote), `configuration` or `unplaced`.
+What releasing does depends on where the task stands:
+- Waiting in the ready buffer (`overrides['queued']` set, not yet in
+  PanDA): removing `panda_site` from `ProdTask.overrides` leaves it
+  unplaced, and the front places it on the recommendation when it feeds
+  it. No PCS operation does this yet: the Site control re-places, never
+  unplaces. Until one exists, the release is that one key removed from
+  the overrides in the deployed tree's Django shell
+  (`/opt/swf-monitor/current`), recorded with `log_epicprod_action`
+  as `prodtask_unplace`.
+- Already in PanDA (`panda_task_id` set, its jobs queued or running):
+  its jobs run where they were sent. The pin then governs only the
+  task's later submissions (the reruns). Work in flight stays where it
+  is: no Move and no job kills to change its queue (Torre, 26 October
+  2026). A Move (`prodtask_move_request`) is a task operation and needs
+  Torre's word.
+
+Seen on 26 October: two p1089 tasks were pinned to GREX through the
+compose page's preselection and were in PanDA by the time anyone looked
+(41222, and 41324 with 499 of its 500 jobs done), so there was nothing
+to release.
+
 **A person's submission waits in line.** Submit, Rerun Residual and
 Rerun Entire Task do not send the task to PanDA; they queue it for the
 front (2026-10-05). The queued submission is
