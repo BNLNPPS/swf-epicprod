@@ -105,12 +105,14 @@ Undeclared, the pilot's event service stage-out forces the
 `objectstore` copytool (`pilot/api/es_data.py`) and fails against a
 storage that is not an object store.
 
-The shipped `zip_time_gap` is 60 seconds. The generic pilot executor transfers
-its range-report archive on this cadence, independently of the payload's ROOT
-output close. Leaving the inherited 7200-second setting held all but the first
-208 event credits during task 41218's 32-minute run, even though 52,332 events
-were registered and independently readable. This short reporting cadence keeps
-PanDA credit following saved output during a bounded run.
+The shipped `zip_time_gap` is 300 seconds, matching the established Google
+queue setting. The effective value must be checked through the pilot's full
+information-service resolution: its configuration provider and the
+`zip_time_gap` alias can compete. A bare `QueueData` construction or reading
+the provider's literal 601-second default does not establish the running
+pilot's value. The Perlmutter batch candidate sets both names and verifies an
+effective 300-second interval locally. The earlier 60-second setting was
+incorrect; pES4 credit reconciliation did not validate that proposed repair.
 
 ## Controlling the pilot on the test queue
 
@@ -325,3 +327,30 @@ budget. See [NERSC affinity](https://docs.nersc.gov/jobs/affinity/).
 - [OSG_SUBMISSION.md](OSG_SUBMISSION.md): pilot selection and the
   canary pilot directory, which Perlmutter does not mount.
 - site-canary `docs/PLAN.md`: the probes and the fingerprint.
+
+## Bounded ES batch-channel correction
+
+The pES4 per-core record failed sustained-occupancy acceptance: higher-numbered
+slots waited over six minutes, and only eight of 128 slots were processing at
+minute 14. Its registered output/readback and later accounting reconciliation
+do not constitute Perlmutter preemption validation.
+
+The new Perlmutter-only candidate gates `EPICPROD_SWITCH_ES_BATCH_CHANNEL=1`.
+It takes up to 256 ranges from the pilot's existing cache per IPC request and
+reports one completed unit with all of its range IDs. The pilot uses its normal
+bulk event API, with at most 10,000 IDs per report request. It packs each unit
+record once through a single tar writer, avoiding a shell tar invocation and a
+repeated record for every event. Range acquisitions are bulk requests at least
+two seconds apart. The explicit pilot report interval is 300 seconds; both
+configuration field names are set so the full information-service resolution
+cannot select a conflicting queue alias.
+
+The harness refills fragmented buffers in bounded batches, retains a hard
+buffer limit, and feeds the longest-idle available slot first. Existing Google
+and GREX runtimes retain their installed archives. The candidate is built from
+exact approved native archive `9532f30b` by `scripts/build-native-es-batch.py`.
+Local checks exercise actual candidate pilot classes over real yampl in the
+campaign image, including full information-service configuration, 128 simulated
+slots, exact owned event IDs, bounded API batches and one stored record per unit.
+A new bounded Perlmutter worker-loss and recovery run is still required before
+calling this correction commissioned.

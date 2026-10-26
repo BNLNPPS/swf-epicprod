@@ -68,3 +68,11 @@ class ProductionES(unittest.TestCase):
                         {'env': {'COPYFULL': 'true'}}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 apply(dict(spec(), **changes), settings())
+    def test_batch_channel_is_explicit_and_has_bounded_unit_minimum(self):
+        command = apply(spec(), dict(settings(), batch_channel=True, min_unit_events=64))['exec']
+        self.assertIn('EPICPROD_SWITCH_ES_BATCH_CHANNEL=1', command)
+        self.assertIn('ES_MIN_UNIT_EVENTS=64', command)
+        self.assertNotIn('EPICPROD_SWITCH_ES_BATCH_CHANNEL', apply(spec(), settings())['exec'])
+        for values in ({'batch_channel': '1'}, {'min_unit_events': 0}, {'min_unit_events': 251}):
+            with self.assertRaises(ValueError):
+                definition(dict(settings(), **values))

@@ -38,6 +38,7 @@ outputs went to the catalog from the payload), "ERR_ATHENAMP_PROCESS
 """
 import argparse
 import bisect
+from collections import deque
 import json
 import os
 import shlex
@@ -79,11 +80,15 @@ class ChannelFeed:
         import yampl
         self.sock = yampl.ClientSocket(name, 'local')
         self.exhausted = False
+        self.pending = deque()
+        self.batch = os.environ.get('EPICPROD_SWITCH_ES_BATCH_CHANNEL') == '1'
 
     def ask(self):
+        if self.pending:
+            return self.pending.popleft()
         if self.exhausted:
             return None
-        self.sock.send_raw(b"Ready for events")
+        self.sock.send_raw(b'Ready for events: 256' if self.batch else b'Ready for events')
         while True:
             size, buf = self.sock.try_recv_raw()
             if size != -1:
@@ -96,7 +101,8 @@ class ChannelFeed:
         ranges = json.loads(message)
         if isinstance(ranges, dict):
             ranges = [ranges]
-        return ranges[0] if ranges else None
+        self.pending.extend(ranges)
+        return self.pending.popleft() if self.pending else None
 
     def report(self, text):
         self.sock.send_raw(text.encode('utf8'))
@@ -222,6 +228,7 @@ class Slot:
         self.unit = None            # the unit id in flight
         self.range_ids = []
         self.taken_at = None
+        self.idle_since = time.time()
         runtime = shutil.which('apptainer') or shutil.which('singularity') or \
             '/cvmfs/atlas.cern.ch/repo/containers/sw/apptainer/x86_64-el8/current/bin/apptainer'
         inner = (f"cd {args.sandbox} && python3 {args.payload}/es/es_slot.py "
@@ -270,6 +277,7 @@ class Slot:
             pass
         uid = self.unit
         self.unit = None
+        self.idle_since = float(record.get('ended_at') or time.time())
         return uid, record, os.path.exists(done)
 
     def stop(self):
@@ -298,7 +306,7 @@ class Pool:
     is cut as soon as its block is whole rather than after every range
     has arrived."""
 
-    def __init__(self, feed, lookahead=0):
+    def __init__(self, feed, lookahead=0, demand_batch=1):
         """lookahead: the most ranges held before the harness asks for them
         (0 = no limit). The pilot kills the payload 30 minutes after it
         answers "No more events" (pilot esprocess.py waiting_time), so a pool
@@ -308,6 +316,8 @@ class Pool:
         only as slots free up, and "No more events" comes near the end."""
         self.feed = feed
         self.lookahead = lookahead
+        self.demand_batch = demand_batch
+        self.demand_to = 0
         self.ranges = []
         self.cut_count = {}                 # (LFN, block) -> events of that block already cut
         self.lock = threading.Lock()
@@ -317,20 +327,26 @@ class Pool:
 
     def want(self):
         """Ask past the lookahead: a slot is free and no block is whole."""
+        with self.lock:
+            target = len(self.ranges) + self.demand_batch
+            self.demand_to = max(self.demand_to, min(target, 2 * self.lookahead) if self.lookahead else target)
         self.wanted.set()
 
     def _gather(self):
         while not self.feed.exhausted:
-            if self.lookahead and len(self) >= self.lookahead and not self.wanted.is_set():
+            if self.lookahead and len(self) >= max(self.lookahead, self.demand_to):
+                self.wanted.clear()
                 self.wanted.wait(0.5)
                 continue
             rng = self.feed.ask()
-            self.wanted.clear()
             if rng is None:
                 break
             with self.lock:
                 bisect.insort(self.ranges, rng,
                               key=lambda r: (r.get('LFN', ''), int(r['startEvent'])))
+                if self.demand_to and len(self.ranges) >= self.demand_to:
+                    self.demand_to = 0
+                    self.wanted.clear()
 
     @property
     def exhausted(self):
@@ -362,6 +378,8 @@ class Pool:
                 return []
             if per_unit < 1:
                 return [self.ranges.pop(0)]
+            if self.demand_batch > 1 and self.lookahead and len(self.ranges) >= 2 * self.lookahead:
+                min_events = 1  # Drain already-owned sparse residuals at the hard buffer bound.
             # The pool is read as runs: consecutive ranges of one block, in
             # event order. The first run that can be cut is cut; a run that
             # cannot yet is passed over, never left to hold up the runs behind
@@ -422,6 +440,24 @@ def dispatch_initial(slots, pool, buffered, per_unit, min_events, file_path, ext
         slot.give(unit_spec(members, per_unit, file_path, ext, stamp))
     buffered.clear()
     return True
+
+
+
+def dispatch_available(slots, pool, per_unit, min_events, input_path, file_path, ext,
+                       stamp, max_events=0, fair=False):
+    """Feed the longest-idle free slots first when the batch channel is enabled."""
+    available = [s for s in slots if s.free()] if max_events >= 0 else []
+    if fair:
+        available.sort(key=lambda s: s.idle_since)
+    fed = False
+    for slot in available:
+        members = pool.take_unit(per_unit, min_events=min_events, max_events=max_events)
+        if not members:
+            pool.want()
+            break
+        slot.give(unit_spec(members, per_unit, file_path, ext, stamp))
+        fed = True
+    return fed
 
 
 def take_unit(pool, per_unit):
@@ -530,9 +566,11 @@ def main():
     # job streams: ranges pulled, processed and reported continuously, so
     # when the server runs dry only the units in flight and the last close
     # remain, well inside the pilot's 30 minutes after "No more events".
+    batch_channel = os.environ.get('EPICPROD_SWITCH_ES_BATCH_CHANNEL') == '1'
+    lookahead_slots = args.slots if batch_channel else max(1, args.slots // 4)
     lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD')
-                    or max(1, args.slots // 4) * max(1, args.events_per_unit))
-    pool = Pool(feed, lookahead=lookahead)
+                    or lookahead_slots * max(1, args.events_per_unit))
+    pool = Pool(feed, lookahead=lookahead, demand_batch=256 if batch_channel else 1)
     pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
     taking = True                                          # False past the deadline's margin
     initial_units = []
@@ -588,6 +626,11 @@ def main():
             'cpu_affinity': sorted(os.sched_getaffinity(0)),
             'initial_cohort_released': initial_released,
             'initial_units_buffered': len(initial_units),
+            'channel_mode': 'batch' if batch_channel else 'legacy',
+            'ranges_pooled': len(pool),
+            'input_pending': len(getattr(feed, 'pending', ())),
+            'report_messages': reported[0],
+            'idle_slots': sum(s.free() for s in slots),
             'started_at': started, 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
             'taking': taking,
             'done': [trim_unit(r) for r in list(summary['done'])],
@@ -617,8 +660,15 @@ def main():
         # The pilot takes one report per 10 ms pass; what it has not taken
         # yet is the backlog the final grace must cover.
         now = time.time()
-        backlog[0] = max(0.0, backlog[0] - (now - backlog[1]) * PILOT_REPORTS_PER_S) + len(range_ids)
+        messages = 1 if ok and batch_channel else len(range_ids)
+        backlog[0] = max(0.0, backlog[0] - (now - backlog[1]) * PILOT_REPORTS_PER_S) + messages
         backlog[1] = now
+        if ok and batch_channel:
+            feed.report('EPICPROD_ES_RESULT_V1 ' + json.dumps({
+                'output': os.path.join(slot.outbox, uid, 'unit.json'),
+                'ids': range_ids, 'wall': wall}, separators=(',', ':')))
+            reported[0] += 1
+            return
         for rid in range_ids:
             if ok:
                 feed.report(f"{os.path.join(slot.outbox, uid, 'unit.json')},ID:{rid},CPU:{wall},WALL:{wall}")
@@ -763,14 +813,9 @@ def main():
                 elif args.events_per_unit and fit < args.events_per_unit:
                     cap = fit
             fed = False
-            for slot in [s for s in slots if s.free()] if cap >= 0 else []:
-                members = pool.take_unit(args.events_per_unit, min_events=args.min_unit_events,
-                                         max_events=cap)
-                if not members:
-                    pool.want()                 # a slot waits on the pool
-                    break
-                slot.give(unit_spec(members, args.events_per_unit, file_path, ext, args.stamp))
-                fed = True
+            fed = dispatch_available(slots, pool, args.events_per_unit,
+                                     args.min_unit_events, input_path, file_path, ext,
+                                     args.stamp, max_events=cap, fair=batch_channel)
             # A bounded close must be considered even while the slots keep
             # accepting units, otherwise a busy node can starve stage-out.
             if fed and not args.close_max_files:

@@ -42,6 +42,8 @@ def main():
     ap.add_argument('--margin-s', type=int, default=300)
     ap.add_argument('--parallel-start', action='store_true')
     ap.add_argument('--fast-merge', action='store_true')
+    ap.add_argument('--batch-channel', action='store_true')
+    ap.add_argument('--min-unit-events', type=int)
     ap.add_argument('--close-s', type=int, default=300)
     ap.add_argument('--close-max-files', type=int)
     ap.add_argument('--priority', type=int)
@@ -161,6 +163,10 @@ def main():
             catalog.close('group.EIC', dataset)
     write_json(args.artifacts / 'bnl-input.json', {'dataset': es['input_dataset'], 'file': lfn,
                'events': events, 'sha256': hashlib.sha256(data).hexdigest()})
+    if args.batch_channel:
+        es['batch_channel'] = True
+    if args.min_unit_events:
+        es['min_unit_events'] = args.min_unit_events
     name = 'group.EIC.26.07.3.epic_craterlake.p1107.e37.s11.r11.3to50deg.' + sample
     task = ProdTask.objects.filter(name=name).first()
     if task is None:
@@ -184,6 +190,8 @@ def main():
     spec = build_evgen_task_params(task)
     if spec['nJobs'] != 1 or spec['event_service']['close_s'] != args.close_s:
         raise RuntimeError('The composed task does not match the approved shape')
+    if args.batch_channel and 'EPICPROD_SWITCH_ES_BATCH_CHANNEL=1' not in spec['exec']:
+        raise RuntimeError('The deployed producer lacks the requested batch-channel gate')
     if args.fast_merge and 'EPICPROD_SWITCH_ES_FAST_MERGE=1' not in spec['exec']:
         raise RuntimeError('The deployed producer has not enabled the requested fast close')
     if args.close_max_files and f'ES_CLOSE_MAX_FILES={args.close_max_files}' not in spec['exec']:

@@ -30,6 +30,10 @@ def definition(settings):
     if slots != 'auto' and (not slots.isdigit() or int(slots) <= 0):
         raise ValueError('production ES slots must be auto or a positive integer')
     cfg['slots'] = slots
+    if 'batch_channel' in cfg and type(cfg['batch_channel']) is not bool:
+        raise ValueError('production ES batch_channel must be a boolean')
+    if 'min_unit_events' in cfg and (type(cfg['min_unit_events']) is not int or not 1 <= cfg['min_unit_events'] <= cfg['unit_events']):
+        raise ValueError('production ES min_unit_events must fit its unit budget')
     if 'parallel_start' in cfg and type(cfg['parallel_start']) is not bool:
         raise ValueError('production ES parallel_start must be a boolean')
     if 'fast_merge' in cfg and type(cfg['fast_merge']) is not bool:
@@ -63,6 +67,10 @@ def apply(spec, settings):
         'ES_DEADLINE_S': str(cfg['deadline_s']), 'ES_MARGIN_S': str(cfg['margin_s']),
         'ES_OUTPUT_DATASET': dataset,
     }
+    if cfg.get('batch_channel'):
+        prefix['EPICPROD_SWITCH_ES_BATCH_CHANNEL'] = '1'
+    if cfg.get('min_unit_events'):
+        prefix['ES_MIN_UNIT_EVENTS'] = str(cfg['min_unit_events'])
     if cfg.get('parallel_start'):
         prefix['EPICPROD_SWITCH_ES_COHORT_START'] = '1'
     if cfg.get('fast_merge'):

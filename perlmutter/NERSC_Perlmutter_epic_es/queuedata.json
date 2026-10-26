@@ -183,5 +183,5 @@
   "vo_name": "eic",
   "wnconnectivity": "full",
   "workflow": null,
-  "zip_time_gap": 60
+  "zip_time_gap": 300
 }
