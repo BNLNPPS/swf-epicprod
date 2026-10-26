@@ -918,6 +918,13 @@ stage simulation start "${EVENTS_PER_TASK:-?} events${GUN_SEED_NOTE}"
   if [ "${EPICPROD_SWITCH_RESIDENT_SIM:-0}" = 1 ] && [ "${resident_source}" = 1 ] && [ -n "${EPICPROD_SIM_SOCKET:-}" ]; then
     # One initialized EIC/DDG4 simulation per ES slot. The resident process
     # finishes this unit's output before the existing reconstruction path.
+    # The request's arguments, for the unit template the handoff writes
+    # (es/resident_unit.py); this block is a subshell, so they go by file.
+    if [ -n "${EPICPROD_UNIT_TEMPLATE:-}" ]; then
+      python -c 'import json, sys; json.dump(sys.argv[2:], open(sys.argv[1], "w"))' \
+        "${EPICPROD_UNIT_TEMPLATE}.npsim.json" "${common_flags[@]}" "${uncommon_flags[@]}" \
+        || echo "unit template arguments not written; the slot keeps this path"
+    fi
     python "${SCRIPT_DIR}/es/resident_sim.py" request \
       --socket "${EPICPROD_SIM_SOCKET}" --state-dir "${EPICPROD_SIM_STATE}" \
       --reply "${EPICPROD_SIM_REPLY}" -- \
@@ -1291,6 +1298,29 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
             preserve_timeout: ($preserve_timeout | tonumber? // 600)}' \
        > "${EPICPROD_RECO_HANDOFF}/${TASKNAME}.handoff.json"
     echo "RECO handed to the harness: ${EPICPROD_RECO_HANDOFF}/${TASKNAME}.eicrecon.edm4eic.root (${RECO_EVENTS:-?} events)"
+    # Resident units (EPICPROD_SWITCH_ES_RESIDENT_UNIT, es/resident_unit.py):
+    # this unit's request, names, seed and registration terms are the
+    # slot's template, which its later units take in place of this script.
+    # The FULL file stays per unit, so a retained FULL keeps this path.
+    if [ -n "${EPICPROD_UNIT_TEMPLATE:-}" ] && [ -s "${EPICPROD_UNIT_TEMPLATE}.npsim.json" ] \
+       && [ "${COPYFULL:-false}" != "true" ]; then
+      jq -n --slurpfile npsim "${EPICPROD_UNIT_TEMPLATE}.npsim.json" \
+            --slurpfile handoff "${EPICPROD_RECO_HANDOFF}/${TASKNAME}.handoff.json" \
+            --arg taskname "${TASKNAME}" --arg task "${TASK}" --arg chunk "${4:-}" \
+            --arg label "${EPICPROD_CHUNK_LABEL:-}" --arg seed "${SEED}" --arg skip "${SKIP_N_EVENTS}" \
+            --arg events "${EVENTS_PER_TASK}" --arg gun_stem_hash "${GUN_STEM_HASH:-}" \
+            --arg gun_events "${EPICPROD_SWITCH_ES_GUN_EVENTS:-0}" \
+            --arg full_dir "${FULL_DIR}" --arg reco_dir "${RECO_DIR}" \
+            --arg full_events "${FULL_EVENTS:-}" --arg reco_events "${RECO_EVENTS:-}" \
+            '{version: 1, taskname: $taskname, task: $task, chunk: $chunk, label: $label,
+              seed: ($seed | tonumber), skip: ($skip | tonumber), events: ($events | tonumber),
+              gun_stem_hash: $gun_stem_hash, gun_events: ($gun_events == "1"),
+              full_dir: $full_dir, reco_dir: $reco_dir,
+              full_events: ($full_events | tonumber? // null), reco_events: ($reco_events | tonumber? // null),
+              npsim_args: $npsim[0], handoff: ($handoff[0] | del(.file, .events))}' \
+        > "${EPICPROD_UNIT_TEMPLATE}.tmp" && mv -f "${EPICPROD_UNIT_TEMPLATE}.tmp" "${EPICPROD_UNIT_TEMPLATE}" \
+        || echo "unit template not written; the slot keeps this path"
+    fi
     stage registration deferred "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
   elif [ "${USERUCIO:-false}" == "true" ] ; then
     registration_stagger

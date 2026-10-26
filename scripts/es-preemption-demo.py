@@ -45,6 +45,8 @@ def main():
     ap.add_argument('--parallel-start', action='store_true')
     ap.add_argument('--fast-merge', action='store_true')
     ap.add_argument('--resident-sim', action='store_true')
+    ap.add_argument('--resident-unit', action='store_true',
+                    help='later units of a slot go straight to its residents (needs --resident-sim)')
     ap.add_argument('--batch-channel', action='store_true')
     ap.add_argument('--min-unit-events', type=int)
     ap.add_argument('--close-s', type=int, default=300)
@@ -118,6 +120,7 @@ def main():
               unit_events=args.unit_events, parallel_start=args.parallel_start,
               fast_merge=args.fast_merge,
               resident_sim=args.resident_sim,
+              resident_unit=args.resident_unit,
               slots=args.slots,
               input_dataset='group.EIC:' + dataset,
               row=f'SINGLE/neutron/5GeV/3to50deg.{sample}/{stem},steer,{events},0000')
@@ -198,6 +201,8 @@ def main():
         raise RuntimeError('The composed task does not match the approved shape')
     if args.batch_channel and 'EPICPROD_SWITCH_ES_BATCH_CHANNEL=1' not in spec['exec']:
         raise RuntimeError('The deployed producer lacks the requested batch-channel gate')
+    if args.resident_unit and 'EPICPROD_SWITCH_ES_RESIDENT_UNIT=1' not in spec['exec']:
+        raise RuntimeError('The deployed producer lacks the requested resident-unit gate')
     if args.fast_merge and 'EPICPROD_SWITCH_ES_FAST_MERGE=1' not in spec['exec']:
         raise RuntimeError('The deployed producer has not enabled the requested fast close')
     if args.close_max_files and f'ES_CLOSE_MAX_FILES={args.close_max_files}' not in spec['exec']:
