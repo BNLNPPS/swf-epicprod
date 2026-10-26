@@ -281,10 +281,8 @@ def apply(args):
             if ok['events'] != f['kept']:
                 raise RuntimeError(f"{local.name}: the clean copy holds {ok['events']} events, the decision {f['kept']}")
             did = clean_name(f['name'])
-            metadata = client.get_metadata(f['scope'], f['name'], plugin='JSON')
             command = [sys.executable, str(payload / 'register_to_rucio.py'), '-f', str(local), '-d', did,
                        '-s', scope, '-r', 'BNL-XRD', '--events', str(ok['events']),
-                       '--metadata-json', json.dumps(metadata),
                        '--preserve-door', 'root://epicxrd1.sdcc.bnl.gov:1094', '--preserve-prefix', '/eic/EPIC']
             print(('register ' if args.execute else 'would register ') + f"{did} ({ok['events']} events)", flush=True)
             if args.execute:
