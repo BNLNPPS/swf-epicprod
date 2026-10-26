@@ -50,6 +50,10 @@ def definition(settings):
         raise ValueError('production ES close_max_files must be a positive integer')
     if 'reco_pool' in cfg and (type(cfg['reco_pool']) is not int or cfg['reco_pool'] <= 0):
         raise ValueError('production ES reco_pool must be a positive integer')
+    if 'reco_async' in cfg and type(cfg['reco_async']) is not bool:
+        raise ValueError('production ES reco_async must be a boolean')
+    if cfg.get('reco_async') and not cfg.get('resident_unit'):
+        raise ValueError('production ES reco_async needs resident_unit')
     return cfg
 
 
@@ -93,6 +97,8 @@ def apply(spec, settings):
         prefix['ES_CLOSE_MAX_FILES'] = str(cfg['close_max_files'])
     if cfg.get('reco_pool'):
         prefix['EPICPROD_SWITCH_ES_RECO_POOL'] = str(cfg['reco_pool'])
+    if cfg.get('reco_async'):
+        prefix['EPICPROD_SWITCH_ES_RECO_ASYNC'] = '1'
     command = ' '.join(k + '=' + shlex.quote(v) for k, v in prefix.items())
     command += (' python3 evgen_job_dispatcher.py es-production '
                 + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])

@@ -620,6 +620,11 @@ def main():
         # The slots' containers start clean: the switch goes as a setting.
         args.env = (args.env or []) + ['EPICPROD_SWITCH_ES_RESIDENT_UNIT=1']
         args.prestage = True
+        if os.environ.get('EPICPROD_SWITCH_ES_RECO_ASYNC') == '1':
+            # A unit's reconstruction finishes in the background while its
+            # slot simulates the next (resident_unit.asynchronous).
+            args.env.append('EPICPROD_SWITCH_ES_RECO_ASYNC=1')
+            log('asynchronous reconstruction: slots simulate while their units reconstruct')
     if reco_pool.enabled():
         # The job's shared resident EICrecon (reco_pool.py) in place of one
         # per slot; the members start with the units that first need them.

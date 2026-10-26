@@ -927,6 +927,29 @@ The harness also reads the `EPICPROD_SWITCH_*` settings of the sandbox's
 environment file at its start, where a payload canary's switches travel,
 so a canary can set switches the harness itself reads.
 
+## Asynchronous reconstruction
+
+A resident unit simulates, then reconstructs, so a slot's simulation waits
+for its own reconstruction: about an eighth of the slot's time at the rates
+above. `EPICPROD_SWITCH_ES_RECO_ASYNC=1` (payload 0.25.13, off by default;
+`reco_async` in a production ES definition, which needs `resident_unit`)
+takes reconstruction off the slot's critical path:
+
+- A resident unit returns once its simulation has finished
+  (`resident_unit.simulate`). Its reconstruction, handoff and outcome
+  marker finish on a thread of the slot (`resident_unit.reconstruct`),
+  through the shared EICrecon when the pool is on, while the slot simulates
+  the unit it holds next. The slot's first unit, which runs run.sh and
+  writes the template, stays synchronous.
+- The harness counts a unit in flight until its marker appears, as for any
+  unit, and gives the slot its next unit then. A slot whose simulation
+  finishes before its previous unit's reconstruction waits for that unit.
+- A unit's record keeps its own simulation and reconstruction intervals.
+  A slot's reconstruction can therefore overlap its next simulation, and
+  its wall (`wall_s`) runs from the start of simulation to the handoff.
+- A slot that stops joins its threads first. A slot that is cut ends with
+  its threads, so the units in flight are lost, as on a lost node.
+
 ## Multithreading
 
 Resident Event Service reconstruction startup uses a PID-based wait by

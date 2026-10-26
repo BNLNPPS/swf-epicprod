@@ -143,9 +143,18 @@ def alive(pid):
         return False
 
 
-def run(template, chunk, label, start, count, out, env, scratch):
-    """One unit through the residents and into the handoff; returns the
-    handoff record. Raises on any failed step, with the reason."""
+def asynchronous():
+    """EPICPROD_SWITCH_ES_RECO_ASYNC=1: a unit's reconstruction and handoff
+    finish in the background through the job's shared EICrecon while the slot
+    simulates its next unit (EPICPROD_PAYLOAD.md, Asynchronous
+    reconstruction)."""
+    return os.environ.get('EPICPROD_SWITCH_ES_RECO_ASYNC') == '1'
+
+
+def simulate(template, chunk, label, start, count, out, env, scratch):
+    """The unit's simulation through the slot's resident npsim; returns what
+    reconstruct() takes. Raises on a failed step, with the reason, and then
+    removes the unit's scratch."""
     out, scratch = Path(out), Path(scratch)
     skip = start - 1
     taskname, seed = identity(template, chunk, label, skip)
@@ -169,6 +178,18 @@ def run(template, chunk, label, start, count, out, env, scratch):
             simulated = json.load(stream)
         if simulated.get('events') != count or not full.is_file():
             raise RuntimeError(f"simulation answered {simulated.get('events')} events of {count}")
+    except BaseException:
+        shutil.rmtree(scratch, ignore_errors=True)
+        raise
+    return {'taskname': taskname, 'full': full, 'reco': reco, 'count': count, 'scratch': scratch}
+
+
+def reconstruct(template, unit, out, env):
+    """A simulated unit's reconstruction and handoff; returns the handoff
+    record and removes the unit's scratch. Raises on a failed step."""
+    out, full, reco, count = Path(out), unit['full'], unit['reco'], unit['count']
+    taskname = unit['taskname']
+    try:
         asked = {'input_file': str(full), 'output_file': str(reco), 'nskip': 0,
                  'nevents': count, 'run_id': taskname}
         if env.get('EPICPROD_RECO_POOL'):
@@ -203,4 +224,10 @@ def run(template, chunk, label, start, count, out, env, scratch):
         resident_sim.write_json(handoff / f'{taskname}.handoff.json', terms)
         return dict(terms, handoff_file=str(handoff / f'{taskname}.handoff.json'))
     finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+        shutil.rmtree(unit['scratch'], ignore_errors=True)
+
+
+def run(template, chunk, label, start, count, out, env, scratch):
+    """One unit through the residents and into the handoff; returns the
+    handoff record. Raises on any failed step, with the reason."""
+    return reconstruct(template, simulate(template, chunk, label, start, count, out, env, scratch), out, env)

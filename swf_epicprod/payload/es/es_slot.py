@@ -28,6 +28,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 import reco_pool
@@ -159,7 +160,7 @@ def unit_timing(out, work, since, report=None):
     return result
 
 
-def run_unit(spec_path, args):
+def run_unit(spec_path, args, background=None):
     with open(spec_path) as f:
         spec = json.load(f)
     uid = spec['unit_id']
@@ -242,7 +243,7 @@ def run_unit(spec_path, args):
         # residents once the template is checked against run.sh's own.
         template = resident_unit.load(args.work, log, args.input)
         if template:
-            return run_resident_unit(template, record, chunk, label, start, count, out, env, args)
+            return run_resident_unit(template, record, chunk, label, start, count, out, env, args, background)
         if not os.path.exists(resident_unit.template_path(args.work)):
             env['EPICPROD_UNIT_TEMPLATE'] = resident_unit.template_path(args.work)
     cmd = [os.path.join(args.payload, 'run.sh'), f"EVGEN/{spec['file_path']}",
@@ -279,17 +280,42 @@ def run_unit(spec_path, args):
     return uid, record, out
 
 
-def run_resident_unit(template, record, chunk, label, start, count, out, env, args):
+def run_resident_unit(template, record, chunk, label, start, count, out, env, args, background=None):
     """A unit through the slot's residents (resident_unit.py), recorded as
-    run_unit records a unit of the run.sh path."""
+    run_unit records a unit of the run.sh path. With ``background`` (a list,
+    EPICPROD_SWITCH_ES_RECO_ASYNC) the unit returns once it is simulated, with
+    no record: its reconstruction, handoff and outcome marker finish on a
+    thread appended there while the slot takes its next unit."""
     uid = record['unit_id']
     log(f"unit {uid}: events {start}-{start + count - 1}, chunk {label or chunk}, resident")
     try:
-        handed = resident_unit.run(template, chunk, label, start, count, out, env,
-                                   os.path.join(unit_tmpdir(args), f'unit-{os.getpid()}-{uid}'))
-        message = ''
+        unit = resident_unit.simulate(template, chunk, label, start, count, out, env,
+                                      os.path.join(unit_tmpdir(args), f'unit-{os.getpid()}-{uid}'))
     except (OSError, RuntimeError, ValueError, KeyError) as error:
-        handed, message = None, f'resident unit failed: {error}'
+        return uid, finish_resident(record, out, args, None, f'resident unit failed: {error}'), out
+
+    def reconstructed():
+        try:
+            return resident_unit.reconstruct(template, unit, out, env), ''
+        except (OSError, RuntimeError, ValueError, KeyError) as error:
+            return None, f'resident unit failed: {error}'
+
+    if background is None:
+        return uid, finish_resident(record, out, args, *reconstructed()), out
+
+    def rest():
+        complete(uid, finish_resident(record, out, args, *reconstructed()), out)
+
+    # A daemon: a slot that is cut ends with its units in flight, as on a node
+    # that is taken away; a slot that stops joins its threads first.
+    thread = threading.Thread(target=rest, name=f'reconstruct-{uid}', daemon=True)
+    thread.start()
+    background.append(thread)
+    return uid, None, out
+
+
+def finish_resident(record, out, args, handed, message):
+    """A resident unit's record, with the measured intervals of its requests."""
     ended = time.time()
     record.update(rc=0 if handed else 1, ended_at=ended,
                   wall_s=round(ended - record['started_at'], 1),
@@ -308,7 +334,18 @@ def run_resident_unit(template, record, chunk, label, start, count, out, env, ar
             phases[name] = {'started_at': stamp(part[first]), 'ended_at': stamp(part[last])}
     if phases:
         record['phases'] = phases
-    return uid, record, out
+    return record
+
+
+def complete(uid, record, out):
+    """The unit's record, then its outcome marker last (WORK_UNIT_CONTRACT.md)."""
+    with open(os.path.join(out, 'unit.json'), 'w') as f:
+        json.dump(record, f)
+    marker = 'done' if record.get('status') == 'ok' else 'error.json'
+    with open(os.path.join(out, marker), 'w') as f:
+        if marker == 'error.json':
+            json.dump({'message': record.get('message'), 'rc': record.get('rc')}, f)
+    log(f"unit {uid}: {record.get('status')} in {record.get('wall_s')} s, dids {record.get('dids')}")
 
 
 def read_handoff(handoff_dir):
@@ -392,6 +429,7 @@ def main():
     log(f"slot up: work {args.work}, input {args.input}")
     idle_since = time.time()
     done = 0
+    background = [] if resident_unit.enabled() and resident_unit.asynchronous() else None
     while True:
         if os.path.exists(os.path.join(inbox, 'STOP')):
             log(f"STOP after {done} units")
@@ -403,20 +441,21 @@ def main():
                 break
             time.sleep(0.1 if resident_unit.enabled() else 1)
             continue
-        uid, record, out = run_unit(spec, args)
+        uid, record, out = run_unit(spec, args, background)
         if out is None:
             out = os.path.join(args.work, 'outbox', uid)
             os.makedirs(out, exist_ok=True)
-        with open(os.path.join(out, 'unit.json'), 'w') as f:
-            json.dump(record, f)
-        marker = 'done' if record.get('status') == 'ok' else 'error.json'
-        with open(os.path.join(out, marker), 'w') as f:
-            if marker == 'error.json':
-                json.dump({'message': record.get('message'), 'rc': record.get('rc')}, f)
+        if record is None:
+            log(f"unit {uid}: simulated; its reconstruction continues in the background")
+        else:
+            complete(uid, record, out)
         os.remove(spec)
         done += 1
         idle_since = time.time()
-        log(f"unit {uid}: {record.get('status')} in {record.get('wall_s')} s, dids {record.get('dids')}")
+        if background:
+            background[:] = [thread for thread in background if thread.is_alive()]
+    for thread in background or []:
+        thread.join()
     end_daemon()
     return 0
 
