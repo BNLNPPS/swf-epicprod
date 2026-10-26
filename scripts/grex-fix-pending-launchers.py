@@ -161,13 +161,18 @@ for row in rows:
                 env = dict(os.environ, EPICPROD_PILOTS_PER_SLOT='1',
                            EPICPROD_PILOT_STAGGER='0', EPICPROD_TIMEFLOOR_SPREAD='0',
                            EPICPROD_ALLOCATION_SECONDS='43200', EPICPROD_DRAIN_RESERVE_SECONDS='10800',
+                           EPICPROD_MIN_TIME_FOR_NEW_JOB='1',
                            EPICPROD_NATIVE_IMAGE='/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable',
                            EPICPROD_NATIVE_BATCH='1', EPICPROD_NATIVE_DISPATCH='per-job',
                            EPICPROD_NATIVE_NESTING='on', EPICPROD_NATIVE_PROXY='x509up_u1000')
                 env.pop('EPICPROD_NATIVE_ASSETS', None)
-                output = subprocess.check_output(['bash', str(probe), '-q', 'UM_GREX_PanDA_1', '--help'],
-                                                 env=env, stderr=subprocess.STDOUT, timeout=180)
+                check = subprocess.run(['bash', str(probe), '-q', 'UM_GREX_PanDA_1', '--help'],
+                                       env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+                output = check.stdout
                 (root / 'native-bootstrap.out').write_bytes(output)
+                if check.returncode:
+                    print(output[-2000:].decode(errors='replace'), flush=True)
+                    raise RuntimeError('Native bootstrap failed with exit ' + str(check.returncode))
                 if args.archive_sha256.encode() not in output or b'Worker scratch selected' not in output:
                     raise RuntimeError('Native bootstrap did not select the approved worker runtime')
                 bootstrap_checked = True
