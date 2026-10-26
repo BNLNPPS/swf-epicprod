@@ -88,15 +88,29 @@ def pack_reports(pending):
 
 def update_finished(executor, messages, output, size, checksum, storage):
     """Flatten only at the normal server boundary, with bounded API requests."""
+    zip_file = {'objstoreID': storage, 'lfn': os.path.basename(output), 'fsize': size, 'pathConvention': 1000}
+    zip_file.update(checksum)
+    send_finished(executor, messages, zip_file)
+
+
+def report_final(executor, messages):
+    """The job's last reports, on the critical path of its end: the finished
+    ranges go straight to the server, without a receipt archive or its upload.
+    The server takes a range update without a zip record; fine-grained credit
+    counts finished ranges (panda-server task_event_module.updateEventRanges,
+    job_complex_module.check_fine_grained_processing)."""
+    send_finished(executor, messages, None)
+
+
+def send_finished(executor, messages, zip_file):
     ranges = [{'eventRangeID': rid, 'eventStatus': 'finished'}
               for message in messages for rid in message.get('ids', [message['id']])]
     for first in range(0, len(ranges), API_BATCH_RANGES):
         batch = ranges[first:first + API_BATCH_RANGES]
-        zip_file = {'numEvents': len(batch), 'objstoreID': storage,
-                    'lfn': os.path.basename(output), 'fsize': size, 'pathConvention': 1000}
-        zip_file.update(checksum)
-        response = executor.update_events({'version': 1, 'eventRanges': json.dumps([
-            {'zipFile': zip_file, 'eventRanges': batch}])})
+        chunk = {'eventRanges': batch}
+        if zip_file is not None:
+            chunk['zipFile'] = dict(zip_file, numEvents=len(batch))
+        response = executor.update_events({'version': 1, 'eventRanges': json.dumps([chunk])})
         returned = response.get('Returns') if isinstance(response, dict) else None
         if isinstance(returned, str):
             returned = json.loads(returned)

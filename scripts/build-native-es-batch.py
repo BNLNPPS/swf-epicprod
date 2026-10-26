@@ -43,7 +43,13 @@ def build(baseline,output):
     s=replace_method(s,'GenericExecutor','update_finished_event_ranges','''    def update_finished_event_ranges(self, out_messages, output_file, fsize, checksum, storage_id):
         from pilot.user.epic.es_batch import update_finished
         return update_finished(self, out_messages, output_file, fsize, checksum, storage_id)
-''');put(key,s)
+''')
+    # The forced stage-out at the payload's end is on the critical path of the
+    # job's end: its finished ranges go to the server without the receipt
+    # archive and its upload (es_batch.report_final); periodic stage-outs keep
+    # their archives.
+    s=replace_once(s,"        job = self.get_job()\n        if self.__queued_out_messages:\n            if force or","        job = self.get_job()\n        if force and self.__queued_out_messages:\n            from pilot.user.epic.es_batch import report_final\n            out_messages, self.__queued_out_messages = self.__queued_out_messages, []\n            try:\n                report_final(self, out_messages)\n                logger.info(f'reported the last {len(out_messages)} messages without a receipt archive')\n            except Exception as exc:\n                logger.error(f'final report of {len(out_messages)} messages failed: {exc}, {traceback.format_exc()}')\n                self.update_failed_event_ranges(out_messages)\n            return\n        if self.__queued_out_messages:\n            if force or")
+    put(key,s)
     key='pilot/info/configinfo.py';s=data['pilot3/'+key].decode()
     s=replace_once(s,'import ast','import ast\nfrom pilot.user.epic.es_batch import stageout_gap')
     s=replace_once(s,"            'es_stageout_gap': 601,  # in seconds, for testing: FIXME LATER,","            'es_stageout_gap': stageout_gap(),\n            'zip_time_gap': stageout_gap(),")
