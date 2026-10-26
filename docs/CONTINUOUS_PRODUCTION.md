@@ -701,6 +701,18 @@ from the front's shadow-mode record.
 
 ## Pilot-side regulation: the harvester's queue limits
 
+An operator worker-limit override is applied with
+`scripts/worker-limit.py QUEUE N --host HOST --by NAME --reason TEXT --apply`.
+It changes Harvester's `maxWorkers`, preserves a dated configuration backup,
+reads back the installed value, and records the active control in
+`pilot.queue.<queue>.worker_limit`. The limit counts worker allocations;
+a GREX allocation runs eight pilots. Existing allocations finish normally.
+The override operates independently of the shadow pilot regulator.
+Using `off` in place of `N` restores the saved prior limit and clears the
+control. An outside change to the controlled value requires reconciliation
+before the command will overwrite it. The dashboard displays the active
+control's current level in red in place of the weekly average.
+
 The third regulator in series with the front and the job throttler. The
 front admits tasks and the throttler paces their generation; neither
 puts a pilot at the site. At
