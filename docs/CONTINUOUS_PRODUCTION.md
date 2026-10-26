@@ -713,7 +713,10 @@ An operator worker-limit override is applied with
 It changes Harvester's `maxWorkers`, preserves a dated configuration backup,
 reads back the installed value, and records the active control in
 `pilot.queue.<queue>.worker_limit`. The limit counts worker allocations;
-a GREX allocation runs eight pilots. Existing allocations finish normally.
+a GREX allocation runs eight single-core pilots. Use `--cores` to specify
+payload concurrency: 500 cores rounds down to 62 allocations, or 496 cores.
+The control records both units and the dashboard reports cores.
+Existing allocations finish normally.
 The override operates independently of the shadow pilot regulator.
 Using `off` in place of `N` restores the saved prior limit and clears the
 control. An outside change to the controlled value requires reconciliation

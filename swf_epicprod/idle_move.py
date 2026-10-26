@@ -15,6 +15,8 @@ SOURCE = 'front_idle_move'
 MODES = ('active', 'shadow', 'off')
 DEFAULTS = {'mode': 'active', 'max_per_cycle': 4, 'cooldown_h': 12.0}
 MOVE_FAILURE_LIMIT = 0.20       # an idle queue takes moved work only below this failure fraction
+RECENT_MINUTES = 60             # ... over the gate window and over this last hour
+RECENT_MIN_OUTCOMES = 20        # the last hour is read when it holds this many finished and failed
 # Paused tasks wait for an operator's resume, which is not ours to make.
 TASK_STATUSES = ('defined', 'ready', 'running', 'scouting', 'scouted', 'pending',
                  'assigning', 'throttled')
@@ -44,12 +46,16 @@ def failure_fraction(decision):
     return failed / outcomes if outcomes else None
 
 
-def refused_for_failures(decision):
+def refused_for_failures(decision, recent=None):
     """Why an idle queue takes no moved work for its failures, or ''.
     Torre Wenaus, 2026-10-26, after the front moved task 41349's 500 jobs to
     GREX while 2,696 of its 7,343 jobs in the gate window had failed (37%,
     under the front's 60% red): "NO MOVE UNLESS FAILURE FRACTION BELOW 20%".
-    A fraction that cannot be read does not establish it. Pure."""
+    A fraction that cannot be read does not establish it. The same limit
+    holds over the last RECENT_MINUTES (``recent``: finished, failed), read
+    when they hold RECENT_MIN_OUTCOMES: a burst that resumes after a quiet
+    spell (GREX, 178 copy failures in the 20 minutes after its feed came back
+    at 16:58) is diluted in the six-hour window. Pure."""
     fraction = failure_fraction(decision)
     d = decision or {}
     if fraction is None:
@@ -58,7 +64,35 @@ def refused_for_failures(decision):
         failed = int(d['gate_failed']) + int(d.get('gate_explained') or 0)
         return (f'failure fraction {fraction:.0%} ({failed} failed of {failed + int(d["gate_finished"])} '
                 f'in the gate window), not below {MOVE_FAILURE_LIMIT:.0%}')
+    finished, failed = recent or (0, 0)
+    if finished + failed >= RECENT_MIN_OUTCOMES and failed / (finished + failed) >= MOVE_FAILURE_LIMIT:
+        return (f'failure fraction {failed / (finished + failed):.0%} ({failed} failed of '
+                f'{finished + failed} in the last {RECENT_MINUTES} minutes), not below {MOVE_FAILURE_LIMIT:.0%}')
     return ''
+
+
+def recent_outcomes(queues, now=None):
+    """(finished, failed) of the production jobs that ended at each queue in
+    the last RECENT_MINUTES, from PanDA's archive."""
+    from datetime import timedelta
+
+    from django.db import connections
+    from django.utils import timezone
+    from monitor_app.panda.constants import PANDA_SCHEMA
+
+    out = {q: (0, 0) for q in queues}
+    if not out:
+        return out
+    since = (now or timezone.now()) - timedelta(minutes=RECENT_MINUTES)
+    with connections['panda'].cursor() as cursor:
+        cursor.execute(
+            "SELECT computingsite, COUNT(*) FILTER (WHERE jobstatus = 'finished'), "
+            "COUNT(*) FILTER (WHERE jobstatus = 'failed') "
+            f'FROM "{PANDA_SCHEMA}".jobsarchived4 WHERE computingsite = ANY(%s) AND endtime > %s '
+            "AND processingtype = 'epicproduction' GROUP BY 1", [list(out), since])
+        for queue, finished, failed in cursor.fetchall():
+            out[queue] = (int(finished or 0), int(failed or 0))
+    return out
 
 
 def idle_queues(decisions):
@@ -74,10 +108,11 @@ def idle_queues(decisions):
     return out
 
 
-def idle_targets(decisions):
+def idle_targets(decisions, recent=None):
     """The idle queues that may take moved work: those whose failure
-    fraction is below MOVE_FAILURE_LIMIT. Pure."""
-    return {q: d for q, d in idle_queues(decisions).items() if not refused_for_failures(d)}
+    fraction is below MOVE_FAILURE_LIMIT (``recent``: recent_outcomes). Pure."""
+    return {q: d for q, d in idle_queues(decisions).items()
+            if not refused_for_failures(d, (recent or {}).get(q))}
 
 
 def task_hours(rows, decision):
@@ -89,7 +124,7 @@ def task_hours(rows, decision):
     return round(rows * float(median) / ceiling, 3)
 
 
-def choose(decisions, tasks, *, max_moves):
+def choose(decisions, tasks, *, max_moves, recent=None):
     """The moves to make this cycle. Pure.
 
     ``decisions``: this cycle's decision per queue. ``tasks``: candidates,
@@ -106,7 +141,7 @@ def choose(decisions, tasks, *, max_moves):
     the work that would start last where it is. Returns ``(moves,
     skipped)``; each move names ``from``, ``to``, ``rows`` and the hours.
     """
-    targets = idle_targets(decisions)
+    targets = idle_targets(decisions, recent)
     moves, skipped = [], []
     if not targets or max_moves <= 0:
         return moves, skipped
@@ -244,10 +279,13 @@ def run(queues, decisions, placement, *, enabled, front_mode, cfg, dry_run, crea
     from swf_epicprod.front import closed_queues
     from swf_epicprod.queues import dispatch_capabilities
 
+    idle = idle_queues(decisions)
+    recent = recent_outcomes(list(idle)) if idle else {}
     out = {'mode': cfg['mode'], 'moves': [], 'skipped': [],
-           'refused': [{'queue': q, 'why': refused_for_failures(d), 'failure_fraction': failure_fraction(d)}
-                       for q, d in sorted(idle_queues(decisions).items()) if refused_for_failures(d)]}
-    if not enabled or cfg['mode'] not in ('active', 'shadow') or not idle_targets(decisions):
+           'refused': [{'queue': q, 'why': refused_for_failures(d, recent.get(q)),
+                        'failure_fraction': failure_fraction(d), 'last_hour': recent.get(q)}
+                       for q, d in sorted(idle.items()) if refused_for_failures(d, recent.get(q))]}
+    if not enabled or cfg['mode'] not in ('active', 'shadow') or not idle_targets(decisions, recent):
         return out
     state = {'queues': decisions, 'placement': placement}
     closed, dispatch = closed_queues(), dispatch_capabilities()
@@ -261,7 +299,7 @@ def run(queues, decisions, placement, *, enabled, front_mode, cfg, dry_run, crea
         t['prod_task_pk'] = prod.pk
         t['eligible'] = _eligible(prod, state, queues, closed, dispatch)
         tasks.append(t)
-    moves, out['skipped'] = choose(decisions, tasks, max_moves=cfg['max_per_cycle'])
+    moves, out['skipped'] = choose(decisions, tasks, max_moves=cfg['max_per_cycle'], recent=recent)
     acting = enabled and front_mode == 'active' and cfg['mode'] == 'active' and not dry_run
     for move in moves:
         reason = (f"{move['to']} idle (no ready work, {move['to_h']} h queued against its "
