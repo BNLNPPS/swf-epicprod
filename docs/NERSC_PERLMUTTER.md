@@ -207,8 +207,8 @@ back to another pilot.
 
 ### The batch pilot
 
-The runtime is `native-runtime-perlmutter-es-batch-3d4c40a`, pilot archive
-`c2da4e4eda0d9c0483d43f61d82bf1f500f220ae40d1c6cfb0c4d48f5234caf1`, built
+The runtime is `native-runtime-perlmutter-es-batch-6c11d8e`, pilot archive
+`0c1e70596a5ed1317d109435bbc22ede9d0430cb9c228945d99f6f3d6f0d6a68`, built
 from the approved native archive `9532f30b` by
 `scripts/build-native-es-batch.py`, staged by `scripts/stage-native-runtime.py`
 from committed helpers and frozen assets, and published by
@@ -233,6 +233,23 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   the record's `channel` carries the requests, the ranges and the pilot's
   answer times (median, 90th percentile, longest of the latest 500), which
   tell a slow pilot from a harness that asks too slowly.
+- **Ranges held from the start, reports at once.** The pilot's communication
+  manager is one thread, a pass a second, carrying acquisitions, range reports
+  and the job's updates in turn. A report of 10,000 ranges sent right behind
+  another took the server 22 to 33 s (2,140 took 0.6 s), so each periodic
+  stage-out's run of them held every acquisition for minutes: job 6095121
+  (task 41299) alternated between about 400 events a second and 5- to
+  15-minute windows of about 50, with acquisitions 4 s apart fed and 50 to 60 s
+  apart starved, about 215 a second overall. The launcher sets
+  `EPICPROD_ES_PREFETCH_RANGES=200000`: the ES process fills a cache of ranges
+  at its start, and a thread of its own refills it straight from the server,
+  10,000 an acquisition, whenever fewer than half are held, about seven minutes
+  of a fed node; the payload is answered from the cache, and "No more events"
+  only when the server has none left. With `EPICPROD_ES_REPORT_AT_ONCE=1` the
+  executor's pass, every five seconds, sends the queued unit reports straight
+  to the server, 2,000 ranges a call, so a close is credited as it stands and
+  the periodic receipt archive goes unused. Ranges a job holds when it ends are
+  released by the server's fine-grained accounting.
 - **One report per unit.** The harness reports a completed unit with all of
   its range IDs in one message (up to 512); the pilot packs each unit's record
   once into the stage-out archive and reports finished ranges through the
@@ -243,13 +260,12 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   committed; any other refusal raises. Before, the pilot re-marked already
   credited ranges failed (error 1220) and they were dispatched again, so the
   same events were simulated twice.
-- **The final report.** Periodic stage-outs, every 300 seconds, archive the
-  units' receipts and upload them through Rucio to `BNL_PROD_DISK_1` before
-  reporting their ranges. The forced stage-out at the payload's end reports
-  the last finished ranges straight to the server, without the archive and
-  its upload (`es_batch.report_final`), since it lies on the critical path of
-  the job's end. The server takes a range update without a zip record, and
-  fine-grained credit counts finished ranges.
+- **The final report.** The forced stage-out at the payload's end reports the
+  last finished ranges straight to the server, without a receipt archive
+  (`es_batch.report_now`). It must not go through the communication manager:
+  on a stop the executor stops that manager first, so a stopping pilot's last
+  reports were aborted and marked failed. The server takes a range update
+  without a zip record, and fine-grained credit counts finished ranges.
 
 ## Event Service jobs on Perlmutter
 
@@ -395,6 +411,27 @@ reported), killing the pilot and everything under it with nothing reported,
 as when a node is taken away (NODE_EVENT_DISPATCHER.md, Preemption, The test);
 the close-out must credit its closes that stood and release the rest, and the
 sample's next job runs whole.
+
+The first trial (task 41316, job 6087270, 26 October) saved 249,480 events in
+seven closes, and PanDA counted the 122,012 the pilot had already reported.
+The harvester saw the Slurm job end and ended the PanDA job three minutes after
+the cut (taskbuffer 300, "The worker was finished while the job was running"),
+before the close-out, which acts only on running jobs; the server released the
+other 127,468 ranges to the file, though their output stood registered.
+`tools/es_credit_ended.py` put them back as finished from the job's record, and
+reports at once (The batch pilot) now credit a close as it stands, so a node
+lost without notice loses only work not yet closed.
+
+A real preemption gives notice: NERSC's preempt QOS sends SIGTERM to the
+srun-launched processes 60 to 120 s before SIGKILL. With
+`EPICPROD_SWITCH_ES_NOTICE=1` (`notice` in the production ES shape, on for the
+Perlmutter feeder's tasks) the harness ends the job inside that notice: it takes
+no more ranges, gives up the units on its slots and those awaiting a close
+(their ranges return to the server unreported), gives a running close 30 s to
+stand, and takes the pilot's receipt; the pilot reports straight to the server
+and sends its final update. The trial key `preempt_notice_s` makes the cut such
+a notice (`ES_PREEMPT_NOTICE_S`: SIGTERM to the pilot and everything under it,
+SIGKILL that many seconds later), which is the test of this path.
 
 ## The end of a job
 
