@@ -8,13 +8,14 @@ MARKER = 'perlmutter_production'
 AUTHORITY = '01a17817-55fd-7551-be68-d05dbb102492'
 # The four-hour shape of task 41262 (NERSC_PERLMUTTER.md, Event Service jobs
 # on Perlmutter) with gun-sized units and closes: a 5 GeV neutron simulates
-# in about 0.24 s and its RECO holds 82 KB, so a 120 s close of the node's
-# 128 slots is about 5 GB and the work directory stays under the pilot's
-# maxwdir. One job takes the whole task: nJobs is events // events_per_job.
-SHAPE = dict(events_per_job=EVENTS, unit_events=500, close_s=120, deadline_s=14100,
-             margin_s=600, memory_mb_per_core=1350, slots='128', pilot_cores=256,
-             resident_sim=True, resident_unit=True, fast_merge=True, batch_channel=True,
-             parallel_start=True, reco_pool=32, reco_async=True, report_barrier=True)
+# in 0.26 s on Perlmutter and its RECO holds 156 KB, so 128 slots write about
+# 78 MB/s, which four concurrent closes of about 35 MB/s each carry (job
+# 6071469). One job takes the whole task: nJobs is events // events_per_job.
+SHAPE = dict(events_per_job=EVENTS, unit_events=500, close_s=120, close_concurrency=4,
+             deadline_s=14100, margin_s=600, memory_mb_per_core=1350, slots='128',
+             pilot_cores=256, resident_sim=True, resident_unit=True, fast_merge=True,
+             batch_channel=True, parallel_start=True, reco_pool=32, reco_async=True,
+             report_barrier=True)
 # JEDI states in which a task has, or is about to make, a job. A paused task
 # makes none.
 LIVE_TASK_STATES = ('registered', 'defined', 'assigning', 'ready', 'pending', 'scouting',

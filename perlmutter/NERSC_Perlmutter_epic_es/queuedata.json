@@ -135,7 +135,7 @@
   "maxinputsize": 14336,
   "maxrss": 0,
   "maxtime": 345600,
-  "maxwdir": 30000,
+  "maxwdir": 150000,
   "meanrss": 4000,
   "minrss": 0,
   "mintime": 0,

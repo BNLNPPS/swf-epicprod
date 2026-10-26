@@ -792,6 +792,11 @@ copies event data through ROOT, and rewrites the metadata category with
 the input-file list. The ordinary validation and registration follow.
 `ES_CLOSE_MAX_FILES` bounds each batch and makes a full batch eligible for
 immediate closing; unset retains the existing cadence and batch behavior.
+`ES_CLOSE_CONCURRENCY` (default 1, payload 0.25.24) lets that many closes run
+at once: a close on the cadence starts while earlier ones still register, for
+output faster than one close carries (Perlmutter gun RECO, 78 MB/s against
+about 35 MB/s a close). The first close still goes as soon as a unit hands
+over.
 Close input paths travel in a manifest rather than one shell argument.
 The shipped ES record includes the active close's stage and merged bytes,
 so a stalled merge can be distinguished from validation or registration.

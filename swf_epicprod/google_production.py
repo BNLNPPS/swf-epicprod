@@ -174,6 +174,9 @@ def task_inventory(marker=MARKER, label='Google'):
     from pcs.models import ProdTask
     active, draft = [], None
     for task in ProdTask.objects.filter(overrides__has_key=marker).order_by('pk'):
+        entry = (task.overrides or {}).get(marker)
+        if isinstance(entry, dict) and entry.get('reviewed'):
+            continue  # an operator reviewed it and released the supply
         attempt = task.panda_tasks.order_by('-try_number').first()
         taskid = task.panda_task_id or (attempt.jedi_task_id if attempt else None)
         if taskid:

@@ -53,6 +53,12 @@ class InventoryTest(unittest.TestCase):
     def test_submitted_without_jedi_id_still_reserves_slot(self):
         self.assertEqual(self.inventory(taskid=None)[0], ([9], None))
 
+    def test_a_reviewed_task_no_longer_holds_supply(self):
+        task = MagicMock(pk=9, panda_task_id=123, overrides={prod.MARKER: {'reviewed': 'r'}})
+        with patch('pcs.models.ProdTask.objects') as tasks, patch('django.db.connections'):
+            tasks.filter.return_value.order_by.return_value = [task]
+            self.assertEqual(prod.task_inventory(), ([], None))
+
     def test_draft_is_reused_after_staging_failure(self):
         (active, draft), task = self.inventory(attempt=False, taskid=None)
         self.assertEqual(active, [])

@@ -664,6 +664,8 @@ def main():
                     help='seconds between closes: the units since the last close merged into one file and registered; 0 = each unit registers its own')
     ap.add_argument('--close-max-files', type=int, default=int(os.environ.get('ES_CLOSE_MAX_FILES', '0')),
                     help='maximum unit files per close; 0 retains an unbounded batch')
+    ap.add_argument('--close-concurrency', type=int, default=int(os.environ.get('ES_CLOSE_CONCURRENCY', '1')),
+                    help='closes running at once; a close on the cadence starts while earlier ones register')
     ap.add_argument('--min-unit-events', type=int, default=int(os.environ.get('ES_MIN_UNIT_EVENTS', '16')),
                     help='a free slot starts on this many contiguous events rather than wait for its whole block')
     ap.add_argument('--preempt-at-s', type=float, default=float(os.environ.get('ES_PREEMPT_AT_S', '0')),
@@ -677,6 +679,8 @@ def main():
     load_job_env(args.sandbox)
     if args.close_max_files < 0:
         ap.error('--close-max-files must be nonnegative')
+    if args.close_concurrency < 1:
+        ap.error('--close-concurrency must be positive')
     args.sandbox = os.path.abspath(args.sandbox)
     args.work = os.path.abspath(args.work)
     args.payload = os.path.abspath(args.payload or os.path.join(args.sandbox, 'payload'))
@@ -994,13 +998,17 @@ def main():
             pool.want()                         # nothing pooled yet
         in_flight = [s for s in slots if s.unit is not None]
         # A close: on the cadence, or the last one when nothing else is
-        # coming; one at a time.
+        # coming; up to --close-concurrency at once, so a node whose output
+        # outruns one close's merge and registration (Perlmutter gun RECO,
+        # 78 MB/s against about 35 MB/s a close) does not pile it up in the
+        # work directory until the pilot kills the job (job 6071469).
         drained = not taking or (pool.exhausted and not len(pool))
         # The first close goes as soon as a unit has handed over, not a
         # cadence after the start: until a close stands, a lost node costs
         # the whole pass (job 3809939, node lost 9 minutes in, nothing
         # credited, with the first units done at about 6 minutes).
-        if pending and not closes and (not summary['closes']
+        started_closes = len(summary['closes']) + len(closes)
+        if pending and len(closes) < args.close_concurrency and (not started_closes
                                        or time.time() - last_close >= args.close_s
                                        or (args.close_max_files and len(pending) >= args.close_max_files)
                                        or (drained and not in_flight)):

@@ -23,7 +23,7 @@ class ShapeTest(unittest.TestCase):
                       'env': {'EVGEN_GENERATOR': 'particle_gun', 'EVGEN_INTERNAL': 'true'},
                       'containerImage': '/cvmfs/image', 'csvBase': 'c', 'outDS': 'o'}, settings())
         self.assertEqual((spec['nJobs'], spec['nCore'], spec['memory']), (1, 256, 1350))
-        for switch in ('ES_SLOTS=128', 'ES_EVENTS_PER_UNIT=500', 'ES_CLOSE_S=120',
+        for switch in ('ES_SLOTS=128', 'ES_EVENTS_PER_UNIT=500', 'ES_CLOSE_S=120', 'ES_CLOSE_CONCURRENCY=4',
                        'ES_DEADLINE_S=14100', 'ES_MARGIN_S=600',
                        'EPICPROD_SWITCH_ES_BATCH_CHANNEL=1', 'EPICPROD_SWITCH_ES_COHORT_START=1',
                        'EPICPROD_SWITCH_ES_FAST_MERGE=1', 'EPICPROD_SWITCH_ES_RESIDENT_UNIT=1',

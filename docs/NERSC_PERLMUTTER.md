@@ -107,9 +107,11 @@ For the Event Service the file must declare the `es_events` and
 as `BNL_PROD_DISK_1`, the route the queue's ordinary outputs take.
 Undeclared, the pilot's event service stage-out forces the
 `objectstore` copytool (`pilot/api/es_data.py`) and fails against a
-storage that is not an object store. Its `maxwdir` (30,000 MB) is the
-pilot's limit on the job's work directory: a job above it is killed with
-its pilot (The end of a job).
+storage that is not an object store. Its `maxwdir` is the pilot's limit on
+the job's work directory, plus 20%: a job above it is killed with its pilot
+(The end of a job). It is 150,000 MB since 26 October (30,000 before): with
+gun output, four concurrent closes each hold their unit files and their
+merged file, about 50 to 60 GB together.
 
 The pilot's report interval (`zip_time_gap`) is 300 seconds. The effective
 value must be checked through the pilot's full information-service
@@ -348,11 +350,13 @@ close-out cycle. With `perlmutter_production.enabled=true` it adds a task only
 when the queue has no job and no other live task, so the queue never holds two
 nodes; a paused task does not hold it. Each task is 6,000,000 fresh 5 GeV
 neutron-gun events at 3–50 degrees in one job, in the shape above with
-500-event units and 120-second closes. A neutron simulates in about 0.24 s
-and reconstructs in about 0.04 s (Google job 6056086), so 32 shared members
-keep pace with 128 slots; its RECO holds 82 KB, so a 120-second close of the
-node is about 5 GB and the work directory stays under `maxwdir`. One node makes
-about 2 million events and 160 GB of RECO an hour. A task that one job does not
+500-event units and 120-second closes, four at a time. On Perlmutter a
+neutron simulates in 0.26 s and reconstructs in about 0.1 s (job 6071469), so
+32 shared members keep pace with 128 slots, and its RECO holds 156 KB: the node
+writes about 78 MB/s, more than one close's merge and registration carry
+(about 35 MB/s, task 41262), hence the concurrent closes
+(`ES_CLOSE_CONCURRENCY`). One node makes about 1.8 million events and 280 GB
+of RECO an hour. A task that one job does not
 finish continues in the next job on its remaining ranges.
 
 PCS sample identities `pOP000001` onward share the seed ledger of Google's
