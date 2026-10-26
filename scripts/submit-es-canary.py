@@ -19,6 +19,7 @@ import subprocess
 import sys
 
 DEPLOYED = Path('/opt/swf-monitor/current')
+PRODUCTION_ENV = Path('/opt/swf-monitor/config/env/production.env')
 MONITOR_URL = 'https://pandaserver02.sdcc.bnl.gov/swf-monitor'
 
 
@@ -45,7 +46,7 @@ def main():
     token = key_values(Path.home() / '.env').get('SWF_API_TOKEN')
     if not token:
         sys.exit('ERROR: SWF_API_TOKEN is not in ~/.env')
-    env = dict(os.environ, **key_values(DEPLOYED / 'config/env/production.env'))
+    env = dict(os.environ, **key_values(PRODUCTION_ENV))
     env.update(SWFMON_TOKEN=token, SWF_TASK_OWNER=args.owner, SWF_MONITOR_URL=MONITOR_URL)
     cmd = [str(DEPLOYED / '.venv/bin/python'), str(DEPLOYED / 'scripts/submit-evgen-task.py')] + passed
     args.log.parent.mkdir(parents=True, exist_ok=True)
