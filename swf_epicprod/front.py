@@ -1199,6 +1199,7 @@ def run_cycle(*, dry_run=False, created_by='front'):
                'mode': mode, 'mode_requested': mode_requested, 'enabled': enabled,
                'jedi_throttled': jedi_throttled,
                'task_failure_guard': task_guard,
+               'feed_guard': feed_returns,
                'idle_move': idle,
                'queues': len(queues), 'decisions_recorded': written,
                'errors': errors,
