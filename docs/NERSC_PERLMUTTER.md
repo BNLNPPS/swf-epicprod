@@ -1,28 +1,28 @@
-# NERSC Perlmutter: how pilots start, and the test queue
+# NERSC Perlmutter: how pilots start, and the Event Service there
 
 Perlmutter runs ePIC production through a harvester operated by PanDA
 operations on the site's login node. This document records how a pilot
 comes to run on a Perlmutter node, what of that path is reachable from
-the production system, and the arrangement under which production
-operations controls the pilot on its own Perlmutter test queue. The
-Event Service design that the test queue serves is
-[NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md); the proving
-program that precedes Perlmutter is
-[NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md).
+the production system, the arrangement under which production operations
+controls the pilot on its own Perlmutter test queue, and how an Event
+Service (ES) job runs there. The ES design is
+[NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md); the payload's ES
+machinery is in [EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md) (Resident
+particle-gun simulation, Resident Event Service units, Shared resident
+reconstruction, Asynchronous reconstruction); the proving program that
+precedes Perlmutter is [NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md).
 
 ## The queues
 
-The site is commissioning for Event Service. The ordinary production queue
-remains off; `NERSC_Perlmutter_epic_es` is the commissioning lane and automatic
-production feeding stays disabled. The allocation monitor preserves an
-explicit commissioning state. Start with short native-pilot smoke jobs and
-verify ES execution, output registration and readability before moving to
-production-shaped validation.
+`NERSC_Perlmutter_epic_es` runs Event Service production on one node
+(Production, below). The ordinary production queue is closed while the m3763
+CPU allocation is above its close threshold (90% used); the ES queue is outside
+that rule (`nersc.queues`).
 
 | Queue | Role | Record |
 |---|---|---|
 | `NERSC_Perlmutter_epic` | production | `jobseed` `std`; mcore; `maxtime` 14400 s |
-| `NERSC_Perlmutter_epic_es` | production operations' test queue for the Event Service | created 2026-09-10 as a clone of `NERSC_Perlmutter_epic_dev`; `jobseed` `all`; mcore; `apptainer:pilot` with `/global`, `/cvmfs` and `/pscratch` bound; rucio copytool to `BNL_PROD_DISK_1`; `maxtime` 345600 s; ordinary jobs run on it |
+| `NERSC_Perlmutter_epic_es` | Event Service production on one node; production operations' launcher | created 2026-09-10 as a clone of `NERSC_Perlmutter_epic_dev`; `jobseed` `all`; mcore; `apptainer:pilot` with `/global`, `/cvmfs` and `/pscratch` bound; rucio copytool to `BNL_PROD_DISK_1`; `maxtime` 345600 s; ordinary jobs run on it |
 
 `jobseed` `all` is the field that lets the server create a new consumer
 for a task's unprocessed ranges (NODE_EVENT_DISPATCHER.md, The pilot
@@ -63,15 +63,18 @@ repository that production operations can find; a change to any of
 them is a request to PanDA operations with the change spelled out,
 and the request below asks that they be kept in one.
 
-## The worker record is public
+## Worker records
 
-`https://portal.nersc.gov/cfs/m3763/panda/jobs/<queue>/<pandaid>/`
-serves, without login, the pilot log, the Slurm job's stdout and the
-task's stdout and stderr; the task stdout carries the rendered wrapper,
-the environment, the container command and the pilot command line
-before the pilot's own log. The job record's `pilotid` names the
-directory, and `panda_study_job` returns these files as `log_urls`.
-Everything in the section above is read from there.
+`https://portal.nersc.gov/cfs/m3763/panda/jobs/<queue>/launch/<worker>/task0.out`
+serves, without login, the public launch record of a test-queue worker:
+the launcher's own messages, the pool sample, the native runtime and pilot
+checksums, the pilot's exit code, and the pilot's end-of-job step lines
+(The end of a job). The pilot's console and the payload's logs stay in the
+private worker directory. The per-job directories
+`https://portal.nersc.gov/cfs/m3763/panda/jobs/<queue>/<pandaid>/`, which
+served the site wrapper's pilot log and task output in September, are not
+published for the test queue's native workers; `panda_study_job` lists the
+harvester's log locations whether or not they are served.
 
 ## CVMFS on the nodes
 
@@ -96,23 +99,23 @@ A file placed in the working directory before the pilot starts
 therefore governs every pilot-side field, as it does on `BNL_NPPS_GPU`
 and in the OSG submit description. The fields the server reads
 (`jobseed`, `corecount`, `capability`, `resource_type`, `maxtime`,
-`status`) stay in CRIC.
+`status`) stay in CRIC. The launcher fetches the test queue's file,
+`perlmutter/NERSC_Perlmutter_epic_es/queuedata.json`, from `main`.
 
 For the Event Service the file must declare the `es_events` and
 `es_failover` activities, in `acopytools` as `rucio` and in `astorages`
 as `BNL_PROD_DISK_1`, the route the queue's ordinary outputs take.
 Undeclared, the pilot's event service stage-out forces the
 `objectstore` copytool (`pilot/api/es_data.py`) and fails against a
-storage that is not an object store.
+storage that is not an object store. Its `maxwdir` (30,000 MB) is the
+pilot's limit on the job's work directory: a job above it is killed with
+its pilot (The end of a job).
 
-The shipped `zip_time_gap` is 300 seconds, matching the established Google
-queue setting. The effective value must be checked through the pilot's full
-information-service resolution: its configuration provider and the
-`zip_time_gap` alias can compete. A bare `QueueData` construction or reading
-the provider's literal 601-second default does not establish the running
-pilot's value. The Perlmutter batch candidate sets both names and verifies an
-effective 300-second interval locally. The earlier 60-second setting was
-incorrect; pES4 credit reconciliation did not validate that proposed repair.
+The pilot's report interval (`zip_time_gap`) is 300 seconds. The effective
+value must be checked through the pilot's full information-service
+resolution, where its configuration provider and the `zip_time_gap` alias
+compete; the batch pilot sets both names and verifies an effective
+300-second interval.
 
 ## Controlling the pilot on the test queue
 
@@ -124,100 +127,6 @@ named to travel alone (a cached copy in the site's tree, a copy in
 every worker directory): whose it is, where it runs, what it does. It
 is served from `main`, as everything in this repository is: `main` is what
 runs.
-
-The launcher is a site adapter to the **common native pilot**, using the
-Perlmutter-only `native-runtime-perlmutter-es-batch-b5ff01c` bundle and archive
-`26e9264ef3f81b1676867432e03c9dff014a37098074988b27bf052d425665c8`.
-It adds bounded batch IPC to the previously approved native baseline
-(`pilot/native-canary/es_batch.py`). The pilot accepts PanDA's committed range
-updates when the server appends a failure for its own post-commit job event
-count; before, it re-marked already credited ranges failed, and they were
-released and dispatched again. Its forced stage-out at the payload's end
-reports the last finished ranges straight to the server, without the receipt
-archive and its upload to BNL that each periodic stage-out keeps, since that
-step lies on the critical path of the job's end. The bundle is staged by `scripts/stage-native-runtime.py`
-and published by `scripts/publish-pilot-asset.py`. It starts the campaign image's own Python through
-Apptainer, without ALRB. Event Service uses that pilot's generic executor
-and a matching Python 3.13 yampl channel; there is no separate ES pilot fork.
-The runtime and channel arrive over immutable, checksum-pinned HTTPS URLs
-under the devcloud bucket's public `pilot/` prefix because the EIC CVMFS
-repository is unavailable on these nodes. A failed artifact check ends the
-launch before dispatch; it never selects the legacy pilot as a fallback.
-
-Image admission reads the same fixed public launcher URL through the cached
-product `perlmutter_pilot_runtime` (five-minute refresh, fifteen-minute maximum
-evidence age). It derives the exact image and pinned runtime hashes from the
-adapter. Missing, unreadable, ambiguous or stale evidence refuses submission.
-This establishes the launcher's capability; it does not assert that a worker
-has started or an ES payload has succeeded.
-
-The existing Slurm script can still start eighty copies of the adapter.
-Only rank zero continues, producing one pilot on the single-node allocation;
-all other ranks exit before staging anything. The pilot advertises 128 physical payload cores, retains the Harvester identity and uses a mode-0600 copy
-of the site's proxy. `/global`, `/pscratch` and `/cvmfs` remain accessible.
-Local queue and storage configuration retain the `es_events` and
-`es_failover` routes. Pilot console output stays private; the public launch
-record contains adapter messages and selected startup markers, without an
-environment dump.
-
-The adapter resolves the scheduler's uid/gid on the host and stages private
-passwd/group lookup files before entering a user and mount namespace. Those
-files are bound over the lookup paths only in that process namespace, so the
-CVMFS Apptainer can resolve the account even without the site's NSS service.
-The host account files and numeric identity remain unchanged. A failed host
-lookup stops the launch before dispatch.
-
-Commissioning workers use a four-hour ceiling
-including staging, clamped to an earlier Slurm end time. HEPiX `shutdowntime` exposes the same
-deadline to the common pilot; its first-job admission minimum is ten minutes.
-A worker takes at most one job and then exits. The initial ES smoke shape is
-20 events, four explicit execution slots and 1,500 MB/core, so whole-node
-memory accounting remains below the node's capacity. The site's existing
-Slurm template is unchanged; the adapter bounds actual worker lifetime.
-The original twenty-minute and later forty-five-minute ceilings served
-startup and short demonstration runs. Resident simulation commissioning
-uses the predictable four-hour allocation; individual canaries retain
-their own shorter payload deadlines.
-
-The first native ES smoke passed on 25 October at 00:40:56 UTC:
-task 41126, job 5904471, worker 21934 (Slurm 60232318), using
-`26.07.1-stable`. All 20 ranges completed without failed units; two RECO closes
-registered 5 and 15 events. Independent JLab Rucio reads confirmed both files,
-and the campaign's ordinary PODIO reader read all 20 distinct event identities
-and all 387 collections. This establishes the short native ES path on
-Perlmutter; it does not establish 26.07.3 gun execution or worker-loss recovery.
-
-An operator submits an Event Service canary from swf-testbed with
-`scripts/submit-es-canary.py --log <file> -- <submit-evgen-task.py arguments>`,
-which runs the deployed submitter with the deployed environment, the
-operator's own token and the internal monitor URL.
-
-Native ES canaries use `submit-evgen-task.py --es-worker-proxy`: the sandbox
-names a local proxy path, and the dispatcher copies the native pilot's existing
-credential into that path on the worker with mode 0600. The live credential is
-not uploaded in the task sandbox. The normal canary output namespace and
-lifetime are unchanged.
-
-Both `X509_USER_PROXY` and `PILOT_X509_USER_PROXY` must name that worker-local
-file in the sandbox environment. ES closes start under `--cleanenv` and source
-the environment afresh. The second name lets the registrar exchange the pilot
-identity for PanDA-issued Rucio and storage write tokens. Catalog authentication
-with a proxy does not establish write permission at the output door.
-
-The first 26.07.3 gun ES checks (Google 41140 and Perlmutter 41141) exposed this
-handoff requirement: reconstruction and merged-file validation passed, but the
-close lacked `PILOT_X509_USER_PROXY`, fell back to X.509 and was denied by the
-output door. A controlled reproduction with a registered neutron file failed
-in the same way; retaining the pilot reference obtained the tokens, transferred
-and checksum-verified the file, and registered it. Actual worker reruns remain
-the acceptance gate for the correction.
-
-The adapter also samples `squeue` and `sinfo` before entering the container,
-writing `pool-sample.json` above its work directory (`pool-sample/1`). It
-exports that path as `EPICPROD_POOL_SAMPLE` and its Apptainer equivalent so
-the payload report carries the account's and machine's running/pending jobs,
-nodes and partition state (swf-monitor `docs/POOL_REPORTER.md`). The existing
-node-exclusion check remains before pilot startup.
 
 The site's Slurm job takes it by queue name, keeping a cached copy in
 the harvester installation, where the job script now copies the site's
@@ -231,168 +140,294 @@ cp "$OURS" epicprod-perlmutter-pilot-launch.sh 2>/dev/null || cp /global/common/
 ```
 
 and the `srun` line runs `./epicprod-perlmutter-pilot-launch.sh` in place of
-the site's file name.
+the site's file name. PanDA operations changed the `NERSC_Perlmutter_epic_es`
+Slurm script on 2026-09-13 to fetch the launcher from its fixed URL (not the
+`${PQ}` form, so the production queue keeps the site's wrapper).
 
 The scope is set by the URL: a queue has a cached copy only if a file
 is published under its name, so only `NERSC_Perlmutter_epic_es` runs
 production operations' wrapper; every other queue's fetch fails and
 the site's wrapper runs as before. On the test queue a successful fetch
 replaces the cached copy atomically; a failed fetch leaves it, and the
-worker runs the last good version; the site's wrapper is reached only
-before the first successful fetch, and a one-time seed of the cached
-copy removes even that. Once a queue has a cached copy, removing the
-file from the repository does not return the queue to the site's
-wrapper; every change in either direction is a publication on `main`.
+worker runs the last good version. Once a queue has a cached copy, removing
+the file from the repository does not return the queue to the site's
+wrapper; every change in either direction is a publication on `main`. The
+standing request to PanDA operations is that the Perlmutter harvester
+configuration, Slurm template and wrapper be kept in a repository, so that a
+change like this one is a pull request.
 
-The request to PanDA operations is these four lines in the Slurm job
-script, the seed, and that the Perlmutter harvester configuration,
-Slurm template and wrapper be kept in a repository, so that a change
-like this one is a pull request. PanDA operations changed the
-`NERSC_Perlmutter_epic_es` Slurm script on 2026-09-13 to fetch the
-launcher from its fixed URL (not the `${PQ}` form, so the production
-queue keeps the site's wrapper); the first worker to run it is the
-payload canary of the section below.
+### The launcher and the native pilot
 
-## Payload canaries on the test queue
+The launcher is a site adapter to the **common native pilot**. It starts the
+campaign image's own Python through Apptainer, without ALRB; the Event Service
+uses that pilot's generic executor and a matching Python 3.13 yampl channel.
+The runtime and channel arrive over immutable, checksum-pinned HTTPS URLs under
+the devcloud bucket's public `pilot/` prefix, since the EIC CVMFS repository is
+unavailable on these nodes; a failed artifact check, or a runtime manifest
+without the batch channel's declaration (`es_batch_channel` version 1, a
+300-second report interval), ends the launch before dispatch, never falling
+back to another pilot.
 
-The production queue's landing probe (below) runs the site's wrapper
-and says what production sees. The test queue runs the launcher, so a
-payload canary there (site-canary IMPLEMENTATION.md § Payload canaries:
-one manifest row of a standard-configuration task, the production
-payload, a verdict from its report) is the launcher's proof and the
-pool sample's carrier: every run leaves a sample of the machine as
-the worker found it, whatever the verdict. A payload canary on
-`NERSC_Perlmutter_epic_es` every twelve hours is the standing reading
-of the Perlmutter pool until production runs the launcher.
+- **Worker shape.** The Slurm script still starts eighty copies of the
+  adapter; only rank zero continues, producing one pilot on the single-node
+  allocation. The pilot advertises 128 physical payload cores
+  (`ATHENA_PROC_NUMBER`), keeps the Harvester identity and uses a mode-0600
+  copy of the site's proxy. A worker takes at most one job and then exits.
+- **Lifetime.** The worker's ceiling is four hours including staging,
+  clamped to an earlier Slurm end time; HEPiX `shutdowntime` exposes the same
+  deadline to the pilot and to the ES harness, whose deadline never extends
+  beyond it. The pilot's first-job admission minimum is ten minutes.
+- **Identity.** The adapter resolves the scheduler's uid/gid on the host and
+  stages private passwd/group lookup files before entering a user and mount
+  namespace; they are bound over the lookup paths only in that namespace, so
+  the CVMFS Apptainer resolves the account without the site's NSS service. A
+  failed host lookup stops the launch before dispatch.
+- **Pool sample.** Before the container starts, the adapter samples `squeue`
+  and `sinfo` into `pool-sample.json` (`pool-sample/1`), exported as
+  `EPICPROD_POOL_SAMPLE`, so the payload report carries the account's and
+  machine's running and pending jobs and partition state (swf-monitor
+  `docs/POOL_REPORTER.md`). The node-exclusion check runs before pilot
+  startup.
+- **Admission.** Image admission reads the same public launcher URL through
+  the cached product `perlmutter_pilot_runtime` (five-minute refresh,
+  fifteen-minute maximum evidence age) and derives the exact image and pinned
+  runtime hashes from it; missing, unreadable, ambiguous or stale evidence
+  refuses submission. The product refreshes only while something long-lived
+  reads it: before a submission after a quiet interval, it is refreshed
+  (`perlmutter_pilots.capability(refresh=True)`, the page's Update).
+
+### The batch pilot
+
+The runtime is `native-runtime-perlmutter-es-batch-b5ff01c`, pilot archive
+`26e9264ef3f81b1676867432e03c9dff014a37098074988b27bf052d425665c8`, built
+from the approved native archive `9532f30b` by
+`scripts/build-native-es-batch.py`, staged by `scripts/stage-native-runtime.py`
+from committed helpers and frozen assets, and published by
+`scripts/publish-pilot-asset.py`, which never overwrites a key and verifies
+the public copy's checksum. Google's batch runtime is built from the same
+module and builder ([GKE_PILOT_FLOW.md](GKE_PILOT_FLOW.md)). The batch
+behaviour lives in `pilot/native-canary/es_batch.py`, gated by
+`EPICPROD_SWITCH_ES_BATCH_CHANNEL=1`, which the launcher exports:
+
+- **Ranges in bulk.** One IPC request takes up to 256 ranges from the pilot's
+  cache; range acquisitions from the server are bulk requests at least two
+  seconds apart.
+- **One report per unit.** The harness reports a completed unit with all of
+  its range IDs in one message (up to 512); the pilot packs each unit's record
+  once into the stage-out archive and reports finished ranges through the
+  normal bulk event API, at most 10,000 IDs per request.
+- **The server's answer.** On PostgreSQL, panda-server commits a range
+  update and then fails its own job event-count statement, appending one
+  `False` to the per-range answers. The pilot accepts exactly that shape as
+  committed; any other refusal raises. Before, the pilot re-marked already
+  credited ranges failed (error 1220) and they were dispatched again, so the
+  same events were simulated twice.
+- **The final report.** Periodic stage-outs, every 300 seconds, archive the
+  units' receipts and upload them through Rucio to `BNL_PROD_DISK_1` before
+  reporting their ranges. The forced stage-out at the payload's end reports
+  the last finished ranges straight to the server, without the archive and
+  its upload (`es_batch.report_final`), since it lies on the critical path of
+  the job's end. The server takes a range update without a zip record, and
+  fine-grained credit counts finished ranges.
+
+## Event Service jobs on Perlmutter
+
+One job occupies one node for its allocation and runs the node harness with
+128 execution slots, one per physical core; the node's second hardware
+threads carry reconstruction. The current shape, as submitted for the
+four-hour runs:
+
+| Setting | Value | Effect |
+|---|---|---|
+| ranges | fine-grained, one event per range | `--es-fine-grained` |
+| unit | 100 events | `--es-events-per-range 100` |
+| slots | 128 | `--es-slots 128` |
+| closes | every 300 s, fast merge | `--es-close-s 300`, `EPICPROD_SWITCH_ES_FAST_MERGE=1` |
+| deadline | 14,100 s, 600 s drain margin | `--es-deadline-s 14100 --es-margin-s 600` |
+| memory request | 1,500 MB per core | `--es-ram-per-core-mb 1500` |
+| simulation | one resident npsim per slot, gun or external EVGEN | `EPICPROD_SWITCH_RESIDENT_SIM=1`, `EPICPROD_SWITCH_RESIDENT_EVGEN=1` |
+| units | later units straight to the residents | `EPICPROD_SWITCH_ES_RESIDENT_UNIT=1` |
+| reconstruction | 32 shared resident EICrecon members, asynchronous | `EPICPROD_SWITCH_ES_RECO_POOL=32`, `EPICPROD_SWITCH_ES_RECO_ASYNC=1` |
+| start | all slots together | `EPICPROD_SWITCH_ES_COHORT_START=1` |
+| last reports | the pilot's receipt before the harness ends | `EPICPROD_SWITCH_ES_REPORT_BARRIER=1` |
+
+Each slot's first unit runs the payload's `run.sh` and writes the slot's unit
+template; later units are one request to the slot's resident simulation and a
+handoff, with reconstruction finishing in the background through a free pool
+member while the slot simulates its next unit. A close every 300 s merges the
+handed-off units into one RECO file, registers it at its RSE, removes the unit
+files and the merged file, and then reports the units' ranges to the pilot.
+At the deadline minus the margin the harness takes no more ranges, cuts the
+last units to what fits, makes the last close and waits for the pilot's
+receipt of its last reports.
+
+Memory sets the reconstruction layout. A slot's resident npsim holds about
+1.9 GB and a resident EICrecon about 2.3 to 2.9 GB, so one of each per slot
+needs about 560 GB on a node with 491 GB available to the job; task 41229
+(`pES6`) had 8 GB available eleven minutes in. With 32 shared members the
+node holds 125 to 140 GB available throughout (tasks 41249, 41256, 41262).
+
+### Submitting, watching and reading back
+
+An operator submits an ES task from swf-testbed with
+`scripts/submit-es-canary.py --log <file> -- <submit-evgen-task.py arguments>`,
+which runs the deployed submitter with the deployed environment, the
+operator's own token and the internal monitor URL; the switches above go as
+`--canary-switch` settings, which the harness reads from the sandbox's
+environment file. Native ES canaries use `--es-worker-proxy`: the sandbox
+names a local proxy path, and the dispatcher copies the native pilot's
+credential into it on the worker with mode 0600, so the live credential is
+not uploaded in the sandbox. Both `X509_USER_PROXY` and
+`PILOT_X509_USER_PROXY` name that file in the sandbox environment, so the
+closes, which start under `--cleanenv`, exchange the pilot identity for
+PanDA-issued Rucio and storage write tokens.
+
+A canary task makes one pass over its file: ranges its job leaves are not
+given to a second job. A task may therefore offer more events than one
+allocation can process, and the job works to its deadline. The monitor's
+task Finish is PanDA's hard finish and cancels the running job, whose
+fine-grained credit is then lost; it is not a way to end a canary early.
+
+`scripts/es-observe.py --task <id> [--every <s>] [--evidence <dir>]` reads the
+task's jobs and their shipped harness records, read-only. After the job,
+`scripts/es-readback.py --dataset <DID> --record <record> --output <manifest>`
+prepares the registered files, and `--validate <manifest> --evgen --source
+<EVGEN file>`, run in the campaign image, reads every registered event with
+the campaign's PODIO reader and checks each event ID once, every collection's
+readability, and each event against the source event of the same number
+(NODE_EVENT_DISPATCHER.md, Resident simulation with external EVGEN input).
+
+### Measured
+
+Task 41262 (job 6055183; 5x130 DIS EVGEN, the shape above, payload 0.25.18,
+batch pilot `d1538119`):
+
+- The 128 simulations started together reached their first events at a
+  median 156 s after the harness started: container start, the first unit's
+  payload stages, the npsim kernel (58 s) and Geant4's lazy first-run setup.
+- After that, slot cores simulated 99.6% of the time. A slot's turnaround from
+  one unit's last event to the next unit's first was 1.8 s at the median, at
+  4.5 s an event for 100-event units; the node simulated 27.8 events/s.
+- Reconstruction ran on the shared members, off the slot cores, at about
+  0.5 s an event.
+- Closes of 10,000 to 12,000 events merged and registered in about two
+  minutes.
+
+The same steady window measured 87.6% simulating with synchronous resident
+units (task 41249) and 92.9% with asynchronous reconstruction before a slot
+whose unit had simulated was fed as idle (task 41256). Every registered event
+of 41249 (34,416) and 41256 (32,000) read back against its source event.
+
+Over a four-hour allocation the one-time startup and the job's end are the
+remaining costs: about 93% of allocated core time simulating, 94% with the
+one initialization counted, before the job-end tail below is shortened.
+
+## Production
+
+On 26 October Torre put `NERSC_Perlmutter_epic_es` into production at one
+node, running fresh particle-gun statistics as Google does (decision
+`01a17817-55fd-7551-be68-d05dbb102492`). The queue is `production` in the queue
+registry and in the front's queue list for normal PCS placement; its general
+`front.queue.NERSC_Perlmutter_epic_es.feed` switch stays false, and the m3763
+allocation rule no longer closes it. The ES close-out covers it
+(`es_closeout.queues`), so a job that loses its node is credited for its closes
+that stood.
+
+`swf_epicprod.perlmutter_production` runs at the end of each five-minute ES
+close-out cycle. With `perlmutter_production.enabled=true` it adds a task only
+when the queue has no job and no other live task, so the queue never holds two
+nodes; a paused task does not hold it. Each task is 6,000,000 fresh 5 GeV
+neutron-gun events at 3–50 degrees in one job, in the shape above with
+500-event units and 120-second closes. A neutron simulates in about 0.24 s
+and reconstructs in about 0.04 s (Google job 6056086), so 32 shared members
+keep pace with 128 slots; its RECO holds 82 KB, so a 120-second close of the
+node is about 5 GB and the work directory stays under `maxwdir`. One node makes
+about 2 million events and 160 GB of RECO an hour. A task that one job does not
+finish continues in the next job on its remaining ranges.
+
+PCS sample identities `pOP000001` onward share the seed ledger of Google's
+feeder (GKE_PILOT_FLOW.md): every seed is disjoint from the source production
+and from every ES sample on either queue, and each sample's generation plan is
+registered the same way. Unknown PanDA state, or a paused, failed or
+incomplete feeder task, holds replenishment for operator review; storage
+headroom and a fresh read of the launcher's image apply before each
+submission. The cached product `perlmutter_production` and the action records
+of that name show each decision. Setting the switch false stops additions;
+the running job drains.
 
 ## The end of a job
 
 A worker's allocation lasts until its pilot exits. In task 41256 the ES
-harness ended at 08:04:18 UTC, PanDA recorded the job's end at 08:09:52,
-and the launcher reported the pilot's exit at 08:12:15 (launch record of
-worker 21955): eight minutes with all 128 cores idle, about 3% of a
-four-hour allocation. The pilot's own log stays private, so after the
-pilot exits the launcher appends its end-of-job step lines to the public
-launch record: timestamped step messages only, with anything credential-like
-removed.
+harness ended at 04:04:18 ET, PanDA recorded the job's end at 04:09:52, and
+the pilot exited at 04:12:15 (launch record of worker 21955): eight minutes
+with all 128 cores idle, about 3% of a four-hour allocation. The batch
+pilot's final report no longer archives and uploads receipts (The batch
+pilot). The pilot's own log stays private, so after the pilot exits the
+launcher appends its end-of-job step lines to the public launch record:
+timestamped step messages only, with anything credential-like removed.
 
-## Canary probes at the site
+Two limits end a job without its pilot's final report:
 
-A landing probe on Perlmutter is a whole-node Slurm allocation: the
-harvester brings up a worker for it, and the worker ends a few minutes
-later (job 2723589: a 256-core node for five minutes, for a
-1.2-minute probe). The probe interval is a property of the queue on the
-canary probes page; for `NERSC_Perlmutter_epic` it is 12 hours
-(2026-09-12). Between probes the queue's health reading comes from the
-production jobs on it, which a fed queue always has.
+- **The work directory.** The pilot kills the payload's process group, its
+  own included, when the job's work directory exceeds `maxwdir`. Through
+  payload 0.25.17 each close kept its merged file, so the directory grew by
+  about 0.5 MB for every event saved; task 41260 was killed that way 55
+  minutes in, at about 34 GB (exit 137 in its launch record). Closes now
+  remove the merged file once it stands at its RSE, and the resident EVGEN
+  service removes each request's range file.
+- **The record.** The harness's shipped record allows 1,500 writes per job;
+  at 128 slots one write per finished unit would reach it after about two
+  hours, and the record would then stand still to the end. Writes are now at
+  least 15 s apart (JOB_REPORTING.md, The Event Service record). The ES
+  close-out does not act on a record at its write cap.
 
-### Native 26.07.3 gun registration proof (25 October UTC)
+## Payload canaries and probes
 
-Task 41148 / job 5910732 finished all 20 events at 01:49:06Z using the
-native worker and the corrected pilot-proxy token handoff. The JLab catalog
-independently lists one registered 20-event close. The normal 26.07.3 PODIO
-reader read all 387 collections and found 20 distinct generated-truth
-momenta. That run predates the ES gun event-number correction: its headers
-contain only five distinct IDs, so it is not the acceptance proof for new
-production event identity.
+The test queue runs the launcher, so a payload canary there (site-canary
+IMPLEMENTATION.md § Payload canaries: one manifest row of a
+standard-configuration task, the production payload, a verdict from its
+report) is the launcher's proof and the pool sample's carrier: every run
+leaves a sample of the machine as the worker found it, whatever the verdict.
+A payload canary on `NERSC_Perlmutter_epic_es` every twelve hours is the
+standing reading of the Perlmutter pool until production runs the launcher.
 
-Task 41157 / job 5911833 subsequently proved the event-number correction on
-Perlmutter: all 20 events finished and registered, with 20 unique event IDs,
-20 distinct generated-truth records and all 387 collections readable. The
-next operator-authorized whole production sample is task 41159 (`pES1`):
-1,000 additional neutron-gun events in one job, 50-event units, a 20-minute
-deadline and five-minute drain margin. Its sample stem separates its random
-streams from both the source production and Google's `gES1` sample. It uses
-the existing Harvester/Slurm path and normal RECO retention; the site remains
-commissioning and automatic feeding remains disabled.
+A landing probe on the production queue is a whole-node Slurm allocation
+running the site's wrapper: the harvester brings up a worker for it, and the
+worker ends a few minutes later (job 2723589: a 256-core node for five
+minutes, for a 1.2-minute probe). The probe interval is a property of the
+queue on the canary probes page; for `NERSC_Perlmutter_epic` it is 12 hours.
 
-Task 41159 / job 5912564 registered and credited all 1,000 events in two
-production RECO files. Independent 26.07.3 readback verified event IDs 0–999
-exactly once, 1,000 distinct neutron truth records at 3–50 degrees, and all
-387 collections readable. The sample's output checks are recorded in its PCS
-metadata; this is separate from the physics-validation service's verdict.
+## Commissioning record
 
-The 1,000-event sample exhausted its input in minutes and occupied only 7.9%
-of its logical core-time. It proves the output path, not sustained ES slot use.
-Task 41203 (`pES2`) supplies 1,000,000 fresh neutron-gun events to two initial
-long consumers, rolling one-minute closes and enough work to stay busy through
-the allocation. Workers have a four-hour ceiling; the ES harness has a
-3-hour-45-minute deadline including its five-minute drain margin, reserving
-time for staging and final pilot output handling. Deferred ranges remain in
-the task's ES ledger for subsequent consumers. Acceptance requires the observed per-core timeline, repeated
-registered closes during processing, and complete independently readable event
-coverage. A declared deadline or successful tiny task is not that evidence.
+| Task | Shape | Result |
+|---|---|---|
+| 41126 | first native ES smoke, 20 events | all ranges completed; two closes registered; 20 IDs and 387 collections read back |
+| 41148, 41157 | 26.07.3 neutron gun, 20 events | the pilot-proxy token handoff, then unique event IDs per range |
+| 41159 (`pES1`) | 1,000 gun events | all credited and read back; the input lasted minutes, 7.9% of core time |
+| 41203 (`pES2`) | 1,000,000 gun events, 256 slots | the record stopped before five minutes; first units reached the slots over 140 s |
+| 41215 | 128 slots, cohort start | first processing within 1.18 s across slots; only the first close saved |
+| 41226 (`pES5`) | first batch channel | the adapter used `pandaid` where native `JobData` has `jobid` |
+| 41229 (`pES6`) | 128 slots, one EICrecon per slot | 8 GB available after eleven minutes; the record stopped; 418 events credited |
+| 41241 | resident EVGEN, 4 slots, 64 events | one npsim per slot across units; all events read back against the source |
+| 41249 | 128 slots, shared reconstruction | memory 135-140 GB available; 34,416 events read back; 87.6% simulating |
+| 41256 | 128 slots, asynchronous reconstruction | 92.9% simulating; the last two closes went uncredited (the report barrier followed) |
+| 41260 | four-hour shape | killed at 55 minutes by the work-directory limit (closes kept merged files) |
+| 41262 | four-hour shape | 99.6% steady simulation, 1.8 s turnaround |
 
-The first `pES2` record stops before five minutes and contains only two registered
-events. A terminal PanDA status without a final harness record does not establish
-that its then-active units were lost, nor that the observation spans the full
-run. Its initial units reached the 256 slots over about 140 seconds, so it also
-does not establish a parallel whole-node start.
-
-The opt-in `parallel_start` production-ES setting exports
-`EPICPROD_SWITCH_ES_COHORT_START=1`. Containers initialize while the harness
-collects the first cohort's ranges, then all healthy slots receive their first
-units together. The unset switch preserves existing tasks' behavior. Fresh
-commissioning samples use 300-second closes, a 2,100-second harness deadline
-with a 180-second drain margin, and the forty-five-minute worker ceiling.
-The CPU-node shape uses 128 execution slots, one per physical core; the 256
-logical CPUs include two hardware threads per core. This keeps the simultaneous
-simulation and resident-reconstruction processes within the node's memory
-budget. See [NERSC affinity](https://docs.nersc.gov/jobs/affinity/).
+Still to establish: a bounded worker-loss and recovery run with the batch
+pilot.
 
 ## Related
 
 - [NODE_EVENT_DISPATCHER.md](NODE_EVENT_DISPATCHER.md): the design the
   test queue serves; the pilot side and the round trip proved on
   `BNL_NPPS_GPU`.
+- [EPICPROD_PAYLOAD.md](EPICPROD_PAYLOAD.md): the payload's ES machinery.
+- [GKE_PILOT_FLOW.md](GKE_PILOT_FLOW.md): the Google ES pilot, which shares
+  the batch pilot.
 - [NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md): the proving program, and
   what that queue cannot represent, which is the Perlmutter material
   here.
 - [OSG_SUBMISSION.md](OSG_SUBMISSION.md): pilot selection and the
   canary pilot directory, which Perlmutter does not mount.
 - site-canary `docs/PLAN.md`: the probes and the fingerprint.
-
-## Bounded ES batch-channel correction
-
-The pES4 per-core record failed sustained-occupancy acceptance: higher-numbered
-slots waited over six minutes, and only eight of 128 slots were processing at
-minute 14. Its registered output/readback and later accounting reconciliation
-do not constitute Perlmutter preemption validation.
-
-The new Perlmutter-only candidate gates `EPICPROD_SWITCH_ES_BATCH_CHANNEL=1`.
-It takes up to 256 ranges from the pilot's existing cache per IPC request and
-reports one completed unit with all of its range IDs. The pilot uses its normal
-bulk event API, with at most 10,000 IDs per report request. It packs each unit
-record once through a single tar writer, avoiding a shell tar invocation and a
-repeated record for every event. Range acquisitions are bulk requests at least
-two seconds apart. The explicit pilot report interval is 300 seconds; both
-configuration field names are set so the full information-service resolution
-cannot select a conflicting queue alias.
-
-The harness refills fragmented buffers in bounded batches, retains a hard
-buffer limit, and feeds the longest-idle available slot first. Existing Google
-and GREX runtimes retain their installed archives. The candidate is built from
-exact approved native archive `9532f30b` by `scripts/build-native-es-batch.py`.
-Local checks exercise actual candidate pilot classes over real yampl in the
-campaign image, including full information-service configuration, 128 simulated
-slots, exact owned event IDs, bounded API batches and one stored record per unit.
-A new bounded Perlmutter worker-loss and recovery run is still required before
-calling this correction commissioned.
-
-The first batch commissioning task 41226 (`pES5`) exposed an adapter identity
-error: native `JobData` exposes `jobid`, not `pandaid`. First-unit redispatch
-gaps were median 0.91 seconds and maximum 2.4 seconds across 127 cores, but
-completion handling stopped after the first 128-event registered file.
-Those events passed independent PODIO readback and were verified credited
-before obsolete-worker cleanup. The task remains paused. The corrected
-`fbc214c` runtime passed real yampl and actual `JobData` validation; it still
-requires a completed Perlmutter worker-loss test.
-
-Task 41229 (`pES6`, job 6020311, 128 slots, per-unit npsim and a resident
-EICrecon per slot) is limited by node memory. Its shipped record reported
-8.0 GB available eleven minutes in, with all 128 slots busy, and then
-stopped. The worker ran on for 71 minutes, and the job ended `fg_partial`
-with the 418 events of its first close credited. A slot's simulation and
-reconstruction hold about 4.4 GB together, so 128 slots fill the node;
-the remedy is shared reconstruction (EPICPROD_PAYLOAD.md, Shared resident
-reconstruction).

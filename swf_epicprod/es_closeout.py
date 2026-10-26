@@ -371,6 +371,10 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
                                  "own node down looks like this; read the jobs' records."),
                         jeditaskid=d['jeditaskid'] or 0, fileid=d.get('fileid') or 0,
                         streak=d['streak'], jobs=d['streak_jobs'], limit=no_progress_limit)
+    if not dry_run:
+        # After the close-outs, so a closed job no longer holds the node.
+        from .perlmutter_production import replenish
+        summary['production'] = replenish(created_by)
     summary['duration_ms'] = int((time.monotonic() - t0) * 1000)
     if not dry_run:
         log_epicprod_action(

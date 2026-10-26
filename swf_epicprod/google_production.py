@@ -32,6 +32,19 @@ def overlaps(first, second):
 
 def reserve_sample():
     """Use PCS as the durable seed ledger, retaining completed and paused work."""
+    # Resident simulation and units (EPICPROD_PAYLOAD.md, Resident Event
+    # Service units); the job declares the pod's fourteen payload cores.
+    shape = dict(events_per_job=50000, unit_events=250, close_s=300, deadline_s=7200,
+                 margin_s=300, memory_mb_per_core=6000, slots='auto', pilot_cores=14,
+                 resident_sim=True, resident_unit=True, fast_merge=True,
+                 report_barrier=True)
+    return reserve('gOP', EVENTS, shape, QUEUE, MARKER, AUTHORITY)
+
+
+def reserve(prefix, events, shape, site, marker, authority):
+    """One sample of a feeder's fresh particle-gun events: its seeds disjoint
+    from the source production and every ES sample on any queue, under the
+    source task's row lock, which serializes the feeders."""
     from django.db import transaction
     from pcs.commands import internal_evgen_sample, prodtask_events_per_job
     from pcs.models import ProdTask
@@ -48,32 +61,26 @@ def reserve_sample():
             reserved.extend(seed_intervals(stem, int(es['events'])))
             samples.add(task.overrides.get('production_sample_prefix'))
         for index in range(1, 1000000):
-            sample = f'gOP{index:06d}'
+            sample = f'{prefix}{index:06d}'
             stem = original_stem + '.' + sample
-            seeds = seed_intervals(stem, EVENTS)
-            if (sample not in samples and sum(b - a + 1 for a, b in seeds) == EVENTS
+            seeds = seed_intervals(stem, events)
+            if (sample not in samples and sum(b - a + 1 for a, b in seeds) == events
                     and not overlaps(seeds, reserved)):
                 break
         else:
-            raise RuntimeError('No disjoint Google production seed interval remains')
-        # Resident simulation and units (EPICPROD_PAYLOAD.md, Resident Event
-        # Service units); the job declares the pod's fourteen payload cores.
-        es = dict(events=EVENTS, input_events=EVENTS, events_per_job=50000,
-                  unit_events=250, close_s=300, deadline_s=7200, margin_s=300,
-                  memory_mb_per_core=6000, slots='auto', pilot_cores=14,
-                  resident_sim=True, resident_unit=True, fast_merge=True,
-                  report_barrier=True,
+            raise RuntimeError(f'No disjoint {prefix} production seed interval remains')
+        es = dict(shape, events=events, input_events=events,
                   input_dataset='group.EIC:group.EIC.esplan.26.07.3.p1107.' + sample,
-                  row=f'SINGLE/neutron/5GeV/3to50deg.{sample}/{stem},steer,{EVENTS},0000')
-        task = compose(source, sample=sample, event_service=es, site=QUEUE,
+                  row=f'SINGLE/neutron/5GeV/3to50deg.{sample}/{stem},steer,{events},0000')
+        task = compose(source, sample=sample, event_service=es, site=site,
                        created_by='wenaus')
-        task.overrides[MARKER] = {'authority': AUTHORITY, 'sample': sample,
-                                  'events': EVENTS, 'seed_stem': stem}
+        task.overrides[marker] = {'authority': authority, 'sample': sample,
+                                  'events': events, 'seed_stem': stem}
         task.save(update_fields=['overrides'])
         return task
 
 
-def register_plan(task, proxy):
+def register_plan(task, proxy, marker=MARKER):
     """Idempotently stage the generation ledger through the proven BNL path."""
     # GSI refuses the group-readable service proxy. Keep its private copy
     # scoped to this upload, as in the validated commissioning submitter.
@@ -84,7 +91,7 @@ def register_plan(task, proxy):
             private = Path(temp) / 'proxy'
             private.write_bytes(Path(proxy).read_bytes())
             private.chmod(0o600)
-            _register_plan(task, str(private))
+            _register_plan(task, str(private), marker)
     finally:
         for key, value in previous.items():
             if value is None:
@@ -93,22 +100,22 @@ def register_plan(task, proxy):
                 os.environ[key] = value
 
 
-def _register_plan(task, proxy):
+def _register_plan(task, proxy, marker):
     os.environ.update(X509_USER_PROXY=proxy,
                       X509_CERT_DIR='/etc/grid-security/certificates')
     from django.conf import settings
     from rucio.client import Client
     from rucio.common.exception import DataIdentifierAlreadyExists, DataIdentifierNotFound
     from XRootD import client as xrd
-    entry = task.overrides[MARKER]
+    entry = task.overrides[marker]
     es = task.overrides['event_service']
     sample = entry['sample']
-    plan = dict(schema='epicprod-particle-gun-generation-plan-v1', events=EVENTS,
+    plan = dict(schema='epicprod-particle-gun-generation-plan-v1', events=entry['events'],
                 sample=sample, source_task=task.dataset.metadata['production_sample']['source'],
                 generator='particle_gun', particle='neutron', gun_energy='5*GeV',
                 theta_min_deg=3, theta_max_deg=50, detector_version='26.07.3',
                 detector_config='epic_craterlake', detector_beams='5x41',
-                seed_stem=entry['seed_stem'], authority=AUTHORITY,
+                seed_stem=entry['seed_stem'], authority=entry['authority'],
                 seed_scheme='(sha256(stem)[:7] * 10000 + zero_based_range_start + 1) modulo 2147483647; zero maps to one',
                 event_number='zero-based absolute event position in this plan')
     data = (json.dumps(plan, indent=2) + '\n').encode()
@@ -145,7 +152,7 @@ def _register_plan(task, proxy):
             raise RuntimeError(str(status))
         catalog.add_replicas('BNL_PROD_DISK_1', [{'scope': 'group.EIC', 'name': lfn,
             'bytes': len(data), 'adler32': adler,
-            'meta': {'guid': uuid.uuid4().hex, 'events': EVENTS}}])
+            'meta': {'guid': uuid.uuid4().hex, 'events': entry['events']}}])
     try:
         catalog.add_dataset('group.EIC', dataset)
     except DataIdentifierAlreadyExists:
@@ -161,12 +168,12 @@ def _register_plan(task, proxy):
         catalog.close('group.EIC', dataset)
 
 
-def task_inventory():
+def task_inventory(marker=MARKER, label='Google'):
     """Unknown, paused, failed or incomplete tasks hold replenishment."""
     from django.db import connections
     from pcs.models import ProdTask
     active, draft = [], None
-    for task in ProdTask.objects.filter(overrides__has_key=MARKER).order_by('pk'):
+    for task in ProdTask.objects.filter(overrides__has_key=marker).order_by('pk'):
         attempt = task.panda_tasks.order_by('-try_number').first()
         taskid = task.panda_task_id or (attempt.jedi_task_id if attempt else None)
         if taskid:
@@ -174,12 +181,12 @@ def task_inventory():
                 cursor.execute('SELECT status FROM doma_panda.jedi_tasks WHERE jeditaskid=%s', [taskid])
                 row = cursor.fetchone()
             if not row:
-                raise RuntimeError(f'No live PanDA state for Google task {taskid}')
+                raise RuntimeError(f'No live PanDA state for {label} task {taskid}')
             state = row[0]
             if state == 'done':
                 continue
             if state in ('finished', 'failed', 'broken', 'aborted', 'exhausted', 'paused'):
-                raise RuntimeError(f'Google task {taskid} is {state}; operator review required')
+                raise RuntimeError(f'{label} task {taskid} is {state}; operator review required')
             active.append(taskid)
         elif attempt:
             active.append(task.pk)
