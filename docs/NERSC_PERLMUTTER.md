@@ -175,8 +175,13 @@ back to another pilot.
   copy of the site's proxy. A worker takes at most one job and then exits.
 - **Lifetime.** The worker's ceiling is four hours including staging,
   clamped to an earlier Slurm end time; HEPiX `shutdowntime` exposes the same
-  deadline to the pilot and to the ES harness, whose deadline never extends
-  beyond it. The pilot's first-job admission minimum is ten minutes.
+  deadline to the pilot and to the ES harness. The pilot stops the job once
+  less than ten minutes remain (checked once a minute), so the harness ends,
+  with its last close and reports, 13 minutes before the shutdown
+  (`es_harness.py`, `PILOT_SHUTDOWN_GRACE_S`, `FINAL_REPORT_S`, payload
+  0.25.23). Task 41262 planned its end 4 minutes before the shutdown; the
+  pilot stopped it 6 minutes into its drain, and its last closes went
+  uncredited. The pilot's first-job admission minimum is ten minutes.
 - **Identity.** The adapter resolves the scheduler's uid/gid on the host and
   stages private passwd/group lookup files before entering a user and mount
   namespace; they are bound over the lookup paths only in that namespace, so

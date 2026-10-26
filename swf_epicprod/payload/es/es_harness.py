@@ -58,6 +58,8 @@ import reco_pool  # noqa: E402
 
 PILOT_REPORTS_PER_S = 100.0    # the pilot takes one channel message per 10 ms pass (esmessage.py)
 IDLE_TAKE_ANY_S = 2.0          # resident units: an idle slot's wait before it takes any pooled run
+PILOT_SHUTDOWN_GRACE_S = 660   # the pilot's shutdown grace (600 s) and its once-a-minute check
+FINAL_REPORT_S = 120           # the last reports and the pilot's receipt, before that grace
 
 
 def meminfo_kb(field):
@@ -688,17 +690,23 @@ def main():
     feed = FileFeed(args.ranges_file) if args.ranges_file else ChannelFeed(args.channel)
     started = time.time()
     # HEPiX carries the allocation's actual end through the native pilot.
-    # A task-relative limit must never extend beyond that batch deadline.
+    # The pilot stops the job once less than its shutdown grace remains
+    # (pilot/control/monitor.py: ten minutes, checked once a minute), so a
+    # task-relative limit ends, with its last close and reports, before that:
+    # Perlmutter task 41262 planned to 4 minutes before the shutdown and was
+    # stopped 6 minutes into its drain.
     features = os.environ.get('MACHINEFEATURES', '')
     if features and '://' not in features:
         try:
             with open(os.path.join(features, 'shutdowntime')) as stream:
-                remaining = float(stream.read()) - started
+                remaining = (float(stream.read()) - PILOT_SHUTDOWN_GRACE_S
+                             - FINAL_REPORT_S - started)
             if remaining <= 0:
                 log('ERROR: the allocation deadline has already passed')
                 return 2
             args.deadline_s = min(args.deadline_s, remaining) if args.deadline_s else remaining
-            log(f'allocation deadline: {remaining:.0f}s remaining; harness limit {args.deadline_s:.0f}s')
+            log(f'allocation deadline: {remaining:.0f}s remaining before the pilot\'s shutdown '
+                f'grace; harness limit {args.deadline_s:.0f}s')
         except (OSError, ValueError) as error:
             log(f'allocation deadline unavailable: {error}')
     os.makedirs(args.work, exist_ok=True)

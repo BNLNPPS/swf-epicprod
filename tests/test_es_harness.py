@@ -249,6 +249,37 @@ class PoolTests(unittest.TestCase):
         self.assertEqual(len(spec['ranges']), 5)
 
 
+
+class AllocationDeadlineTest(unittest.TestCase):
+    """The harness ends before the pilot's shutdown grace, not at the shutdown."""
+
+    def run_harness(self, left_s):
+        import subprocess
+        import tempfile
+        harness = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
+                               'swf_epicprod', 'payload', 'es', 'es_harness.py')
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, 'features'))
+            with open(os.path.join(d, 'features', 'shutdowntime'), 'w') as f:
+                f.write(str(int(time.time() + left_s)))
+            with open(os.path.join(d, 'x.csv'), 'w') as f:
+                f.write('in.hepmc3.tree.root,hepmc3.tree.root,10,0000\n')
+            with open(os.path.join(d, 'ranges'), 'w') as f:
+                f.write('[]')
+            env = dict(os.environ, MACHINEFEATURES=os.path.join(d, 'features'))
+            return subprocess.run(
+                [sys.executable, harness, '--work', os.path.join(d, 'work'), '--sandbox', d,
+                 '--image', '/img', '--csv-base', 'x', '--stamp', 's', '--ranges-file',
+                 os.path.join(d, 'ranges'), '--deadline-s', '14100', '--summary',
+                 os.path.join(d, 'summary.json')],
+                env=env, capture_output=True, text=True, timeout=60)
+
+    def test_a_shutdown_inside_the_pilot_grace_leaves_no_harness_time(self):
+        result = self.run_harness(700)
+        self.assertEqual(result.returncode, 2, result.stderr[-500:] + result.stdout[-500:])
+        self.assertIn('allocation deadline has already passed', result.stdout + result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()
 
