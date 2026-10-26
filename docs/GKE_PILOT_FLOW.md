@@ -161,7 +161,9 @@ appear twice. `scripts/es-dedup.py` removes the second copy (below). On 26
 October it reduced gRU2 from 281,529 registered events to 200,000 (16 files
 rewritten, 3 detached) and gRU1 from 202,407 to 200,000 (3 rewritten, 3
 detached). Each dataset then held event IDs 0 to 199,999 exactly once, every
-event in the file of the job PanDA credited for it. gOP000004 (task 41230,
+event in the file of the job PanDA credited for it. Normal 26.07.3 PODIO
+readback of each found 200,000 unique event IDs, 200,000 distinct neutron truth
+records within 3 to 50 degrees, and all 387 collections. gOP000004 (task 41230,
 which ran on the first batch pilot) had no duplicates: 500,000 events in 125
 files, each credited once.
 
