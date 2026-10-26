@@ -126,9 +126,15 @@ is served from `main`, as everything in this repository is: `main` is what
 runs.
 
 The launcher is a site adapter to the **common native pilot**, using the
-Perlmutter-only `native-runtime-perlmutter-es-batch-fbc214c` bundle and archive
-`711576f9bef5516c2c3d95e794dc0738ce23bdb4f4c80750ac95abb15e437b00`.
-It adds bounded batch IPC to the previously approved native baseline. It starts the campaign image's own Python through
+Perlmutter-only `native-runtime-perlmutter-es-batch-0878633` bundle and archive
+`d1538119c72b4cb48b0f1f3b7dd4e1fe293ab3c49958ce26a3704dedc405855d`.
+It adds bounded batch IPC to the previously approved native baseline. The
+archive differs from its predecessor `711576f9` only in accepting PanDA's
+committed range updates when the server appends a failure for its own
+post-commit job event count (`pilot/native-canary/es_batch.py`); before, the
+pilot re-marked already credited ranges failed, and they were released and
+dispatched again. The bundle is staged by `scripts/stage-native-runtime.py`
+and published by `scripts/publish-pilot-asset.py`. It starts the campaign image's own Python through
 Apptainer, without ALRB. Event Service uses that pilot's generic executor
 and a matching Python 3.13 yampl channel; there is no separate ES pilot fork.
 The runtime and channel arrive over immutable, checksum-pinned HTTPS URLs
