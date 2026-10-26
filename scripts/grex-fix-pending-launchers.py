@@ -21,10 +21,25 @@ parser.add_argument('manifest', type=Path)
 parser.add_argument('launcher', type=Path)
 parser.add_argument('--pilot-archive', type=Path)
 parser.add_argument('--archive-sha256')
+parser.add_argument('--native-wrapper', type=Path)
 parser.add_argument('--apply', action='store_true')
 args = parser.parse_args()
 rows = json.loads(args.manifest.read_text())
 replacement = args.launcher.read_bytes()
+base_hash = hashlib.sha256(replacement).hexdigest()
+helper = args.native_wrapper.read_bytes() if args.native_wrapper else None
+if args.pilot_archive:
+    if not helper or hashlib.sha256(helper).hexdigest() != '804b1c64381d47ada0637892843b536d96784df7091cd0283a74e66322498d00':
+        raise RuntimeError('Use the validated CE-bind native wrapper with headroom telemetry')
+    if base_hash != 'f6119577c52009c8cb279e55662ebb7ccf8db6744b9ce96921692f730abeddcc':
+        raise RuntimeError('Unexpected validated relocation launcher')
+    # Stage versioned assets first. One atomic entry-file replacement then
+    # selects the complete set; a concurrent start cannot mix old/new assets.
+    replacement = replacement.replace(b'for name in epic-native-pilot.sh ',
+        b'for name in epic-native-pilot-headroom.sh pilot3-native-headroom.tar.gz epic-native-pilot.sh ', 1)
+    replacement = replacement.replace(b'#!/bin/bash\n', b'#!/bin/bash\n'
+        b'export EPICPROD_STANDARD_WRAPPER=epic-native-pilot-headroom.sh\n'
+        b'export EPICPROD_NATIVE_ARCHIVE=pilot3-native-headroom.tar.gz\n', 1)
 replacement_hash = hashlib.sha256(replacement).hexdigest()
 archive = args.pilot_archive.read_bytes() if args.pilot_archive else None
 if archive and (not args.archive_sha256 or hashlib.sha256(archive).hexdigest() != args.archive_sha256):
@@ -66,7 +81,7 @@ for row in rows:
         continue
     original = path.read_bytes()
     original_hash = hashlib.sha256(original).hexdigest()
-    if original_hash not in (OLD, replacement_hash):
+    if original_hash not in (OLD, base_hash, replacement_hash):
         continue
     archive_path = sandbox / 'pilot3-native.tar.gz'
     original_archive, archive_hash = None, None
@@ -102,11 +117,20 @@ for row in rows:
             continue
         if 'JobState=PENDING ' not in current:
             continue
-        if archive and archive_hash != args.archive_sha256:
-            temp_archive = archive_path.with_name('.epicprod-pilot-' + uuid.uuid4().hex)
-            temp_archive.write_bytes(archive)
-            temp_archive.chmod(stat.S_IMODE(archive_path.stat().st_mode))
-            os.replace(str(temp_archive), str(archive_path))
+        if archive:
+            for name, data in (('pilot3-native-headroom.tar.gz', archive),
+                               ('epic-native-pilot-headroom.sh', helper)):
+                destination = sandbox / name
+                if destination.exists():
+                    if destination.is_symlink() or destination.read_bytes() != data:
+                        raise RuntimeError('Versioned runtime already exists with different contents')
+                else:
+                    staged = destination.with_name('.epicprod-asset-' + uuid.uuid4().hex)
+                    staged.write_bytes(data); staged.chmod(0o555)
+                    os.replace(str(staged), str(destination))
+            current = subprocess.check_output(['scontrol', 'show', 'job', jid, '-o'], universal_newlines=True, timeout=10)
+            if 'JobState=PENDING ' not in current:
+                continue
         temp = path.with_name('.epicprod-launcher-' + uuid.uuid4().hex)
         temp.write_bytes(replacement); temp.chmod(stat.S_IMODE(path.stat().st_mode))
         os.replace(str(temp), str(path))
