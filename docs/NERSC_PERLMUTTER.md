@@ -384,7 +384,13 @@ Two limits end a job without its pilot's final report:
   about 0.5 MB for every event saved; task 41260 was killed that way 55
   minutes in, at about 34 GB (exit 137 in its launch record). Closes now
   remove the merged file once it stands at its RSE, and the resident EVGEN
-  service removes each request's range file.
+  service removes each request's range file. Small units fill it too: each
+  unit's files carry a fixed overhead, and closes of hundreds of them fall
+  behind. The first production job (6071469, task 41287) ran 5-event units
+  while its ranges were starved (The batch pilot, Ranges in bulk) and was
+  killed 20 minutes in at 40 GB, with 14,438 events awaiting a close; the
+  10,212 events of its two registered closes were credited, and its other
+  ranges returned to the task.
 - **The record.** The harness's shipped record allows 1,500 writes per job;
   at 128 slots one write per finished unit would reach it after about two
   hours, and the record would then stand still to the end. Writes are now
