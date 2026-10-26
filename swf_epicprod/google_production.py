@@ -11,7 +11,11 @@ import zlib
 
 QUEUE = 'BNL_ePIC_GOOGLE_es'
 SOURCE = 8524
-EVENTS = 500000
+# Multi-hour jobs (Torre, 2026-10-26): each job is sized past what a pod
+# simulates within the harness ceiling, so it runs to the ceiling; three
+# jobs per task keep the five workers fed from the two committed tasks.
+EVENTS = 1800000
+EVENTS_PER_JOB = 600000
 MARKER = 'google_production'
 MODULUS = 2147483647
 AUTHORITY = '01a174ee-0d98-7656-a327-ddb85cde212d'
@@ -37,8 +41,8 @@ def reserve_sample():
     # Continuous simulation as on Perlmutter: reconstruction runs off the
     # slots' critical path on three shared EICrecon members, on the CPU the
     # pod's limit gives above its fourteen-core request (GKE_PILOT_FLOW.md).
-    shape = dict(events_per_job=50000, unit_events=250, close_s=300, deadline_s=7200,
-                 margin_s=300, memory_mb_per_core=6000, slots='auto', pilot_cores=14,
+    shape = dict(events_per_job=EVENTS_PER_JOB, unit_events=250, close_s=300, deadline_s=14100,
+                 margin_s=600, memory_mb_per_core=6000, slots='auto', pilot_cores=14,
                  resident_sim=True, resident_unit=True, fast_merge=True,
                  report_barrier=True, reco_pool=3, reco_async=True)
     return reserve('gOP', EVENTS, shape, QUEUE, MARKER, AUTHORITY)
@@ -230,13 +234,13 @@ def replenish(cfg):
             if problem:
                 raise RuntimeError(problem)
             spec = build_evgen_task_params(task)
-            if spec['nJobs'] != 10 or spec['containerImage'] != cfg['native_image']:
+            if spec['nJobs'] != EVENTS // EVENTS_PER_JOB or spec['containerImage'] != cfg['native_image']:
                 raise RuntimeError('Google task shape/image differs from its operating configuration')
             register_plan(task, cfg['proxy'])
             services.prodtask_submit_request(task=task, changed_by='wenaus',
                                              source='google_production', site=QUEUE)
             result.update(outcome='submitted', reason='replenished finite particle-gun work',
-                          task=task.composed_name, events=EVENTS, jobs=10,
+                          task=task.composed_name, events=EVENTS, jobs=EVENTS // EVENTS_PER_JOB,
                           authority=AUTHORITY)
     except Exception as exc:
         result['reason'] = f'{type(exc).__name__}: {exc}'

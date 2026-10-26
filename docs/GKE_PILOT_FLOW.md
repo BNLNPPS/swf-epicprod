@@ -28,9 +28,10 @@ the front's queue list for normal PCS placement, while its general
 `swf_epicprod.google_production` runs under the existing five-minute controller
 lock after runtime/image capability publication. With
 `google_production.enabled=true`, it keeps two finite whole production tasks
-committed, adding at most one per cycle. Each has 500,000 fresh neutron-gun
-events, ten initial 50,000-event jobs, automatic 14-core harness slots,
-250-event units, 300-second closes, a two-hour harness ceiling and a five-minute
+committed, adding at most one per cycle. Since 26 October 15:00 ET each has 1,800,000 fresh
+neutron-gun events in three 600,000-event jobs (before: 500,000 in ten 50,000-event jobs of about
+20 minutes), automatic 14-core harness slots, 250-event units, 300-second closes, and the
+multi-hour harness ceiling Perlmutter uses, 14,100 s, so each job runs to the ceiling with a ten-minute
 drain margin. From 26 October its tasks declare the fourteen payload cores and
 run resident simulation, resident units, the fast close merge and the report
 barrier, and from 26 October 14:30 ET continuous simulation as on Perlmutter: asynchronous reconstruction on
