@@ -203,8 +203,8 @@ back to another pilot.
 
 ### The batch pilot
 
-The runtime is `native-runtime-perlmutter-es-batch-b5ff01c`, pilot archive
-`26e9264ef3f81b1676867432e03c9dff014a37098074988b27bf052d425665c8`, built
+The runtime is `native-runtime-perlmutter-es-batch-3d4c40a`, pilot archive
+`c2da4e4eda0d9c0483d43f61d82bf1f500f220ae40d1c6cfb0c4d48f5234caf1`, built
 from the approved native archive `9532f30b` by
 `scripts/build-native-es-batch.py`, staged by `scripts/stage-native-runtime.py`
 from committed helpers and frozen assets, and published by
@@ -215,8 +215,11 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
 `EPICPROD_SWITCH_ES_BATCH_CHANNEL=1`, which the launcher exports:
 
 - **Ranges in bulk.** One IPC request takes up to 256 ranges from the pilot's
-  cache; range acquisitions from the server are bulk requests at least two
-  seconds apart.
+  cache; an empty cache is refilled by one server acquisition of eight ranges
+  per core, at most one every two seconds (`es_batch.acquire_count`), so up to
+  about 1,000 ranges a second on 256 cores. One per core held the first
+  production job (6071469) to about 100 a second: 5-event units, a fifth of
+  the rate of 128 slots of 0.26 s gun events.
 - **One report per unit.** The harness reports a completed unit with all of
   its range IDs in one message (up to 512); the pilot packs each unit's record
   once into the stage-out archive and reports finished ranges through the
