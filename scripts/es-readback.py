@@ -35,7 +35,23 @@ def prepare(args):
         if (result.get('pagination') or {}).get('has_more'):
             raise RuntimeError('The output listing is incomplete')
         files = result.get('data', [])
-        expected = set(range(args.events))
+        if args.record:
+            record = json.loads(args.record.read_text())
+            names = {c['did'].rsplit('/', 1)[-1] for c in record.get('closes', []) if c.get('ok')}
+            files = [f for f in files if f['name'].rsplit('/', 1)[-1] in names]
+            if {f['name'].rsplit('/', 1)[-1] for f in files} != names:
+                raise RuntimeError('A recorded saved close is absent from the catalog')
+            expected = set()
+            for unit in record.get('done', []):
+                span = unit['range']
+                ids = set(range(int(span['startEvent']) - 1, int(span['lastEvent'])))
+                if expected.intersection(ids):
+                    raise RuntimeError('Saved unit event identities overlap')
+                expected.update(ids)
+            if not expected:
+                raise RuntimeError('The record has no saved events to read')
+        else:
+            expected = set(range(args.events))
     if sum(int(f.get('events') or 0) for f in files) != len(expected):
         raise RuntimeError('Registered event counts do not equal the expected coverage')
     result = catalog.list_file_replicas(
@@ -118,12 +134,15 @@ def main():
     mode.add_argument('--dataset', help='complete task output DID')
     mode.add_argument('--validate', type=Path, help='prepared readback manifest')
     ap.add_argument('--events', type=int, help='complete task event count')
+    ap.add_argument('--record', type=Path, help='read only the saved closes and exact IDs in this shipped record')
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--fingerprints', type=Path,
                     help='retain checked identities for combining separately read closes')
     args = ap.parse_args()
-    if args.dataset and not args.events:
-        ap.error('--dataset requires --events')
+    if args.dataset and not (args.events or args.record):
+        ap.error('--dataset requires --events or --record')
+    if args.record and not args.dataset:
+        ap.error('--record requires --dataset')
     if args.fingerprints and not args.validate:
         ap.error('--fingerprints requires --validate')
     result = validate(args) if args.validate else prepare(args)
