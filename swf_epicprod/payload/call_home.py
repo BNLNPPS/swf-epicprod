@@ -67,9 +67,10 @@ def default_flag(workdir):
 
 
 def load_job_env(sandbox):
-    """REPORT_OUT_* and PANDAID from the sandbox's environment-*.sh (the file
-    run.sh sources), for a caller that does not run under it, such as the
-    Event Service harness. Values already in the environment win."""
+    """REPORT_OUT_*, PANDAID and the EPICPROD_SWITCH_* settings from the
+    sandbox's environment-*.sh (the file run.sh sources), for a caller that
+    does not run under it, such as the Event Service harness: a canary's
+    switches ride in that file. Values already in the environment win."""
     import glob
     for path in sorted(glob.glob(os.path.join(sandbox, 'environment-*.sh'))):
         try:
@@ -78,7 +79,8 @@ def load_job_env(sandbox):
                     line = line.strip().removeprefix('export ').strip()
                     key, sep, value = line.partition('=')
                     key = key.strip()
-                    if sep and (key.startswith('REPORT_OUT_') or key == 'PANDAID') and not os.environ.get(key):
+                    if sep and (key.startswith(('REPORT_OUT_', 'EPICPROD_SWITCH_')) or key == 'PANDAID') \
+                            and not os.environ.get(key):
                         os.environ[key] = value.strip().strip('"').strip("'")
         except OSError as e:
             log(f"cannot read {path}: {e}")

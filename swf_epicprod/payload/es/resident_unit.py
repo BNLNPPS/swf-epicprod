@@ -6,9 +6,10 @@ With EPICPROD_SWITCH_ES_RESIDENT_UNIT=1 a slot's first unit runs the payload
 as before and leaves the unit template beside the slot's work: the arguments
 of its resident simulation request, the names and seed run.sh derived for its
 chunk, and the registration terms of its handoff. Everything but the event
-interval, the random seed and the output names is constant for the job, so a
-later unit runs as one request to the slot's resident simulation, one to its
-resident EICrecon and a handoff to the close. The environment, landing check,
+interval (an EVGEN unit's skip with it), the random seed and the output names
+is constant for the job, so a later unit runs as one request to the slot's
+resident simulation, one to its resident EICrecon (or the job's shared one,
+reco_pool.py) and a handoff to the close. The environment, landing check,
 gun steering, ROOT opens and per-stage reports of run.sh are not repeated.
 
 The slot uses a template only after recomputing the names and seed of the
@@ -25,6 +26,7 @@ import shutil
 import time
 from types import SimpleNamespace
 
+import reco_pool
 import resident_sim
 import zmq_request
 
@@ -59,8 +61,10 @@ def flag_values(argv):
     return {flag: value for flag, value in zip(argv, argv[1:]) if flag.startswith('--')}
 
 
-def check(template):
-    """Why the template cannot stand in for run.sh, or None."""
+def check(template, input_local=None):
+    """Why the template cannot stand in for run.sh, or None. An EVGEN
+    template stands in only over the job's staged input: a unit whose input
+    run.sh makes itself (a background merge) keeps run.sh."""
     if template.get('version') != 1:
         return f"template version {template.get('version')}"
     taskname, seed = identity(template, template['chunk'], template.get('label') or '', template['skip'])
@@ -70,19 +74,27 @@ def check(template):
     expected = {'--random.seed': str(seed), '--numberOfEvents': str(template['events'])}
     if '--meta.eventNumberOffset' in values:
         expected['--meta.eventNumberOffset'] = str(template['skip'])
+    evgen = '--inputFiles' in values
+    if evgen:
+        expected['--skipNEvents'] = str(template['skip'])
     wrong = [flag for flag, value in expected.items() if values.get(flag) != value]
     if wrong:
         return 'request arguments differ at ' + ', '.join(wrong)
     if not values.get('--outputFile', '').endswith('/' + taskname + '.edm4hep.root'):
         return 'request output name differs'
-    if '--enableGun' not in template['npsim_args'] or '--steeringFile' not in values:
+    if evgen:
+        if '--enableGun' in template['npsim_args']:
+            return 'both a particle gun and an input file'
+        if not input_local or os.path.realpath(values['--inputFiles']) != os.path.realpath(input_local):
+            return 'the input is not the job\'s staged input'
+    elif '--enableGun' not in template['npsim_args'] or '--steeringFile' not in values:
         return 'not a particle-gun request'
     if template['full_events'] != template['events'] or template['reco_events'] != template['events']:
         return 'the template unit did not reconstruct every event'
     return None
 
 
-def load(work, log):
+def load(work, log, input_local=None):
     """The slot's checked template, or None (the run.sh path)."""
     path = template_path(work)
     if path in _loaded:
@@ -96,7 +108,7 @@ def load(work, log):
         template, reason = None, f'unreadable: {error}'
     else:
         try:
-            reason = check(template)
+            reason = check(template, input_local)
         except (KeyError, TypeError, ValueError) as error:
             reason = f'incomplete: {error}'
     if reason:
@@ -145,28 +157,39 @@ def run(template, chunk, label, start, count, out, env, scratch):
     values = {'--random.seed': seed, '--numberOfEvents': count, '--outputFile': full}
     if '--meta.eventNumberOffset' in template['npsim_args']:
         values['--meta.eventNumberOffset'] = skip
+    if '--inputFiles' in template['npsim_args']:
+        values['--skipNEvents'] = skip
     try:
         resident_sim.request(SimpleNamespace(
             socket=env['EPICPROD_SIM_SOCKET'], state_dir=str(state), reply=out / 'simulation.json',
             startup_timeout=600, request_timeout=1800,
+            source_id=env.get('EPICPROD_EVGEN_SOURCE_ID'),
             npsim_args=arguments(template, values, str(state / 'gun.steer'))))
         with open(out / 'simulation.json') as stream:
             simulated = json.load(stream)
         if simulated.get('events') != count or not full.is_file():
             raise RuntimeError(f"simulation answered {simulated.get('events')} events of {count}")
-        # A dead EICrecon leaves its socket path behind, and a request to it
-        # would wait out the reply timeout.
-        with open(env['EPICPROD_RECO_STATE']) as stream:
-            reco_pid = json.load(stream).get('pid')
-        if not alive(reco_pid) or not os.path.exists(env['EPICPROD_RECO_SOCKET']):
-            raise RuntimeError(f'the resident EICrecon (pid {reco_pid}) is not running')
-        started = time.time()
-        resident_sim.write_json(out / 'reconstruction.json', {'request_started_at': started})
-        reply = zmq_request.request(env['EPICPROD_RECO_SOCKET'], {
-            'input_file': str(full), 'output_file': str(reco), 'nskip': 0,
-            'nevents': count, 'run_id': taskname})
-        reply.update(request_started_at=started, request_ended_at=time.time())
-        resident_sim.write_json(out / 'reconstruction.json', reply)
+        asked = {'input_file': str(full), 'output_file': str(reco), 'nskip': 0,
+                 'nevents': count, 'run_id': taskname}
+        if env.get('EPICPROD_RECO_POOL'):
+            # The job's shared EICrecon (reco_pool.py): any free member,
+            # started or restarted by this unit when it must be.
+            reply = reco_pool.request(env['EPICPROD_RECO_POOL'], asked,
+                                      flag_values(template['npsim_args'])['--compactFile'],
+                                      out / 'reconstruction.json',
+                                      prefer=int(env.get('EPICPROD_RECO_POOL_PREFER') or 0))
+        else:
+            # A dead EICrecon leaves its socket path behind, and a request to
+            # it would wait out the reply timeout.
+            with open(env['EPICPROD_RECO_STATE']) as stream:
+                reco_pid = json.load(stream).get('pid')
+            if not alive(reco_pid) or not os.path.exists(env['EPICPROD_RECO_SOCKET']):
+                raise RuntimeError(f'the resident EICrecon (pid {reco_pid}) is not running')
+            started = time.time()
+            resident_sim.write_json(out / 'reconstruction.json', {'request_started_at': started})
+            reply = zmq_request.request(env['EPICPROD_RECO_SOCKET'], asked)
+            reply.update(request_started_at=started, request_ended_at=time.time())
+            resident_sim.write_json(out / 'reconstruction.json', reply)
         if reply.get('status') != 'completed':
             raise RuntimeError(f"reconstruction {reply.get('status')}: {reply.get('error') or reply}")
         events = reply.get('events_processed')

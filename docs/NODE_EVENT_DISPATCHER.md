@@ -804,9 +804,23 @@ become green processing time.
 `--input <source> --work <new evidence directory>`, checks complete input
 content, separated source ranges, seeded replay, one simulation PID,
 original output event numbers, and generated truth and every FULL
-collection size against normal cold npsim. Native ES validation must also
-establish registered, normally readable reconstructed output before
-increasing the number of execution slots.
+collection size against normal cold npsim.
+
+On Perlmutter, task 41241 (job 6048343; four slots, 64 events of the 5x130
+DIS source in eight-event units, payload 0.25.12) registered all 64 events
+in three closes. Each slot ran its two units on one npsim process: kernel
+readiness about 39 s, then about 30 s of lazy physics setup before the first
+event. Normal 26.07.3 PODIO readback found event IDs 0 to 63 once each and
+all 387 collections. `scripts/es-readback.py --evgen --source <file>` also
+compares each event with the source event of the same number, with HepMC3
+reading the source: every final-state species, and the momentum of every
+final-state particle not produced in a generator decay. A generator decay is
+handed to Geant4 as a pre-assigned decay, so its products' momenta follow
+the parent through field and material (event 19: a Σ⁺'s neutron and π⁺).
+All 64 events matched.
+
+At 128 slots a node needs shared reconstruction (EPICPROD_PAYLOAD.md,
+Shared resident reconstruction).
 
 ## Open questions
 

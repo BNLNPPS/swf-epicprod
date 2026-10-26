@@ -363,3 +363,12 @@ Those events passed independent PODIO readback and were verified credited
 before obsolete-worker cleanup. The task remains paused. The corrected
 `fbc214c` runtime passed real yampl and actual `JobData` validation; it still
 requires a completed Perlmutter worker-loss test.
+
+Task 41229 (`pES6`, job 6020311, 128 slots, per-unit npsim and a resident
+EICrecon per slot) is limited by node memory. Its shipped record reported
+8.0 GB available eleven minutes in, with all 128 slots busy, and then
+stopped. The worker ran on for 71 minutes, and the job ended `fg_partial`
+with the 418 events of its first close credited. A slot's simulation and
+reconstruction hold about 4.4 GB together, so 128 slots fill the node;
+the remedy is shared reconstruction (EPICPROD_PAYLOAD.md, Shared resident
+reconstruction).

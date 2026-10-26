@@ -859,7 +859,11 @@ removes both:
   simulated and reconstructed counts, and the handoff's registration terms.
 - Before using the template, the slot recomputes that unit's name, seed and
   event offset. It keeps every unit on run.sh if they differ from run.sh's
-  own, if the request is not a particle gun, or if FULL output is retained.
+  own, if FULL output is retained, or if the request is neither a particle
+  gun nor external EVGEN read from the job's staged input. An EVGEN unit
+  whose input run.sh prepares itself, a per-unit background merge, keeps
+  run.sh. A later EVGEN unit varies its skip (`--skipNEvents`) with its
+  start, beside the seed, the event count and the output name.
 - Later units are one request to the resident simulation, one to the
   resident EICrecon, and a handoff to the close (`es/resident_unit.py`).
   Counts are the residents' own: the completed simulation's events and
@@ -878,6 +882,50 @@ of wall for 0.4 to 1.0 s of simulation events and 0.3 s of reconstruction,
 all on one resident PID. The two closes registered all 20 events, and
 normal 26.07.3 PODIO readback found 20 unique event IDs, 20 distinct
 neutron truth records and all 387 collections.
+
+## Shared resident reconstruction
+
+A slot with a resident simulation and its own resident EICrecon holds both
+processes for the life of the job. On Perlmutter (canary 41241, 26.07.3,
+5x130 DIS) the resident npsim's proportional set size (PSS) was 1.96 GB
+(1.87 GB private) and the resident EICrecon's 2.32 to 2.45 GB, growing by
+about 0.13 GB private between its first and second request. 128 slots of
+both need about 560 GB; a CPU node has 512 GB, 491 GB of it available to
+the job. Task 41229 (128 slots, per-unit npsim, a resident EICrecon per
+slot) had 8.0 GB available eleven minutes in. Its record then stopped,
+while the worker ran on for 71 minutes. The job ended `fg_partial` with 418
+events credited.
+
+Reconstruction takes about 0.4 s per event against about 3 s for
+simulation, so it occupies a slot about an eighth of the time.
+`EPICPROD_SWITCH_ES_RECO_POOL=<R>` (payload 0.25.13, off by default;
+`reco_pool` in a production ES definition) replaces the per-slot EICrecon
+with R resident members shared by all of the job's slots
+(`es/reco_pool.py`). At 128 slots and 32 members the estimate is 128 × 1.96
++ 32 × 2.45 ≈ 330 GB.
+
+- A member is a lock file, a state file and a socket under the job's work
+  tree (`reco-pool/`). A unit takes the lock of any free member, starting
+  with the member its slot's number names, and waits while every member is
+  busy. Holding the lock, it starts the member if the member is absent or
+  dead, sends its request and releases the lock. A member therefore serves
+  one unit at a time and is started by exactly one unit. A member that does
+  not answer within the request timeout is killed under its lock, and the
+  next unit to take it starts it again.
+- Members are started with the arguments run.sh uses for a slot's own
+  EICrecon. A member keeps one geometry: a request for another is refused.
+- run.sh and resident units (`es/resident_unit.py`) both reconstruct
+  through `reco_pool.request`. The reply carries the member, the wait for
+  it (`pool.wait_s`), its request count and memory after the request, and
+  the member's initialization interval only when this unit started it. The
+  unit record's reconstruction interval begins when the request is sent,
+  so a wait for a member is outside it and a startup is charged once.
+- The harness forwards the switch to its slots and ends the members after
+  the slots have stopped.
+
+The harness also reads the `EPICPROD_SWITCH_*` settings of the sandbox's
+environment file at its start, where a payload canary's switches travel,
+so a canary can set switches the harness itself reads.
 
 ## Multithreading
 

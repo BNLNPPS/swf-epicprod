@@ -53,6 +53,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from call_home import CallHome, default_flag, load_job_env, status_key  # noqa: E402
 from es_record import RecordOut, trim_unit  # noqa: E402
 from es_slot import unit_timing  # noqa: E402
+import reco_pool  # noqa: E402
 
 
 PILOT_REPORTS_PER_S = 100.0    # the pilot takes one channel message per 10 ms pass (esmessage.py)
@@ -571,6 +572,9 @@ def main():
                          'or reported; the units cut off and the units whose output never left the '
                          'node are recorded as what was lost')
     args = ap.parse_args()
+    # The report key and a canary's switches ride in the sandbox's
+    # environment file, which run.sh sources and this process does not.
+    load_job_env(args.sandbox)
     if args.close_max_files < 0:
         ap.error('--close-max-files must be nonnegative')
     args.sandbox = os.path.abspath(args.sandbox)
@@ -616,6 +620,11 @@ def main():
         # The slots' containers start clean: the switch goes as a setting.
         args.env = (args.env or []) + ['EPICPROD_SWITCH_ES_RESIDENT_UNIT=1']
         args.prestage = True
+    if reco_pool.enabled():
+        # The job's shared resident EICrecon (reco_pool.py) in place of one
+        # per slot; the members start with the units that first need them.
+        args.env = (args.env or []) + [f'EPICPROD_SWITCH_ES_RECO_POOL={reco_pool.size()}']
+        log(f'reco pool: {reco_pool.size()} shared EICrecon members for {args.slots} slots')
     lookahead_slots = args.slots if batch_channel else max(1, args.slots // 4)
     lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD')
                     or lookahead_slots * max(1, args.events_per_unit))
@@ -654,7 +663,6 @@ def main():
             'ranges_pooled': len(pool), 'reports_to_pilot': reported[0],
         }
 
-    load_job_env(args.sandbox)            # the report key rides in the sandbox's environment file
     CallHome(default_flag(args.sandbox), status_key(), status).start()
 
     # Set at the harness's own end, before its last write: a record that
@@ -909,6 +917,9 @@ def main():
         s.stop()
     for s in slots:
         s.wait(120)
+    if reco_pool.enabled():
+        ended_members = reco_pool.stop_all(reco_pool.job_pool(args.work))
+        log(f'reco pool: {ended_members} members ended')
     summary['wall_s'] = round(time.time() - started, 1)
     ended['at'] = time.time()
     shipped.stop()

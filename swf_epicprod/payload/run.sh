@@ -963,43 +963,54 @@ if [ -n "${EPICPROD_RECO_SOCKET:-}" ]; then
   # answers in the events' own time.
   {
     date
-    if [ ! -S "${EPICPROD_RECO_SOCKET}" ]; then
-      reco_initialization_started=$(date +%s.%N)
-      echo "starting the resident eicrecon on ${EPICPROD_RECO_SOCKET}"
-      resident_wait=()
-      [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-1}" != 1 ] || resident_wait=(--wait)
-      setsid "${resident_wait[@]}" nohup eicrecon \
-        -Pdd4hep:xml_files="${DETECTOR_COMPACT}" \
-        -Ppodio:managed_socket_path="${EPICPROD_RECO_SOCKET}" \
-        -Pjana:warmup_timeout=0 -Pjana:timeout=0 \
-        > "${EPICPROD_RECO_SOCKET}.log" 2>&1 < /dev/null &
-      resident_pid=$!
-      for i in $(seq 1 "${EPICPROD_RECO_STARTUP_S:-600}"); do
-        [ -S "${EPICPROD_RECO_SOCKET}" ] && break
-        # The forked child is alive before exec exposes eicrecon's arguments
-        # to pgrep. Track that child instead; --wait also covers setsid forks.
-        if [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-1}" = 1 ]; then
-          kill -0 "$resident_pid" 2>/dev/null && resident_alive=1 || resident_alive=0
-        else
-          pgrep -f "managed_socket_path=${EPICPROD_RECO_SOCKET}" >/dev/null && resident_alive=1 || resident_alive=0
+    if [ -n "${EPICPROD_RECO_POOL:-}" ]; then
+      # The job's shared resident EICrecon (es/reco_pool.py, switch
+      # EPICPROD_SWITCH_ES_RECO_POOL): any free member, started or
+      # restarted under its lock when it must be.
+      python "${SCRIPT_DIR}/es/reco_pool.py" request --pool "${EPICPROD_RECO_POOL}" \
+        --compact "${DETECTOR_COMPACT}" --reply "${EPICPROD_RECO_REPLY:-}" \
+        --prefer "${EPICPROD_RECO_POOL_PREFER:-0}" \
+        "{\"input_file\": \"$(realpath ${FULL_TEMP}/${TASKNAME}.edm4hep.root)\", \"output_file\": \"$(realpath ${RECO_TEMP})/${TASKNAME}.eicrecon.edm4eic.root\", \"nskip\": 0, \"nevents\": ${FULL_EVENTS:-${EVENTS_PER_TASK}}, \"run_id\": \"${TASKNAME}\"}" \
+      | tee "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json"
+    else
+      if [ ! -S "${EPICPROD_RECO_SOCKET}" ]; then
+        reco_initialization_started=$(date +%s.%N)
+        echo "starting the resident eicrecon on ${EPICPROD_RECO_SOCKET}"
+        resident_wait=()
+        [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-1}" != 1 ] || resident_wait=(--wait)
+        setsid "${resident_wait[@]}" nohup eicrecon \
+          -Pdd4hep:xml_files="${DETECTOR_COMPACT}" \
+          -Ppodio:managed_socket_path="${EPICPROD_RECO_SOCKET}" \
+          -Pjana:warmup_timeout=0 -Pjana:timeout=0 \
+          > "${EPICPROD_RECO_SOCKET}.log" 2>&1 < /dev/null &
+        resident_pid=$!
+        for i in $(seq 1 "${EPICPROD_RECO_STARTUP_S:-600}"); do
+          [ -S "${EPICPROD_RECO_SOCKET}" ] && break
+          # The forked child is alive before exec exposes eicrecon's arguments
+          # to pgrep. Track that child instead; --wait also covers setsid forks.
+          if [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-1}" = 1 ]; then
+            kill -0 "$resident_pid" 2>/dev/null && resident_alive=1 || resident_alive=0
+          else
+            pgrep -f "managed_socket_path=${EPICPROD_RECO_SOCKET}" >/dev/null && resident_alive=1 || resident_alive=0
+          fi
+          if [ "$resident_alive" = 0 ]; then
+            echo "ERROR: resident eicrecon exited before its socket appeared"
+            tail -30 "${EPICPROD_RECO_SOCKET}.log"
+            exit 86
+          fi
+          sleep 1
+        done
+        [ -S "${EPICPROD_RECO_SOCKET}" ] || { echo "ERROR: resident eicrecon gave no socket in ${EPICPROD_RECO_STARTUP_S:-600} s"; tail -20 "${EPICPROD_RECO_SOCKET}.log"; exit 86; }
+        echo "resident eicrecon up after ${i} s"
+        if [ -n "${EPICPROD_RECO_STATE:-}" ]; then
+          python -c 'import json,sys,time; json.dump(dict(pid=int(sys.argv[1]), initialization_started_at=float(sys.argv[2]), initialized_at=time.time()), open(sys.argv[3], "w"))' \
+            "${resident_pid}" "${reco_initialization_started}" "${EPICPROD_RECO_STATE}"
         fi
-        if [ "$resident_alive" = 0 ]; then
-          echo "ERROR: resident eicrecon exited before its socket appeared"
-          tail -30 "${EPICPROD_RECO_SOCKET}.log"
-          exit 86
-        fi
-        sleep 1
-      done
-      [ -S "${EPICPROD_RECO_SOCKET}" ] || { echo "ERROR: resident eicrecon gave no socket in ${EPICPROD_RECO_STARTUP_S:-600} s"; tail -20 "${EPICPROD_RECO_SOCKET}.log"; exit 86; }
-      echo "resident eicrecon up after ${i} s"
-      if [ -n "${EPICPROD_RECO_STATE:-}" ]; then
-        python -c 'import json,sys,time; json.dump(dict(pid=int(sys.argv[1]), initialization_started_at=float(sys.argv[2]), initialized_at=time.time()), open(sys.argv[3], "w"))' \
-          "${resident_pid}" "${reco_initialization_started}" "${EPICPROD_RECO_STATE}"
       fi
+      python "${SCRIPT_DIR}/es/zmq_request.py" "${EPICPROD_RECO_SOCKET}" \
+        "{\"input_file\": \"$(realpath ${FULL_TEMP}/${TASKNAME}.edm4hep.root)\", \"output_file\": \"$(realpath ${RECO_TEMP})/${TASKNAME}.eicrecon.edm4eic.root\", \"nskip\": 0, \"nevents\": ${FULL_EVENTS:-${EVENTS_PER_TASK}}, \"run_id\": \"${TASKNAME}\"}" \
+        "${EPICPROD_RECO_REPLY:-}" | tee "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json"
     fi
-    python "${SCRIPT_DIR}/es/zmq_request.py" "${EPICPROD_RECO_SOCKET}" \
-      "{\"input_file\": \"$(realpath ${FULL_TEMP}/${TASKNAME}.edm4hep.root)\", \"output_file\": \"$(realpath ${RECO_TEMP})/${TASKNAME}.eicrecon.edm4eic.root\", \"nskip\": 0, \"nevents\": ${FULL_EVENTS:-${EVENTS_PER_TASK}}, \"run_id\": \"${TASKNAME}\"}" \
-      "${EPICPROD_RECO_REPLY:-}" | tee "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json"
     grep -q '"status": *"completed"' "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json" \
       || { echo "ERROR: resident eicrecon did not complete the range"; exit 86; }
     ls -al ${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root

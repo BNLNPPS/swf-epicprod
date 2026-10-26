@@ -30,6 +30,7 @@ import subprocess
 import sys
 import time
 
+import reco_pool
 import resident_unit
 
 
@@ -42,6 +43,12 @@ def sock_path(args):
     108 bytes, so it lives in /tmp under a short name, not in the work
     tree (a scratchpad path broke ZeroMQ's bind)."""
     return f'/tmp/esreco-{os.getpid()}.sock'
+
+
+def slot_index(work):
+    """The slot's number from its work directory (es_harness: slotNNN)."""
+    match = re.search(r'(\d+)$', os.path.basename(os.path.normpath(work)))
+    return int(match.group(1)) if match else 0
 
 
 def unit_tmpdir(args):
@@ -129,11 +136,22 @@ def unit_timing(out, work, since, report=None):
         result['simulation'] = simulation
     reconstruction = read(os.path.join(out, 'reconstruction.json'))
     if reconstruction:
-        startup = read(os.path.join(work, 'reconstruction-startup.json'))
+        member = reconstruction.get('pool')
+        if member:
+            # A shared member (reco_pool.py): its initialization is this
+            # unit's only when this unit started it, and the wait for a free
+            # member comes before the request's own interval.
+            startup = {key: member[key] for key in ('pid', 'initialization_started_at', 'initialized_at')
+                       if key in member}
+            startup.update(pool_member=member.get('member'), pool_wait_s=member.get('wait_s'),
+                           pool_requests=member.get('requests'))
+            memory = member.get('memory')
+        else:
+            startup = read(os.path.join(work, 'reconstruction-startup.json'))
+            memory = process_memory(startup.get('pid'))
         result['reconstruction'] = dict(startup,
             started_at=reconstruction.get('request_started_at'),
             ended_at=reconstruction.get('request_ended_at'))
-        memory = process_memory(startup.get('pid'))
         if memory:
             result['reconstruction']['memory'] = memory
     if errors:
@@ -214,11 +232,15 @@ def run_unit(spec_path, args):
     })
     if args.input:
         env['EPICPROD_INPUT_LOCAL'] = args.input
+    if reco_pool.enabled():
+        # The job's shared resident EICrecon in place of the slot's own.
+        env['EPICPROD_RECO_POOL'] = reco_pool.pool_dir(args.work)
+        env['EPICPROD_RECO_POOL_PREFER'] = str(slot_index(args.work))
     if handoff and resident_unit.enabled():
         # Resident units (resident_unit.py): the slot's first unit runs
         # run.sh and leaves the template; later units go straight to the
         # residents once the template is checked against run.sh's own.
-        template = resident_unit.load(args.work, log)
+        template = resident_unit.load(args.work, log, args.input)
         if template:
             return run_resident_unit(template, record, chunk, label, start, count, out, env, args)
         if not os.path.exists(resident_unit.template_path(args.work)):

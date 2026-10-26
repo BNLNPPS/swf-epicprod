@@ -72,10 +72,64 @@ def prepare(args):
             'expected_events': len(expected)}
 
 
+def source_truth(path, numbers):
+    """The final-state particles of the source EVGEN events with these event
+    numbers, read by HepMC3 directly, in GeV: {event number: {'species':
+    sorted PDG codes, 'exact': sorted (PDG, px, py, pz) of the particles not
+    produced in a generator decay}}. npsim hands a generator decay (status 2)
+    to Geant4 as a pre-assigned decay, so its products' lab momenta follow
+    the parent through field and material; only their species is the
+    source's."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'swf_epicprod' / 'payload' / 'es'))
+    from evgen_ranges import hepmc, reader_for
+    root, wanted, found = hepmc(), set(numbers), {}
+    if not root.gInterpreter.Declare('#include <HepMC3/GenParticle.h>'):
+        raise RuntimeError('Cannot load the HepMC3 particle interface')
+    reader = reader_for(path)
+    try:
+        while wanted - set(found):
+            event = root.HepMC3.GenEvent()
+            if not reader.read_event(event) or reader.failed():
+                break
+            number = int(event.event_number())
+            if number in wanted:
+                scale = 0.001 if event.momentum_unit() == root.HepMC3.Units.MEV else 1.0
+                final = [p for p in event.particles() if p.status() == 1]
+                found[number] = {
+                    'species': sorted(int(p.pid()) for p in final),
+                    'exact': sorted((int(p.pid()), p.momentum().px() * scale, p.momentum().py() * scale,
+                                     p.momentum().pz() * scale) for p in final
+                                    if not any(q.status() == 2 for q in p.parents()))}
+    finally:
+        reader.close()
+    missing = wanted - set(found)
+    if missing:
+        raise RuntimeError(f'{len(missing)} event numbers are absent from the source, e.g. {sorted(missing)[:5]}')
+    return found
+
+
+def same_particles(simulated, source, tolerance=1e-5):
+    """Every final-state species of the source event, and every particle not
+    produced in a generator decay at the source's momentum."""
+    if sorted(p[0] for p in simulated) != source['species']:
+        return False
+    remaining = list(simulated)
+    for expected in source['exact']:
+        match = next((p for p in remaining if p[0] == expected[0] and
+                      all(abs(x - y) <= tolerance * max(1.0, abs(y)) for x, y in zip(p[1:], expected[1:]))), None)
+        if match is None:
+            return False
+        remaining.remove(match)
+    return True
+
+
 def validate(args):
     from podio import root_io
     evgen = getattr(args, 'evgen', False)
     manifest = json.loads(args.validate.read_text())
+    source = getattr(args, 'source', None)
+    expected_source = source_truth(source, manifest['expected_event_ids']) if source else None
+    source_checked = 0
     ids, identities, truth = set(), set(), set()
     collections = None
     observed = []
@@ -106,6 +160,12 @@ def validate(args):
                            p.getMomentum().x, p.getMomentum().y, p.getMomentum().z)
                           for p in generated]
                 truth.add(hashlib.sha256(repr(values).encode()).hexdigest())
+                if expected_source is not None:
+                    simulated = sorted((p.getPDG(), p.getMomentum().x, p.getMomentum().y, p.getMomentum().z)
+                                       for p in generated)
+                    if event not in expected_source or not same_particles(simulated, expected_source[event]):
+                        raise RuntimeError(f'Event {event}: generated particles differ from the source event')
+                    source_checked += 1
                 count += 1
                 continue
             if len(generated) != 1 or generated[0].getPDG() != 2112:
@@ -136,6 +196,8 @@ def validate(args):
             'reader': 'podio.root_io.Reader', 'files': observed}
     if evgen:
         result['source_mode'] = 'evgen'
+        if expected_source is not None:
+            result.update(source=str(source), source_events_matched=source_checked)
     else:
         result.update(particle_pdg=2112, theta_degrees=[3, 50])
     return result
@@ -149,6 +211,8 @@ def main():
     mode.add_argument('--validate', type=Path, help='prepared readback manifest')
     ap.add_argument('--events', type=int, help='complete task event count')
     ap.add_argument('--evgen', action='store_true', help='external EVGEN truth instead of the neutron-gun plan')
+    ap.add_argument('--source', help='with --evgen: the source EVGEN file; each event\'s final-state '
+                                     'particles must match the source event of the same number')
     ap.add_argument('--record', type=Path, help='read only the saved closes and exact IDs in this shipped record')
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--fingerprints', type=Path,
@@ -160,6 +224,8 @@ def main():
         ap.error('--record requires --dataset')
     if args.fingerprints and not args.validate:
         ap.error('--fingerprints requires --validate')
+    if args.source and not (args.validate and args.evgen):
+        ap.error('--source requires --validate and --evgen')
     result = validate(args) if args.validate else prepare(args)
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps({k: v for k, v in result.items() if k not in ('files', 'expected_event_ids')}))

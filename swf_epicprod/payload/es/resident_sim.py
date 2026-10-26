@@ -43,7 +43,7 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-def configuration(argv):
+def configuration(argv, source_id=None):
     """Separate range identity from the fixed detector and source setup."""
     values, fixed = {'steering': ''}, []
     varying = {'--random.seed': 'seed', '--numberOfEvents': 'events',
@@ -82,7 +82,7 @@ def configuration(argv):
             raise ValueError('EVGEN retains source event numbers; an additional offset is invalid')
         if '://' not in values['input_file']:
             values['input_file'] = str(Path(values['input_file']).resolve())
-        values['source_id'] = os.environ.get('EPICPROD_EVGEN_SOURCE_ID') or values['input_file']
+        values['source_id'] = source_id or os.environ.get('EPICPROD_EVGEN_SOURCE_ID') or values['input_file']
     values['source_mode'] = mode
     values['output_file'] = str(Path(values['output_file']).resolve())
     signature = hashlib.sha256(json.dumps([mode, fixed, values['steering']]).encode()).hexdigest()
@@ -91,7 +91,7 @@ def configuration(argv):
 
 
 def request(args):
-    fixed, payload = configuration(args.npsim_args)
+    fixed, payload = configuration(args.npsim_args, getattr(args, 'source_id', None))
     state = Path(args.state_dir).resolve()
     state.mkdir(parents=True, exist_ok=True)
     descriptor = state / 'resident.json'
@@ -104,8 +104,11 @@ def request(args):
             # it would silently lose npsim's EIC particle-truth settings.
             steering += '\nimport sys\nsys.path.insert(0, ' + repr(str(Path(__file__).resolve().parent)) + ')\n'
             steering += 'from evgen_source import configure\nconfigure(SIM, ' + repr(str(state / 'current-range')) + ')\n'
-        (state / 'source.steer').write_text(steering)
-        setup = fixed + ['--steeringFile', str(state / 'source.steer'),
+        # The gun's copy keeps its name: resident units replay it
+        # (resident_unit.run) and its content is the configuration's.
+        steer = state / ('source.steer' if payload['source_mode'] == 'evgen' else 'gun.steer')
+        steer.write_text(steering)
+        setup = fixed + ['--steeringFile', str(steer),
                          '--random.seed', str(payload['seed']), '--numberOfEvents',
                          '1' if payload['source_mode'] == 'evgen' else '0',
                          '--outputFile', str(state / 'unused.edm4hep.root')]
