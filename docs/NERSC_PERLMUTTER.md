@@ -126,14 +126,16 @@ is served from `main`, as everything in this repository is: `main` is what
 runs.
 
 The launcher is a site adapter to the **common native pilot**, using the
-Perlmutter-only `native-runtime-perlmutter-es-batch-0878633` bundle and archive
-`d1538119c72b4cb48b0f1f3b7dd4e1fe293ab3c49958ce26a3704dedc405855d`.
-It adds bounded batch IPC to the previously approved native baseline. The
-archive differs from its predecessor `711576f9` only in accepting PanDA's
-committed range updates when the server appends a failure for its own
-post-commit job event count (`pilot/native-canary/es_batch.py`); before, the
-pilot re-marked already credited ranges failed, and they were released and
-dispatched again. The bundle is staged by `scripts/stage-native-runtime.py`
+Perlmutter-only `native-runtime-perlmutter-es-batch-b5ff01c` bundle and archive
+`26e9264ef3f81b1676867432e03c9dff014a37098074988b27bf052d425665c8`.
+It adds bounded batch IPC to the previously approved native baseline
+(`pilot/native-canary/es_batch.py`). The pilot accepts PanDA's committed range
+updates when the server appends a failure for its own post-commit job event
+count; before, it re-marked already credited ranges failed, and they were
+released and dispatched again. Its forced stage-out at the payload's end
+reports the last finished ranges straight to the server, without the receipt
+archive and its upload to BNL that each periodic stage-out keeps, since that
+step lies on the critical path of the job's end. The bundle is staged by `scripts/stage-native-runtime.py`
 and published by `scripts/publish-pilot-asset.py`. It starts the campaign image's own Python through
 Apptainer, without ALRB. Event Service uses that pilot's generic executor
 and a matching Python 3.13 yampl channel; there is no separate ES pilot fork.
