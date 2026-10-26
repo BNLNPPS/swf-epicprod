@@ -54,6 +54,8 @@ def definition(settings):
         raise ValueError('production ES reco_async must be a boolean')
     if cfg.get('reco_async') and not cfg.get('resident_unit'):
         raise ValueError('production ES reco_async needs resident_unit')
+    if 'report_barrier' in cfg and type(cfg['report_barrier']) is not bool:
+        raise ValueError('production ES report_barrier must be a boolean')
     return cfg
 
 
@@ -99,6 +101,8 @@ def apply(spec, settings):
         prefix['EPICPROD_SWITCH_ES_RECO_POOL'] = str(cfg['reco_pool'])
     if cfg.get('reco_async'):
         prefix['EPICPROD_SWITCH_ES_RECO_ASYNC'] = '1'
+    if cfg.get('report_barrier'):
+        prefix['EPICPROD_SWITCH_ES_REPORT_BARRIER'] = '1'
     command = ' '.join(k + '=' + shlex.quote(v) for k, v in prefix.items())
     command += (' python3 evgen_job_dispatcher.py es-production '
                 + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])
