@@ -514,11 +514,15 @@ def dispatch_available(slots, pool, per_unit, min_events, input_path, file_path,
         # a file's ranges in no event order (task_event_module.py orders by
         # task, job and file only), so with prestaging an idle slot that has
         # waited IDLE_TAKE_ANY_S takes the longest run pooled, however short:
-        # a short unit costs its turnaround, an idle core everything.
+        # a short unit costs its turnaround, an idle core everything. A task
+        # whose ES_MIN_UNIT_EVENTS is its whole unit asks for whole units
+        # only: the default close merge costs seconds per file, so small
+        # units would let the closes fall behind.
         least = min_events
         if slot.unit is not None:
             least = 0
-        elif getattr(slot, 'prestage', False) and now - slot.idle_since > IDLE_TAKE_ANY_S:
+        elif (getattr(slot, 'prestage', False) and 0 < min_events < per_unit
+              and now - slot.idle_since > IDLE_TAKE_ANY_S):
             least = 1
         members = pool.take_unit(per_unit, min_events=least, max_events=max_events,
                                  longest=least == 1 and min_events > 1)
