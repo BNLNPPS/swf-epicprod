@@ -712,13 +712,15 @@ from the front's shadow-mode record.
 ## Pilot-side regulation: the harvester's queue limits
 
 An operator worker-limit override is applied with
-`scripts/worker-limit.py QUEUE N --host HOST --by NAME --reason TEXT --apply`.
+`scripts/worker-limit.py QUEUE N --cores --host HOST --by NAME --reason TEXT --apply`.
 It changes Harvester's `maxWorkers`, preserves a dated configuration backup,
 reads back the installed value, and records the active control in
 `pilot.queue.<queue>.worker_limit`. The limit counts worker allocations;
 a GREX allocation runs eight single-core pilots. Use `--cores` to specify
 payload concurrency: 500 cores rounds down to 62 allocations, or 496 cores.
-The control records both units and the dashboard reports cores.
+Use `--workers` for an allocation count. A positive limit requires one
+of these explicit units. The control records both units and the dashboard
+reports cores.
 Existing allocations finish normally.
 The override operates independently of the shadow pilot regulator.
 Using `off` in place of `N` restores the saved prior limit and clears the

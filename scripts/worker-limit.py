@@ -28,9 +28,12 @@ def remote(host, command, *, content=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('queue')
-    parser.add_argument('limit', help='Positive worker count, or off to restore the prior limit')
-    parser.add_argument('--cores', action='store_true',
-                        help='Interpret the limit as cores and round down to whole worker allocations')
+    parser.add_argument('limit', help='Positive count with explicit units, or off to restore the prior limit')
+    units = parser.add_mutually_exclusive_group()
+    units.add_argument('--cores', action='store_true',
+                       help='Interpret the limit as cores and round down to whole worker allocations')
+    units.add_argument('--workers', action='store_true',
+                       help='Interpret the limit as Harvester worker allocations')
     parser.add_argument('--host', required=True)
     parser.add_argument('--by', required=True)
     parser.add_argument('--reason', required=True)
@@ -39,6 +42,8 @@ def main():
     if not re.fullmatch(r'[A-Za-z0-9_.-]+', args.host):
         parser.error('invalid harvester host')
     clearing = args.limit.lower() == 'off'
+    if not clearing and not (args.cores or args.workers):
+        parser.error('explicit units are required: --cores or --workers')
     if not clearing and (not args.limit.isdigit() or int(args.limit) <= 0):
         parser.error('limit must be a positive worker count or off')
 
