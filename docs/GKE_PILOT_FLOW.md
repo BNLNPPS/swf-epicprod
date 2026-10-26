@@ -31,7 +31,9 @@ lock after runtime/image capability publication. With
 committed, adding at most one per cycle. Each has 500,000 fresh neutron-gun
 events, ten initial 50,000-event jobs, automatic 14-core harness slots,
 250-event units, 300-second closes, a two-hour harness ceiling and a five-minute
-drain margin. The worker cap independently limits execution to five nodes
+drain margin. From 26 October its tasks declare the fourteen payload cores and
+run resident simulation and resident units (EPICPROD_PAYLOAD.md, Resident Event
+Service units). The worker cap independently limits execution to five nodes
 (70 payload cores). Successful tasks are replenished through normal PCS
 composition, admission and submission; registered RECO has normal retention.
 
@@ -277,7 +279,7 @@ requested from the PanDA team, regenerates the ranges it left.
 | `cpu`, `memory` | `'14'`, `'100Gi'` | each pod's request and limit |
 | `getjobrequests` | 5 | job requests before an idle pilot exits |
 | `proxy`, `secret_name` | as above, `epicprod-pilot-proxy` | the credential |
-| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle |
+| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle; since 2026-10-26 03:00 ET `native-runtime-google-es-batch-28cf224` (below) |
 | `native_image` | `/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable` | the image containing the pilot's Python and the payload |
 | `es_channel` | `.../canary/es-channel-py313-debian13` | the channel matching Python 3.13 in that image |
 | `queuedata` | `.../canary/queuedata/BNL_ePIC_GOOGLE_es.json` | existing ES storage/cadence overrides, preserved from the previous launcher |
@@ -337,6 +339,20 @@ debug pod with that setting started the payload image as uid 1000
 (2026-10-01).
 
 ## Operating limits
+
+**The ES batch channel.** Since 2026-10-26 the runtime is
+`native-runtime-google-es-batch-28cf224`: the launcher and helpers of commit
+28cf224 with the batch-channel pilot archive `711576f9`, the same pilot and
+helpers as Perlmutter's (NERSC_PERLMUTTER.md, Bounded ES batch-channel
+correction). Its manifest declares `es_batch_channel`, and the controller then
+exports `EPICPROD_SWITCH_ES_BATCH_CHANNEL=1` and a 300-second stage-out
+interval to the pod. The pilot fetches 256 ranges per server call, at least
+two seconds apart. The legacy channel fetched twice the core count per call:
+on job 6050590 that supplied about 26 events a second against the 39 that
+fourteen resident slots use. The payload's harness inherits the gate and uses
+the batch channel on these pods, so a task does not set it. Pods started
+before the change finish on the previous runtime. Setting
+`gke_pilots.native_runtime` back restores it.
 
 Cron enqueue (`*/5`) is installed and enabled. Preserve the authorized five-worker
 cap and shared native runtime during steady production. The one approved
