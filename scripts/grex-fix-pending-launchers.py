@@ -94,6 +94,14 @@ for row in rows:
             continue
     if original_hash == replacement_hash and (not archive or archive_hash == args.archive_sha256):
         continue
+    if archive and original_hash == replacement_hash:
+        staged_archive = sandbox / 'pilot3-native-headroom.tar.gz'
+        staged_helper = sandbox / 'epic-native-pilot-headroom.sh'
+        if (staged_archive.is_file() and not staged_archive.is_symlink()
+                and hashlib.sha256(staged_archive.read_bytes()).hexdigest() == args.archive_sha256
+                and staged_helper.is_file() and not staged_helper.is_symlink()
+                and staged_helper.read_bytes() == helper):
+            continue
     try:
         body = subprocess.check_output(['scontrol', 'write', 'batch_script', jid, '-'], universal_newlines=True, timeout=10)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
