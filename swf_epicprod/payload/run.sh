@@ -911,13 +911,22 @@ stage simulation start "${EVENTS_PER_TASK:-?} events${GUN_SEED_NOTE}"
       --steeringFile ${INPUT_FILE}
     )
   fi
-  # Run npsim with both common and uncommon flags
-  guard_stage npsim prmon \
+  if [ "${EPICPROD_SWITCH_RESIDENT_SIM:-0}" = 1 ] && [ "${EVGEN_GENERATOR:-}" = particle_gun ] && [ -n "${EPICPROD_SIM_SOCKET:-}" ]; then
+    # One initialized EIC/DDG4 simulation per ES slot. The resident process
+    # finishes this unit's output before the existing reconstruction path.
+    python "${SCRIPT_DIR}/es/resident_sim.py" request \
+      --socket "${EPICPROD_SIM_SOCKET}" --state-dir "${EPICPROD_SIM_STATE}" \
+      --reply "${EPICPROD_SIM_REPLY}" -- \
+      "${common_flags[@]}" "${uncommon_flags[@]}"
+  else
+    # Run npsim with both common and uncommon flags
+    guard_stage npsim prmon \
     --filename ${LOG_TEMP}/${TASKNAME}.npsim.prmon.txt \
     --json-summary ${LOG_TEMP}/${TASKNAME}.npsim.prmon.json \
     --log-filename ${LOG_TEMP}/${TASKNAME}.npsim.prmon.log \
     -- \
-  npsim "${common_flags[@]}" "${uncommon_flags[@]}" ${thread_flags_npsim[@]+"${thread_flags_npsim[@]}"}
+    npsim "${common_flags[@]}" "${uncommon_flags[@]}" ${thread_flags_npsim[@]+"${thread_flags_npsim[@]}"}
+  fi
   ls -al ${FULL_TEMP}/${TASKNAME}.edm4hep.root
 } 2>&1 | tee ${LOG_TEMP}/${TASKNAME}.npsim.log | tail -n1000
 stage simulation ok
@@ -944,6 +953,7 @@ if [ -n "${EPICPROD_RECO_SOCKET:-}" ]; then
   {
     date
     if [ ! -S "${EPICPROD_RECO_SOCKET}" ]; then
+      reco_initialization_started=$(date +%s.%N)
       echo "starting the resident eicrecon on ${EPICPROD_RECO_SOCKET}"
       resident_wait=()
       [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-1}" != 1 ] || resident_wait=(--wait)
@@ -971,10 +981,14 @@ if [ -n "${EPICPROD_RECO_SOCKET:-}" ]; then
       done
       [ -S "${EPICPROD_RECO_SOCKET}" ] || { echo "ERROR: resident eicrecon gave no socket in ${EPICPROD_RECO_STARTUP_S:-600} s"; tail -20 "${EPICPROD_RECO_SOCKET}.log"; exit 86; }
       echo "resident eicrecon up after ${i} s"
+      if [ -n "${EPICPROD_RECO_STATE:-}" ]; then
+        python -c 'import json,sys,time; json.dump(dict(pid=int(sys.argv[1]), initialization_started_at=float(sys.argv[2]), initialized_at=time.time()), open(sys.argv[3], "w"))' \
+          "${resident_pid}" "${reco_initialization_started}" "${EPICPROD_RECO_STATE}"
+      fi
     fi
     python "${SCRIPT_DIR}/es/zmq_request.py" "${EPICPROD_RECO_SOCKET}" \
       "{\"input_file\": \"$(realpath ${FULL_TEMP}/${TASKNAME}.edm4hep.root)\", \"output_file\": \"$(realpath ${RECO_TEMP})/${TASKNAME}.eicrecon.edm4eic.root\", \"nskip\": 0, \"nevents\": ${FULL_EVENTS:-${EVENTS_PER_TASK}}, \"run_id\": \"${TASKNAME}\"}" \
-      | tee "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json"
+      "${EPICPROD_RECO_REPLY:-}" | tee "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json"
     grep -q '"status": *"completed"' "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json" \
       || { echo "ERROR: resident eicrecon did not complete the range"; exit 86; }
     ls -al ${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root

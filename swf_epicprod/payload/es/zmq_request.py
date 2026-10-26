@@ -2,7 +2,7 @@
 """A request to a running EICrecon on its managed PODIO socket, over
 libzmq through ctypes (the image has libzmq for EICrecon and no pyzmq).
 REQ/REP over ipc: one JSON request, one JSON reply."""
-import ctypes, ctypes.util, json, sys
+import ctypes, ctypes.util, json, sys, time
 
 ZMQ_REQ, ZMQ_RCVTIMEO, ZMQ_SNDTIMEO = 3, 27, 28
 
@@ -39,4 +39,13 @@ def request(socket_path, payload, timeout_s=600):
 
 
 if __name__ == '__main__':
-    print(json.dumps(request(sys.argv[1], json.loads(sys.argv[2]))))
+    started = time.time()
+    record = sys.argv[3] if len(sys.argv) > 3 else ''
+    if record:
+        from resident_sim import write_json
+        write_json(record, {'request_started_at': started})
+    reply = request(sys.argv[1], json.loads(sys.argv[2]))
+    reply.update(request_started_at=started, request_ended_at=time.time())
+    if record:
+        write_json(record, reply)
+    print(json.dumps(reply))
