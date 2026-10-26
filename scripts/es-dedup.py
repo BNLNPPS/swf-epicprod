@@ -14,6 +14,7 @@ credit for keeps its first copy, by file name.
   es-dedup.py decide --plan PLAN.json --scan SCAN.json --output DECISION.json
   es-dedup.py skim   --decision DECISION.json --workdir DIR         campaign image (clean copies)
   es-dedup.py apply  --decision DECISION.json --workdir DIR --proxy FILE [--execute]   campaign image
+                     with the host's /etc/grid-security/certificates and the proxy's directory bound
 
 A file with nothing to drop is left as it is. A file whose every event is
 another copy's duplicate is detached from the dataset. A file holding both is
@@ -257,9 +258,48 @@ def skim(args):
         print(f'{target.name}: {len(ids)} events, {len(collections or [])} collections', flush=True)
 
 
-def apply(args):
-    import shutil
+def adler32_of(path):
+    import zlib
+    value = 1
+    with open(path, 'rb') as handle:
+        for block in iter(lambda: handle.read(1 << 24), b''):
+            value = zlib.adler32(block, value)
+    return f'{value:08x}'
+
+
+DOOR, PREFIX, RSE = 'root://epicxrd1.sdcc.bnl.gov:1094', '/eic/EPIC', 'BNL-XRD'
+
+
+def home(registrar, local, did, logger, execute):
+    """The clean copy at its deterministic path behind the door, verified
+    there by size and Adler-32 against the local file: (size, adler32).
+    The copy is made with the X.509 proxy; an existing file of other
+    content is never overwritten."""
     import subprocess
+    size, adler = local.stat().st_size, adler32_of(local)
+    path = f"{PREFIX}/{did.lstrip('/')}"
+    there = registrar.stored_at(DOOR, path)
+    if there is None:
+        check = registrar._xrd([DOOR, 'stat', path], 120)
+        print(f"door stat {path}: rc {check.returncode} {(check.stderr or '').strip()[-300:]}; "
+              f"auth {({k: v for k, v in os.environ.items() if 'X509' in k or k.startswith(('XRD', 'Xrd', 'BEARER'))})}",
+              flush=True)
+    if there is None and execute:
+        copy = subprocess.run(['xrdcp', '--nopbar', str(local), f'{DOOR}/{path}'],
+                              capture_output=True, text=True, timeout=1800)
+        if copy.returncode != 0:
+            raise RuntimeError(f'xrdcp to {DOOR}/{path} exited {copy.returncode}: {copy.stderr.strip()[-300:]}')
+        there = registrar.stored_at(DOOR, path)
+    if there is None:
+        return None
+    if there != (size, adler):
+        raise RuntimeError(f'{DOOR}/{path} holds {there}, the clean copy {(size, adler)}')
+    return size, adler
+
+
+def apply(args):
+    import logging
+    import shutil
     import tempfile
     decision = json.loads(args.decision.read_text())
     scope, dataset = decision['summary']['dataset'].split(':', 1)
@@ -268,12 +308,30 @@ def apply(args):
     shutil.copy(args.proxy, proxy)
     proxy.chmod(0o600)
     env = dict(os.environ, X509_USER_PROXY=str(proxy), RUCIO_CONFIG=str(payload / 'rucio.cfg'),
-               RUCIO_ACCOUNT='eicprod', REGISTRATION_STAGGER_MAX_S='0')
+               RUCIO_ACCOUNT='eicprod', REGISTRATION_STAGGER_MAX_S='0',
+               X509_CERT_DIR=str(args.ca_dir))
+    if not os.path.isdir(env['X509_CERT_DIR']):
+        raise RuntimeError(f"No CA directory at {env['X509_CERT_DIR']}: bind the host's into the image")
     os.environ.update(env)
     from rucio.client import Client
     client = Client()
+    # The payload's registrar, in this process: its door check and its
+    # in-place registration (one call for the replica and the attachment,
+    # then the event count).
+    sys.path.insert(0, str(payload))
+    import register_to_rucio as registrar
+    logger = logging.getLogger('es-dedup')
+    logging.basicConfig(level=logging.INFO)
+
+    def attached():
+        return {x['name'].lstrip('/') for x in client.list_files(scope, dataset)}
+
+    present = attached()
     for f in decision['files']:
         if f['action'] == 'keep':
+            continue
+        if f['name'].lstrip('/') not in present:
+            print(f"detached already: {f['name']}", flush=True)
             continue
         if f['action'] == 'rewrite':
             local = args.workdir / clean_name(f['name']).rsplit('/', 1)[-1]
@@ -281,16 +339,15 @@ def apply(args):
             if ok['events'] != f['kept']:
                 raise RuntimeError(f"{local.name}: the clean copy holds {ok['events']} events, the decision {f['kept']}")
             did = clean_name(f['name'])
-            command = [sys.executable, str(payload / 'register_to_rucio.py'), '-f', str(local), '-d', did,
-                       '-s', scope, '-r', 'BNL-XRD', '--events', str(ok['events']),
-                       '--preserve-door', 'root://epicxrd1.sdcc.bnl.gov:1094', '--preserve-prefix', '/eic/EPIC']
-            print(('register ' if args.execute else 'would register ') + f"{did} ({ok['events']} events)", flush=True)
-            if args.execute:
-                if subprocess.run(command, env=env).returncode != 0:
-                    raise RuntimeError('Registration failed for ' + did)
-                names = {x['name'] for x in client.list_files(scope, dataset)}
-                if did.lstrip('/') not in {n.lstrip('/') for n in names}:
-                    raise RuntimeError(did + ' is not attached to the dataset after registration')
+            if did.lstrip('/') in present:
+                print(f'registered already: {did}', flush=True)
+            else:
+                print(('register ' if args.execute else 'would register ') + f"{did} ({ok['events']} events)", flush=True)
+                stored = home(registrar, local, did, logger, args.execute)
+                if args.execute:
+                    registrar.register_in_place(client, scope, did, RSE, stored[0], stored[1], ok['events'], logger)
+                    if did.lstrip('/') not in attached():
+                        raise RuntimeError(did + ' is not attached to the dataset after registration')
         print(('detach ' if args.execute else 'would detach ') + f"{f['name']} ({f['drop']} duplicates of {f['events']})", flush=True)
         if args.execute:
             client.detach_dids(scope, dataset, [{'scope': f['scope'], 'name': f['name']}])
@@ -307,6 +364,9 @@ def main():
     p = sub.add_parser('skim'); p.add_argument('--decision', type=Path, required=True); p.add_argument('--workdir', type=Path, required=True)
     p = sub.add_parser('apply'); p.add_argument('--decision', type=Path, required=True); p.add_argument('--workdir', type=Path, required=True)
     p.add_argument('--proxy', type=Path, required=True); p.add_argument('--execute', action='store_true')
+    # The campaign image sets X509_CERT_DIR to its own /opt/local/certificates,
+    # against which the BNL door's TLS handshake fails; the host's, bound in, works.
+    p.add_argument('--ca-dir', type=Path, default=Path('/etc/grid-security/certificates'))
     args = parser.parse_args()
     {'plan': plan, 'scan': scan, 'decide': decide, 'skim': skim, 'apply': apply}[args.command](args)
 
