@@ -85,19 +85,41 @@ class ChannelFeed:
         self.exhausted = False
         self.pending = deque()
         self.batch = os.environ.get('EPICPROD_SWITCH_ES_BATCH_CHANNEL') == '1'
+        # One request and its reply at a time: the pool's thread asks while
+        # the main loop reports, and a barrier must read its own reply.
+        self.lock = threading.Lock()
+
+    def exchange(self, request):
+        with self.lock:
+            self.sock.send_raw(request)
+            while True:
+                size, buf = self.sock.try_recv_raw()
+                if size != -1:
+                    break
+                time.sleep(0.01)            # the pilot's own message cadence (esmessage.py)
+        return buf.decode('utf8') if isinstance(buf, bytes) else str(buf)
+
+    def barrier(self):
+        """Returns once the pilot has handled every report sent before it.
+        The pilot takes the payload's messages one at a time and in order,
+        and drops those still queued when the payload exits (pilot3
+        esprocess.py, run and handle_messages), so its answer to one more
+        request follows every earlier report (EPICPROD_SWITCH_ES_REPORT_BARRIER).
+        A range it hands out here is left untaken; the server releases it
+        with the job's other unprocessed ranges. Returns the ranges handed."""
+        message = self.exchange(b'Ready for events: 1' if self.batch else b'Ready for events')
+        if "No more events" in message:
+            self.exhausted = True
+            return []
+        ranges = json.loads(message)
+        return ranges if isinstance(ranges, list) else [ranges]
 
     def ask(self):
         if self.pending:
             return self.pending.popleft()
         if self.exhausted:
             return None
-        self.sock.send_raw(b'Ready for events: 256' if self.batch else b'Ready for events')
-        while True:
-            size, buf = self.sock.try_recv_raw()
-            if size != -1:
-                break
-            time.sleep(0.01)                # the pilot's own message cadence (esmessage.py)
-        message = buf.decode('utf8') if isinstance(buf, bytes) else str(buf)
+        message = self.exchange(b'Ready for events: 256' if self.batch else b'Ready for events')
         if "No more events" in message:
             self.exhausted = True
             return None
@@ -108,7 +130,8 @@ class ChannelFeed:
         return self.pending.popleft() if self.pending else None
 
     def report(self, text):
-        self.sock.send_raw(text.encode('utf8'))
+        with self.lock:
+            self.sock.send_raw(text.encode('utf8'))
 
 
 class FileFeed:
@@ -236,6 +259,9 @@ class Slot:
         # current one runs, so the slot starts it at once on finishing, with
         # no harness pass or range fetch between the two.
         self.prestage = getattr(args, 'prestage', False)
+        # Asynchronous reconstruction: a unit's slot is free once the unit has
+        # simulated (its outbox's ``simulated`` marker), before its handoff.
+        self.asynchronous = getattr(args, 'reco_async', False)
         self.queued = None          # (unit id, range ids, events, range) of the next unit
         self.given = 0
         runtime = shutil.which('apptainer') or shutil.which('singularity') or \
@@ -269,6 +295,17 @@ class Slot:
             self.start(entry, time.time())
         else:
             self.queued = entry
+
+    def simulated_at(self):
+        """When the unit in flight finished simulating, its reconstruction
+        going on in the background (es_slot.run_resident_unit), or None."""
+        if self.unit is None or not self.asynchronous:
+            return None
+        try:
+            with open(os.path.join(self.outbox, self.unit, 'simulated')) as f:
+                return float(f.read())
+        except (OSError, ValueError):
+            return None
 
     def start(self, entry, at):
         self.unit, self.range_ids, self.unit_events, self.unit_range = entry
@@ -499,14 +536,18 @@ def dispatch_available(slots, pool, per_unit, min_events, input_path, file_path,
                        stamp, max_events=0, fair=False):
     """Feed the longest-idle free slots first when the batch channel is enabled."""
     available = [s for s in slots if s.free()] if max_events >= 0 else []
+    # A slot is idle with no unit, or, under asynchronous reconstruction, when
+    # its unit has simulated and it holds no next one: its core is free from
+    # that moment, while the unit reconstructs.
+    since = {id(s): idle_since(s) for s in available}
     if max_events:
         # A unit cut to what fits before the margin starts now, not behind
         # another, so near the deadline only idle slots are fed.
-        available = [s for s in available if s.unit is None]
+        available = [s for s in available if since[id(s)] is not None]
     if fair:
-        available.sort(key=lambda s: s.idle_since)
+        available.sort(key=lambda s: since[id(s)] or s.idle_since)
     # Idle slots first; a slot's next unit is given after every idle slot has one.
-    available.sort(key=lambda s: s.unit is not None)
+    available.sort(key=lambda s: since[id(s)] is None)
     fed = False
     now = time.time()
     for slot in available:
@@ -515,11 +556,15 @@ def dispatch_available(slots, pool, per_unit, min_events, input_path, file_path,
         # a file's ranges in no event order (task_event_module.py orders by
         # task, job and file only), so with prestaging an idle slot that has
         # waited IDLE_TAKE_ANY_S takes the longest run pooled, however short:
-        # a short unit costs its turnaround, an idle core everything.
+        # a short unit costs its turnaround, an idle core everything. A task
+        # whose ES_MIN_UNIT_EVENTS is its whole unit asks for whole units
+        # only: the default close merge costs seconds per file, so small
+        # units would let the closes fall behind.
         least = min_events
-        if slot.unit is not None:
+        if since[id(slot)] is None:
             least = 0
-        elif getattr(slot, 'prestage', False) and now - slot.idle_since > IDLE_TAKE_ANY_S:
+        elif (getattr(slot, 'prestage', False) and 0 < min_events < per_unit
+              and now - since[id(slot)] > IDLE_TAKE_ANY_S):
             least = 1
         members = pool.take_unit(per_unit, min_events=least, max_events=max_events,
                                  longest=least == 1 and min_events > 1)
@@ -529,6 +574,15 @@ def dispatch_available(slots, pool, per_unit, min_events, input_path, file_path,
         slot.give(unit_spec(members, per_unit, file_path, ext, stamp))
         fed = True
     return fed
+
+
+def idle_since(slot):
+    """When the slot's core became free, or None while it simulates."""
+    if slot.unit is None:
+        return slot.idle_since
+    if getattr(slot, 'queued', None) is None and hasattr(slot, 'simulated_at'):
+        return slot.simulated_at()
+    return None
 
 
 def take_unit(pool, per_unit):
@@ -664,6 +718,7 @@ def main():
             # A unit's reconstruction finishes in the background while its
             # slot simulates the next (resident_unit.asynchronous).
             args.env.append('EPICPROD_SWITCH_ES_RECO_ASYNC=1')
+            args.reco_async = True
             log('asynchronous reconstruction: slots simulate while their units reconstruct')
     if reco_pool.enabled():
         # The job's shared resident EICrecon (reco_pool.py) in place of one
@@ -957,7 +1012,23 @@ def main():
     grace = min(300.0, 5.0 + 5 * untaken / PILOT_REPORTS_PER_S)
     log(f"no more ranges: {len(summary['done'])} done, {len(summary['failed'])} failed; "
         f"{grace:.0f} s for the pilot to take the last ~{untaken:.0f} of {reported[0]} reports, then stopping slots")
-    time.sleep(grace)
+    if os.environ.get('EPICPROD_SWITCH_ES_REPORT_BARRIER') == '1' and hasattr(feed, 'barrier'):
+        # The estimate above is a pace, not a receipt: task 41256's last two
+        # closes (4,600 events, reported in the job's last 30 s) were never
+        # credited. The pilot's answer to one more request is the receipt.
+        waited = time.time()
+        result = {}
+        waiter = threading.Thread(target=lambda: result.update(handed=feed.barrier()), daemon=True)
+        waiter.start()
+        waiter.join(300.0)
+        if waiter.is_alive():
+            log(f"report barrier: no answer from the pilot in 300 s; {reported[0]} reports sent")
+        else:
+            log(f"report barrier: the pilot holds all {reported[0]} reports after {time.time() - waited:.1f} s; "
+                f"{len(result.get('handed') or [])} range(s) handed at the barrier left untaken")
+        summary['report_barrier_s'] = round(time.time() - waited, 1)
+    else:
+        time.sleep(grace)
     for s in slots:
         s.stop()
     for s in slots:

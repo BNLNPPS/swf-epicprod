@@ -132,6 +132,10 @@ def main():
         totals['sandboxes'] += 1
         emit(**record)
     emit(phase='complete', at=time.time(), totals=totals, **space())
+    # A grid job that finishes before pandaharvester01's gridmanager sees it
+    # running reads there as idle after a start, which the schedd's
+    # SYSTEM_PERIODIC_REMOVE removes before the output returns.
+    time.sleep(150)
 
 
 if __name__ == '__main__':

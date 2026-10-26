@@ -221,6 +221,20 @@ does not give.
 - **Range reporting keeps up.** The pilot took 6,000 finished-range
   messages in 62 s and tarred a batch of 5,884 in 47 s (npps0 job
   3618821); reporting is not the bottleneck at these scales.
+- **The last reports need a receipt.** The pilot handles the payload's
+  messages one at a time and in order, only while the payload runs; when
+  the payload exits it drops those still queued (pilot3 `esprocess.py`,
+  `run`). A unit's ranges are reported when its close stands, so the last
+  closes are reported in the job's last seconds. Perlmutter task 41256 had
+  its last two closes (4,600 of 32,000 events, all registered) reported in
+  its last 30 s, and none of them were credited: the harness's timed grace
+  is a pace, not a receipt. With `EPICPROD_SWITCH_ES_REPORT_BARRIER=1`
+  (payload 0.25.17, off by default) the harness ends by asking the pilot
+  for one more range and waiting, up to 300 s, for the answer, which
+  follows every earlier report. A range handed at the barrier is left
+  untaken and released with the job's other unprocessed ranges. Ranges a
+  job reports nowhere stay unprocessed and return to the file, so a later
+  job would simulate events whose output is already registered.
 
 **Measured on one Perlmutter node (2026-09-25, job 3618884, payload
 0.22.6).** 64 cores of 163-event units, closes every 10 minutes: the

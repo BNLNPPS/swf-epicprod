@@ -589,6 +589,62 @@ cancels or requeues workers and preserves their submit/eligible times.
 Running sandboxes and unknown runtime hashes are excluded. In-place
 queued repair is distinct from proof that a repaired worker has started.
 
+### Shared spool exhaustion, 25–26 October
+
+The GREX CE spool is one 196 GiB NFS filesystem, `/var/lib/condor-ce`,
+shared by every GREX CE user and mounted on the batch workers. From the
+native-pilot rollout of 24 October until 79ec244, the multipilot launcher
+ran each allocation's eight pilots, and every job directory, in the CE
+sandbox on that spool. The spool filled at 18:50 ET on 25 October and
+again at 01:49 ET on 26 October; the second fill aborted 220 jobs with
+pilot error 1098, 212 of them after a successful payload.
+
+The writers after the template switch were allocations already started
+on the earlier runtime (`native-grex-production-20261024`). An allocation
+keeps the launcher it started with, and each of its pilots takes further
+jobs until the allocation's intake deadline, the start plus a time floor
+of 480–535 minutes. About 440 such jobs were running at the second fill.
+Their spool footprint grows over a job's life to about 0.45 GiB at the
+end of the payload, so a wave of jobs started together fills the spool
+together. A pilot that exits is never restarted, so this population only
+declines; at 03:00 ET on 26 October it was 157 jobs in 54 allocations,
+with intake closing between 03:00 and 06:47 ET.
+
+These allocations were not removed. Every job they held was on its last
+attempt (tasks 41175 at 2 of 2; 41181, 41182 and 41191 at 1 of 1), so
+removal would have failed each one finally. The earlier pilot has no
+control that ends intake while letting the current job finish: on GREX
+no machine ad or MachineFeatures directory reaches it, so a shutdown time
+cannot be lowered, and the node guard acts per host, on the new runtime's
+pilots too, and fails the payload landing check of a job it catches.
+The old allocations drain instead, and the CE deletes each sandbox, with
+any leftover job directories and log tarballs, when its allocation ends.
+
+The queued-worker limit was the other contributor. Each queued
+allocation's transferred inputs, about 15 MB, occupy the spool while it
+waits in Slurm, and harvester held 623 queued against 118 running. At
+02:53 ET the GREX entry in pandaharvester01's `panda_queueconfig.json`
+was set to `nQueueLimitWorkerMax` 50 and `nQueueLimitWorkerMin` 25 (from
+625 and 125) with `scripts/set-harvester-queue-limits.py`, and the 573
+most recently queued allocations were removed while still idle, keeping
+the 50 longest queued. The spool's free space rose from 123 to 132 GiB.
+
+`scripts/grex-spool-inventory.py` reads the spool as the CE's mapped
+account from a batch worker and reports, per owned sandbox, its bytes,
+whether its pilots work on the spool, the launcher's intake deadline,
+live pilots, job directories and leftover log tarballs. Its 03:04 ET
+reading: 140.7 of 210.8 GB free; ePIC held 49.2 GB in 68 earlier-runtime
+sandboxes (about 0.6 GB each, chiefly the eight pilots' extracted trees)
+and 2.2 GB in 274 others; other users held about 19 GB. A diagnostic
+grid job submitted from pandaharvester01 must run for at least two
+minutes: one that finishes before the gridmanager observes it running
+reads as idle after a start, and the schedd's `SYSTEM_PERIODIC_REMOVE`
+removes it before its output returns.
+
+On the corrected runtime the pilot tree is in worker `/tmp`, which on
+GREX is a per-job Slurm container directory that Slurm removes with the
+job, so relocation leaves nothing behind on the nodes.
+
 ## GREX Event Service channel
 
 The Python 3.13 channel is published beside the existing Python 3.11

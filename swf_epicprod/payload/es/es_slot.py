@@ -306,6 +306,13 @@ def run_resident_unit(template, record, chunk, label, start, count, out, env, ar
     def rest():
         complete(uid, finish_resident(record, out, args, *reconstructed()), out)
 
+    # The harness feeds the slot from this moment (es_harness.idle_since):
+    # its core is free while the unit reconstructs.
+    marker = os.path.join(out, 'simulated')
+    with open(marker + '.tmp', 'w') as stream:
+        stream.write(repr(time.time()))
+    os.replace(marker + '.tmp', marker)
+
     # A daemon: a slot that is cut ends with its units in flight, as on a node
     # that is taken away; a slot that stops joins its threads first.
     thread = threading.Thread(target=rest, name=f'reconstruct-{uid}', daemon=True)

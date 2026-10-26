@@ -801,8 +801,15 @@ with the first processing starts spread over 1.18 seconds, but did not
 establish sustained saved work: only its first 32 events were registered.
 Its second close held 255 unit files and 11,515 events until the worker
 ended; the last snapshot still lacked a normal harness end. No cause is
-assigned from the pilot's batch-time-limit label alone. The opt-in merge
-path is under commissioning and is not the default production path.
+assigned from the pilot's batch-time-limit label alone.
+
+On Google (2026-10-26) the default `podio-merge-files` costs 4 to 5 s per unit
+file whatever its size. Job 6050590's closes of 172 and 283 files took 881 s
+and 2,229 s. With the fast merge, job 6052018 closed 11,164 and 13,750 events
+of about 50 resident units each in 32 s and 36 s. Normal 26.07.3 PODIO readback
+of its three registered closes found all 24,919 expected event IDs exactly
+once, 24,919 distinct neutron truth records within 3 to 50 degrees, and all
+387 collections. Google's feeder tasks use the fast merge from then on.
 
 ## Resident particle-gun simulation
 
@@ -875,6 +882,14 @@ removes both:
   starts it as the current one hands off. Near the deadline only idle slots
   are fed, with units cut to what fits. The harness passes every 0.25 s and
   slots poll their inbox every 0.1 s.
+- A prestaged unit is cut only as a whole block. The server hands out a
+  file's single-event ranges in no event order: `task_event_module.py`
+  orders by task, job and file only. On the legacy channel the pool
+  therefore fills with fragments. A slot idle for 2 s takes the longest
+  pooled run, however short (payload 0.25.14), unless the task's
+  `ES_MIN_UNIT_EVENTS` equals its unit (0.25.16). The default close merge,
+  `podio-merge-files`, costs 4 to 5 s per file whatever its size, so short
+  units let the closes fall behind.
 
 On npps0 (`scripts/validate-resident-es.py --resident-unit`, one slot,
 5-event units) the three units after the template unit took 1.2 to 1.9 s
@@ -898,7 +913,7 @@ events credited.
 
 Reconstruction takes about 0.4 s per event against about 3 s for
 simulation, so it occupies a slot about an eighth of the time.
-`EPICPROD_SWITCH_ES_RECO_POOL=<R>` (payload 0.25.15, off by default;
+`EPICPROD_SWITCH_ES_RECO_POOL=<R>` (payload 0.25.17, off by default;
 `reco_pool` in a production ES definition) replaces the per-slot EICrecon
 with R resident members shared by all of the job's slots
 (`es/reco_pool.py`). At 128 slots and 32 members the estimate is 128 × 1.96
@@ -939,7 +954,7 @@ so a canary can set switches the harness itself reads.
 
 A resident unit simulates, then reconstructs, so a slot's simulation waits
 for its own reconstruction: about an eighth of the slot's time at the rates
-above. `EPICPROD_SWITCH_ES_RECO_ASYNC=1` (payload 0.25.15, off by default;
+above. `EPICPROD_SWITCH_ES_RECO_ASYNC=1` (payload 0.25.17, off by default;
 `reco_async` in a production ES definition, which needs `resident_unit`)
 takes reconstruction off the slot's critical path:
 
@@ -950,8 +965,11 @@ takes reconstruction off the slot's critical path:
   the unit it holds next. The slot's first unit, which runs run.sh and
   writes the template, stays synchronous.
 - The harness counts a unit in flight until its marker appears, as for any
-  unit. A busy slot receives its next unit only when a whole block is
-  pooled; otherwise the slot waits for that marker before it is fed.
+  unit. When the unit has simulated, the slot writes `simulated` in its
+  outbox, and a slot whose unit carries it and that holds no next unit is
+  fed as an idle one (`es_harness.idle_since`): from that moment its core
+  is free, and the wait before it takes any pooled run counts from it. A
+  slot still simulating receives its next unit only as a whole block.
 - A unit's record keeps its own simulation and reconstruction intervals.
   A slot's reconstruction can therefore overlap its next simulation, and
   its wall (`wall_s`) runs from the start of simulation to the handoff.
@@ -966,7 +984,8 @@ simulated 92.9% and 27.5 events/s. Reconstruction was about 7.5% of slot
 time in both. Of 146 consecutive resident units, 118 began during their
 predecessor's reconstruction; the slot's turnaround from last event to
 next first event was 1.5 s at the tenth percentile and 21 s at the median.
-The remainder is the slot waiting for a whole block while it counts as busy.
+The remainder was the slot waiting for a whole block while it counted as
+busy, which the `simulated` marker removes (payload 0.25.17).
 
 ## Multithreading
 
