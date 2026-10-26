@@ -537,6 +537,39 @@ successfully in 26.07.1 through the private namespace. It acquired no
 PanDA job. This establishes worker image startup, not a new physics-output
 registration. It replaces the still-idle 27403.0 probe, which was cancelled.
 
+## GREX local scratch and disk telemetry
+
+At 00:37:28 UTC on 26 October (20:37 ET on 25 October), the future-worker
+GREX template moved to
+`/data/atlpan/harvester_common/native-grex-headroom-79ec244`.
+Its common launcher comes from `79ec244`; its pilot archive SHA256 is
+`250054c846255a7d9aa059a4e52d0de03eb07e6bc35e563f06e28697bfc0cc41`.
+The archive differs from approved `9532f30b` only in native-container and
+jobmetrics telemetry. Before extracting the pilot, the launcher relocates
+the pilot tree from the shared CE spool to a private worker `/tmp` directory
+and exports that location as `_CONDOR_SCRATCH_DIR`. The CE sandbox remains
+bound read-only for headroom measurement. Normal heartbeats carry free bytes
+and inodes for the CE, pilot and payload scratch filesystems.
+
+The exact bounded validation was Condor 27484 / CE 1499292.0, PCS trial
+41221 and PanDA job 6007380, using source 8524/config 23. It finished all
+20 neutron-gun events with pilot and payload errors zero. Registration and
+independent normal PODIO readback passed: exact IDs 0–19, distinct neutron
+truth and all 387 collections. Its heartbeat measured CE free space of
+78,036 MiB and worker pilot/scratch free space of 776,835 MiB, with separate
+inode readings. No ordinary production allocation was stopped or changed.
+
+Only the production template's immutable asset paths and tag changed;
+eight cores, 48 GB, twelve-hour allocation, CE and Harvester identities
+were preserved. Template SHA256 is
+`a79875ccdec45b53de80c5bc58d3551accdb0093719fecfb9e069ed1831bb818`.
+The prior template is backed up as
+`submit_pilot3_pull_umgrex.sdf.before-local-scratch-20261025T2037ET`.
+Evidence is under
+`/data/wenauseic/swf-incident-archives/grex-local-scratch-20261025/`.
+This validates the bounded worker and installs future-worker assets;
+subsequent normal Harvester production use remains observable separately.
+
 ## GREX Event Service channel
 
 The Python 3.13 channel is published beside the existing Python 3.11
