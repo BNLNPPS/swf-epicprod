@@ -22,6 +22,15 @@ def spec():
 
 
 class ProductionES(unittest.TestCase):
+    def test_explicit_worker_cores_reach_the_pilot_without_changing_the_budget(self):
+        result = apply(spec(), dict(settings(), pilot_cores=14))
+        self.assertEqual(result['nCore'], 14)
+        self.assertEqual(result['nJobs'] * result['nEventsPerJob'], 10000)
+        self.assertEqual(apply(spec(), settings())['nCore'], 1)
+        for value in (0, -1, True, '14'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                definition(dict(settings(), pilot_cores=value))
+
     def test_fast_close_is_opt_in_and_has_a_validated_batch_bound(self):
         ordinary = apply(spec(), settings())['exec']
         self.assertNotIn('EPICPROD_SWITCH_ES_FAST_MERGE', ordinary)

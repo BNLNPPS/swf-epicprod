@@ -30,6 +30,8 @@ def definition(settings):
     if slots != 'auto' and (not slots.isdigit() or int(slots) <= 0):
         raise ValueError('production ES slots must be auto or a positive integer')
     cfg['slots'] = slots
+    if 'pilot_cores' in cfg and (type(cfg['pilot_cores']) is not int or cfg['pilot_cores'] <= 0):
+        raise ValueError('production ES pilot_cores must be a positive integer')
     if 'batch_channel' in cfg and type(cfg['batch_channel']) is not bool:
         raise ValueError('production ES batch_channel must be a boolean')
     if 'min_unit_events' in cfg and (type(cfg['min_unit_events']) is not int or not 1 <= cfg['min_unit_events'] <= cfg['unit_events']):
@@ -89,7 +91,7 @@ def apply(spec, settings):
                 inputDataset=cfg['input_dataset'], nFilesPerJob=1,
                 nEventsPerWorker=cfg['unit_events'],
                 nEventsPerInputFile=cfg['input_events'], nEventsPerJob=cfg['events_per_job'],
-                nJobs=cfg['events'] // cfg['events_per_job'], nCore=1,
+                nJobs=cfg['events'] // cfg['events_per_job'], nCore=cfg.get('pilot_cores', 1),
                 walltimeHours=cfg['deadline_s'] / 3600,
                 memory=cfg['memory_mb_per_core'], maxAttempt=10, maxFailure=3,
                 noLog=True, workerProxy=True, event_service=dict(cfg))
