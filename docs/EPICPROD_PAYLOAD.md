@@ -871,6 +871,14 @@ removes both:
   starts it as the current one hands off. Near the deadline only idle slots
   are fed, with units cut to what fits. The harness passes every 0.25 s and
   slots poll their inbox every 0.1 s.
+- A prestaged unit is cut only as a whole block. The server hands out a
+  file's single-event ranges in no event order: `task_event_module.py`
+  orders by task, job and file only. On the legacy channel the pool
+  therefore fills with fragments. A slot idle for 2 s takes the longest
+  pooled run, however short (payload 0.25.14), unless the task's
+  `ES_MIN_UNIT_EVENTS` equals its unit (0.25.16). The default close merge,
+  `podio-merge-files`, costs 4 to 5 s per file whatever its size, so short
+  units let the closes fall behind.
 
 On npps0 (`scripts/validate-resident-es.py --resident-unit`, one slot,
 5-event units) the three units after the template unit took 1.2 to 1.9 s
