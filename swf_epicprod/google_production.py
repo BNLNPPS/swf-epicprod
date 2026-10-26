@@ -61,7 +61,7 @@ def reserve_sample():
         es = dict(events=EVENTS, input_events=EVENTS, events_per_job=50000,
                   unit_events=250, close_s=300, deadline_s=7200, margin_s=300,
                   memory_mb_per_core=6000, slots='auto', pilot_cores=14,
-                  resident_sim=True, resident_unit=True,
+                  resident_sim=True, resident_unit=True, fast_merge=True,
                   input_dataset='group.EIC:group.EIC.esplan.26.07.3.p1107.' + sample,
                   row=f'SINGLE/neutron/5GeV/3to50deg.{sample}/{stem},steer,{EVENTS},0000')
         task = compose(source, sample=sample, event_service=es, site=QUEUE,

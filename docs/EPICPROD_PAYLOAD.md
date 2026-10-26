@@ -801,8 +801,15 @@ with the first processing starts spread over 1.18 seconds, but did not
 establish sustained saved work: only its first 32 events were registered.
 Its second close held 255 unit files and 11,515 events until the worker
 ended; the last snapshot still lacked a normal harness end. No cause is
-assigned from the pilot's batch-time-limit label alone. The opt-in merge
-path is under commissioning and is not the default production path.
+assigned from the pilot's batch-time-limit label alone.
+
+On Google (2026-10-26) the default `podio-merge-files` costs 4 to 5 s per unit
+file whatever its size. Job 6050590's closes of 172 and 283 files took 881 s
+and 2,229 s. With the fast merge, job 6052018 closed 11,164 and 13,750 events
+of about 50 resident units each in 32 s and 36 s. Normal 26.07.3 PODIO readback
+of its three registered closes found all 24,919 expected event IDs exactly
+once, 24,919 distinct neutron truth records within 3 to 50 degrees, and all
+387 collections. Google's feeder tasks use the fast merge from then on.
 
 ## Resident particle-gun simulation
 
