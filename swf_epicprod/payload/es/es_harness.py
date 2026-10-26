@@ -85,8 +85,9 @@ class ChannelFeed:
         self.exhausted = False
         self.pending = deque()
         self.batch = os.environ.get('EPICPROD_SWITCH_ES_BATCH_CHANNEL') == '1'
-        # One request and its reply at a time: the pool's thread asks while
-        # the main loop reports, and a barrier must read its own reply.
+        # One request and its reply at a time: the pool's thread asks, and a
+        # barrier must read its own reply. Reports need no reply and stay
+        # unlocked, so a request waiting on the server never holds them up.
         self.lock = threading.Lock()
 
     def exchange(self, request):
@@ -130,8 +131,7 @@ class ChannelFeed:
         return self.pending.popleft() if self.pending else None
 
     def report(self, text):
-        with self.lock:
-            self.sock.send_raw(text.encode('utf8'))
+        self.sock.send_raw(text.encode('utf8'))
 
 
 class FileFeed:
