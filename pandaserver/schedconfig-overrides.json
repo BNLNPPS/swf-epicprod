@@ -68,5 +68,9 @@
         "ce_version": null
       }
     ]
+  },
+  "BNL_ePIC_GOOGLE_es": {
+    "maxtime": 999999999,
+    "_why": "2026-10-26: Google's Event Service pods have no wall clock; each job is bounded by its harness deadline. JEDI's scouting divides a job's wall time by its input size, and a particle-gun ES task's input is a few-kB generation plan, so the task walltime goes to JEDI's cap of 999999999 kSI2kseconds (task_utils_module.py). GenJobBroker then skips any queue whose maxtime is below it: task 41223's file left by job 6008778 (fg_partial, 10,576 events) stood 'no candidates' with maxtime 345600. At the cap the check passes. The pilot's own limit comes from its queue file, not from this record."
   }
 }

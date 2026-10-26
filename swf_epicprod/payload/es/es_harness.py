@@ -312,11 +312,15 @@ class Slot:
         self.taken_at = at
 
     def result(self):
-        """(unit id, record, ok) when the unit in flight has finished."""
+        """(unit id, record, ok, range ids, taken at) when the unit in flight
+        has finished. The range ids and start are the finished unit's own:
+        a prestaged unit takes the slot's place as this one ends, so the
+        slot's attributes already name the next unit when this returns."""
         if self.unit is None:
             return None
         out = os.path.join(self.outbox, self.unit)
         done, err = os.path.join(out, 'done'), os.path.join(out, 'error.json')
+        ids, taken = list(self.range_ids), self.taken_at
         if not (os.path.exists(done) or os.path.exists(err)):
             if self.proc.poll() is not None:
                 # Once only: the unit is cleared so it is not reported again
@@ -326,7 +330,7 @@ class Slot:
                 if self.queued:
                     self.start(self.queued, time.time())
                     self.queued = None
-                return uid, {'message': f'slot exited {self.proc.returncode} with the unit in flight'}, False
+                return uid, {'message': f'slot exited {self.proc.returncode} with the unit in flight'}, False, ids, taken
             return None
         record = {}
         try:
@@ -341,7 +345,7 @@ class Slot:
             # The slot went on to it as this one ended.
             self.start(self.queued, self.idle_since)
             self.queued = None
-        return uid, record, os.path.exists(done)
+        return uid, record, os.path.exists(done), ids, taken
 
     def stop(self):
         with open(os.path.join(self.inbox, 'STOP'), 'w'):
@@ -842,11 +846,10 @@ def main():
             r = s.result()
             if r is None:
                 continue
-            uid, record, ok = r
-            record.setdefault('wall_s', round(time.time() - (s.taken_at or time.time()), 1))
+            uid, record, ok, range_ids, taken_at = r
+            record.setdefault('wall_s', round(time.time() - (taken_at or time.time()), 1))
             record['slot'] = s.index                    # which slot ran it: the slot occupancy plot
-            record.setdefault('started_at', s.taken_at)
-            range_ids = list(s.range_ids)
+            record.setdefault('started_at', taken_at)
             if ok:
                 unit_walls.append((int(record.get('events') or 0), float(record['wall_s'])))
                 shipped.nudge()
