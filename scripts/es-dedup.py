@@ -5,7 +5,7 @@ A unit whose ranges PanDA did not credit goes back to the task, and a later job
 simulates its events again, so the dataset holds two files with the same event
 IDs (EPICPROD_PAYLOAD.md, Resident Event Service units; GKE_PILOT_FLOW.md, the
 ES batch channel). PanDA's credit decides which copy stands: an event ID
-credited (JEDI_Events done) to the job that wrote a file stays in that file, and
+credited (JEDI_Events finished or done, 3 or 6) to the job that wrote a file stays in that file, and
 the same ID in any other job's file is the duplicate. An ID that no job holds
 credit for keeps its first copy, by file name.
 
@@ -83,7 +83,7 @@ def plan(args):
                     'rses': sorted((r.get('rses') or {}).keys())})
     with connections['panda'].cursor() as cursor:
         cursor.execute('SELECT pandaid, job_processid FROM doma_panda.jedi_events '
-                       'WHERE jeditaskid = %s AND status = 6', [args.task])
+                       'WHERE jeditaskid = %s AND status IN (3, 6)', [args.task])
         credit = {}
         for pandaid, process in cursor.fetchall():
             credit.setdefault(int(pandaid), []).append(int(process) - 1)
@@ -174,7 +174,8 @@ def skim(args):
         if f['action'] != 'rewrite':
             continue
         target = args.workdir / clean_name(f['name']).rsplit('/', 1)[-1]
-        if target.exists() and (args.workdir / (target.name + '.ok.json')).exists():
+        done = args.workdir / (target.name + '.ok.json')
+        if target.exists() and done.exists() and json.loads(done.read_text())['events'] == f['kept']:
             continue
         source = ROOT.TFile.Open(f['url'])
         if not source or source.IsZombie():
@@ -244,6 +245,8 @@ def apply(args):
         if f['action'] == 'rewrite':
             local = args.workdir / clean_name(f['name']).rsplit('/', 1)[-1]
             ok = json.loads((args.workdir / (local.name + '.ok.json')).read_text())
+            if ok['events'] != f['kept']:
+                raise RuntimeError(f"{local.name}: the clean copy holds {ok['events']} events, the decision {f['kept']}")
             did = clean_name(f['name'])
             metadata = client.get_metadata(f['scope'], f['name'], plugin='JSON')
             command = [sys.executable, str(payload / 'register_to_rucio.py'), '-f', str(local), '-d', did,
