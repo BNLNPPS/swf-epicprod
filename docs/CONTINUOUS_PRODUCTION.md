@@ -597,8 +597,11 @@ task from its queue S to a queue T when all of these hold:
   window with none does not establish it (Torre, 2026-10-26: "NO MOVE UNLESS
   FAILURE FRACTION BELOW 20%", after the rule moved task 41349's 500 jobs to
   GREX while 2,696 of its 7,343 jobs in the window had failed, under the
-  front's 60% red). The cycle record names each idle queue so refused, with
-  its fraction (`refused`);
+  front's 60% red). The same limit holds over the last hour when it holds 20
+  finished and failed jobs or more, since a burst that resumes after a quiet
+  spell is diluted in the six hours (GREX: 178 copy failures in the 20 minutes
+  after its feed came back). The cycle record names each idle queue so
+  refused, with both readings (`refused`);
 - the task has nothing started: no job sent, starting, running, holding,
   transferring or merging, so no pilot loses a job;
 - the task is not paused (a resume is the operators'), not Event Service,
