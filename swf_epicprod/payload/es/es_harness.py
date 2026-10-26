@@ -57,6 +57,7 @@ import reco_pool  # noqa: E402
 
 
 PILOT_REPORTS_PER_S = 100.0    # the pilot takes one channel message per 10 ms pass (esmessage.py)
+IDLE_TAKE_ANY_S = 2.0          # resident units: an idle slot's wait before it takes any pooled run
 
 
 def meminfo_kb(field):
@@ -390,14 +391,40 @@ class Pool:
         with self.lock:
             self.ranges = []
 
-    def take_unit(self, per_unit, min_events=0, max_events=0):
+    def take_unit(self, per_unit, min_events=0, max_events=0, longest=False):
         """The ranges of the next unit: one range, or up to per_unit
         consecutive ranges within one block of per_unit events (block b
         is events b*K+1 to (b+1)*K), so that a unit is a chunk of the row
         and its block index names its outputs. A block is cut when it is
         whole, or when no more ranges are coming; empty otherwise.
         max_events caps the unit (what fits before the deadline), and a
-        run that reaches the cap is cut at once."""
+        run that reaches the cap is cut at once. longest: of the runs that
+        can be cut, the longest rather than the first."""
+        if longest:
+            with self.lock:
+                best, i = None, 0
+                while i < len(self.ranges):
+                    first = self.ranges[i]
+                    block = (int(first['startEvent']) - 1) // per_unit if per_unit > 0 else i
+                    run = 1
+                    for rng in self.ranges[i + 1:]:
+                        if (per_unit < 1 or rng.get('LFN') != first.get('LFN')
+                                or int(rng['startEvent']) != int(self.ranges[i + run - 1]['lastEvent']) + 1
+                                or (int(rng['startEvent']) - 1) // per_unit != block or run >= per_unit):
+                            break
+                        run += 1
+                    if best is None or run > best[1]:
+                        best = (i, run, (first.get('LFN'), block))
+                    i += run
+                if best is None:
+                    return []
+                i, run, key = best
+                if 0 < max_events < run:
+                    run = max_events
+                members = self.ranges[i:i + run]
+                del self.ranges[i:i + run]
+                self.cut_count[key] = self.cut_count.get(key, 0) + run
+                return members
         with self.lock:
             if not self.ranges:
                 return []
@@ -481,8 +508,21 @@ def dispatch_available(slots, pool, per_unit, min_events, input_path, file_path,
     # Idle slots first; a slot's next unit is given after every idle slot has one.
     available.sort(key=lambda s: s.unit is not None)
     fed = False
+    now = time.time()
     for slot in available:
-        members = pool.take_unit(per_unit, min_events=min_events, max_events=max_events)
+        # An idle slot starts on what it can have now; a slot's next unit has
+        # the current unit's run to wait for its whole block. The server hands
+        # a file's ranges in no event order (task_event_module.py orders by
+        # task, job and file only), so with prestaging an idle slot that has
+        # waited IDLE_TAKE_ANY_S takes the longest run pooled, however short:
+        # a short unit costs its turnaround, an idle core everything.
+        least = min_events
+        if slot.unit is not None:
+            least = 0
+        elif getattr(slot, 'prestage', False) and now - slot.idle_since > IDLE_TAKE_ANY_S:
+            least = 1
+        members = pool.take_unit(per_unit, min_events=least, max_events=max_events,
+                                 longest=least == 1 and min_events > 1)
         if not members:
             pool.want()
             break

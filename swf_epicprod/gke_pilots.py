@@ -135,6 +135,14 @@ def render_job(template, cfg, name=None):
         'PILOT_ES_EXECUTOR_TYPE': 'generic',
         'ATHENA_PROC_NUMBER': str(int(cfg['cpu'])),
     }
+    # A runtime whose manifest declares the bounded ES batch channel gets its
+    # gate: that pilot fetches 256 ranges per server call and refuses ES
+    # stage-out without it (NERSC_PERLMUTTER.md, Bounded ES batch-channel
+    # correction). A legacy-channel payload still gets one range per request.
+    batch = cfg.get('es_batch_channel')
+    if batch:
+        exports.update(EPICPROD_SWITCH_ES_BATCH_CHANNEL='1',
+                       EPICPROD_ES_STAGEOUT_GAP=str(int(batch['stageout_s'])))
     command = ['bash', '/pilotdir/epic-native-pilot.sh', '-q', queue,
                '-i', 'PR', '-j', 'managed', '-t', '-w', 'generic',
                '--pilot-user', 'epic', '--url', 'https://pandaserver01.sdcc.bnl.gov',
@@ -297,6 +305,13 @@ def _last_reason():
     return ((row or {}).get('extra_data') or {}).get('reason')
 
 
+def runtime_manifest(cfg):
+    """The published manifest of the configured native runtime."""
+    import json
+    with open(os.path.join(cfg['native_runtime'], 'manifest.json')) as handle:
+        return json.load(handle)
+
+
 def publish_capability(cfg, summary, template_text):
     """Admission evidence from the controller's checked runtime and pod template."""
     import json
@@ -366,6 +381,7 @@ def _run_cycle(*, dry_run=False, created_by='gke_pilots'):
                        outcome='started' if n else 'steady')
         if not dry_run:
             summary['secret_written'] = ensure_proxy_secret(core, cfg)
+            cfg['es_batch_channel'] = runtime_manifest(cfg).get('es_batch_channel')
             names = []
             for _ in range(n):
                 job = render_job(template, cfg)

@@ -898,7 +898,7 @@ events credited.
 
 Reconstruction takes about 0.4 s per event against about 3 s for
 simulation, so it occupies a slot about an eighth of the time.
-`EPICPROD_SWITCH_ES_RECO_POOL=<R>` (payload 0.25.13, off by default;
+`EPICPROD_SWITCH_ES_RECO_POOL=<R>` (payload 0.25.15, off by default;
 `reco_pool` in a production ES definition) replaces the per-slot EICrecon
 with R resident members shared by all of the job's slots
 (`es/reco_pool.py`). At 128 slots and 32 members the estimate is 128 × 1.96
@@ -931,7 +931,7 @@ so a canary can set switches the harness itself reads.
 
 A resident unit simulates, then reconstructs, so a slot's simulation waits
 for its own reconstruction: about an eighth of the slot's time at the rates
-above. `EPICPROD_SWITCH_ES_RECO_ASYNC=1` (payload 0.25.13, off by default;
+above. `EPICPROD_SWITCH_ES_RECO_ASYNC=1` (payload 0.25.15, off by default;
 `reco_async` in a production ES definition, which needs `resident_unit`)
 takes reconstruction off the slot's critical path:
 

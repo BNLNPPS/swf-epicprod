@@ -75,6 +75,7 @@ class RenderTest(unittest.TestCase):
         self.assertNotIn('resources', template['spec']['template']['spec']['containers'][0])
 
 
+
 class SupplyTest(unittest.TestCase):
     def test_jobs_without_pods_fill_the_cap(self):
         core, batch = Mock(), Mock()

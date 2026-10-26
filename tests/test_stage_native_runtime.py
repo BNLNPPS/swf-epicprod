@@ -1,10 +1,12 @@
 """Exercise the assembled helper interface that failed on the real GKE worker."""
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -14,6 +16,16 @@ stage_runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(stage_runtime)
 
 
+def pilot_archive(*members):
+    """A pilot archive holding the named members, as the frozen baseline has one."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode='w:gz') as archive:
+        for name in members:
+            info = tarfile.TarInfo(name)
+            archive.addfile(info, io.BytesIO(b''))
+    return buffer.getvalue()
+
+
 class RuntimeBundle(unittest.TestCase):
     def test_committed_helpers_ignore_stale_baseline_and_prepare_queuedata(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -21,11 +33,12 @@ class RuntimeBundle(unittest.TestCase):
             baseline = root / 'baseline'; baseline.mkdir()
             for name in stage_runtime.ASSETS:
                 (baseline / name).write_bytes(b'frozen asset')
+            (baseline / 'pilot3-native.tar.gz').write_bytes(pilot_archive('pilot3/pilot.py'))
             (baseline / 'queuedata-source.json').write_text('{"nickname":"BNL_OSG_PanDA_1"}')
             (baseline / 'runtime-policy.py').write_text('obsolete helper')
             (baseline / 'private-key').write_text('must not be copied')
             bundle = root / 'bundle'
-            digest = hashlib.sha256(b'frozen asset').hexdigest()
+            digest = hashlib.sha256((baseline / 'pilot3-native.tar.gz').read_bytes()).hexdigest()
             manifest = stage_runtime.stage(baseline, bundle, digest)
             self.assertFalse((bundle / 'private-key').exists())
             for name, expected in manifest['files'].items():

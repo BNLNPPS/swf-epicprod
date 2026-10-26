@@ -2,9 +2,11 @@
 """Assemble an immutable native runtime from committed code and frozen assets."""
 import argparse
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
+import tarfile
 
 REPO = Path(__file__).resolve().parents[1]
 CODE = (
@@ -17,6 +19,11 @@ CODE = (
 )
 ASSETS = ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
           'queuedata-source.json')
+# A pilot built with the bounded ES batch channel (build-native-es-batch.py)
+# refuses ES stage-out without its gate, so the manifest declares it and the
+# launching site exports the gate exactly when its runtime carries it.
+ES_BATCH_MODULE = 'pilot3/pilot/user/epic/es_batch.py'
+ES_BATCH_STAGEOUT_S = 300
 
 
 def stage(baseline, output, archive_sha256):
@@ -47,6 +54,9 @@ def stage(baseline, output, archive_sha256):
         'code_files': sorted(code),
         'baseline_assets': sorted(assets),
     }
+    with tarfile.open(fileobj=io.BytesIO(assets['pilot3-native.tar.gz'])) as archive:
+        if ES_BATCH_MODULE in archive.getnames():
+            manifest['es_batch_channel'] = {'stageout_s': ES_BATCH_STAGEOUT_S}
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     return manifest
 
