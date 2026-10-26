@@ -35,6 +35,11 @@ CLOSED = ('off', 'retired')
 ROOM_STATUS = {'production': None, 'commissioning': 'commissioning', 'off': 'off',
                'not_built': 'not_built'}
 FIELDS = ('queue', 'status', 'reason', 'since', 'by', 'site', 'pool', 'front')
+# Queues whose pilots the ops agent supplies, not Harvester
+# (GKE_PILOT_FLOW.md). Harvester holds them offline on purpose, so the drift
+# check does not judge its copy, and the room reads their pilot supply from
+# the agent.
+AGENT_SUPPLIED = ('BNL_ePIC_GOOGLE_es',)
 CACHE_S = 10
 DISPATCH_MAX_AGE_S = 900
 _dispatch_cache = {'at': 0, 'value': {}}
@@ -485,7 +490,7 @@ def drift(reports, record=None):
         harvester = (rec.get('queue_status') or {}).get('status')
         for queue, value in sorted((harvester or {}).items()):
             e, value = by.get(queue), str(value or 'online').lower()
-            if not e:
+            if not e or queue in AGENT_SUPPLIED:
                 continue
             if e['status'] == 'retired' and value != 'offline':
                 add(queue, f'harvester on {host}', value, 'offline (retired)')

@@ -159,6 +159,15 @@ class Drift(unittest.TestCase):
             ('BNL_OSG_EPIC_PROD_1', 'PanDA schedconfig override'),
             ('BNL_OSG_EPIC_PROD_1', 'JEDI throttler pool osg')})
 
+    def test_harvester_copy_of_an_agent_supplied_queue_is_not_judged(self):
+        record = [{'queue': 'BNL_ePIC_GOOGLE_es', 'status': 'production'}]
+        reports = {'pandaharvester02': {'record': {'queue_status': {'status': {
+            'BNL_ePIC_GOOGLE_es': 'offline'}}}}}
+        self.assertEqual(registry.drift(reports, record), [])
+        reports = {'pandaserver01': {'record': {'queue_overrides': {'status': {
+            'BNL_ePIC_GOOGLE_es': 'brokeroff'}}}}}
+        self.assertEqual([d['queue'] for d in registry.drift(reports, record)], ['BNL_ePIC_GOOGLE_es'])
+
 
 if __name__ == '__main__':
     unittest.main()

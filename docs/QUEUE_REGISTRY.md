@@ -142,6 +142,10 @@ each build the room compares them with the record
 - A retired queue must be offline in harvester and off in PanDA
   (`brokeroff`, `offline` or `test`).
 - A production queue must be neither.
+- A queue the ops agent supplies with pilots, not Harvester
+  (`queues.AGENT_SUPPLIED`: BNL_ePIC_GOOGLE_es, GKE_PILOT_FLOW.md), is
+  held offline in Harvester on purpose; Harvester's copy of it is not
+  judged. Its PanDA override still is.
 - A pool the throttler read must hold exactly the members the record
   gives it (`queue-status.py --jedi-pools`); a pool it has not read
   lately, such as an idle drain, is not judged.
