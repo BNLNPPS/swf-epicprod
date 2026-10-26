@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the image's npsim setup alive and run seeded particle-gun requests.
+"""Keep the image's npsim setup alive for gun or prepared EVGEN requests.
 
 The image's npsim entry point performs its normal EIC configuration. Its
 DDG4 kernel run call is replaced by the request loop, after initialization
@@ -44,10 +44,11 @@ def write_json(path, value):
 
 
 def configuration(argv):
-    """Separate per-request values from the fixed detector and gun setup."""
-    values, fixed = {}, []
+    """Separate range identity from the fixed detector and source setup."""
+    values, fixed = {'steering': ''}, []
     varying = {'--random.seed': 'seed', '--numberOfEvents': 'events',
-               '--meta.eventNumberOffset': 'event_offset', '--outputFile': 'output_file'}
+               '--meta.eventNumberOffset': 'event_offset', '--outputFile': 'output_file',
+               '--inputFiles': 'input_file', '--skipNEvents': 'first_event'}
     index = 0
     while index < len(argv):
         flag = argv[index]
@@ -67,14 +68,24 @@ def configuration(argv):
         else:
             fixed.append(flag)
             index += 1
-    if '--enableGun' not in fixed or '--inputFiles' in fixed:
-        raise ValueError('Resident simulation currently accepts particle guns only')
-    for name in ('seed', 'events', 'event_offset'):
+    mode = 'evgen' if values.get('input_file') else 'gun'
+    if ('--enableGun' in fixed) != (mode == 'gun'):
+        raise ValueError('Resident simulation needs exactly one input source')
+    if mode == 'gun' and not values['steering']:
+        raise ValueError('Resident gun needs a steering file')
+    for name in ('seed', 'events', 'event_offset', 'first_event'):
         values[name] = int(values.get(name, 0))
-    if values['seed'] <= 0 or values['events'] <= 0 or values['event_offset'] < 0:
-        raise ValueError('Invalid gun seed, event count or event offset')
+    if values['seed'] <= 0 or values['events'] <= 0 or min(values['event_offset'], values['first_event']) < 0:
+        raise ValueError('Invalid seed, event count or event offset')
+    if mode == 'evgen':
+        if values['event_offset']:
+            raise ValueError('EVGEN retains source event numbers; an additional offset is invalid')
+        if '://' not in values['input_file']:
+            values['input_file'] = str(Path(values['input_file']).resolve())
+        values['source_id'] = os.environ.get('EPICPROD_EVGEN_SOURCE_ID') or values['input_file']
+    values['source_mode'] = mode
     values['output_file'] = str(Path(values['output_file']).resolve())
-    signature = hashlib.sha256(json.dumps([fixed, values['steering']]).encode()).hexdigest()
+    signature = hashlib.sha256(json.dumps([mode, fixed, values['steering']]).encode()).hexdigest()
     values['configuration_sha256'] = signature
     return fixed, values
 
@@ -87,12 +98,19 @@ def request(args):
     started = time.time()
     child = None
     if not descriptor.exists():
-        (state / 'gun.steer').write_text(payload['steering'])
-        setup = fixed + ['--steeringFile', str(state / 'gun.steer'),
-                         '--random.seed', str(payload['seed']), '--numberOfEvents', '0',
+        steering = payload['steering']
+        if payload['source_mode'] == 'evgen':
+            # DDSim supplies SIM as the image's configured runner. Replacing
+            # it would silently lose npsim's EIC particle-truth settings.
+            steering += '\nimport sys\nsys.path.insert(0, ' + repr(str(Path(__file__).resolve().parent)) + ')\n'
+            steering += 'from evgen_source import configure\nconfigure(SIM, ' + repr(str(state / 'current-range')) + ')\n'
+        (state / 'source.steer').write_text(steering)
+        setup = fixed + ['--steeringFile', str(state / 'source.steer'),
+                         '--random.seed', str(payload['seed']), '--numberOfEvents', '1',
                          '--outputFile', str(state / 'unused.edm4hep.root')]
         write_json(descriptor, {'status': 'starting',
                    'initialization_started_at': time.time(),
+                   'source_mode': payload['source_mode'],
                    'configuration_sha256': payload['configuration_sha256']})
         with (state / 'resident.log').open('ab') as log:
             child = subprocess.Popen(
@@ -179,12 +197,30 @@ def serve(args):
                         path = str(Path(payload['output_file']).resolve())
                         if Path(path).exists():
                             raise FileExistsError(path)
+                        input_range = None
+                        if info.get('source_mode') == 'evgen':
+                            from evgen_ranges import prepare
+                            range_file = state / f'range-{sequence + 1}.hepmc3'
+                            manifest = prepare(payload['input_file'], int(payload['first_event']), count,
+                                               range_file, payload.get('source_id'))
+                            control = state / 'current-range'
+                            temporary = state / 'current-range.tmp'
+                            temporary.write_text(str(range_file) + '\n')
+                            temporary.replace(control)
+                            input_range = {k: manifest[k] for k in
+                                ('schema', 'source_id', 'first_event', 'events', 'sha256', 'started_at', 'ended_at')}
+                            input_range['event_content_sha256'] = hashlib.sha256(
+                                json.dumps(manifest['selected'], sort_keys=True).encode()).hexdigest()
                         set_property('Output', path)
                         set_property('EventNumberOffset', offset)
                         request_header = dict(header, **{'random.seed': str(seed),
                             'random.enableEventSeed': 'False', 'numberOfEvents': str(count),
                             'meta.eventNumberOffset': str(offset), 'outputFile': path,
                             'epicprod.seedMode': 'request-stream'})
+                        if input_range:
+                            request_header.update({'inputFiles': payload['input_file'],
+                                'skipNEvents': str(payload['first_event']),
+                                'epicprod.inputRangeSHA256': input_range['sha256']})
                         request_header['CommandLine'] = shlex.join(
                             [str(entry)] + args.npsim_args + ['--random.seed', str(seed),
                              '--numberOfEvents', str(count), '--meta.eventNumberOffset', str(offset),
@@ -215,6 +251,8 @@ def serve(args):
                                      last_event_at=float(timing.last) or None,
                                      cpu_s=time.process_time() - cpu_started,
                                      resident_peak_rss_kb=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+                        if input_range:
+                            reply['input_range'] = input_range
                         info['requests'] = sequence
                         write_json(descriptor, info)
                         write_json(state / 'request.json', reply)

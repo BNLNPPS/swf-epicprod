@@ -82,6 +82,15 @@ def validate(args):
             identities.add(identity)
             ids.add(event)
             generated = [p for p in frame.get('MCParticles') if p.getGeneratorStatus() == 1]
+            if args.evgen:
+                if not generated:
+                    raise RuntimeError('The reconstructed EVGEN event has no generated stable particles')
+                values = [(p.getPDG(), p.getGeneratorStatus(),
+                           p.getMomentum().x, p.getMomentum().y, p.getMomentum().z)
+                          for p in generated]
+                truth.add(hashlib.sha256(repr(values).encode()).hexdigest())
+                count += 1
+                continue
             if len(generated) != 1 or generated[0].getPDG() != 2112:
                 raise RuntimeError('The generated particle differs from the neutron-gun plan')
             q = generated[0].getMomentum()
@@ -104,11 +113,15 @@ def validate(args):
     if args.fingerprints:
         args.fingerprints.write_text(json.dumps({
             'event_ids': sorted(ids), 'generated_truth_sha256': sorted(truth)}, indent=2) + '\n')
-    return {'events': len(ids), 'unique_event_ids': len(ids),
+    result = {'events': len(ids), 'unique_event_ids': len(ids),
             'distinct_generated_truth': len(truth), 'collections': len(collections or []),
-            'particle_pdg': 2112, 'theta_degrees': [3, 50],
             'event_ids_sha256': hashlib.sha256(json.dumps(sorted(ids)).encode()).hexdigest(),
             'reader': 'podio.root_io.Reader', 'files': observed}
+    if args.evgen:
+        result['source_mode'] = 'evgen'
+    else:
+        result.update(particle_pdg=2112, theta_degrees=[3, 50])
+    return result
 
 
 def main():
@@ -118,6 +131,7 @@ def main():
     mode.add_argument('--dataset', help='complete task output DID')
     mode.add_argument('--validate', type=Path, help='prepared readback manifest')
     ap.add_argument('--events', type=int, help='complete task event count')
+    ap.add_argument('--evgen', action='store_true', help='external EVGEN truth instead of the neutron-gun plan')
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--fingerprints', type=Path,
                     help='retain checked identities for combining separately read closes')

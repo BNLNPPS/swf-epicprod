@@ -556,6 +556,20 @@ def main():
     file_path, ext = row[0], row[1]
     feed = FileFeed(args.ranges_file) if args.ranges_file else ChannelFeed(args.channel)
     started = time.time()
+    # HEPiX carries the allocation's actual end through the native pilot.
+    # A task-relative limit must never extend beyond that batch deadline.
+    features = os.environ.get('MACHINEFEATURES', '')
+    if features and '://' not in features:
+        try:
+            with open(os.path.join(features, 'shutdowntime')) as stream:
+                remaining = float(stream.read()) - started
+            if remaining <= 0:
+                log('ERROR: the allocation deadline has already passed')
+                return 2
+            args.deadline_s = min(args.deadline_s, remaining) if args.deadline_s else remaining
+            log(f'allocation deadline: {remaining:.0f}s remaining; harness limit {args.deadline_s:.0f}s')
+        except (OSError, ValueError) as error:
+            log(f'allocation deadline unavailable: {error}')
     os.makedirs(args.work, exist_ok=True)
     slots, summary = [], {'stamp': args.stamp, 'slots': args.slots, 'image': args.image,
                           'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False,

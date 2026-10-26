@@ -67,6 +67,18 @@ def next_unit(inbox):
     return os.path.join(inbox, names[0]) if names else None
 
 
+def process_memory(pid):
+    """Current proportional memory, when /proc permits reading it."""
+    try:
+        with open(f'/proc/{int(pid)}/smaps_rollup') as stream:
+            fields = {line.split(':')[0]: int(line.split()[1])
+                      for line in stream if line.startswith(('Rss:', 'Pss:', 'Private_Clean:', 'Private_Dirty:'))}
+        return {'rss_kb': fields['Rss'], 'pss_kb': fields['Pss'],
+                'private_kb': fields.get('Private_Clean', 0) + fields.get('Private_Dirty', 0)}
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
 def unit_timing(out, work, since, report=None):
     """The same measured phases for completed units and live snapshots."""
     errors = []
@@ -109,6 +121,9 @@ def unit_timing(out, work, since, report=None):
         if float(startup.get('initialization_started_at') or 0) >= since:
             simulation = startup
     if simulation:
+        memory = process_memory(simulation.get('pid'))
+        if memory:
+            simulation['memory'] = memory
         result['simulation'] = simulation
     reconstruction = read(os.path.join(out, 'reconstruction.json'))
     if reconstruction:
@@ -116,6 +131,9 @@ def unit_timing(out, work, since, report=None):
         result['reconstruction'] = dict(startup,
             started_at=reconstruction.get('request_started_at'),
             ended_at=reconstruction.get('request_ended_at'))
+        memory = process_memory(startup.get('pid'))
+        if memory:
+            result['reconstruction']['memory'] = memory
     if errors:
         result['timing_error'] = '; '.join(errors)
     return result
@@ -170,6 +188,8 @@ def run_unit(spec_path, args):
         'EPICPROD_REPORT_ID': f"{env.get('PANDAID') or 'unidentified'}/{uid}",
         'EPICPROD_RECO_HANDOFF': handoff,
         'EPICPROD_SKIP_EVENTS': str(start - 1),
+        'EPICPROD_EVGEN_SOURCE_ID': json.dumps({key: spec['range'].get(key)
+            for key in ('LFN', 'GUID')}, sort_keys=True),
         'EPICPROD_CHUNK_LABEL': label or '',
         'EPICPROD_RECO_SOCKET': sock_path(args),
         'EPICPROD_SIM_SOCKET': f'/tmp/essim-{os.getpid()}.sock',

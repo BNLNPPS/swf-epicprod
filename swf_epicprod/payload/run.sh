@@ -911,7 +911,11 @@ stage simulation start "${EVENTS_PER_TASK:-?} events${GUN_SEED_NOTE}"
       --steeringFile ${INPUT_FILE}
     )
   fi
-  if [ "${EPICPROD_SWITCH_RESIDENT_SIM:-0}" = 1 ] && [ "${EVGEN_GENERATOR:-}" = particle_gun ] && [ -n "${EPICPROD_SIM_SOCKET:-}" ]; then
+  resident_source=0
+  if [ "${EVGEN_GENERATOR:-}" = particle_gun ] || { [ "${EPICPROD_SWITCH_RESIDENT_EVGEN:-0}" = 1 ] && [ "$EXTENSION" = hepmc3.tree.root ]; }; then
+    resident_source=1
+  fi
+  if [ "${EPICPROD_SWITCH_RESIDENT_SIM:-0}" = 1 ] && [ "${resident_source}" = 1 ] && [ -n "${EPICPROD_SIM_SOCKET:-}" ]; then
     # One initialized EIC/DDG4 simulation per ES slot. The resident process
     # finishes this unit's output before the existing reconstruction path.
     python "${SCRIPT_DIR}/es/resident_sim.py" request \

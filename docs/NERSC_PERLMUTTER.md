@@ -159,16 +159,17 @@ CVMFS Apptainer can resolve the account even without the site's NSS service.
 The host account files and numeric identity remain unchanged. A failed host
 lookup stops the launch before dispatch.
 
-Commissioning workers use a forty-five-minute ceiling
+Commissioning workers use a four-hour ceiling
 including staging, clamped to an earlier Slurm end time. HEPiX `shutdowntime` exposes the same
 deadline to the common pilot; its first-job admission minimum is ten minutes.
 A worker takes at most one job and then exits. The initial ES smoke shape is
 20 events, four explicit execution slots and 1,500 MB/core, so whole-node
 memory accounting remains below the node's capacity. The site's existing
 Slurm template is unchanged; the adapter bounds actual worker lifetime.
-The original twenty-minute ceiling was for startup and output-path smoke tests.
-The later four-hour ceiling was replaced to bound the requested roughly
-thirty-minute production demonstration, including staging and final handling.
+The original twenty-minute and later forty-five-minute ceilings served
+startup and short demonstration runs. Resident simulation commissioning
+uses the predictable four-hour allocation; individual canaries retain
+their own shorter payload deadlines.
 
 The first native ES smoke passed on 25 October at 00:40:56 UTC:
 task 41126, job 5904471, worker 21934 (Slurm 60232318), using

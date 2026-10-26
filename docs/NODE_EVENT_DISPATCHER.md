@@ -769,6 +769,45 @@ events, every range reported and done. The pilot's fetch pace on a
 six-core job put the first six units on their cores within four
 seconds of the start.
 
+## Resident simulation with external EVGEN input
+
+`EPICPROD_SWITCH_RESIDENT_SIM=1` together with
+`EPICPROD_SWITCH_RESIDENT_EVGEN=1` enables file-fed simulation through the
+same per-slot resident npsim service as the particle gun. Both switches
+are off by default. The existing staging, reconstruction, rolling closes
+and PanDA range accounting are retained.
+
+Before each request, `es/evgen_ranges.py` uses HepMC3 directly to extract
+the assigned zero-based positions into a small ASCII HepMC3 file. It
+retains complete events, units, topology, attributes, weights and run
+information, and verifies a round trip against canonical event hashes.
+The source reader supports the campaign's HepMC3 ROOT trees and HepMC3
+ASCII. The range manifest records source identity, positions and hashes;
+the simulation reply retains its summary and event-content hash.
+
+`es/evgen_source.py` opens each prepared file independently. It reuses the
+installed DDG4 HepMC3 particle converter and normal primary chain, while
+avoiding framework file switching and seeking. A request can therefore
+move to an earlier range or another input file without rebuilding the
+detector or physics kernel. Original HepMC event numbers become output
+event numbers; a second event-number offset is refused. Random streams
+use the common resident service's request seed, independently of preceding
+requests.
+
+The adapter is attached to the image's existing npsim runner. Creating a
+replacement DDSim runner would discard EIC-specific particle-truth
+configuration. Processing measurements use the common first/last Geant4
+event action, so preprocessing and lazy first-run initialization do not
+become green processing time.
+
+`scripts/validate-resident-evgen.py`, run in the campaign image with
+`--input <source> --work <new evidence directory>`, checks complete input
+content, separated source ranges, seeded replay, one simulation PID,
+original output event numbers, and generated truth and every FULL
+collection size against normal cold npsim. Native ES validation must also
+establish registered, normally readable reconstructed output before
+increasing the number of execution slots.
+
 ## Open questions
 
 - PanDA credit while the job runs: finished ranges are credited at the
