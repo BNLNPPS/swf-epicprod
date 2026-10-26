@@ -157,8 +157,13 @@ Task 41223's last file had no consumer for some hours, for a different reason:
 JEDI's walltime estimate exceeded the queue's `maxtime` until the override.
 
 An uncredited range goes back to the task and is simulated again, so its events
-appear twice. `scripts/es-dedup.py` removes the second copy (below). gRU2
-had 281,529 registered events, 81,529 of them duplicates; gRU1 had 202,407.
+appear twice. `scripts/es-dedup.py` removes the second copy (below). On 26
+October it reduced gRU2 from 281,529 registered events to 200,000 (16 files
+rewritten, 3 detached) and gRU1 from 202,407 to 200,000 (3 rewritten, 3
+detached). Each dataset then held event IDs 0 to 199,999 exactly once, every
+event in the file of the job PanDA credited for it. gOP000004 (task 41230,
+which ran on the first batch pilot) had no duplicates: 500,000 events in 125
+files, each credited once.
 
 Task and job pages show the same per-core harness timeline. Running snapshots
 stop at their observation timestamp; observations older than ten minutes carry
@@ -198,9 +203,19 @@ map to zero-based EventHeader IDs through the payload's `startEvent - 1` offset.
 `decide` assigns each event to one copy. A credited event stays in the file
 of the job PanDA credited for it; an event without credit keeps its first
 copy. `skim` rewrites each file that holds kept and duplicate events,
-through an entry list, and reads the copy back with the normal PODIO reader.
-`apply` registers each clean copy into the same dataset and only then
-detaches the original; without `--execute` it only prints what it would do.
+through an entry list, copying each object once from its newest cycle (a file
+can keep an older cycle of its events tree), and reads the copy back with
+the normal PODIO reader: the exact kept IDs, every collection, and every
+other tree at the source's entry count. `apply` copies each clean copy to its
+deterministic path behind the BNL door with the X.509 proxy, verifies size and
+Adler-32 there, registers it in place into the same dataset through the
+payload registrar's `register_in_place`, and only then detaches the original.
+A detached file leaves the dataset's rule and the RSE's reaper removes it.
+`apply` skips what an earlier run already did; without `--execute` it only
+prints what it would do. Run it in the campaign image with the host's
+`/etc/grid-security/certificates` bound in: the image's own
+`X509_CERT_DIR`, `/opt/local/certificates`, fails the door's TLS handshake.
+Credit is JEDI_Events status 3 or 6.
 Its records are kept under
 `/data/wenauseic/swf-incident-archives/es-dedup-20261026/`.
 
