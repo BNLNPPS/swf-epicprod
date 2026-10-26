@@ -923,6 +923,14 @@ with R resident members shared by all of the job's slots
 - The harness forwards the switch to its slots and ends the members after
   the slots have stopped.
 
+Perlmutter task 41249 (job 6050988; 128 slots, 32 members, resident units,
+5x130 DIS EVGEN) held 135 to 140 GB available once every process was
+resident: simulations at 1.93 GB private, members at 2.5 to 2.9 GB after
+about ten requests, with no further growth. The median wait for a member
+was zero (maximum 52 s). All 34,416 registered events read back against
+their source events. Started together, the 128 simulations took about
+five minutes to their first events, against 70 s for four.
+
 The harness also reads the `EPICPROD_SWITCH_*` settings of the sandbox's
 environment file at its start, where a payload canary's switches travel,
 so a canary can set switches the harness itself reads.
@@ -942,13 +950,23 @@ takes reconstruction off the slot's critical path:
   the unit it holds next. The slot's first unit, which runs run.sh and
   writes the template, stays synchronous.
 - The harness counts a unit in flight until its marker appears, as for any
-  unit, and gives the slot its next unit then. A slot whose simulation
-  finishes before its previous unit's reconstruction waits for that unit.
+  unit. A busy slot receives its next unit only when a whole block is
+  pooled; otherwise the slot waits for that marker before it is fed.
 - A unit's record keeps its own simulation and reconstruction intervals.
   A slot's reconstruction can therefore overlap its next simulation, and
   its wall (`wall_s`) runs from the start of simulation to the handoff.
 - A slot that stops joins its threads first. A slot that is cut ends with
   its threads, so the units in flight are lost, as on a lost node.
+
+Measured on Perlmutter over the same 900 s of steady running (60 s after
+the first events), with 128 slots and 32 members: synchronous resident units
+(task 41249) simulated 87.6% of slot time and 26.6 events/s;
+asynchronous ones (task 41256, which also ran the whole-block prestaging)
+simulated 92.9% and 27.5 events/s. Reconstruction was about 7.5% of slot
+time in both. Of 146 consecutive resident units, 118 began during their
+predecessor's reconstruction; the slot's turnaround from last event to
+next first event was 1.5 s at the tenth percentile and 21 s at the median.
+The remainder is the slot waiting for a whole block while it counts as busy.
 
 ## Multithreading
 
