@@ -179,6 +179,11 @@ and the campaign's ordinary PODIO reader read all 20 distinct event identities
 and all 387 collections. This establishes the short native ES path on
 Perlmutter; it does not establish 26.07.3 gun execution or worker-loss recovery.
 
+An operator submits an Event Service canary from swf-testbed with
+`scripts/submit-es-canary.py --log <file> -- <submit-evgen-task.py arguments>`,
+which runs the deployed submitter with the deployed environment, the
+operator's own token and the internal monitor URL.
+
 Native ES canaries use `submit-evgen-task.py --es-worker-proxy`: the sandbox
 names a local proxy path, and the dispatcher copies the native pilot's existing
 credential into that path on the worker with mode 0600. The live credential is
