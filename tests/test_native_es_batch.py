@@ -65,6 +65,7 @@ class NativeBatchTests(unittest.TestCase):
   with patch.dict(sys.modules,{'yampl':types.SimpleNamespace(ClientSocket=lambda *args:Socket())}):feed=h.ChannelFeed('offline')
   self.assertEqual([feed.ask()['eventRangeID'] for _ in range(256)],ids(1,256))
   self.assertEqual(len(sent),1);self.assertEqual(sent[0],f'Ready for events: {h.REQUEST_RANGES}'.encode());self.assertIsNone(feed.ask())
+  stats=feed.stats();self.assertEqual((stats['requests'],stats['ranges']),(1,256));self.assertIsNotNone(stats['answer_s_median'])
  def test_fragmented_full_buffer_refills_in_one_bounded_batch(self):
   class Feed:
    exhausted=False

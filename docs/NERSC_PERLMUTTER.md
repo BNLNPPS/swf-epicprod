@@ -229,7 +229,10 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   empty cache and answered 256-range requests about once a second, so 104 of
   its 128 slots stood idle and units ran a median 9 events against the 440
   events a second its slots simulate (0.289 s each). The harness asks for
-  512 a request from payload 0.25.28, the batch pilot's limit.
+  512 a request from payload 0.25.28, the batch pilot's limit. From 0.25.29
+  the record's `channel` carries the requests, the ranges and the pilot's
+  answer times (median, 90th percentile, longest of the latest 500), which
+  tell a slow pilot from a harness that asks too slowly.
 - **One report per unit.** The harness reports a completed unit with all of
   its range IDs in one message (up to 512); the pilot packs each unit's record
   once into the stage-out archive and reports finished ranges through the

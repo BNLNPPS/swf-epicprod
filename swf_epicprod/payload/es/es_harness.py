@@ -198,16 +198,33 @@ class ChannelFeed:
         # barrier must read its own reply. Reports need no reply and stay
         # unlocked, so a request waiting on the server never holds them up.
         self.lock = threading.Lock()
+        # How long the pilot takes to answer, and how many ranges it hands:
+        # whether the feed is held by the pilot's answers or by the harness's
+        # own asking (job 6074509: about 250 ranges a second for 440 wanted).
+        self.requests, self.ranges, self.wait_s = 0, 0, 0.0
+        self.answers = deque(maxlen=500)    # (seconds to answer, ranges) of the latest requests
 
     def exchange(self, request):
         with self.lock:
+            asked = time.monotonic()
             self.sock.send_raw(request)
             while True:
                 size, buf = self.sock.try_recv_raw()
                 if size != -1:
                     break
                 time.sleep(0.01)            # the pilot's own message cadence (esmessage.py)
+            self.wait_s += time.monotonic() - asked
+            self.answers.append(time.monotonic() - asked)
         return buf.decode('utf8') if isinstance(buf, bytes) else str(buf)
+
+    def stats(self):
+        """The feed's account for the record: requests, ranges and the
+        pilot's answer times over the latest 500 requests."""
+        recent = sorted(self.answers)
+        pick = (lambda q: round(recent[min(len(recent) - 1, int(q * len(recent)))], 3)) if recent else (lambda q: None)
+        return {'requests': self.requests, 'ranges': self.ranges, 'wait_s': round(self.wait_s, 1),
+                'answer_s_median': pick(0.5), 'answer_s_p90': pick(0.9),
+                'answer_s_max': round(recent[-1], 3) if recent else None}
 
     def barrier(self):
         """Returns once the pilot has handled every report sent before it.
@@ -236,6 +253,8 @@ class ChannelFeed:
         ranges = json.loads(message)
         if isinstance(ranges, dict):
             ranges = [ranges]
+        self.requests += 1
+        self.ranges += len(ranges)
         self.pending.extend(ranges)
         return self.pending.popleft() if self.pending else None
 
@@ -972,6 +991,7 @@ def main():
             'initial_cohort_released': initial_released,
             'initial_units_buffered': len(initial_units),
             'channel_mode': 'batch' if batch_channel else 'legacy',
+            'channel': feed.stats() if hasattr(feed, 'stats') else None,
             'ranges_pooled': len(pool),
             'input_pending': len(getattr(feed, 'pending', ())),
             'report_messages': reported[0],
