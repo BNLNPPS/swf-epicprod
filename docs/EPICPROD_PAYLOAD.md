@@ -837,6 +837,48 @@ checks one PID across successive requests, exact event IDs, seeded replay,
 distinct generated truth, every collection's readability and size, and
 agreement with a cold npsim using the same request-stream seed mode.
 
+## Resident Event Service units
+
+The quantity that matters is a slot's turnaround from the last event of one
+unit to the first event of the next. With residents alone, Google job
+6041910 (14 slots, 250-event units, payload 0.25.11) spent 75 s of each
+106 s unit processing events and about 31 s in run.sh: 17 s before the
+simulation request (environment, landing check, gun steering, report
+uploads at every stage), 5 s between simulation and reconstruction (a ROOT
+open to count events), and 7 s after (validation, metadata, handoff).
+Another 10 s on average passed between units waiting for the harness and
+the range feed.
+
+`EPICPROD_SWITCH_ES_RESIDENT_UNIT=1` (payload 0.25.12, off by default;
+`resident_unit` in a production ES definition, which needs `resident_sim`)
+removes both:
+
+- A slot's first unit runs run.sh and writes the slot's unit template
+  (`unit-template.json`). The template holds the resident request's
+  arguments, the output name and seed run.sh derived for the chunk, the
+  simulated and reconstructed counts, and the handoff's registration terms.
+- Before using the template, the slot recomputes that unit's name, seed and
+  event offset. It keeps every unit on run.sh if they differ from run.sh's
+  own, if the request is not a particle gun, or if FULL output is retained.
+- Later units are one request to the resident simulation, one to the
+  resident EICrecon, and a handoff to the close (`es/resident_unit.py`).
+  Counts are the residents' own: the completed simulation's events and
+  EICrecon's `events_processed`. The close counts its merged file against
+  the units' sum, as for any unit. Each unit record names its path
+  (`unit_path`) and carries the same simulation and reconstruction
+  intervals, so the core plots separate processing from overhead as before.
+- Each slot holds its next unit in its inbox while the current one runs, and
+  starts it as the current one hands off. Near the deadline only idle slots
+  are fed, with units cut to what fits. The harness passes every 0.25 s and
+  slots poll their inbox every 0.1 s.
+
+On npps0 (`scripts/validate-resident-es.py --resident-unit`, one slot,
+5-event units) the three units after the template unit took 1.2 to 1.9 s
+of wall for 0.4 to 1.0 s of simulation events and 0.3 s of reconstruction,
+all on one resident PID. The two closes registered all 20 events, and
+normal 26.07.3 PODIO readback found 20 unique event IDs, 20 distinct
+neutron truth records and all 387 collections.
+
 ## Multithreading
 
 Resident Event Service reconstruction startup uses a PID-based wait by

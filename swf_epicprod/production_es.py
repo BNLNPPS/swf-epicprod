@@ -42,6 +42,10 @@ def definition(settings):
         raise ValueError('production ES fast_merge must be a boolean')
     if 'resident_sim' in cfg and type(cfg['resident_sim']) is not bool:
         raise ValueError('production ES resident_sim must be a boolean')
+    if 'resident_unit' in cfg and type(cfg['resident_unit']) is not bool:
+        raise ValueError('production ES resident_unit must be a boolean')
+    if cfg.get('resident_unit') and not cfg.get('resident_sim'):
+        raise ValueError('production ES resident_unit needs resident_sim')
     if 'close_max_files' in cfg and (type(cfg['close_max_files']) is not int or cfg['close_max_files'] <= 0):
         raise ValueError('production ES close_max_files must be a positive integer')
     return cfg
@@ -81,6 +85,8 @@ def apply(spec, settings):
         prefix['EPICPROD_SWITCH_ES_COHORT_START'] = '1'
     if cfg.get('fast_merge'):
         prefix['EPICPROD_SWITCH_ES_FAST_MERGE'] = '1'
+    if cfg.get('resident_unit'):
+        prefix['EPICPROD_SWITCH_ES_RESIDENT_UNIT'] = '1'
     if cfg.get('close_max_files'):
         prefix['ES_CLOSE_MAX_FILES'] = str(cfg['close_max_files'])
     command = ' '.join(k + '=' + shlex.quote(v) for k, v in prefix.items())

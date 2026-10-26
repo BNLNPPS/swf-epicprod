@@ -230,6 +230,12 @@ class Slot:
         self.range_ids = []
         self.taken_at = None
         self.idle_since = time.time()
+        # Resident units: the slot's next unit waits in its inbox while the
+        # current one runs, so the slot starts it at once on finishing, with
+        # no harness pass or range fetch between the two.
+        self.prestage = getattr(args, 'prestage', False)
+        self.queued = None          # (unit id, range ids, events, range) of the next unit
+        self.given = 0
         runtime = shutil.which('apptainer') or shutil.which('singularity') or \
             '/cvmfs/atlas.cern.ch/repo/containers/sw/apptainer/x86_64-el8/current/bin/apptainer'
         inner = (f"cd {args.sandbox} && python3 {args.payload}/es/es_slot.py "
@@ -244,18 +250,27 @@ class Slot:
         log(f"slot {index} started (pid {self.proc.pid})")
 
     def free(self):
-        return self.unit is None and self.proc.poll() is None
+        if self.proc.poll() is not None:
+            return False
+        return self.unit is None or (self.prestage and self.queued is None)
 
     def give(self, spec):
         uid = spec['unit_id']
-        self.range_ids = [r['eventRangeID'] for r in spec['ranges']]
         tmp = os.path.join(self.inbox, f'.{uid}.tmp')
         with open(tmp, 'w') as f:
             json.dump(spec, f)
-        os.rename(tmp, os.path.join(self.inbox, f'{uid}.unit.json'))
-        self.unit, self.taken_at = uid, time.time()
-        self.unit_events = len(spec['ranges'])
-        self.unit_range = spec['range']
+        # The slot takes its inbox in name order: the order given.
+        self.given += 1
+        os.rename(tmp, os.path.join(self.inbox, f'{self.given:06d}.{uid}.unit.json'))
+        entry = (uid, [r['eventRangeID'] for r in spec['ranges']], len(spec['ranges']), spec['range'])
+        if self.unit is None:
+            self.start(entry, time.time())
+        else:
+            self.queued = entry
+
+    def start(self, entry, at):
+        self.unit, self.range_ids, self.unit_events, self.unit_range = entry
+        self.taken_at = at
 
     def result(self):
         """(unit id, record, ok) when the unit in flight has finished."""
@@ -266,8 +281,12 @@ class Slot:
         if not (os.path.exists(done) or os.path.exists(err)):
             if self.proc.poll() is not None:
                 # Once only: the unit is cleared so it is not reported again
-                # on every pass, and the slot then reads as exited.
+                # on every pass, and the slot then reads as exited. A unit
+                # waiting behind it is reported on the next pass the same way.
                 uid, self.unit = self.unit, None
+                if self.queued:
+                    self.start(self.queued, time.time())
+                    self.queued = None
                 return uid, {'message': f'slot exited {self.proc.returncode} with the unit in flight'}, False
             return None
         record = {}
@@ -279,6 +298,10 @@ class Slot:
         uid = self.unit
         self.unit = None
         self.idle_since = float(record.get('ended_at') or time.time())
+        if self.queued:
+            # The slot went on to it as this one ended.
+            self.start(self.queued, self.idle_since)
+            self.queued = None
         return uid, record, os.path.exists(done)
 
     def stop(self):
@@ -448,8 +471,14 @@ def dispatch_available(slots, pool, per_unit, min_events, input_path, file_path,
                        stamp, max_events=0, fair=False):
     """Feed the longest-idle free slots first when the batch channel is enabled."""
     available = [s for s in slots if s.free()] if max_events >= 0 else []
+    if max_events:
+        # A unit cut to what fits before the margin starts now, not behind
+        # another, so near the deadline only idle slots are fed.
+        available = [s for s in available if s.unit is None]
     if fair:
         available.sort(key=lambda s: s.idle_since)
+    # Idle slots first; a slot's next unit is given after every idle slot has one.
+    available.sort(key=lambda s: s.unit is not None)
     fed = False
     for slot in available:
         members = pool.take_unit(per_unit, min_events=min_events, max_events=max_events)
@@ -568,6 +597,11 @@ def main():
     # when the server runs dry only the units in flight and the last close
     # remain, well inside the pilot's 30 minutes after "No more events".
     batch_channel = os.environ.get('EPICPROD_SWITCH_ES_BATCH_CHANNEL') == '1'
+    resident_units = os.environ.get('EPICPROD_SWITCH_ES_RESIDENT_UNIT') == '1'
+    if resident_units:
+        # The slots' containers start clean: the switch goes as a setting.
+        args.env = (args.env or []) + ['EPICPROD_SWITCH_ES_RESIDENT_UNIT=1']
+        args.prestage = True
     lookahead_slots = args.slots if batch_channel else max(1, args.slots // 4)
     lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD')
                     or lookahead_slots * max(1, args.events_per_unit))
@@ -631,7 +665,8 @@ def main():
             'ranges_pooled': len(pool),
             'input_pending': len(getattr(feed, 'pending', ())),
             'report_messages': reported[0],
-            'idle_slots': sum(s.free() for s in slots),
+            'idle_slots': sum(s.unit is None and s.proc.poll() is None for s in slots),
+            'queued_units': sum(s.queued is not None for s in slots),
             'started_at': started, 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
             'taking': taking,
             'done': [trim_unit(r) for r in list(summary['done'])],
@@ -841,7 +876,9 @@ def main():
             pending, last_close = pending[count:], time.time()
         if drained and not in_flight and not pending and not closes:
             break
-        time.sleep(2)
+        # Resident units take a second or two of their own between requests,
+        # so a two-second pass would be the larger part of a slot's wait.
+        time.sleep(0.25 if resident_units else 2)
     # The pilot takes one report per pass of its loop, ten milliseconds
     # each, and drops what it has not taken when the payload exits (job
     # 3556537: 116 of a close's 326 reports landed); a burst of reports

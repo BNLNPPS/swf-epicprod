@@ -30,6 +30,8 @@ import subprocess
 import sys
 import time
 
+import resident_unit
+
 
 def log(msg):
     print(f"[es_slot {time.strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -192,6 +194,15 @@ def run_unit(spec_path, args):
     })
     if args.input:
         env['EPICPROD_INPUT_LOCAL'] = args.input
+    if handoff and resident_unit.enabled():
+        # Resident units (resident_unit.py): the slot's first unit runs
+        # run.sh and leaves the template; later units go straight to the
+        # residents once the template is checked against run.sh's own.
+        template = resident_unit.load(args.work, log)
+        if template:
+            return run_resident_unit(template, record, chunk, label, start, count, out, env, args)
+        if not os.path.exists(resident_unit.template_path(args.work)):
+            env['EPICPROD_UNIT_TEMPLATE'] = resident_unit.template_path(args.work)
     cmd = [os.path.join(args.payload, 'run.sh'), f"EVGEN/{spec['file_path']}",
            spec['ext'], str(count), chunk]
     log(f"unit {uid}: events {start}-{last} ({len(spec.get('ranges') or [rng])} ranges), chunk {label or chunk}")
@@ -214,7 +225,7 @@ def run_unit(spec_path, args):
                   events_reconstructed=(report.get('events') or {}).get('reconstructed'),
                   dids=dids if not handoff else [],
                   registration=(report.get('registration') or {}).get('outcome'),
-                  handoff=handed,
+                  handoff=handed, unit_path='run.sh',
                   status='ok' if ok else 'error',
                   message='' if ok else f'payload exit {rc}' + ('' if (dids or handed) else ', nothing registered'))
     record.update(unit_timing(out, args.work, record['started_at'], report))
@@ -223,6 +234,38 @@ def run_unit(spec_path, args):
         # reaches the job report and the server: the pilot removes the
         # job directory, logs included, when the job ends.
         record['message'] += failure_detail(out)
+    return uid, record, out
+
+
+def run_resident_unit(template, record, chunk, label, start, count, out, env, args):
+    """A unit through the slot's residents (resident_unit.py), recorded as
+    run_unit records a unit of the run.sh path."""
+    uid = record['unit_id']
+    log(f"unit {uid}: events {start}-{start + count - 1}, chunk {label or chunk}, resident")
+    try:
+        handed = resident_unit.run(template, chunk, label, start, count, out, env,
+                                   os.path.join(unit_tmpdir(args), f'unit-{os.getpid()}-{uid}'))
+        message = ''
+    except (OSError, RuntimeError, ValueError, KeyError) as error:
+        handed, message = None, f'resident unit failed: {error}'
+    ended = time.time()
+    record.update(rc=0 if handed else 1, ended_at=ended,
+                  wall_s=round(ended - record['started_at'], 1),
+                  events_reconstructed=handed['events'] if handed else None,
+                  dids=[], registration='deferred' if handed else None,
+                  handoff=handed, unit_path='resident',
+                  status='ok' if handed else 'error', message=message)
+    record.update(unit_timing(out, args.work, record['started_at'], {}))
+    # The stage intervals the run.sh path's report carries, from the requests.
+    stamp = lambda t: time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(float(t)))  # noqa: E731
+    phases = {}
+    for name, first, last in (('simulation', 'started_at', 'ended_at'),
+                              ('reconstruction', 'started_at', 'ended_at')):
+        part = record.get(name) or {}
+        if part.get(first) and part.get(last):
+            phases[name] = {'started_at': stamp(part[first]), 'ended_at': stamp(part[last])}
+    if phases:
+        record['phases'] = phases
     return uid, record, out
 
 
@@ -279,6 +322,11 @@ def main():
     ap.add_argument('--handoff', action='store_true',
                     help='hand each unit\'s validated RECO to the harness for the close instead of registering it')
     args = ap.parse_args()
+    # The harness's switches arrive as settings: the container starts clean.
+    for kv in args.env or []:
+        key, _, value = kv.partition('=')
+        if key.startswith('EPICPROD_SWITCH_'):
+            os.environ[key] = value
     inbox = os.path.join(args.work, 'inbox')
     os.makedirs(inbox, exist_ok=True)
     os.makedirs(os.path.join(args.work, 'outbox'), exist_ok=True)
@@ -311,7 +359,7 @@ def main():
             if args.idle_exit and time.time() - idle_since > args.idle_exit:
                 log(f"idle {args.idle_exit} s after {done} units; exiting")
                 break
-            time.sleep(1)
+            time.sleep(0.1 if resident_unit.enabled() else 1)
             continue
         uid, record, out = run_unit(spec, args)
         if out is None:

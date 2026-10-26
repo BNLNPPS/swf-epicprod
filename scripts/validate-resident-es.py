@@ -66,6 +66,8 @@ def main():
     parser.add_argument('--template', type=Path)
     parser.add_argument('--stamp', required=True)
     parser.add_argument('--phase', choices=('create', 'read'))
+    parser.add_argument('--resident-unit', action='store_true',
+                        help='EPICPROD_SWITCH_ES_RESIDENT_UNIT=1: units after the first skip run.sh')
     args = parser.parse_args()
     if args.phase:
         return inside(args)
@@ -99,8 +101,11 @@ def main():
         '--summary', str(work / 'es-summary.json'),
         '--env', 'CANARY_OUTPUT_DATASET=TEST/canary/' + args.stamp,
         '--env', 'CANARY_LIFETIME_S=604800']
+    harness_env = dict(os.environ)
+    if args.resident_unit:
+        harness_env['EPICPROD_SWITCH_ES_RESIDENT_UNIT'] = '1'
     with (work / 'harness.log').open('w') as log:
-        subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True, env=harness_env)
     summary = json.loads((work / 'es-summary.json').read_text())
     units = summary['done']
     if summary['failed'] or len(units) != 4 or sum(u['events'] for u in units) != 20:
@@ -116,6 +121,18 @@ def main():
             raise RuntimeError('The unit did not retain its measured processing phases')
     if not summary['closes'] or not all(c.get('ok') for c in summary['closes']):
         raise RuntimeError('A rolling close failed')
+    units.sort(key=lambda u: u['simulation']['sequence'])
+    paths = [u.get('unit_path') for u in units]
+    if args.resident_unit and paths != ['run.sh', 'resident', 'resident', 'resident']:
+        raise RuntimeError(f'Unit paths {paths}: the template did not carry the later units')
+    for unit in units:
+        sim, reco = unit['simulation'], unit['reconstruction']
+        print(json.dumps({'sequence': sim['sequence'], 'path': unit.get('unit_path'),
+                          'wall_s': unit['wall_s'],
+                          'simulation_events_s': round(sim['last_event_at'] - sim['first_event_at'], 2),
+                          'reconstruction_s': round(reco['ended_at'] - reco['started_at'], 2),
+                          'events': unit['events'], 'reconstructed': unit.get('events_reconstructed')}),
+              flush=True)
     subprocess.run(image_command(root, work, helper + ['--phase', 'read']), check=True)
     print(json.dumps({'status': 'passed', 'events': 20, 'units': len(units),
                       'resident_pid': next(iter(pids)), 'dataset': 'epic:/TEST/canary/' + args.stamp}), flush=True)
