@@ -280,6 +280,35 @@ class AllocationDeadlineTest(unittest.TestCase):
         self.assertIn('allocation deadline has already passed', result.stdout + result.stderr)
 
 
+class NodeLossTest(unittest.TestCase):
+    """A controlled preemption takes the pilot and all under it at once."""
+
+    def test_the_pilot_and_everything_under_it_are_killed(self):
+        import subprocess
+        es = os.path.join(HERE, '..', 'swf_epicprod', 'payload', 'es')
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, 'harness.py'), 'w') as f:
+                f.write(f"import sys, subprocess; sys.path.insert(0, {es!r}); import es_harness\n"
+                        "subprocess.Popen(['sleep', '60'])\n"
+                        "es_harness.lose_node()\n")
+            with open(os.path.join(d, 'pilot.py'), 'w') as f:
+                f.write("import subprocess, sys, time\n"
+                        f"subprocess.Popen([sys.executable, {os.path.join(d, 'harness.py')!r}])\n"
+                        "time.sleep(60)\n")
+            pilot = subprocess.Popen([sys.executable, os.path.join(d, 'pilot.py')])
+            self.assertEqual(pilot.wait(timeout=30), -9)
+
+    def test_the_pool_knows_when_it_holds_the_task_first_event(self):
+        with tempfile.TemporaryDirectory() as d:
+            for events, first in (([3, 1, 2], True), ([5, 6], False)):
+                path = os.path.join(d, 'r.json')
+                with open(path, 'w') as f:
+                    json.dump(ranges(events), f)
+                pool = h.Pool(h.FileFeed(path))
+                pool.thread.join(5)
+                self.assertEqual(pool.holds_first, first)
+
+
 class WorkdirGuardTest(unittest.TestCase):
     """Units held before the pilot's work-directory limit kills the job."""
 

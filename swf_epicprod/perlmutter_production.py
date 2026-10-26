@@ -26,13 +26,36 @@ class Closed(Exception):
     """The queue is closed: the cycle ends without a decision to post."""
 
 
-def reserve_sample():
-    return reserve('pOP', EVENTS, SHAPE, QUEUE, MARKER, AUTHORITY)
+def reserve_sample(extra=None):
+    return reserve('pOP', EVENTS, dict(SHAPE, **(extra or {})), QUEUE, MARKER, AUTHORITY)
+
+
+TRIAL_KEYS = ('preempt_at_s', 'preempt_pilot', 'preempt_first_job')
+
+
+def trial():
+    """A controlled preemption waiting for the next submission: SysConfig
+    ``perlmutter_production.trial``, the shape keys it adds to one sample
+    (production_es.py); {} when none is set."""
+    from monitor_app.models import SysConfig
+    value = SysConfig.get_setting('perlmutter_production.trial', {})
+    return {k: v for k, v in value.items() if k in TRIAL_KEYS} if isinstance(value, dict) else {}
+
+
+def shaped(task, extra):
+    """The sample about to go with exactly this submission's trial keys, so a
+    trial whose submission failed never rides a later sample's draft."""
+    es = task.overrides['event_service']
+    want = dict({k: v for k, v in es.items() if k not in TRIAL_KEYS}, **extra)
+    if want != es:
+        task.overrides['event_service'] = want
+        task.save(update_fields=['overrides'])
+    return task
 
 
 def occupancy():
     """The queue's jobs and its other live tasks: anything there holds a new
-    task, so the queue never runs two nodes."""
+    task, so the queue runs one node outside a trial."""
     from django.db import connections
     with connections['panda'].cursor() as cursor:
         cursor.execute('SELECT count(*) FROM doma_panda.jobsactive4 WHERE computingsite=%s', [QUEUE])
@@ -64,7 +87,11 @@ def replenish(created_by='es-closeout'):
         active, task = task_inventory(MARKER, 'Perlmutter')
         jobs, tasks = occupancy()
         result.update(active_tasks=active, queue_jobs=jobs, queue_tasks=tasks)
-        if active or jobs or tasks:
+        # A trial goes in beside the running work, a node of its own, as a
+        # whole production sample: once its first job is cut, the rest of the
+        # sample runs as any other.
+        extra = trial()
+        if (active or jobs or tasks) and not extra:
             result.update(outcome='steady', reason='the node has its work')
         else:
             from pcs import services
@@ -72,8 +99,8 @@ def replenish(created_by='es-closeout'):
             from .front import full_output_rses, output_storage_problem
             from .gke_pilots import settings as gke_settings
             from .perlmutter_pilots import capability
-            task = task or reserve_sample()
-            problem = output_storage_problem(task.get_effective_config(), full_output_rses())
+            task = shaped(task or reserve_sample(extra), extra)
+            problem =output_storage_problem(task.get_effective_config(), full_output_rses())
             if problem:
                 raise RuntimeError(problem)
             spec = build_evgen_task_params(task)
@@ -84,7 +111,11 @@ def replenish(created_by='es-closeout'):
             register_plan(task, gke_settings()['proxy'], MARKER)
             services.prodtask_submit_request(task=task, changed_by='wenaus',
                                              source=MARKER, site=QUEUE)
-            result.update(outcome='submitted', reason='replenished particle-gun work',
+            if extra:
+                SysConfig.update_config({'perlmutter_production.trial': {}}, username=created_by)
+            result.update(outcome='submitted',
+                          reason=f'controlled-preemption trial {extra}' if extra
+                          else 'replenished particle-gun work',
                           task=task.composed_name, events=EVENTS, jobs=1,
                           authority=AUTHORITY)
     except Closed:

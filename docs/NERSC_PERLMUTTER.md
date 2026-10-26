@@ -16,8 +16,10 @@ precedes Perlmutter is [NPPS0_TEST_QUEUE.md](NPPS0_TEST_QUEUE.md).
 
 `NERSC_Perlmutter_epic_es` runs Event Service production on one node
 (Production, below). The ordinary production queue is closed while the m3763
-CPU allocation is above its close threshold (90% used); the ES queue has its
-own floor instead and closes at 200 CPU node-hours left (`nersc.close_at_left_h`).
+CPU allocation is above its close threshold (90% used), and has been off on
+Torre's word since 26 October ("ES is our efficient means of using perl now");
+the ES queue has its own floor instead and closes at 2,656 CPU node-hours left
+(`nersc.close_at_left_h`).
 
 | Queue | Role | Record |
 |---|---|---|
@@ -339,9 +341,10 @@ node, running fresh particle-gun statistics as Google does (decision
 `01a17817-55fd-7551-be68-d05dbb102492`). The queue is `production` in the queue
 registry and in the front's queue list for normal PCS placement; its general
 `front.queue.NERSC_Perlmutter_epic_es.feed` switch stays false. The m3763
-balance closes it at 200 CPU node-hours left rather than at 90% used
-(Torre, 26 October), and reopens it above that; one node uses about 24
-node-hours a day. The ES close-out covers it
+balance closes it at 2,656 CPU node-hours left rather than at 90% used, and
+reopens it above that: 6,000 node-hours were added on 26 October (7,656 left),
+1,000 of them to be left to NERSC, so production uses 5,000 from then (Torre,
+"5k from now"; 200 before). One node uses about 24 node-hours a day. The ES close-out covers it
 (`es_closeout.queues`), so a job that loses its node is credited for its closes
 that stood.
 
@@ -368,6 +371,19 @@ headroom and a fresh read of the launcher's image apply before each
 submission. The cached product `perlmutter_production` and the action records
 of that name show each decision. Setting the switch false stops additions;
 the running job drains.
+
+The next step is five nodes on the preempt QOS, which charges half after a
+job's first two hours, with six-hour jobs and then eight (Torre's mail to
+epic-prod-ops, 26 October); the QOS, the Slurm time limit and the worker count
+are in PanDA operations' harvester. It starts with a controlled preemption:
+SysConfig `perlmutter_production.trial`, the shape keys `preempt_at_s`,
+`preempt_pilot` and `preempt_first_job`, makes the next cycle submit one
+sample beside the running work, a second node, and then clears. Its first job
+cuts itself at `preempt_at_s` (1,200 s: several closes stood, and some not yet
+reported), killing the pilot and everything under it with nothing reported,
+as when a node is taken away (NODE_EVENT_DISPATCHER.md, Preemption, The test);
+the close-out must credit its closes that stood and release the rest, and the
+sample's next job runs whole.
 
 ## The end of a job
 

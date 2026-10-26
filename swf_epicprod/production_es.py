@@ -58,6 +58,13 @@ def definition(settings):
         raise ValueError('production ES reco_async needs resident_unit')
     if 'report_barrier' in cfg and type(cfg['report_barrier']) is not bool:
         raise ValueError('production ES report_barrier must be a boolean')
+    if 'preempt_at_s' in cfg and (type(cfg['preempt_at_s']) is not int or cfg['preempt_at_s'] <= 0):
+        raise ValueError('production ES preempt_at_s must be a positive integer')
+    for key in ('preempt_pilot', 'preempt_first_job'):
+        if key in cfg and type(cfg[key]) is not bool:
+            raise ValueError(f'production ES {key} must be a boolean')
+        if cfg.get(key) and not cfg.get('preempt_at_s'):
+            raise ValueError(f'production ES {key} needs preempt_at_s')
     return cfg
 
 
@@ -107,7 +114,15 @@ def apply(spec, settings):
         prefix['EPICPROD_SWITCH_ES_RECO_ASYNC'] = '1'
     if cfg.get('report_barrier'):
         prefix['EPICPROD_SWITCH_ES_REPORT_BARRIER'] = '1'
-    command = ' '.join(k + '=' + shlex.quote(v) for k, v in prefix.items())
+    if cfg.get('preempt_at_s'):
+        # A controlled preemption (es_harness.py --preempt-at-s): a test of
+        # the close-out of a lost node, never a production shape by itself.
+        prefix['ES_PREEMPT_AT_S'] = str(cfg['preempt_at_s'])
+        if cfg.get('preempt_pilot'):
+            prefix['ES_PREEMPT_PILOT'] = '1'
+        if cfg.get('preempt_first_job'):
+            prefix['ES_PREEMPT_FIRST_JOB'] = '1'
+    command =' '.join(k + '=' + shlex.quote(v) for k, v in prefix.items())
     command += (' python3 evgen_job_dispatcher.py es-production '
                 + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])
                 + ' $PILOT_EVENTRANGECHANNEL --accessmode=direct')

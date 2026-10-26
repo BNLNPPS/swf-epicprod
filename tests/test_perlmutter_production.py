@@ -31,11 +31,39 @@ class ShapeTest(unittest.TestCase):
                        'EPICPROD_SWITCH_ES_REPORT_BARRIER=1'):
             self.assertIn(switch, spec['exec'])
         self.assertEqual(spec['env']['EPICPROD_SWITCH_RESIDENT_SIM'], '1')
+        self.assertNotIn('ES_PREEMPT', spec['exec'])
+
+    def test_a_trial_carries_its_cut_and_a_cut_needs_its_time(self):
+        trial = dict(preempt_at_s=1200, preempt_pilot=True, preempt_first_job=True)
+        spec = apply({'outputs': [{'level': 'RECO', 'dataset': '/RECO/x'}],
+                      'env': {'EVGEN_GENERATOR': 'particle_gun', 'EVGEN_INTERNAL': 'true'},
+                      'containerImage': '/cvmfs/image', 'csvBase': 'c', 'outDS': 'o'},
+                     dict(settings(), **trial))
+        for switch in ('ES_PREEMPT_AT_S=1200', 'ES_PREEMPT_PILOT=1', 'ES_PREEMPT_FIRST_JOB=1'):
+            self.assertIn(switch, spec['exec'])
+        with self.assertRaises(ValueError):
+            definition(dict(settings(), preempt_pilot=True))
+
+    def test_a_draft_takes_exactly_its_submission_trial_keys(self):
+        class Task:
+            saved = 0
+            def save(self, update_fields):
+                Task.saved += 1
+        task = Task()
+        task.overrides = {'event_service': dict(prod.SHAPE, preempt_at_s=1200, preempt_pilot=True)}
+        prod.shaped(task, {})
+        self.assertNotIn('preempt_at_s', task.overrides['event_service'])
+        prod.shaped(task, {'preempt_at_s': 900})
+        self.assertEqual(task.overrides['event_service']['preempt_at_s'], 900)
+        prod.shaped(task, {'preempt_at_s': 900})
+        self.assertEqual(Task.saved, 2)
 
 
 class HoldTest(unittest.TestCase):
-    def replenish(self, active=(), jobs=0, tasks=(), status='production'):
-        with patch('monitor_app.models.SysConfig.get_setting', return_value=True), \
+    def replenish(self, active=(), jobs=0, tasks=(), status='production', trial=None):
+        def setting(key, default=None):
+            return trial or {} if key == 'perlmutter_production.trial' else True
+        with patch('monitor_app.models.SysConfig.get_setting', side_effect=setting), \
              patch('monitor_app.cached_product.get_product'), \
              patch('monitor_app.epicprod_logging.log_epicprod_action') as self.log, \
              patch('swf_epicprod.queues.entries',
@@ -54,6 +82,11 @@ class HoldTest(unittest.TestCase):
         result = self.replenish(status='off')
         self.assertEqual((result['outcome'], result['reason']), ('closed', 'r'))
         self.assertFalse(self.log.call_args.kwargs['live_default'])
+
+    def test_a_trial_goes_in_beside_the_running_work(self):
+        result = self.replenish(jobs=1, tasks=[41299], trial={'preempt_at_s': 1200, 'other': 1})
+        self.assertEqual(result['outcome'], 'held')
+        self.assertIn('reserved', result['reason'])
 
     def test_an_empty_queue_reserves_a_sample(self):
         result = self.replenish()

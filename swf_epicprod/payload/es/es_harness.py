@@ -289,6 +289,54 @@ def kill_group(proc):
         pass
 
 
+def _parent(pid):
+    try:
+        with open(f'/proc/{pid}/stat') as f:
+            return int(f.read().rsplit(')', 1)[1].split()[1])
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def _cmdline(pid):
+    try:
+        with open(f'/proc/{pid}/cmdline', 'rb') as f:
+            return f.read().replace(b'\0', b' ').decode(errors='replace')
+    except OSError:
+        return ''
+
+
+def lose_node():
+    """TEST AND DEMO ONLY (preemption with the pilot): the pilot above this
+    harness, then every process under it, this one last, SIGKILLed, as when a
+    preempted node is taken away: nothing more is reported and the pilot's
+    final update never goes. On Perlmutter no one outside the job can take
+    its node, so a job takes its own (es_closeout.py closes it out)."""
+    pid, pilot = os.getpid(), None
+    while pid > 1 and pilot is None:
+        pid = _parent(pid)
+        if 'pilot.py' in _cmdline(pid):
+            pilot = pid
+    if pilot is None:
+        log('node loss: no pilot among the harness ancestors; the harness alone ends')
+    else:
+        children = {}
+        for name in os.listdir('/proc'):
+            if name.isdigit():
+                children.setdefault(_parent(int(name)), []).append(int(name))
+        tree, stack = [], [pilot]
+        while stack:
+            for child in children.get(stack.pop(), ()):
+                tree.append(child)
+                stack.append(child)
+        log(f'node loss: SIGKILL to pilot {pilot} and {len(tree)} processes under it')
+        for victim in [pilot] + [p for p in tree if p != os.getpid()]:
+            try:
+                os.kill(victim, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
 class Close:
     """One close: the pending units' RECO merged and registered by
     es_close.sh in the image, in the background; the units' ranges are
@@ -489,6 +537,7 @@ class Pool:
         self.demand_batch = demand_batch
         self.demand_to = 0
         self.ranges = []
+        self.holds_first = False            # a range of the task's first event came to this job
         self.cut_count = {}                 # (LFN, block) -> events of that block already cut
         self.lock = threading.Lock()
         self.wanted = threading.Event()     # a free slot found no whole block
@@ -512,6 +561,7 @@ class Pool:
             if rng is None:
                 break
             with self.lock:
+                self.holds_first = self.holds_first or int(rng['startEvent']) == 1
                 bisect.insort(self.ranges, rng,
                               key=lambda r: (r.get('LFN', ''), int(r['startEvent'])))
                 if self.demand_to and len(self.ranges) >= self.demand_to:
@@ -774,6 +824,13 @@ def main():
                          'node: every slot and a running close killed at once, nothing more closed '
                          'or reported; the units cut off and the units whose output never left the '
                          'node are recorded as what was lost')
+    ap.add_argument('--preempt-pilot', action='store_true',
+                    default=os.environ.get('ES_PREEMPT_PILOT') == '1',
+                    help='TEST AND DEMO ONLY: the pilot and all under it go with the node at the cut')
+    ap.add_argument('--preempt-first-job', action='store_true',
+                    default=os.environ.get('ES_PREEMPT_FIRST_JOB') == '1',
+                    help="TEST AND DEMO ONLY: only the job given the task's first event is cut, "
+                         'so the jobs after it run whole')
     args = ap.parse_args()
     # The report key and a canary's switches ride in the sandbox's
     # environment file, which run.sh sources and this process does not.
@@ -1019,7 +1076,8 @@ def main():
             feed.exhausted = True
             pool.clear()
             summary['slots_exited'] = dict(exited)
-        if args.preempt_at_s and time.time() - started >= args.preempt_at_s:
+        if (args.preempt_at_s and time.time() - started >= args.preempt_at_s
+                and (pool.holds_first or not args.preempt_first_job)):
             # TEST AND DEMO ONLY: the node is taken away. What is lost is the
             # processing cut off in the slots, and the units finished since
             # the last close that stood, whose output never left the node
@@ -1048,6 +1106,8 @@ def main():
                 'unshipped_units': len(summary['unshipped']),
                 'unshipped_events': sum(int(r.get('events') or 0) for r in summary['unshipped'])}
             log(f"PREEMPTED at {cut - started:.0f} s: {summary['preempted']}")
+            if args.preempt_pilot:
+                lose_node()
             break
         past_deadline = args.deadline_s and time.time() - started > args.deadline_s - args.margin_s
         if past_deadline and taking:

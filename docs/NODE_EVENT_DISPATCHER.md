@@ -346,7 +346,12 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   SIGKILLs the job's whole pilot pass at once, so nothing is told and
   nothing reports. The earlier harness-level cut (`ES_PREEMPT_AT_S`, test
   only) kills the cores alone and leaves the pilot to report, which a
-  real preemption does not.
+  real preemption does not. With `ES_PREEMPT_PILOT=1` (payload 0.25.26)
+  the cut also SIGKILLs the pilot above the harness and every process
+  under it, for a site where no one outside the job can take its node
+  (Perlmutter, NERSC_PERLMUTTER.md, Production); `ES_PREEMPT_FIRST_JOB=1`
+  limits the cut to the job given the task's first event, so a whole
+  production sample can carry it and its later jobs run whole.
 
 ### Completeness and accounting
 
