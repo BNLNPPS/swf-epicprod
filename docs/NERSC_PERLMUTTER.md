@@ -105,6 +105,13 @@ Undeclared, the pilot's event service stage-out forces the
 `objectstore` copytool (`pilot/api/es_data.py`) and fails against a
 storage that is not an object store.
 
+The shipped `zip_time_gap` is 60 seconds. The generic pilot executor transfers
+its range-report archive on this cadence, independently of the payload's ROOT
+output close. Leaving the inherited 7200-second setting held all but the first
+208 event credits during task 41218's 32-minute run, even though 52,332 events
+were registered and independently readable. This short reporting cadence keeps
+PanDA credit following saved output during a bounded run.
+
 ## Controlling the pilot on the test queue
 
 Production operations owns the pilot launch that runs on
