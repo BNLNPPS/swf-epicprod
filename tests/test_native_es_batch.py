@@ -83,7 +83,7 @@ class NativeBatchTests(unittest.TestCase):
   finally:feed.exhausted=True;pool.wanted.set();pool.thread.join(1)
  def test_fair_dispatch_does_not_starve_higher_numbered_cores(self):
   class Slot:
-   def __init__(self,i):self.index=i;self.idle_since=0;self.given=0
+   def __init__(self,i):self.index=i;self.idle_since=0;self.given=0;self.unit=None
    def free(self):return True
    def give(self,spec):self.given+=1;self.idle_since=tick+1
   class Pool:
