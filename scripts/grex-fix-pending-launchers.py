@@ -94,6 +94,11 @@ for row in rows:
             continue
     if original_hash == replacement_hash and (not archive or archive_hash == args.archive_sha256):
         continue
+    if archive and original_hash == base_hash and archive_hash == args.archive_sha256:
+        existing_helper = sandbox / 'epic-native-pilot.sh'
+        if (existing_helper.is_file() and not existing_helper.is_symlink()
+                and existing_helper.read_bytes() == helper):
+            continue
     if archive and original_hash == replacement_hash:
         staged_archive = sandbox / 'pilot3-native-headroom.tar.gz'
         staged_helper = sandbox / 'epic-native-pilot-headroom.sh'
@@ -136,13 +141,20 @@ for row in rows:
                     staged = destination.with_name('.epicprod-asset-' + uuid.uuid4().hex)
                     staged.write_bytes(data); staged.chmod(0o555)
                     os.replace(str(staged), str(destination))
-            current = subprocess.check_output(['scontrol', 'show', 'job', jid, '-o'], universal_newlines=True, timeout=10)
+            try:
+                current = subprocess.check_output(['scontrol', 'show', 'job', jid, '-o'], universal_newlines=True, timeout=10)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                continue
             if 'JobState=PENDING ' not in current:
                 continue
         temp = path.with_name('.epicprod-launcher-' + uuid.uuid4().hex)
         temp.write_bytes(replacement); temp.chmod(stat.S_IMODE(path.stat().st_mode))
         os.replace(str(temp), str(path))
-        record['slurm_after'] = subprocess.check_output(['scontrol', 'show', 'job', jid, '-o'], universal_newlines=True, timeout=10)
+        record['applied'] = True
+        try:
+            record['slurm_after'] = subprocess.check_output(['scontrol', 'show', 'job', jid, '-o'], universal_newlines=True, timeout=10)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            record['slurm_after_error'] = str(exc)
         (root / (jid + '.json')).write_text(json.dumps(record))
     changed += 1
     print(json.dumps(record), flush=True)
