@@ -43,7 +43,10 @@ composition, admission and submission; registered RECO has normal retention.
 PCS sample identities `gOP000001` onward are the persistent seed ledger.
 Allocation checks every possible range-start seed against the original source
 production and all existing ES samples, including unfinished and paused work
-on Perlmutter. Draft reservations are reused after staging failures and pending
+on Perlmutter. Perlmutter's feeder (`swf_epicprod.perlmutter_production`,
+samples `pOP000001` onward) reserves from the same ledger through the same
+`reserve`; both hold the source production task's row lock (PCS task 8524)
+while they allocate, so neither can reserve the other's seeds. Draft reservations are reused after staging failures and pending
 submissions count against the two-task limit. Unknown PanDA state, paused,
 failed or incomplete terminal tasks hold replenishment for operator review;
 storage headroom and image admission still apply. `google_production` cached
