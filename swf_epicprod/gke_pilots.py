@@ -38,6 +38,7 @@ DEFAULTS = {
     'template': '',
     'max_pods': 0,
     'cpu': '14',
+    'cpu_limit': '15.8',
     'memory': '100Gi',
     'getjobrequests': 5,
     'proxy': '/etc/swf-monitor/longproxy-for-rucio',
@@ -119,7 +120,11 @@ def render_job(template, cfg, name=None):
             vol['secret']['secretName'] = cfg['secret_name']
     container = spec['containers'][0]
     resources = {'cpu': str(cfg['cpu']), 'memory': str(cfg['memory'])}
-    container['resources'] = {'requests': dict(resources), 'limits': dict(resources)}
+    # The request sizes the pod to the node for scheduling; a higher CPU
+    # limit lets the shared reconstruction use what the node's system pods
+    # leave idle (GKE_PILOT_FLOW.md, Settings).
+    limits = dict(resources, cpu=str(cfg.get('cpu_limit') or cfg['cpu']))
+    container['resources'] = {'requests': dict(resources), 'limits': limits}
     queue = cfg['queue']
     runtime = cfg['native_runtime']
     # The same native archive/launcher as production; site settings supply

@@ -33,7 +33,8 @@ events, ten initial 50,000-event jobs, automatic 14-core harness slots,
 250-event units, 300-second closes, a two-hour harness ceiling and a five-minute
 drain margin. From 26 October its tasks declare the fourteen payload cores and
 run resident simulation, resident units, the fast close merge and the report
-barrier (EPICPROD_PAYLOAD.md, Resident Event Service units and Event Service
+barrier, and from 26 October 14:30 ET continuous simulation as on Perlmutter: asynchronous reconstruction on
+three shared EICrecon members (`reco_pool=3`, `reco_async`) using the CPU above the pod's request (`cpu_limit`) (EPICPROD_PAYLOAD.md, Resident Event Service units and Event Service
 closes; NODE_EVENT_DISPATCHER.md for the barrier). The queue's `maxtime` is
 raised on the server so that JEDI's walltime estimate for these tasks never
 excludes it (SCHEDCONFIG_OVERRIDES.md). The worker cap independently limits execution to five nodes
@@ -352,7 +353,8 @@ requested from the PanDA team, regenerates the ranges it left.
 | `namespace` | `default` | where the pods run |
 | `template` | the package's `gke/pilot-job.yaml` | the pod template |
 | `max_pods` | 0 | the most pilot pods alive at once |
-| `cpu`, `memory` | `'14'`, `'100Gi'` | each pod's request and limit |
+| `cpu`, `memory` | `'14'`, `'100Gi'` | each pod's request (and the memory limit); 14 CPUs is what a node's 15.89 allocatable leaves after its system pods' 1.3 to 1.7 |
+| `cpu_limit` | `'15.8'` | each pod's CPU limit, above its request so the shared reconstruction can use the CPU the node's system pods leave idle; the harness still runs 14 slots (`ATHENA_PROC_NUMBER` follows `cpu`) |
 | `getjobrequests` | 5 | job requests before an idle pilot exits |
 | `proxy`, `secret_name` | as above, `epicprod-pilot-proxy` | the credential |
 | `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle; since 2026-10-26 08:07 ET `native-runtime-google-es-batch-7a16c78` (below) |

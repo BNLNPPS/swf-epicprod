@@ -34,10 +34,13 @@ def reserve_sample():
     """Use PCS as the durable seed ledger, retaining completed and paused work."""
     # Resident simulation and units (EPICPROD_PAYLOAD.md, Resident Event
     # Service units); the job declares the pod's fourteen payload cores.
+    # Continuous simulation as on Perlmutter: reconstruction runs off the
+    # slots' critical path on three shared EICrecon members, on the CPU the
+    # pod's limit gives above its fourteen-core request (GKE_PILOT_FLOW.md).
     shape = dict(events_per_job=50000, unit_events=250, close_s=300, deadline_s=7200,
                  margin_s=300, memory_mb_per_core=6000, slots='auto', pilot_cores=14,
                  resident_sim=True, resident_unit=True, fast_merge=True,
-                 report_barrier=True)
+                 report_barrier=True, reco_pool=3, reco_async=True)
     return reserve('gOP', EVENTS, shape, QUEUE, MARKER, AUTHORITY)
 
 
