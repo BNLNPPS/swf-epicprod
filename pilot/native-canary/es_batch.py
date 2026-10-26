@@ -100,6 +100,13 @@ def update_finished(executor, messages, output, size, checksum, storage):
         returned = response.get('Returns') if isinstance(response, dict) else None
         if isinstance(returned, str):
             returned = json.loads(returned)
+        # panda-server commits the range updates, then sets the job's nEvents;
+        # on PostgreSQL that statement's :PandaID bind is missing from its
+        # parameters (:pandaID; task_event_module.py updateEventRanges), and
+        # the handler appends one False after the per-range answers. The
+        # ranges are committed and their answers stand.
+        if isinstance(returned, list) and len(returned) == len(batch) + 1 and returned[-1] is False:
+            returned = returned[:-1]
         if not isinstance(returned, list) or len(returned) != len(batch) or any(v is not True for v in returned):
             raise RuntimeError('PanDA did not acknowledge the entire owned event batch')
     executor.get_job().nevents += len(ranges)
