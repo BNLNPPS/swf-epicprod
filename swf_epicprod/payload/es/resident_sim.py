@@ -106,7 +106,8 @@ def request(args):
             steering += 'from evgen_source import configure\nconfigure(SIM, ' + repr(str(state / 'current-range')) + ')\n'
         (state / 'source.steer').write_text(steering)
         setup = fixed + ['--steeringFile', str(state / 'source.steer'),
-                         '--random.seed', str(payload['seed']), '--numberOfEvents', '1',
+                         '--random.seed', str(payload['seed']), '--numberOfEvents',
+                         '1' if payload['source_mode'] == 'evgen' else '0',
                          '--outputFile', str(state / 'unused.edm4hep.root')]
         write_json(descriptor, {'status': 'starting',
                    'initialization_started_at': time.time(),
