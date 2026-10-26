@@ -890,6 +890,16 @@ removes both:
   `ES_MIN_UNIT_EVENTS` equals its unit (0.25.16). The default close merge,
   `podio-merge-files`, costs 4 to 5 s per file whatever its size, so short
   units let the closes fall behind.
+- A finished unit is reported with its own range IDs and start time, taken
+  before the slot promotes its queued unit (payload 0.25.19). Payloads 0.25.12
+  to 0.25.18 reported the successor's: a slot's first unit was never credited,
+  and each later unit was credited one unit early, before its output was
+  saved. A range left uncredited is simulated again by a later job, so its
+  events are registered twice (GKE_PILOT_FLOW.md, Resident-unit production).
+
+On Google, with the batch channel and the fast merge, the median turnaround is
+0.7 s and fourteen slots keep 93% of the job's core-time in units, 82% in saved
+event processing (job 6056086, 50,000 events in 20 minutes).
 
 On npps0 (`scripts/validate-resident-es.py --resident-unit`, one slot,
 5-event units) the three units after the template unit took 1.2 to 1.9 s

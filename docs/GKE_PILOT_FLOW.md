@@ -32,8 +32,11 @@ committed, adding at most one per cycle. Each has 500,000 fresh neutron-gun
 events, ten initial 50,000-event jobs, automatic 14-core harness slots,
 250-event units, 300-second closes, a two-hour harness ceiling and a five-minute
 drain margin. From 26 October its tasks declare the fourteen payload cores and
-run resident simulation and resident units (EPICPROD_PAYLOAD.md, Resident Event
-Service units). The worker cap independently limits execution to five nodes
+run resident simulation, resident units, the fast close merge and the report
+barrier (EPICPROD_PAYLOAD.md, Resident Event Service units and Event Service
+closes; NODE_EVENT_DISPATCHER.md for the barrier). The queue's `maxtime` is
+raised on the server so that JEDI's walltime estimate for these tasks never
+excludes it (SCHEDCONFIG_OVERRIDES.md). The worker cap independently limits execution to five nodes
 (70 payload cores). Successful tasks are replenished through normal PCS
 composition, admission and submission; registered RECO has normal retention.
 
@@ -113,6 +116,47 @@ This controlled pod loss establishes abrupt worker-loss behavior; it does not
 identify a cloud Spot-reclamation cause or test delivery of a shutdown notice.
 The five-worker cap is unchanged. The later operating transition is described above.
 
+## Resident-unit production (26 October)
+
+Before resident units, a 250-event unit on Google held its core for about
+106 s and processed events for 75 s; the median turnaround between units was
+34 s (job 6041910, payload 0.25.11). With resident simulation, resident units,
+prestaged units, the batch channel and the fast merge, the turnaround is under
+a second:
+
+| Task / job | Turnaround median (90th percentile) | Unit occupancy | Saved processing |
+|---|---|---|---|
+| gRU2 41254 / 6052018 | 0.7 s (1.0 s) over 158 transitions | 75% | 64% |
+| gOP000005 41263 / 6056086 | 0.7 s (0.8 s) over 208 transitions | 93% | 82% |
+
+Both jobs ran 14 cores for 20 minutes. gRU2's 200,000 events took about
+2 h 20 min on the five workers. Job 6056086 saved 50,000 events.
+
+Saved processing is the measured event-processing time of saved units
+divided by the observed core-time (swf-monitor EVENT_SERVICE_PLOTS.md). The
+job page draws each core's units:
+<https://epic-devcloud.org/prod/panda/jobs/6056086/>. None of the 97 Google
+jobs that ended in the 24 hours to 08:00 ET on 26 October failed.
+
+Three defects left events registered in two files:
+
+- the first batch pilot, `711576f9`, re-marked committed ranges failed (03:00
+  to 04:15 ET; Operating limits, below). Fixed in archive `d1538119`;
+- prestaged units were reported with their successor's range IDs (payload
+  0.25.12 to 0.25.18), so a slot's first unit was never credited and later
+  units were credited one unit early. Fixed in payload 0.25.19;
+- the pilot's last range report was lost when the payload exited first
+  (gRU1, job 6050590: 193 events). Feeder tasks since swf-epicprod 7ad0086
+  carry the report barrier, which holds the payload's exit until the pilot
+  has reported; its first Google job is yet to end.
+
+Task 41223's last file had no consumer for some hours, for a different reason:
+JEDI's walltime estimate exceeded the queue's `maxtime` until the override.
+
+An uncredited range goes back to the task and is simulated again, so its events
+appear twice. `scripts/es-dedup.py` removes the second copy (below). gRU2
+had 281,529 registered events, 81,529 of them duplicates; gRU1 had 202,407.
+
 Task and job pages show the same per-core harness timeline. Running snapshots
 stop at their observation timestamp; observations older than ten minutes carry
 a stale warning. An ended job whose harness did not end normally marks its
@@ -144,6 +188,18 @@ the complete task output. Run `--validate MANIFEST --output REPORT` inside the
 matching campaign image. It checks exact coverage, duplicate IDs, generated
 truth and the readable collection schema. PanDA's one-based inclusive ranges
 map to zero-based EventHeader IDs through the payload's `startEvent - 1` offset.
+
+`scripts/es-dedup.py` removes duplicate events from a registered ES dataset.
+`plan` lists the dataset's files and replicas and the task's credited ranges.
+`scan`, run in the campaign image, reads each file's EventHeader IDs, and
+`decide` assigns each event to one copy. A credited event stays in the file
+of the job PanDA credited for it; an event without credit keeps its first
+copy. `skim` rewrites each file that holds kept and duplicate events,
+through an entry list, and reads the copy back with the normal PODIO reader.
+`apply` registers each clean copy into the same dataset and only then
+detaches the original; without `--execute` it only prints what it would do.
+Its records are kept under
+`/data/wenauseic/swf-incident-archives/es-dedup-20261026/`.
 
 ## Why the agent, not Harvester
 
@@ -259,10 +315,10 @@ Secret when the file changes.
 **Preemption.** When a spot node is reclaimed, its pod dies with its
 job. The ES close-out, which lists this queue in `es_closeout.queues`,
 credits the ranges the job finished within minutes
-(NODE_EVENT_DISPATCHER.md, Preemption). The pilot passes finished
-ranges to the server every 601 s, its built-in value, which overrides
-the queue file's `zip_time_gap` (300 s there since 2026-10-01, as on
-`BNL_NPPS_GPU`, with no effect on the cadence). The queue's `jobseed=all`,
+(NODE_EVENT_DISPATCHER.md, Preemption). The batch-channel pilot passes
+finished ranges to the server every 300 s, the interval the controller
+exports (Operating limits). The stock pilot used its built-in 601 s, which
+overrides the queue file's `zip_time_gap`. The queue's `jobseed=all`,
 requested from the PanDA team, regenerates the ranges it left.
 
 ## Settings (SysConfig `gke_pilots.*`)
@@ -279,7 +335,7 @@ requested from the PanDA team, regenerates the ranges it left.
 | `cpu`, `memory` | `'14'`, `'100Gi'` | each pod's request and limit |
 | `getjobrequests` | 5 | job requests before an idle pilot exits |
 | `proxy`, `secret_name` | as above, `epicprod-pilot-proxy` | the credential |
-| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle; since 2026-10-26 04:35 ET `native-runtime-google-es-batch-f48bc53` (below) |
+| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle; since 2026-10-26 08:07 ET `native-runtime-google-es-batch-7a16c78` (below) |
 | `native_image` | `/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable` | the image containing the pilot's Python and the payload |
 | `es_channel` | `.../canary/es-channel-py313-debian13` | the channel matching Python 3.13 in that image |
 | `queuedata` | `.../canary/queuedata/BNL_ePIC_GOOGLE_es.json` | existing ES storage/cadence overrides, preserved from the previous launcher |
@@ -340,10 +396,15 @@ debug pod with that setting started the payload image as uid 1000
 
 ## Operating limits
 
-**The ES batch channel.** Since 2026-10-26 04:35 ET the runtime is
-`native-runtime-google-es-batch-f48bc53`: the launcher and helpers of commit
-f48bc53 with the batch-channel pilot archive `d1538119`, the pilot Perlmutter
-runs (NERSC_PERLMUTTER.md, Bounded ES batch-channel correction). Its manifest declares `es_batch_channel`, and the controller then
+**The ES batch channel.** Since 2026-10-26 08:07 ET the runtime is
+`native-runtime-google-es-batch-7a16c78`: the launcher and helpers of commit
+7a16c78 with the batch-channel pilot archive `26e9264e`, the pilot Perlmutter
+runs (NERSC_PERLMUTTER.md, Controlling the pilot on the test queue). It differs
+from the previous runtime, `native-runtime-google-es-batch-f48bc53` (archive
+`d1538119`, 04:35 to 08:07 ET), only in the archive: the forced stage-out at the
+payload's end reports the last finished ranges without the receipt archive and
+its upload, which lay on the critical path of the job's end. The periodic
+stage-outs keep them. Its manifest declares `es_batch_channel`, and the controller then
 exports `EPICPROD_SWITCH_ES_BATCH_CHANNEL=1` and a 300-second stage-out
 interval to the pod. The pilot fetches 256 ranges per server call, at least
 two seconds apart. The legacy channel fetched twice the core count per call:
