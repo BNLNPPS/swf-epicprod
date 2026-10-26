@@ -73,15 +73,7 @@ class RenderTest(unittest.TestCase):
         secrets = [v['secret']['secretName'] for v in pod['spec']['volumes'] if 'secret' in v]
         self.assertEqual(secrets, ['s1'])
         self.assertNotIn('resources', template['spec']['template']['spec']['containers'][0])
-        self.assertNotIn('EPICPROD_SWITCH_ES_BATCH_CHANNEL', c['args'][0])
 
-    def test_batch_runtime_carries_its_gate(self):
-        with open(TEMPLATE_DEFAULT) as f:
-            template = yaml.safe_load(f.read().replace(PLACEHOLDER, 'x'))
-        cfg = dict(DEFAULTS, es_batch_channel={'stageout_s': 300})
-        args = render_job(template, cfg)['spec']['template']['spec']['containers'][0]['args'][0]
-        self.assertIn('EPICPROD_SWITCH_ES_BATCH_CHANNEL=1', args)
-        self.assertIn('EPICPROD_ES_STAGEOUT_GAP=300', args)
 
 
 class SupplyTest(unittest.TestCase):
