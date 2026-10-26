@@ -11,7 +11,10 @@
 # files merged; exits 0 when the merged file is registered (or its
 # registration is pending on an unreachable catalog, exit 81 of the
 # registrar, which leaves the file home at BNL), nonzero otherwise. The
-# units' files are removed after a registration that stands.
+# units' files and the merged file are removed after a registration that
+# stands: the merged file is then at its RSE, and kept here it would grow
+# the job's work directory by every event saved until the pilot's size
+# limit kills the job (task 41260: about 34 GB at 55 minutes).
 set -uo pipefail
 CLOSE_DIR=$1; NAME=$2; shift 2
 if [ "${1:-}" == --handoffs ]; then
@@ -115,11 +118,11 @@ rucio_auth
 python "${PAYLOAD}/register_to_rucio.py" "${ARGS[@]}"; RC=$?
 if [ ${RC} -eq 0 ]; then
   record registered "$DID" "$EVENTS" 0 ""
-  rm -f "${FILES[@]}"
+  rm -f "${FILES[@]}" "${MERGED}"
   exit 0
 elif [ ${RC} -eq 81 ]; then
   record pending "$DID" "$EVENTS" 81 "catalog unreachable; the file is preserved and its registration owed"
-  rm -f "${FILES[@]}"
+  rm -f "${FILES[@]}" "${MERGED}"
   exit 0
 fi
 record failed "$DID" "$EVENTS" "${RC}" "registrar exit ${RC}"

@@ -149,13 +149,20 @@ batch slot is the whole allocation.
   every core idle from 30 minutes on a 4-hour allocation).
 - **Save as you go.** A close merges the units since the last one,
   copies the file off the node to its storage element (checked for size
-  and checksum), then registers it, then deletes the unit files: output
-  is shipped before it is claimed and claimed as it is made. Closes are
-  short and frequent, so each merge is small and output handling is
-  never bunched at the end; a sudden end loses at most the units since
-  the last close. At about 1,000 events a minute on a 64-core node and
-  a merge rate of 25 to 60 events a second, a close every three minutes
-  keeps each merge to a minute or two.
+  and checksum), then registers it, then deletes the unit files and the
+  merged file: output is shipped before it is claimed and claimed as it
+  is made. Closes are short and frequent, so each merge is small and
+  output handling is never bunched at the end; a sudden end loses at
+  most the units since the last close. At about 1,000 events a minute on
+  a 64-core node and a merge rate of 25 to 60 events a second, a close
+  every three minutes keeps each merge to a minute or two. The job's work
+  directory then holds only what is in flight. Through payload 0.25.17 a
+  close kept its merged file, so the directory grew by every event saved
+  (about 0.5 MB an event for DIS RECO) until the pilot's work-directory
+  limit (the queue's `maxwdir`, 30,000 MB on `NERSC_Perlmutter_epic_es`)
+  killed the payload's process group, the pilot's own included: task
+  41260 lost its worker that way 55 minutes in, at about 34 GB, with
+  no final update from the pilot (exit 137 in the public launch record).
 
 **What is not yet saved as it goes.** PanDA credits a fine-grained
 job's finished ranges at the job's final update: through Perlmutter job
