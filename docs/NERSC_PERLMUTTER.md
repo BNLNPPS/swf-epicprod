@@ -126,8 +126,8 @@ is served from `main`, as everything in this repository is: `main` is what
 runs.
 
 The launcher is a site adapter to the **common native pilot**, using the
-Perlmutter-only `native-runtime-perlmutter-es-batch-afeaebd` bundle and archive
-`98a30c3237d742655faed267bb8f3dbb7ba634c10e08e3b68054e92899075028`.
+Perlmutter-only `native-runtime-perlmutter-es-batch-fbc214c` bundle and archive
+`711576f9bef5516c2c3d95e794dc0738ce23bdb4f4c80750ac95abb15e437b00`.
 It adds bounded batch IPC to the previously approved native baseline. It starts the campaign image's own Python through
 Apptainer, without ALRB. Event Service uses that pilot's generic executor
 and a matching Python 3.13 yampl channel; there is no separate ES pilot fork.
@@ -353,3 +353,12 @@ campaign image, including full information-service configuration, 128 simulated
 slots, exact owned event IDs, bounded API batches and one stored record per unit.
 A new bounded Perlmutter worker-loss and recovery run is still required before
 calling this correction commissioned.
+
+The first batch commissioning task 41226 (`pES5`) exposed an adapter identity
+error: native `JobData` exposes `jobid`, not `pandaid`. First-unit redispatch
+gaps were median 0.91 seconds and maximum 2.4 seconds across 127 cores, but
+completion handling stopped after the first 128-event registered file.
+Those events passed independent PODIO readback and were verified credited
+before obsolete-worker cleanup. The task remains paused. The corrected
+`fbc214c` runtime passed real yampl and actual `JobData` validation; it still
+requires a completed Perlmutter worker-loss test.
