@@ -60,6 +60,9 @@ PILOT_REPORTS_PER_S = 100.0    # the pilot takes one channel message per 10 ms p
 IDLE_TAKE_ANY_S = 2.0          # resident units: an idle slot's wait before it takes any pooled run
 PILOT_SHUTDOWN_GRACE_S = 660   # the pilot's shutdown grace (600 s) and its once-a-minute check
 FINAL_REPORT_S = 120           # the last reports and the pilot's receipt, before that grace
+WORKDIR_HOLD = 0.7             # of the pilot's work-directory limit: no new unit; the closes go at once
+WORKDIR_RESUME = 0.5           # units start again once the closes bring it under this
+WORKDIR_CHECK_S = 60           # the guard's measuring interval
 
 
 def meminfo_kb(field):
@@ -76,6 +79,104 @@ def meminfo_kb(field):
 
 def log(msg):
     print(f"[es_harness {time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+def pilot_workdir_limit(pilot_home):
+    """The pilot's work-directory limit in bytes (pilot/util/monitoring.py,
+    get_max_allowed_work_dir_size): the queue's maxwdir in MB with its
+    pilot_maxwdir_grace percent added (20 unless the queue sets it), from
+    the queuedata the pilot keeps in its home; None when there is none."""
+    try:
+        with open(os.path.join(pilot_home, 'queuedata.json')) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if isinstance(data, dict) and 'maxwdir' not in data:
+        data = next((v for v in data.values() if isinstance(v, dict) and 'maxwdir' in v), {})
+    try:
+        maxwdir = int(data.get('maxwdir'))
+        grace = float((data.get('params') or {}).get('pilot_maxwdir_grace', 20))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return int(maxwdir * 1024 * 1024 * (1 + grace / 100)) if maxwdir > 0 else None
+
+
+def tree_bytes(path):
+    """A directory as the pilot measures it (filehandling.get_disk_usage):
+    the sizes of its files, symbolic links left out."""
+    total = 0
+    for root, _, names in os.walk(path):
+        for name in names:
+            p = os.path.join(root, name)
+            try:
+                if not os.path.islink(p):
+                    total += os.path.getsize(p)
+            except OSError:
+                continue
+    return total
+
+
+class WorkdirGuard:
+    """The job directory measured as the pilot measures it, once a minute in
+    its own thread. Past its limit the pilot kills the whole job (job
+    6071469: closes fell behind the units, 40 GB, killed 20 minutes in);
+    from WORKDIR_HOLD of the limit the harness starts no unit and closes
+    what it holds at once, and starts units again under WORKDIR_RESUME."""
+
+    def __init__(self, job_dir, limit, interval=WORKDIR_CHECK_S):
+        self.job_dir, self.limit, self.interval = job_dir, limit, interval
+        self.size, self.peak, self.held, self.holds = None, 0, False, 0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+
+    @classmethod
+    def from_env(cls):
+        """The guard on the pilot's job directory, PILOT_HOME/PanDA_Pilot-<PANDAID>
+        (pilot/control/job.py); None without a pilot or a limit to read."""
+        home, pandaid = os.environ.get('PILOT_HOME', ''), os.environ.get('PANDAID', '')
+        job_dir = os.path.join(home, f'PanDA_Pilot-{pandaid}') if home and pandaid else ''
+        limit = pilot_workdir_limit(home) if home else None
+        if not (job_dir and os.path.isdir(job_dir) and limit):
+            return None
+        return cls(job_dir, limit)
+
+    def measure(self):
+        with self._lock:
+            self.size = tree_bytes(self.job_dir)
+            self.peak = max(self.peak, self.size)
+            if not self.held and self.size >= WORKDIR_HOLD * self.limit:
+                self.held, self.holds = True, self.holds + 1
+                log(f"work directory {self.size / 1e9:.1f} GB of the pilot's {self.limit / 1e9:.1f} GB "
+                    f"limit: no new unit; closing what is held")
+            elif self.held and self.size < WORKDIR_RESUME * self.limit:
+                self.held = False
+                log(f"work directory {self.size / 1e9:.1f} GB: units start again")
+            return self.size
+
+    def release(self):
+        """Nothing left to close and under the hold: units start again."""
+        with self._lock:
+            self.held = False
+        log(f"work directory {self.size / 1e9:.1f} GB with nothing left to close: units start again")
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                self.measure()
+            except Exception as error:      # a measuring fault never ends the job
+                log(f"work-directory guard: {error}")
+            self._stop.wait(self.interval)
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+
+    def snapshot(self):
+        return {'bytes': self.size, 'peak_bytes': self.peak, 'limit_bytes': self.limit,
+                'held': self.held, 'holds': self.holds}
 
 
 class ChannelFeed:
@@ -718,6 +819,13 @@ def main():
                           'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False,
                           'interrupted': [], 'unshipped': [],
                           'started_at': started}
+    guard = WorkdirGuard.from_env()
+    if guard:
+        log(f"work-directory guard: {guard.job_dir}, units held from "
+            f"{WORKDIR_HOLD * guard.limit / 1e9:.1f} GB of the pilot's {guard.limit / 1e9:.1f} GB limit")
+        guard.start()
+    else:
+        log("work-directory guard: no pilot job directory or limit to read; off")
     input_path = args.input
     # Just in time: a unit ready for a quarter of the slots, the rest pulled
     # as slots free (a pilot fetch is 2 x cores ranges, one round trip). The
@@ -777,6 +885,7 @@ def main():
             'units_awaiting_close': len(pending), 'closes': len(closed),
             'events_closed': sum(c.get('events') or 0 for c in closed if c.get('ok')),
             'ranges_pooled': len(pool), 'reports_to_pilot': reported[0],
+            'workdir': guard.snapshot() if guard else None,
         }
 
     CallHome(default_flag(args.sandbox), status_key(), status).start()
@@ -807,6 +916,7 @@ def main():
             'queued_units': sum(s.queued is not None for s in slots),
             'started_at': started, 'deadline_s': args.deadline_s, 'margin_s': args.margin_s,
             'taking': taking,
+            'workdir': guard.snapshot() if guard else None,
             'done': [trim_unit(r) for r in list(summary['done'])],
             'failed': [trim_unit(r) for r in list(summary['failed'])],
             'closes': [{k: c.get(k) for k in ('index', 'ok', 'outcome', 'events', 'started_at',
@@ -948,6 +1058,23 @@ def main():
             feed.exhausted = True
             pool.clear()
             summary['untaken_at_deadline'] = True
+        held = bool(guard and guard.held)
+        if (held and taking and slots and not pending and not closes
+                and not any(s.unit is not None for s in slots)):
+            # Held with every unit closed: measured again now, what is
+            # still there no close frees (a failed close's files, the
+            # slots' own), so the job ends cleanly rather than idle to its
+            # deadline; its untaken ranges go back to the server.
+            if guard.measure() >= WORKDIR_HOLD * guard.limit:
+                log(f"ERROR: work directory {guard.size / 1e9:.1f} GB with nothing left to close; "
+                    f"taking no further range ({len(pool)} pooled)")
+                taking = False
+                feed.exhausted = True
+                pool.clear()
+                summary['workdir_full'] = guard.snapshot()
+            elif guard.held:
+                guard.release()
+            held = guard.held
         if taking and not slots and pool.first():
             # Every slot starts at once, as soon as the first range names the
             # input file: their start (container, geometry, resident
@@ -963,7 +1090,7 @@ def main():
             log(f"input: {input_path or 'not staged; the payload reads the door per range'}")
             slots = [Slot(i, args, input_path) for i in range(args.slots)]
             log(f"{len(slots)} slots started")
-        if taking and slots:
+        if taking and slots and not held:
             if not initial_released:
                 initial_released = dispatch_initial(
                     slots, pool, initial_units, args.events_per_unit,
@@ -994,7 +1121,7 @@ def main():
             # accepting units, otherwise a busy node can starve stage-out.
             if fed and not args.close_max_files:
                 continue
-        elif taking:
+        elif taking and not held:
             pool.want()                         # nothing pooled yet
         in_flight = [s for s in slots if s.unit is not None]
         # A close: on the cadence, or the last one when nothing else is
@@ -1008,7 +1135,7 @@ def main():
         # the whole pass (job 3809939, node lost 9 minutes in, nothing
         # credited, with the first units done at about 6 minutes).
         started_closes = len(summary['closes']) + len(closes)
-        if pending and len(closes) < args.close_concurrency and (not started_closes
+        if pending and len(closes) < args.close_concurrency and (not started_closes or held
                                        or time.time() - last_close >= args.close_s
                                        or (args.close_max_files and len(pending) >= args.close_max_files)
                                        or (drained and not in_flight)):
@@ -1048,6 +1175,9 @@ def main():
         summary['report_barrier_s'] = round(time.time() - waited, 1)
     else:
         time.sleep(grace)
+    if guard:
+        guard.stop()
+        summary['workdir'] = guard.snapshot()
     for s in slots:
         s.stop()
     for s in slots:

@@ -797,6 +797,18 @@ at once: a close on the cadence starts while earlier ones still register, for
 output faster than one close carries (Perlmutter gun RECO, 78 MB/s against
 about 35 MB/s a close). The first close still goes as soon as a unit hands
 over.
+The work-directory guard (payload 0.25.25) measures the pilot's job
+directory, `PILOT_HOME/PanDA_Pilot-<PANDAID>`, once a minute as the pilot
+does (file sizes, symbolic links left out), against the pilot's own limit:
+the queue's `maxwdir` from the `queuedata.json` in the pilot's home, plus
+its `pilot_maxwdir_grace` (20%), 188.7 GB on Perlmutter. From 70% of it the
+harness starts no unit and closes what it holds at once; units start again
+under 50%. Held with every unit closed, it measures again, and a directory
+still at 70% (a failed close's files, the slots' own) ends the job cleanly,
+its untaken ranges back to the server, instead of the pilot killing it
+(job 6071469). Without a pilot home or a limit to read the guard is off. Its
+state rides in the record, the call-home status and the summary as
+`workdir`.
 Close input paths travel in a manifest rather than one shell argument.
 The shipped ES record includes the active close's stage and merged bytes,
 so a stalled merge can be distinguished from validation or registration.

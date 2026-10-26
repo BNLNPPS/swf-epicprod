@@ -280,6 +280,65 @@ class AllocationDeadlineTest(unittest.TestCase):
         self.assertIn('allocation deadline has already passed', result.stdout + result.stderr)
 
 
+class WorkdirGuardTest(unittest.TestCase):
+    """Units held before the pilot's work-directory limit kills the job."""
+
+    def pilot(self, d, queuedata):
+        with open(os.path.join(d, 'queuedata.json'), 'w') as f:
+            json.dump(queuedata, f)
+        job = os.path.join(d, 'PanDA_Pilot-42')
+        os.makedirs(job)
+        return job
+
+    def fill(self, job, name, mb):
+        with open(os.path.join(job, name), 'wb') as f:
+            f.write(b'\0' * int(mb * 1024 * 1024))
+
+    def test_the_limit_is_maxwdir_with_the_pilot_grace(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.pilot(d, {'maxwdir': 150000})
+            self.assertEqual(h.pilot_workdir_limit(d), int(150000 * 1024 * 1024 * 1.2))
+        with tempfile.TemporaryDirectory() as d:
+            self.pilot(d, {'Q': {'maxwdir': 100, 'params': {'pilot_maxwdir_grace': 50}}})
+            self.assertEqual(h.pilot_workdir_limit(d), 150 * 1024 * 1024)
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(h.pilot_workdir_limit(d))
+
+    def test_holds_at_the_hold_level_and_resumes_under_the_resume_level(self):
+        with tempfile.TemporaryDirectory() as d:
+            job = self.pilot(d, {'maxwdir': 10, 'params': {'pilot_maxwdir_grace': 0}})
+            env = {'PILOT_HOME': d, 'PANDAID': '42'}
+            old = {k: os.environ.get(k) for k in env}
+            os.environ.update(env)
+            try:
+                guard = h.WorkdirGuard.from_env()
+            finally:
+                for k, v in old.items():
+                    os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+            self.assertEqual(guard.job_dir, job)
+            self.fill(job, 'a', 6)
+            guard.measure()
+            self.assertFalse(guard.held)
+            self.fill(job, 'b', 1.5)
+            os.symlink(os.path.join(job, 'a'), os.path.join(job, 'link'))   # not counted, as the pilot
+            guard.measure()
+            self.assertTrue(guard.held)
+            os.remove(os.path.join(job, 'b'))
+            guard.measure()
+            self.assertTrue(guard.held, 'between the levels the hold stands')
+            os.remove(os.path.join(job, 'a'))
+            guard.measure()
+            self.assertFalse(guard.held)
+            self.assertEqual(guard.snapshot()['holds'], 1)
+
+    def test_off_without_a_pilot(self):
+        old = {k: os.environ.pop(k, None) for k in ('PILOT_HOME', 'PANDAID')}
+        try:
+            self.assertIsNone(h.WorkdirGuard.from_env())
+        finally:
+            os.environ.update({k: v for k, v in old.items() if v is not None})
+
+
 if __name__ == '__main__':
     unittest.main()
 

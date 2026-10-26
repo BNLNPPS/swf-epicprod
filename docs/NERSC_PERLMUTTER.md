@@ -394,7 +394,10 @@ Two limits end a job without its pilot's final report:
   while its ranges were starved (The batch pilot, Ranges in bulk) and was
   killed 20 minutes in at 40 GB, with 14,438 events awaiting a close; the
   10,212 events of its two registered closes were credited, and its other
-  ranges returned to the task.
+  ranges returned to the task. The harness now guards the directory
+  (payload 0.25.25; EPICPROD_PAYLOAD.md, Event Service closes): from 70% of the
+  pilot's limit it starts no unit and closes what it holds, so a slow close
+  costs node time rather than the job.
 - **The record.** The harness's shipped record allows 1,500 writes per job;
   at 128 slots one write per finished unit would reach it after about two
   hours, and the record would then stand still to the end. Writes are now
