@@ -645,6 +645,12 @@ On the corrected runtime the pilot tree is in worker `/tmp`, which on
 GREX is a per-job Slurm container directory that Slurm removes with the
 job, so relocation leaves nothing behind on the nodes.
 
+The drain completed at 08:15 ET on 26 October, when no earlier-runtime
+allocation remained. The spool then had 176.6 GiB free. No GREX job had
+failed with pilot error 1098 since 01:59 ET; 7,144 finished and 808 failed
+for other causes between 02:00 and 08:15 ET. The queued-worker limit stays
+at 50, since idle queued allocations hold space on the same spool.
+
 ## GREX Event Service channel
 
 The Python 3.13 channel is published beside the existing Python 3.11
