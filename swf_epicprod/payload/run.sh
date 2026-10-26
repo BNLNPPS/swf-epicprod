@@ -953,6 +953,7 @@ if [ -n "${EPICPROD_RECO_SOCKET:-}" ]; then
   {
     date
     if [ ! -S "${EPICPROD_RECO_SOCKET}" ]; then
+      reco_initialization_started=$(date +%s.%N)
       echo "starting the resident eicrecon on ${EPICPROD_RECO_SOCKET}"
       resident_wait=()
       [ "${EPICPROD_SWITCH_RESIDENT_PID_WAIT:-1}" != 1 ] || resident_wait=(--wait)
@@ -980,10 +981,14 @@ if [ -n "${EPICPROD_RECO_SOCKET:-}" ]; then
       done
       [ -S "${EPICPROD_RECO_SOCKET}" ] || { echo "ERROR: resident eicrecon gave no socket in ${EPICPROD_RECO_STARTUP_S:-600} s"; tail -20 "${EPICPROD_RECO_SOCKET}.log"; exit 86; }
       echo "resident eicrecon up after ${i} s"
+      if [ -n "${EPICPROD_RECO_STATE:-}" ]; then
+        python -c 'import json,sys,time; json.dump(dict(pid=int(sys.argv[1]), initialization_started_at=float(sys.argv[2]), initialized_at=time.time()), open(sys.argv[3], "w"))' \
+          "${resident_pid}" "${reco_initialization_started}" "${EPICPROD_RECO_STATE}"
+      fi
     fi
     python "${SCRIPT_DIR}/es/zmq_request.py" "${EPICPROD_RECO_SOCKET}" \
       "{\"input_file\": \"$(realpath ${FULL_TEMP}/${TASKNAME}.edm4hep.root)\", \"output_file\": \"$(realpath ${RECO_TEMP})/${TASKNAME}.eicrecon.edm4eic.root\", \"nskip\": 0, \"nevents\": ${FULL_EVENTS:-${EVENTS_PER_TASK}}, \"run_id\": \"${TASKNAME}\"}" \
-      | tee "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json"
+      "${EPICPROD_RECO_REPLY:-}" | tee "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json"
     grep -q '"status": *"completed"' "${LOG_TEMP}/${TASKNAME}.eicrecon.reply.json" \
       || { echo "ERROR: resident eicrecon did not complete the range"; exit 86; }
     ls -al ${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root

@@ -108,6 +108,12 @@ def main():
     pids = {u['simulation']['pid'] for u in units}
     if len(pids) != 1 or sorted(u['simulation']['sequence'] for u in units) != [1, 2, 3, 4]:
         raise RuntimeError('The harness did not reuse its resident simulation')
+    for unit in units:
+        sim = unit['simulation']
+        if not sim['started_at'] <= sim['first_event_at'] <= sim['last_event_at'] <= sim['ended_at']:
+            raise RuntimeError('Simulation event boundaries are not ordered')
+        if not unit.get('reconstruction', {}).get('started_at') or not unit.get('phases'):
+            raise RuntimeError('The unit did not retain its measured processing phases')
     if not summary['closes'] or not all(c.get('ok') for c in summary['closes']):
         raise RuntimeError('A rolling close failed')
     subprocess.run(image_command(root, work, helper + ['--phase', 'read']), check=True)

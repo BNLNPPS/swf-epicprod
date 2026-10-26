@@ -67,6 +67,60 @@ def next_unit(inbox):
     return os.path.join(inbox, names[0]) if names else None
 
 
+def unit_timing(out, work, since, report=None):
+    """The same measured phases for completed units and live snapshots."""
+    errors = []
+
+    def read(path):
+        try:
+            with open(path) as stream:
+                return json.load(stream)
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as error:
+            errors.append(f'{path}: {error}')
+            return {}
+
+    result = {}
+    if report is None:
+        report = read(os.path.join(out, 'payload-report.json'))
+    phases = {name: {key: stage.get(key) for key in ('started_at', 'ended_at')}
+              for name, stage in (report.get('stages') or {}).items()
+              if name in ('simulation', 'reconstruction') and stage.get('started_at')}
+    if phases:
+        result['phases'] = phases
+    simulation = read(os.path.join(out, 'simulation.json'))
+    if not simulation:
+        simulation = read(os.path.join(work, 'simulation', 'request.json'))
+        if float(simulation.get('started_at') or 0) < since:
+            simulation = {}
+        if simulation:
+            try:
+                with open(os.path.join(work, 'simulation', 'first-event.txt')) as stream:
+                    first = float(stream.read())
+                if first > 0:
+                    simulation['first_event_at'] = first
+            except FileNotFoundError:
+                pass
+            except (OSError, ValueError) as error:
+                errors.append(str(error))
+    if not simulation:
+        startup = read(os.path.join(work, 'simulation', 'resident.json'))
+        if float(startup.get('initialization_started_at') or 0) >= since:
+            simulation = startup
+    if simulation:
+        result['simulation'] = simulation
+    reconstruction = read(os.path.join(out, 'reconstruction.json'))
+    if reconstruction:
+        startup = read(os.path.join(work, 'reconstruction-startup.json'))
+        result['reconstruction'] = dict(startup,
+            started_at=reconstruction.get('request_started_at'),
+            ended_at=reconstruction.get('request_ended_at'))
+    if errors:
+        result['timing_error'] = '; '.join(errors)
+    return result
+
+
 def run_unit(spec_path, args):
     with open(spec_path) as f:
         spec = json.load(f)
@@ -121,6 +175,8 @@ def run_unit(spec_path, args):
         'EPICPROD_SIM_SOCKET': f'/tmp/essim-{os.getpid()}.sock',
         'EPICPROD_SIM_STATE': os.path.join(args.work, 'simulation'),
         'EPICPROD_SIM_REPLY': os.path.join(out, 'simulation.json'),
+        'EPICPROD_RECO_STATE': os.path.join(args.work, 'reconstruction-startup.json'),
+        'EPICPROD_RECO_REPLY': os.path.join(out, 'reconstruction.json'),
         'REGISTRATION_STAGGER_MAX_S': '0',
         'EPICPROD_CALL_HOME': '0',          # the harness calls home for the job
         'EPICPROD_NTHREADS': '1',           # the slots are the job's parallelism
@@ -161,9 +217,7 @@ def run_unit(spec_path, args):
                   handoff=handed,
                   status='ok' if ok else 'error',
                   message='' if ok else f'payload exit {rc}' + ('' if (dids or handed) else ', nothing registered'))
-    if os.path.isfile(env['EPICPROD_SIM_REPLY']):
-        with open(env['EPICPROD_SIM_REPLY']) as stream:
-            record['simulation'] = json.load(stream)
+    record.update(unit_timing(out, args.work, record['started_at'], report))
     if not ok:
         # The payload's own account travels with the range's record, which
         # reaches the job report and the server: the pilot removes the

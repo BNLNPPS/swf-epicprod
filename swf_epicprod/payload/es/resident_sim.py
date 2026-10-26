@@ -127,7 +127,10 @@ def request(args):
 
 def serve(args):
     import DDG4
+    import ROOT
     DDG4.import_geant4_class('G4RunManager', 'G4RunManager.hh')
+    if not ROOT.gInterpreter.Declare('#include "' + str(Path(__file__).with_name('resident_timing.h')) + '"'):
+        raise RuntimeError('Cannot load the resident event-timing action')
     state = Path(args.state_dir)
     descriptor = state / 'resident.json'
     info = json.loads(descriptor.read_text())
@@ -140,6 +143,8 @@ def serve(args):
             raise RuntimeError('The configured npsim EDM4hep output action is missing')
         handle.UI = ''
         random = DDG4.Sim.Geant4Random.instance()
+        timing = ROOT.epicprod.installTiming(kernel)
+        ROOT.SetOwnership(timing, False)
         header = dict(DDG4._evalProperty(DDG4.Interface.getProperty(output, 'RunHeader').data))
 
         def set_property(name, value):
@@ -186,6 +191,13 @@ def serve(args):
                              '--outputFile', path])
                         set_property('RunHeader', request_header)
                         random.setSeed(seed)
+                        marker = state / 'first-event.txt'
+                        marker.write_text('0\n')
+                        timing.reset(str(marker))
+                        progress = dict(payload, pid=os.getpid(), sequence=sequence + 1,
+                                        initialization_started_at=launched_at,
+                                        initialized_at=info['initialized_at'], started_at=started_at)
+                        write_json(state / 'request.json', progress)
                         # Request identity and random stream must not depend on
                         # the number of requests previously handled by this slot.
                         kernel.runManager().SetRunIDCounter(0)
@@ -199,10 +211,13 @@ def serve(args):
                                      initialization_started_at=launched_at,
                                      initialized_at=info['initialized_at'],
                                      started_at=started_at, ended_at=time.time(),
+                                     first_event_at=float(timing.first) or None,
+                                     last_event_at=float(timing.last) or None,
                                      cpu_s=time.process_time() - cpu_started,
                                      resident_peak_rss_kb=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
                         info['requests'] = sequence
                         write_json(descriptor, info)
+                        write_json(state / 'request.json', reply)
                     except Exception as error:
                         info.update(status='failed', error=str(error))
                         write_json(descriptor, info)

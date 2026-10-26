@@ -52,6 +52,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from call_home import CallHome, default_flag, load_job_env, status_key  # noqa: E402
 from es_record import RecordOut, trim_unit  # noqa: E402
+from es_slot import unit_timing  # noqa: E402
 
 
 PILOT_REPORTS_PER_S = 100.0    # the pilot takes one channel message per 10 ms pass (esmessage.py)
@@ -643,6 +644,7 @@ def main():
                                for u in list(pending) + [u for c in running for u in c.units]],
             'in_flight': [{'unit_id': s.unit, 'slot': s.index, 'started_at': s.taken_at,
                            'events': s.unit_events,
+                           **unit_timing(os.path.join(s.outbox, s.unit), s.work, s.taken_at),
                            'range': {'startEvent': s.unit_range.get('startEvent'),
                                      'lastEvent': s.unit_range.get('lastEvent')}}
                           for s in list(slots) if s.unit is not None],
