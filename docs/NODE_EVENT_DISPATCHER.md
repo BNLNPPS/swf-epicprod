@@ -804,7 +804,8 @@ retains complete events, units, topology, attributes, weights and run
 information, and verifies a round trip against canonical event hashes.
 The source reader supports the campaign's HepMC3 ROOT trees and HepMC3
 ASCII. The range manifest records source identity, positions and hashes;
-the simulation reply retains its summary and event-content hash.
+the simulation reply retains its summary and event-content hash, and the
+range file and manifest are removed once the request completes.
 
 `es/evgen_source.py` opens each prepared file independently. It reuses the
 installed DDG4 HepMC3 particle converter and normal primary chain, while

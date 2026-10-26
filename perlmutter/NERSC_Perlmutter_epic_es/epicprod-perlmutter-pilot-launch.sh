@@ -291,5 +291,14 @@ if (( rc != 0 )); then
         | grep -E '^ePIC native pilot(:| startup failed)|^ModuleNotFoundError:|^(FATAL|ERROR|WARNING)[ :]|^(unshare|mount|apptainer):' \
         | tail -12 || true
 fi
+# The pilot's steps between the payload's end and its own exit, which decide
+# how long the node stays allocated after the work (docs/NERSC_PERLMUTTER.md,
+# The end of a job): selected timestamped step lines, nothing credential-like.
+log "native pilot end of job:"
+sed -r 's/\x1B\[[0-9;]*[[:alpha:]]//g' native-pilot-console.log \
+    | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:,]+ \|' \
+    | grep -E 'ESProcess finished|tar/zip event ranges|stag(ing|ed) output file|failed to stage out|ES generic executor finished|final server update|this job has now completed|report files in Harvester mode|proceeding with|thread has finished|clean|work dir|pilot has finished|exit code' \
+    | grep -viE 'token|secret|passw|authori|bearer|x509|proxy|cert|pre-merge' \
+    | sed -r 's/[A-Za-z0-9+\/=_-]{40,}/<long value>/g' | cut -c1-200 | tail -60 || true
 log "native pilot finished with code $rc"
 exit "$rc"

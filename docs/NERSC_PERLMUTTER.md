@@ -263,6 +263,17 @@ the worker found it, whatever the verdict. A payload canary on
 `NERSC_Perlmutter_epic_es` every twelve hours is the standing reading
 of the Perlmutter pool until production runs the launcher.
 
+## The end of a job
+
+A worker's allocation lasts until its pilot exits. In task 41256 the ES
+harness ended at 08:04:18 UTC, PanDA recorded the job's end at 08:09:52,
+and the launcher reported the pilot's exit at 08:12:15 (launch record of
+worker 21955): eight minutes with all 128 cores idle, about 3% of a
+four-hour allocation. The pilot's own log stays private, so after the
+pilot exits the launcher appends its end-of-job step lines to the public
+launch record: timestamped step messages only, with anything credential-like
+removed.
+
 ## Canary probes at the site
 
 A landing probe on Perlmutter is a whole-node Slurm allocation: the

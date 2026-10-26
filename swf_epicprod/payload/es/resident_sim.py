@@ -260,6 +260,12 @@ def serve(args):
                         info['requests'] = sequence
                         write_json(descriptor, info)
                         write_json(state / 'request.json', reply)
+                        if input_range:
+                            # The reply keeps the range's identity and hashes;
+                            # the file would only grow the job's work directory
+                            # (the reader holds it open until the next range).
+                            for done_with in (range_file, Path(str(range_file) + '.json')):
+                                done_with.unlink(missing_ok=True)
                     except Exception as error:
                         info.update(status='failed', error=str(error))
                         write_json(descriptor, info)
