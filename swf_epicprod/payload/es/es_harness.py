@@ -60,6 +60,12 @@ PILOT_REPORTS_PER_S = 100.0    # the pilot takes one channel message per 10 ms p
 IDLE_TAKE_ANY_S = 2.0          # resident units: an idle slot's wait before it takes any pooled run
 PILOT_SHUTDOWN_GRACE_S = 660   # the pilot's shutdown grace (600 s) and its once-a-minute check
 FINAL_REPORT_S = 120           # the last reports and the pilot's receipt, before that grace
+# Ranges per request on the batch channel: the most the batch pilot hands in
+# one answer (es_batch.MAX_MESSAGE_RANGES). The pilot answers about once a
+# second, so 256 a request held Perlmutter job 6074509 to about 250 ranges a
+# second against the 440 its 128 slots simulate: 104 slots idle, units of 9
+# events.
+REQUEST_RANGES = 512
 WORKDIR_HOLD = 0.7             # of the pilot's work-directory limit: no new unit; the closes go at once
 WORKDIR_RESUME = 0.5           # units start again once the closes bring it under this
 WORKDIR_CHECK_S = 60           # the guard's measuring interval
@@ -223,7 +229,7 @@ class ChannelFeed:
             return self.pending.popleft()
         if self.exhausted:
             return None
-        message = self.exchange(b'Ready for events: 256' if self.batch else b'Ready for events')
+        message = self.exchange(f'Ready for events: {REQUEST_RANGES}'.encode() if self.batch else b'Ready for events')
         if "No more events" in message:
             self.exhausted = True
             return None
@@ -909,7 +915,7 @@ def main():
     lookahead_slots = args.slots if batch_channel else max(1, args.slots // 4)
     lookahead = int(os.environ.get('ES_POOL_LOOKAHEAD')
                     or lookahead_slots * max(1, args.events_per_unit))
-    pool = Pool(feed, lookahead=lookahead, demand_batch=256 if batch_channel else 1)
+    pool = Pool(feed, lookahead=lookahead, demand_batch=REQUEST_RANGES if batch_channel else 1)
     pending, closes, last_close = [], [], time.time()     # units handed over, awaiting a close
     taking = True                                          # False past the deadline's margin
     initial_units = []

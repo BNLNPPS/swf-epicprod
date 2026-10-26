@@ -26,6 +26,7 @@ class NativeBatchTests(unittest.TestCase):
   with patch.dict(os.environ,{'EPICPROD_ES_STAGEOUT_GAP':''}):self.assertEqual(b.stageout_gap(),601)
  def test_bounded_requests_and_legacy_default(self):
   self.assertEqual(b.request_count('Ready for events: 256'),256)
+  self.assertEqual(b.request_count(f'Ready for events: {h.REQUEST_RANGES}'),h.REQUEST_RANGES)
   for s in ['Ready for events: 0','Ready for events: 513']:
    with self.assertRaises(ValueError):b.request_count(s)
   with patch.dict(os.environ,{'EPICPROD_SWITCH_ES_BATCH_CHANNEL':'0'}):self.assertEqual(b.request_count('Ready for events'),1)
@@ -63,7 +64,7 @@ class NativeBatchTests(unittest.TestCase):
    def try_recv_raw(self):r=responses.pop(0);return len(r),r
   with patch.dict(sys.modules,{'yampl':types.SimpleNamespace(ClientSocket=lambda *args:Socket())}):feed=h.ChannelFeed('offline')
   self.assertEqual([feed.ask()['eventRangeID'] for _ in range(256)],ids(1,256))
-  self.assertEqual(len(sent),1);self.assertEqual(sent[0],b'Ready for events: 256');self.assertIsNone(feed.ask())
+  self.assertEqual(len(sent),1);self.assertEqual(sent[0],f'Ready for events: {h.REQUEST_RANGES}'.encode());self.assertIsNone(feed.ask())
  def test_fragmented_full_buffer_refills_in_one_bounded_batch(self):
   class Feed:
    exhausted=False

@@ -27,7 +27,7 @@ class ShapeTest(unittest.TestCase):
                        'ES_DEADLINE_S=14100', 'ES_MARGIN_S=600',
                        'EPICPROD_SWITCH_ES_BATCH_CHANNEL=1', 'EPICPROD_SWITCH_ES_COHORT_START=1',
                        'EPICPROD_SWITCH_ES_FAST_MERGE=1', 'EPICPROD_SWITCH_ES_RESIDENT_UNIT=1',
-                       'EPICPROD_SWITCH_ES_RECO_POOL=32', 'EPICPROD_SWITCH_ES_RECO_ASYNC=1',
+                       'EPICPROD_SWITCH_ES_RECO_POOL=48', 'EPICPROD_SWITCH_ES_RECO_ASYNC=1',
                        'EPICPROD_SWITCH_ES_REPORT_BARRIER=1'):
             self.assertIn(switch, spec['exec'])
         self.assertEqual(spec['env']['EPICPROD_SWITCH_RESIDENT_SIM'], '1')

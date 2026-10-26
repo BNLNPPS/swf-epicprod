@@ -218,12 +218,18 @@ module and builder ([GKE_PILOT_FLOW.md](GKE_PILOT_FLOW.md)). The batch
 behaviour lives in `pilot/native-canary/es_batch.py`, gated by
 `EPICPROD_SWITCH_ES_BATCH_CHANNEL=1`, which the launcher exports:
 
-- **Ranges in bulk.** One IPC request takes up to 256 ranges from the pilot's
+- **Ranges in bulk.** One IPC request takes up to 512 ranges from the pilot's
   cache; an empty cache is refilled by one server acquisition of eight ranges
   per core, at most one every two seconds (`es_batch.acquire_count`), so up to
   about 1,000 ranges a second on 256 cores. One per core held the first
   production job (6071469) to about 100 a second: 5-event units, a fifth of
-  the rate of 128 slots of 0.26 s gun events.
+  the rate of 128 slots of 0.26 s gun events. Eight per core still left job
+  6074509 (task 41299) at about 250 a second: the server answered each
+  2,048-range acquisition in 0.2 s, contiguous, but the pilot refills only an
+  empty cache and answered 256-range requests about once a second, so 104 of
+  its 128 slots stood idle and units ran a median 9 events against the 440
+  events a second its slots simulate (0.289 s each). The harness asks for
+  512 a request from payload 0.25.28, the batch pilot's limit.
 - **One report per unit.** The harness reports a completed unit with all of
   its range IDs in one message (up to 512); the pilot packs each unit's record
   once into the stage-out archive and reports finished ranges through the
@@ -354,12 +360,14 @@ when the queue has no job and no other live task, so the queue never holds two
 nodes; a paused task does not hold it. Each task is 6,000,000 fresh 5 GeV
 neutron-gun events at 3–50 degrees in one job, in the shape above with
 500-event units and 120-second closes, four at a time. On Perlmutter a
-neutron simulates in 0.26 s and reconstructs in about 0.1 s (job 6071469), so
-32 shared members keep pace with 128 slots, and its RECO holds 156 KB: the node
-writes about 78 MB/s, more than one close's merge and registration carry
-(about 35 MB/s, task 41262), hence the concurrent closes
-(`ES_CLOSE_CONCURRENCY`). One node makes about 1.8 million events and 280 GB
-of RECO an hour. A task that one job does not
+neutron simulates in 0.289 s with reconstruction running beside it (job
+6074509, 6,337 units) and reconstructs in about 0.1 s (job 6071469), so a fed
+node keeps about 45 reconstruction members busy: 48 shared members from 26
+October (32 before, enough only for the starved 230 events a second of job
+6074509). Its RECO holds 156 KB: the node writes about 69 MB/s, more than one
+close's merge and registration carry (about 35 MB/s, task 41262), hence the
+concurrent closes (`ES_CLOSE_CONCURRENCY`). One fed node makes about 1.6
+million events and 250 GB of RECO an hour. A task that one job does not
 finish continues in the next job on its remaining ranges.
 
 PCS sample identities `pOP000001` onward share the seed ledger of Google's

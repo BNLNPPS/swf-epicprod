@@ -11,10 +11,13 @@ AUTHORITY = '01a17817-55fd-7551-be68-d05dbb102492'
 # in 0.26 s on Perlmutter and its RECO holds 156 KB, so 128 slots write about
 # 78 MB/s, which four concurrent closes of about 35 MB/s each carry (job
 # 6071469). One job takes the whole task: nJobs is events // events_per_job.
+# Reconstruction at 0.10 s an event against 440 events a second simulated
+# (0.289 s on 128 slots, job 6074509) keeps about 45 members busy: 48 shared
+# members, about 2.85 GB private each.
 SHAPE = dict(events_per_job=EVENTS, unit_events=500, close_s=120, close_concurrency=4,
              deadline_s=14100, margin_s=600, memory_mb_per_core=1350, slots='128',
              pilot_cores=256, resident_sim=True, resident_unit=True, fast_merge=True,
-             batch_channel=True, parallel_start=True, reco_pool=32, reco_async=True,
+             batch_channel=True, parallel_start=True, reco_pool=48, reco_async=True,
              report_barrier=True)
 # JEDI states in which a task has, or is about to make, a job. A paused task
 # makes none.
