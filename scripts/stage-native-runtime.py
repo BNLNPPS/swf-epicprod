@@ -24,6 +24,10 @@ ASSETS = ('pilot3-native.tar.gz', 'certificates.tar.gz', 'rucio.cfg',
 # launching site exports the gate exactly when its runtime carries it.
 ES_BATCH_MODULE = 'pilot3/pilot/user/epic/es_batch.py'
 ES_BATCH_STAGEOUT_S = 300
+# The channel's bounds as es_batch.py sets them; the Perlmutter launcher
+# admits a runtime only with this declaration (version 1).
+ES_BATCH_CHANNEL = {'version': 1, 'stageout_s': ES_BATCH_STAGEOUT_S, 'max_ranges_per_ipc': 512,
+                    'min_acquisition_spacing_s': 2, 'job_identity': 'JobData.jobid'}
 
 
 def stage(baseline, output, archive_sha256):
@@ -56,7 +60,7 @@ def stage(baseline, output, archive_sha256):
     }
     with tarfile.open(fileobj=io.BytesIO(assets['pilot3-native.tar.gz'])) as archive:
         if ES_BATCH_MODULE in archive.getnames():
-            manifest['es_batch_channel'] = {'stageout_s': ES_BATCH_STAGEOUT_S}
+            manifest['es_batch_channel'] = dict(ES_BATCH_CHANNEL)
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     return manifest
 
