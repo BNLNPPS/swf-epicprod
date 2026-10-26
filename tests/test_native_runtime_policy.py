@@ -67,6 +67,22 @@ class RuntimePolicyTests(unittest.TestCase):
         self.assertIn('+MaxRuntime = ifThenElse(MachineAttrGLIDEIN_Site0 =?= "OSG_US_FSU_HNPGRID", 960, 600)', result)
         self.assertIn('job_machine_attrs = GLIDEIN_Site', result)
         self.assertEqual(renderer.runtime_limits(result), result)
+        self.assertEqual(renderer.no_restart(result), result)
+        self.assertIn('(JobStatus == 1 && NumJobStarts > 0)', result)
+
+    def test_eviction_policy_preserves_constraints_and_condor_key_case(self):
+        text = ('requirements = TARGET.Memory >= 4096 && MY.NodeAllowed\n'
+                'PERIODIC_REMOVE = JobStatus == 2 && time() - EnteredCurrentStatus > 36000\n')
+        result = renderer.no_restart(text)
+        self.assertIn('(TARGET.Memory >= 4096 && MY.NodeAllowed) && ', result)
+        self.assertIn('(isUndefined(MY.NumJobStarts) || MY.NumJobStarts == 0)', result)
+        self.assertIn('(JobStatus == 2 && time() - EnteredCurrentStatus > 36000) || ', result)
+        self.assertEqual(renderer.no_restart(result), result)
+        for invalid in ('', 'Requirements = \nperiodic_remove = False\n',
+                        text + 'Requirements = False\n',
+                        'Requirements = True \\\n && False\nperiodic_remove = False\n'):
+            with self.assertRaises(ValueError):
+                renderer.no_restart(invalid)
 
     def test_matchmaking_floor_uses_the_landing_policy(self):
         gate = policy_module.condor_admission(POLICY, 'BNL_OSG_PanDA_1')

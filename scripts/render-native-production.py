@@ -13,11 +13,31 @@ import re
 
 
 def replace_line(text, key, value):
-    pattern = r'(?m)^' + re.escape(key) + r'\s*=.*$'
+    pattern = r'(?mi)^' + re.escape(key) + r'[ \t]*=.*$'
     result, count = re.subn(pattern, lambda _: key + ' = ' + value, text)
     if count != 1:
         raise ValueError('expected exactly one ' + key)
     return result
+
+
+def no_restart(text):
+    """Let PanDA retry work after eviction instead of reusing a worker ID.
+
+    Requirements closes the interval before periodic_remove runs. Condor's
+    NumJobStarts is updated after startup, so this is its documented best
+    effort policy, not an exactly-once execution guarantee.
+    """
+    for key, operator, clause in (
+        ('Requirements', '&&', '(isUndefined(MY.NumJobStarts) || MY.NumJobStarts == 0)'),
+        ('periodic_remove', '||', '(JobStatus == 1 && NumJobStarts > 0)'),
+    ):
+        matches = re.findall(r'(?mi)^' + re.escape(key) + r'[ \t]*=[ \t]*(.*)$', text)
+        if len(matches) != 1 or not matches[0].strip() or matches[0].rstrip().endswith('\\'):
+            raise ValueError('expected one complete ' + key + ' expression')
+        expression = matches[0]
+        if clause not in expression:
+            text = replace_line(text, key, '(' + expression + ') ' + operator + ' ' + clause)
+    return text
 
 
 def runtime_limits(text):
@@ -120,7 +140,7 @@ def render(text, assets, image):
                  '+EpicprodNativeMode = "direct"\n+EpicprodNativeImage = "' + image + '"\n')
     if len(re.findall(r'(?m)^queue\s+1\s*$', text)) != 1:
         raise ValueError('expected one worker per Harvester submission')
-    return runtime_limits(re.sub(r'(?m)^queue\s+1\s*$', lambda _: additions + '\nqueue 1\n', text))
+    return no_restart(runtime_limits(re.sub(r'(?m)^queue\s+1\s*$', lambda _: additions + '\nqueue 1\n', text)))
 
 
 def retarget(text, assets, tag):
@@ -150,7 +170,7 @@ def retarget(text, assets, tag):
             files.append(str(Path(assets) / name))
     text = replace_line(text, 'executable', assets + '/epic-native-pilot.sh')
     text = replace_line(text, 'transfer_input_files', ','.join(files))
-    return runtime_limits(replace_line(text, '+EpicprodNative', '"' + tag + '"'))
+    return no_restart(runtime_limits(replace_line(text, '+EpicprodNative', '"' + tag + '"')))
 
 
 if __name__ == '__main__':

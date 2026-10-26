@@ -42,6 +42,45 @@ remnants under 4 GB. The queue still reached about 313 running within 40
 minutes of receiving work that morning; Harvester's waiting buffer stood at
 its 600 limit, so more waiting pilots would not have raised it.
 
+## Eviction and job recovery
+
+An OSG pilot uses a Harvester worker ID for its lifetime. When Condor
+evicts and restarts that same batch job, a pull pilot acquires a new PanDA
+job while its old payload can remain marked running. Harvester sees the
+worker running again. PanDA's heartbeat watcher eventually recovers the
+old job; on 26 October its timeout was two hours and `copyArchive` ran
+every 2,400 seconds. These delays explain some nearly complete task tails.
+
+The native production template prevents ordinary restarts using Condor's
+[documented policy](https://research.cs.wisc.edu/htcondor/wiki-archive/pages/HowToAvoidJobRestarts/):
+
+```text
+Requirements = (existing requirements) && (isUndefined(MY.NumJobStarts) || MY.NumJobStarts == 0)
+periodic_remove = (existing removal policy) || (JobStatus == 1 && NumJobStarts > 0)
+```
+
+The matching rule blocks a pilot with a recorded start from matching
+again. The removal rule removes it after eviction returns it to Idle;
+the running execution is not selected by this added removal condition.
+Both rules are required because periodic evaluation can lag a new match.
+`NumJobStarts` is updated after startup, so this is a best effort policy,
+not an exactly-once execution guarantee. The normal heartbeat recovery
+remains the backstop.
+
+The production pull queue uses `NoJob` and `truePilot`, which give its
+workers synchronization level 1. A terminal worker lets PanDA's existing
+worker-done path report the orphaned job (task-buffer error 300), and JEDI
+performs the normal within-task retry. The first natural eviction after
+installation must still verify that complete path in the live record.
+
+`scripts/configure-osg-no-restart.py` plans the two template edits and,
+with `--apply --expected-sha256 HASH`, preserves a dated backup and
+installs the reviewed version atomically. It changes future submissions
+only. It does not edit existing idle or running workers. The native
+renderer and retarget operation preserve the same policy. The retired
+PROD_1 queue and the separate CI/pilotest push templates are outside this
+change. No heartbeat timeout or vendor source is changed.
+
 ## 23 October 2026: direct pilot in OSG production
 
 At **14:38:35 UTC (10:38:35 ET)**, on Torre's production Go after the
