@@ -330,7 +330,11 @@ and running. The last write is the record at the cut, and bounds the cut
 to within a minute. At most 1500 writes per job, a constant; the one-minute
 spacing keeps a four-hour job on 128 slots near 240 (payload 0.25.22; 15 s
 from 0.25.21; before, task 41262 wrote once every 5 s and reached the cap
-after about 2 h 10 min, its record then frozen). For Event Service jobs
+after about 2 h 10 min, its record then frozen). A close that stands is
+written at once, outside the spacing (payload 0.25.27): the close-out credits
+a lost node's units from the record, and a close registered in the minute
+before the cut, missing from it, would be simulated again by a later job,
+its events then registered twice. For Event Service jobs
 this channel is always on, not gated on debug mode. From payload 0.23.1
 the record is version 2 and carries `ended_at`, set at the harness's own
 end before its last write: a record without it that has gone quiet on a

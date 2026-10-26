@@ -407,3 +407,29 @@ class TestRecordOut(unittest.TestCase):
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
+
+    def test_a_flush_writes_at_once_where_a_nudge_waits_out_the_spacing(self):
+        import es_record as r
+        sent = []
+        orig = r.put_object
+        r.put_object = lambda body, *a, **k: (sent.append(body), (True, ''))[1]
+        env = {'PANDAID': '42', 'REPORT_OUT_BUCKET': 'b', 'REPORT_OUT_ACCESS_KEY_ID': 'k',
+               'REPORT_OUT_SECRET_ACCESS_KEY': 's'}
+        old = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            rec = r.RecordOut(lambda: {}, interval=3600).start()
+            rec.nudge()
+            time.sleep(0.3)
+            self.assertEqual(len(sent), 0, 'a nudge joins the next write, a spacing away')
+            rec.flush()
+            time.sleep(0.3)
+            self.assertEqual(len(sent), 1, 'a close that stood is written at once')
+            rec.halt()
+        finally:
+            r.put_object = orig
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v

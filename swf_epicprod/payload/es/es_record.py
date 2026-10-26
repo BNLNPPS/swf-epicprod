@@ -65,6 +65,7 @@ class RecordOut:
         self.key = record_key()
         self.sent = 0
         self.wake = threading.Event()
+        self.urgent = threading.Event()     # a flush or a stop: no spacing
         self.stopping = threading.Event()
         self.thread = threading.Thread(target=self._run, name='es-record', daemon=True)
 
@@ -77,6 +78,14 @@ class RecordOut:
         return self
 
     def nudge(self):
+        self.wake.set()
+
+    def flush(self):
+        """Write now, outside the spacing: a close that stood. Its units are
+        credited from the record when the node is lost (es_closeout.py), and
+        a close missing from it is in Rucio but simulated again by a later
+        job; about one close every two minutes, inside the write cap."""
+        self.urgent.set()
         self.wake.set()
 
     def write(self):
@@ -104,12 +113,14 @@ class RecordOut:
         and the channel with it, is gone)."""
         self.sent = MAX_WRITES
         self.stopping.set()
+        self.urgent.set()
         self.wake.set()
 
     def stop(self):
         """One last write with the final state, then stop."""
         if self.thread.is_alive():
             self.stopping.set()
+            self.urgent.set()
             self.wake.set()
             self.thread.join(timeout=30)
 
@@ -117,9 +128,11 @@ class RecordOut:
         while True:
             nudged = self.wake.wait(self.interval)
             if nudged and not self.stopping.is_set():
-                # Nudges inside the spacing join this write; a stop does not wait.
-                self.stopping.wait(SPACING_S)
+                # Nudges inside the spacing join this write; a flush or a
+                # stop does not wait.
+                self.urgent.wait(SPACING_S)
             self.wake.clear()
+            self.urgent.clear()
             self.write()
             if self.stopping.is_set():
                 return
