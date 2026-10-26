@@ -37,6 +37,8 @@ def main():
     ap.add_argument('--events', type=int, default=30000)
     ap.add_argument('--unit-events', type=int, default=250)
     ap.add_argument('--slots', default='auto')
+    ap.add_argument('--pilot-cores', type=int,
+                    help='declare the worker cores to PanDA and its range-acquisition path')
     ap.add_argument('--memory-mb-per-core', type=int)
     ap.add_argument('--deadline-s', type=int, default=2400)
     ap.add_argument('--margin-s', type=int, default=300)
@@ -121,6 +123,8 @@ def main():
               row=f'SINGLE/neutron/5GeV/3to50deg.{sample}/{stem},steer,{events},0000')
     if args.memory_mb_per_core is not None:
         es['memory_mb_per_core'] = args.memory_mb_per_core
+    if args.pilot_cores is not None:
+        es['pilot_cores'] = args.pilot_cores
     if args.close_max_files is not None:
         es['close_max_files'] = args.close_max_files
     write_json(args.artifacts / 'gun-generation-plan.json', plan)
