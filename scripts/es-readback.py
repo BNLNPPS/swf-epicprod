@@ -58,6 +58,7 @@ def prepare(args):
 
 def validate(args):
     from podio import root_io
+    evgen = getattr(args, 'evgen', False)
     manifest = json.loads(args.validate.read_text())
     ids, identities, truth = set(), set(), set()
     collections = None
@@ -82,7 +83,7 @@ def validate(args):
             identities.add(identity)
             ids.add(event)
             generated = [p for p in frame.get('MCParticles') if p.getGeneratorStatus() == 1]
-            if args.evgen:
+            if evgen:
                 if not generated:
                     raise RuntimeError('The reconstructed EVGEN event has no generated stable particles')
                 values = [(p.getPDG(), p.getGeneratorStatus(),
@@ -117,7 +118,7 @@ def validate(args):
             'distinct_generated_truth': len(truth), 'collections': len(collections or []),
             'event_ids_sha256': hashlib.sha256(json.dumps(sorted(ids)).encode()).hexdigest(),
             'reader': 'podio.root_io.Reader', 'files': observed}
-    if args.evgen:
+    if evgen:
         result['source_mode'] = 'evgen'
     else:
         result.update(particle_pdg=2112, theta_degrees=[3, 50])
