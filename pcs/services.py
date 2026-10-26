@@ -2972,7 +2972,8 @@ def _parse_past_index(text):
 
 
 _PAST_BEAM_RE = _re.compile(r'(\d+x\d+)')
-_PAST_Q2_RE   = _re.compile(r'(minQ2=\d+|q2_\d+(?:(?:to|_)\d+)?)')
+# A bound may carry an exponent (q2_5to1e8, the rapgap3.310-2.0 samples).
+_PAST_Q2_RE   = _re.compile(r'(minQ2=\d+|q2_\d+(?:e\d+)?(?:(?:to|_)\d+(?:e\d+)?)?)')
 _PAST_PHYS_TOP = ('DIS', 'SIDIS', 'DDIS', 'EXCLUSIVE', 'SINGLE', 'BACKGROUNDS')
 
 
@@ -4532,8 +4533,8 @@ def _index_snapshot_by_tail(snapshot):
 
 
 _Q2_MIN_RE   = _re.compile(r'^minQ2=([\d.]+)$', _re.I)
-_Q2_RANGE_RE = _re.compile(r'^q2_([\d.]+)(?:to|_)([\d.]+)$', _re.I)
-_Q2_POINT_RE = _re.compile(r'^q2_([\d.]+)$', _re.I)
+_Q2_RANGE_RE = _re.compile(r'^q2_([\d.]+(?:e\d+)?)(?:to|_)([\d.]+(?:e\d+)?)$', _re.I)
+_Q2_POINT_RE = _re.compile(r'^q2_([\d.]+(?:e\d+)?)$', _re.I)
 
 
 def _q2_range(s):
@@ -5994,8 +5995,8 @@ def _evgen_did_tail(did):
 
 
 _EVGEN_Q2_MIN_RE   = _re.compile(r'^minq2=([\d.]+)$')
-_EVGEN_Q2_RANGE_RE = _re.compile(r'^q2_([\d.]+)(?:to|_)([\d.]+)$')
-_EVGEN_Q2_POINT_RE = _re.compile(r'^q2_([\d.]+)$')
+_EVGEN_Q2_RANGE_RE = _re.compile(r'^q2_([\d.]+(?:e\d+)?)(?:to|_)([\d.]+(?:e\d+)?)$')
+_EVGEN_Q2_POINT_RE = _re.compile(r'^q2_([\d.]+(?:e\d+)?)$')
 
 
 def _looks_evgen_q2(tok):

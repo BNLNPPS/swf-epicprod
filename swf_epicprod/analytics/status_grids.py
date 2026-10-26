@@ -31,8 +31,8 @@ PRODUCT_TTL_SECONDS = 3600
 
 # A beam token: electron x hadron energy, e.g. 10x100, 18x137.5.
 BEAM_RE = re.compile(r'^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$')
-# A Q² token: q2_1to10, q2_1000toINF, q2_10_20, q2_0to0.01, minQ2=10.
-Q2_RANGE_RE = re.compile(r'^q2_([\d.]+)(?:to|_)([\d.]+|INF)$', re.IGNORECASE)
+# A Q² token: q2_1to10, q2_1000toINF, q2_10_20, q2_0to0.01, q2_5to1e8, minQ2=10.
+Q2_RANGE_RE = re.compile(r'^q2_([\d.]+(?:e\d+)?)(?:to|_)([\d.]+(?:e\d+)?|INF)$', re.IGNORECASE)
 Q2_FLOOR_RE = re.compile(r'^(?:minQ2=|q2_)([\d.]+)$', re.IGNORECASE)
 # A single particle's energy and angular range: 100MeV, 10GeV; 3to50deg.
 SINGLE_AREA = 'SINGLE'
