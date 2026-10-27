@@ -217,8 +217,8 @@ back to another pilot.
 
 ### The batch pilot
 
-The runtime is `native-runtime-perlmutter-es-batch-bd83375`, pilot archive
-`2cd4ffef6eabf635297edc6191730ee38f84911c71641a66e464b1912d5ea9c0`, built
+The runtime is `native-runtime-perlmutter-es-batch-81b3476`, pilot archive
+`9024592adc331a74f9573a92f43bce63767717b8a28238c6072a57f81bdf370a`, built
 from the approved native archive `9532f30b` by
 `scripts/build-native-es-batch.py`, staged by `scripts/stage-native-runtime.py`
 from committed helpers and frozen assets, and published by
