@@ -3,6 +3,14 @@ import re
 import hashlib
 import shlex
 
+# Events per range of a fine-grained task above one need JEDI to cut such
+# ranges: its job generator gives a fine-grained task single-event ranges
+# (pandajedi JobGenerator), and the submitter drops nEventsPerWorker for one
+# (swf-monitor scripts/evgen_panda_submit.py), since that parameter alone
+# makes a task ordinary Event Service, with its merge. The payload and the
+# close-out take ranges of any size (NODE_EVENT_DISPATCHER.md).
+JEDI_FINE_GRAINED_RANGES = False
+
 
 def definition(settings):
     """Validate the declared whole-task budget before building any submission."""
@@ -36,6 +44,13 @@ def definition(settings):
         raise ValueError('production ES batch_channel must be a boolean')
     if 'min_unit_events' in cfg and (type(cfg['min_unit_events']) is not int or not 1 <= cfg['min_unit_events'] <= cfg['unit_events']):
         raise ValueError('production ES min_unit_events must fit its unit budget')
+    if 'range_events' in cfg:
+        k = cfg['range_events']
+        if type(k) is not int or k <= 0 or cfg['unit_events'] % k:
+            raise ValueError('production ES range_events must be a positive divisor of unit_events')
+        if k > 1 and not JEDI_FINE_GRAINED_RANGES:
+            raise ValueError('production ES range_events above 1 needs JEDI ranges of several events '
+                             'for fine-grained tasks')
     if 'parallel_start' in cfg and type(cfg['parallel_start']) is not bool:
         raise ValueError('production ES parallel_start must be a boolean')
     if 'fast_merge' in cfg and type(cfg['fast_merge']) is not bool:
@@ -146,6 +161,8 @@ def apply(spec, settings):
                 walltimeHours=cfg['deadline_s'] / 3600,
                 memory=cfg['memory_mb_per_core'], maxAttempt=10, maxFailure=3,
                 noLog=True, workerProxy=True, event_service=dict(cfg))
+    if cfg.get('range_events', 1) > 1:
+        spec['fineGrainedRangeEvents'] = cfg['range_events']
     return spec
 
 

@@ -80,8 +80,10 @@ ACTION_INSTANCE = 'ops-agent'
 
 def closed_range_ids(record):
     """The distinct range ids of the units in closes that stood. A unit's
-    first range id is <task>-<job>-<file>-<event>-<attempt>; its ranges are
-    one event each over [startEvent, lastEvent]."""
+    first range id is <task>-<job>-<file>-<event>-<attempt>; its ranges
+    start every ``range_events`` events over [startEvent, lastEvent] (the
+    record's range size, one event when the record carries none)."""
+    step = max(1, int(record.get('range_events') or 1))
     ids = []
     for u in record.get('done') or []:
         rng, uid = u.get('range') or {}, u.get('unit_id') or ''
@@ -89,8 +91,19 @@ def closed_range_ids(record):
         if len(parts) < 5 or rng.get('startEvent') is None:
             continue
         prefix, attempt = '-'.join(parts[:3]), parts[4]
-        ids += [f'{prefix}-{e}-{attempt}' for e in range(int(rng['startEvent']), int(rng['lastEvent']) + 1)]
+        ids += [f'{prefix}-{e}-{attempt}'
+                for e in range(int(rng['startEvent']), int(rng['lastEvent']) + 1, step)]
     return list(dict.fromkeys(ids))
+
+
+def closed_events(record):
+    """The events of the distinct units in closes that stood."""
+    spans = {}
+    for u in record.get('done') or []:
+        rng = u.get('range') or {}
+        if rng.get('startEvent') is not None and u.get('unit_id'):
+            spans[u['unit_id']] = int(rng['lastEvent']) - int(rng['startEvent']) + 1
+    return sum(spans.values())
 
 
 def judge(record, age_s, quiet_s):
@@ -142,9 +155,10 @@ def _count_true(rets):
 
 
 def finish_job(pandaid, ids, status='finished', expect_queue=None, expect_attempt=None,
-               apply=True, say=print):
-    """Credit ``ids`` and send the final update. Returns a result dict;
-    ``ok`` is True only when the server took the final update."""
+               apply=True, say=print, n_events=None):
+    """Credit ``ids`` and send the final update with ``n_events`` (the
+    events of those ranges; one a range when not given). Returns a result
+    dict; ``ok`` is True only when the server took the final update."""
     out = {'pandaid': int(pandaid), 'ranges': len(ids), 'ok': False}
     job_status, attempt, queue = job_state(pandaid)
     out.update(job_status=job_status, attempt=attempt, queue=queue)
@@ -176,7 +190,7 @@ def finish_job(pandaid, ids, status='finished', expect_queue=None, expect_attemp
     # fine-grained archive does not recompute it (job 3618959: 2,750 shown,
     # 6,750 ranges finished)
     data = {'job_id': int(pandaid), 'job_status': status, 'attempt_nr': attempt,
-            'n_events': len(ids), 'pilot_error_code': PREEMPTED_CODE,
+            'n_events': len(ids) if n_events is None else int(n_events), 'pilot_error_code': PREEMPTED_CODE,
             'pilot_error_diag': 'Event Service node lost (preempted); force-finished from the record '
                                 'the harness shipped: every close that stood credited'}
     http, resp = _api('pilot/update_job', data)
@@ -196,7 +210,8 @@ def _inside_pclient(payload_path):
             results.append(finish_job(job['pandaid'], job['ids'], status=job.get('status', 'finished'),
                                       expect_queue=job.get('queue'),
                                       expect_attempt=job.get('attempt'),
-                                      say=lambda s: print(s, file=sys.stderr)))
+                                      say=lambda s: print(s, file=sys.stderr),
+                                      n_events=job.get('events')))
         except Exception as e:                                # noqa: BLE001
             results.append({'pandaid': job['pandaid'], 'ok': False, 'error': f'{type(e).__name__}: {e}'})
     print(json.dumps({'results': results}))
@@ -318,6 +333,7 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
             d.update(act=act, reason=reason, record_age_s=round(age))
             if act:
                 d['ids'] = closed_range_ids(record)
+                d['events'] = closed_events(record)
                 d['status'] = 'finished'
                 if not d['ids']:
                     # A pass without progress. Failed only when the file's
@@ -333,7 +349,7 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
         summary['quiet'] = len(to_close)
         if to_close and not dry_run:
             try:
-                results, _ = finish_in_pclient([{'pandaid': d['pandaid'], 'ids': d['ids'],
+                results, _ = finish_in_pclient([{'pandaid': d['pandaid'], 'ids': d['ids'], 'events': d['events'],
                                                  'status': d['status'],
                                                  'queue': d['queue'], 'attempt': d['attempt']}
                                                 for d in to_close])

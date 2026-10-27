@@ -598,7 +598,17 @@ naming the outputs as a chunk's does, K from `ES_EVENTS_PER_UNIT`
 (`--es-events-per-range`); a unit that does not open its block (the
 events left after a partial job) names its outputs by its start as
 well. The cost is a `JEDI_Events` row per event and, at the job's
-start, one server call per sixteen events to pool them. Two things
+start, one server call per sixteen events to pool them. The row per event
+bounds a task's size: a job's insertion writes a row for every event it
+leaves unprocessed, inside JEDI's 600-second limit (NERSC_PERLMUTTER.md,
+Production), and every range is a server update and a line of the server's
+event log. The harness and the close-out therefore count in events, not
+ranges: a unit, its cap at the deadline, the pool's look-ahead and the
+record's counts are sums of range spans, a range is never split, and the
+record carries the range size the job's ranges showed (`range_events`), from
+which the close-out derives a unit's range ids. Ranges of several events in
+a fine-grained task need JEDI to cut them; until it does, the production ES
+definition refuses a `range_events` above one. Two things
 learned on the way: the pilot hands a direct-access queue's input as a
 TURL and the ePIC pilot module writes no PoolFileCatalog, so runGen
 must be told to take the input as given (`--givenPFN`, added by the
