@@ -69,7 +69,9 @@ repositories, Apptainer and an image start from
 XRootD door, and the free disk.
 [`computecanada/fir-probe.sub`](../computecanada/fir-probe.sub) submits it
 from the harvester host's HTCondor as an ARC grid job (one slot, 2 GB, one
-hour) with the token above. The copies in use are in `/data/atlpan/fir-test/`
+hour) with the token above, to ce2;
+[`computecanada/fir-probe-ce1.sub`](../computecanada/fir-probe-ce1.sub) is the
+same to ce1, with a token minted for ce1 (`fir-ce1.token`). The copies in use are in `/data/atlpan/fir-test/`
 on pandaharvester01; after minting a fresh token there:
 
 ```
@@ -86,11 +88,11 @@ in `fir-probe.<cluster>.out`.
 
 ## State
 
-As of 27 October 2026, after site administration configured ce2 for the ePIC
-token, both CEs are reachable from pandaharvester01 over TLS with the grid
-certification authorities, and authorization fails: HTCondor's ping of ce2 is
+As of 27 October 2026, 12:22 ET, after site administration's mapping changes,
+both CEs are reachable from pandaharvester01 over TLS with the grid
+certification authorities, and both refuse the token: HTCondor's ping is
 answered 403 Forbidden, and the REST job and delegation endpoints answer 500 to
-the token. Probe job 27669 waits on ce2.
+a token minted for each CE. Probe jobs 27669 (ce2) and 27686 (ce1) wait.
 
 ## Building the queue
 
