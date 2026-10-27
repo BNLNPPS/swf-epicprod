@@ -13,6 +13,16 @@ which are not otherwise changed.
 ``plan_rebind`` reads only; ``classify`` and ``plan_problems`` are pure;
 ``apply_rebind`` plans again and writes, in one transaction, only a plan
 in which every configuration moves whole.
+
+The database runs READ COMMITTED, so the transaction alone does not hold
+what the plan checked. ``apply_rebind`` first locks the named
+configurations and their editions (``lock_scope``), in primary-key
+order, and only then plans. The configuration lock blocks a concurrent
+edition from binding to an old configuration (an insert or rebind takes
+FOR KEY SHARE on the referenced row) and blocks concurrent requestor,
+metadata or lifecycle changes until commit. Existing targets are locked
+and checked again after planning, and no edition may remain on an old
+configuration when it is superseded.
 """
 
 #: Per old configuration, what a resave would do to its editions.
@@ -107,11 +117,44 @@ def plan_rebind(pc_labels):
     return plan
 
 
+def lock_scope(pc_labels):
+    """Lock the named configurations, then every edition bound to them,
+    each in primary-key order, for the rest of the enclosing transaction.
+    Returns the locked configurations by label; refuses an unknown label."""
+    from django.core.exceptions import ValidationError
+    from .models import Dataset, PhysicsConfig
+
+    configs = list(PhysicsConfig.objects.select_for_update()
+                   .filter(label__in=pc_labels).order_by('pk'))
+    missing = sorted(set(pc_labels) - {pc.label for pc in configs})
+    if missing:
+        raise ValidationError(f"unknown configuration(s): {', '.join(missing)}")
+    list(Dataset.objects.select_for_update().filter(physics_config__in=configs)
+         .order_by('pk').values_list('pk', flat=True))
+    return {pc.label: pc for pc in configs}
+
+
+def lock_targets(plan):
+    """Lock the existing target configurations in primary-key order and
+    return why any may not receive editions, as text lines."""
+    from .models import PhysicsConfig
+
+    keys = {entry['target']['key'] for entry in plan if entry['target']}
+    problems = []
+    for pc in (PhysicsConfig.objects.select_for_update()
+               .filter(config_key__in=keys).order_by('pk')):
+        if pc.lifecycle != 'active':
+            problems.append(f'target {pc.label} is {pc.lifecycle}, not active')
+    return problems
+
+
 def apply_rebind(pc_labels, *, actor, reason, expect_editions):
-    """Plan again inside one transaction, then resave every planned edition
-    and supersede each old configuration with its target. Refuses (nothing
-    written) when plan_problems is non-empty or an edition does not bind
-    as planned. Returns (plan, {old label: new label})."""
+    """Lock the scope, plan again under the locks, then resave every
+    planned edition and supersede each old configuration with its target,
+    all in one transaction. Refuses (nothing written) when plan_problems
+    or lock_targets report a problem, an edition does not bind as planned,
+    or an edition is left on an old configuration. Returns
+    (plan, {old label: new label})."""
     from django.core.exceptions import ValidationError
     from .models import Dataset, PhysicsConfig
     from .permanence import identity_change, set_lifecycle
@@ -120,14 +163,15 @@ def apply_rebind(pc_labels, *, actor, reason, expect_editions):
         raise ValidationError('An acting person and a reason are required.')
     moved = {}
     with identity_change(actor, reason):
+        locked = lock_scope(pc_labels)
         plan = plan_rebind(pc_labels)
-        problems = plan_problems(plan, expect_editions)
+        problems = plan_problems(plan, expect_editions) + lock_targets(plan)
         if problems:
             raise ValidationError(problems)
         for entry in plan:
             target_key = entry['target']['key']
             for planned in entry['editions']:
-                ds = Dataset.objects.select_for_update().get(pk=planned['pk'])
+                ds = Dataset.objects.get(pk=planned['pk'])
                 ds.save()
                 ds.refresh_from_db()
                 if ds.physics_config.config_key != target_key:
@@ -138,7 +182,12 @@ def apply_rebind(pc_labels, *, actor, reason, expect_editions):
                     raise ValidationError(
                         f'edition {ds.pk} renamed {planned["composed_name"]} '
                         f'-> {ds.composed_name}')
-            old = PhysicsConfig.objects.get(label=entry['pc'])
+            old = locked[entry['pc']]
+            left = list(Dataset.objects.filter(physics_config=old)
+                        .order_by('pk').values_list('pk', flat=True))
+            if left:
+                raise ValidationError(
+                    f"{old.label}: editions {left} still bound; not superseded")
             new = PhysicsConfig.objects.get(config_key=target_key)
             set_lifecycle(old, 'superseded', reason=reason, changed_by=actor,
                           replacement=new)
