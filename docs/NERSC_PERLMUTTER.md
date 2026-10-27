@@ -299,6 +299,9 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   failed with error 1165 (job 6258483; the reason ES tasks had no log dataset
   from September). The batch build puts the archive in the pilot's home, beside
   the renamed directory, and lets tar's exit status decide.
+  Log test 41454 (job 6268857, runtime bd83375) staged a 5.3 MB log; the
+  Perlmutter feeder's tasks stage theirs from 27 October (`job_log` in the
+  production ES definition, which needs the batch channel).
 
 ## Event Service jobs on Perlmutter
 

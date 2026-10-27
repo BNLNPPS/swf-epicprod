@@ -58,6 +58,13 @@ def definition(settings):
         if k > 1 and not cfg.get('batch_channel'):
             raise ValueError('production ES range_events above 1 needs the batch channel: '
                              'the stock pilot counts a range as one event')
+    if 'job_log' in cfg and type(cfg['job_log']) is not bool:
+        raise ValueError('production ES job_log must be a boolean')
+    if cfg.get('job_log') and not cfg.get('batch_channel'):
+        # The batch pilot writes the ES log beside the renamed work directory
+        # and trims it; the stock pilot makes none and fails the stage-out
+        # (NERSC_PERLMUTTER.md, The batch pilot, The job's log).
+        raise ValueError('production ES job_log needs the batch channel')
     if 'parallel_start' in cfg and type(cfg['parallel_start']) is not bool:
         raise ValueError('production ES parallel_start must be a boolean')
     if 'fast_merge' in cfg and type(cfg['fast_merge']) is not bool:
@@ -171,7 +178,7 @@ def apply(spec, settings):
                 nJobs=cfg['events'] // cfg['events_per_job'], nCore=cfg.get('pilot_cores', 1),
                 walltimeHours=cfg['deadline_s'] / 3600,
                 memory=cfg['memory_mb_per_core'], maxAttempt=10, maxFailure=3,
-                noLog=True, workerProxy=True, event_service=dict(cfg))
+                noLog=not cfg.get('job_log'), workerProxy=True, event_service=dict(cfg))
     if cfg.get('range_events', 1) > 1:
         spec['fineGrainedRangeEvents'] = cfg['range_events']
     return spec
