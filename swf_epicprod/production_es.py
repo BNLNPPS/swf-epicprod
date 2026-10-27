@@ -133,6 +133,10 @@ def apply(spec, settings):
         prefix['EPICPROD_SWITCH_ES_FAST_MERGE'] = '1'
     if cfg.get('resident_unit'):
         prefix['EPICPROD_SWITCH_ES_RESIDENT_UNIT'] = '1'
+        # A slot's dead resident is restarted; a slot whose restarts are
+        # spent takes no more units (job 6254767: one dead resident failed
+        # 960 units, 480,000 ranges).
+        prefix['EPICPROD_SWITCH_ES_RESIDENT_RESTART'] = '1'
     if cfg.get('close_max_files'):
         prefix['ES_CLOSE_MAX_FILES'] = str(cfg['close_max_files'])
     if cfg.get('close_concurrency'):

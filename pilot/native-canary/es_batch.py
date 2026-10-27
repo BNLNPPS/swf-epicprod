@@ -78,9 +78,10 @@ def decode_result(message, expected_pandaid):
 # A failed unit, one message (EPICPROD_SWITCH_ES_FAILED_UNIT, which this pilot
 # sets for its payload): before it the harness sent one ERR message a range,
 # and the pilot reported each with a server call of its own, a second or more,
-# inside the loop that answers the payload's range requests. Job 6254767
-# (2026-10-27) had 36 units of 500 one-event ranges fail together; its range
-# requests waited behind about 18,000 such calls, hours, with every slot idle.
+# inside the loop that answers the payload's range requests. In job 6254767
+# (2026-10-27) a slot whose resident simulation had died failed 961 units of
+# 500 one-event ranges in no time each; the job's range requests waited
+# behind their 480,000 messages, days of such calls, with every slot idle.
 FAILED_PREFIX = 'EPICPROD_ES_FAILED_V1 '
 
 

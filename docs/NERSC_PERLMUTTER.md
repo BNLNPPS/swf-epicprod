@@ -279,11 +279,12 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   without a zip record, and fine-grained credit counts finished ranges.
 - **Failed units.** The harness reported a failed unit with one message a
   range, and the pilot sent each to the server in a call of its own, a second
-  or more, inside the loop that answers the payload's range requests. Job
-  6254767 (task 41445, 27 October) had 36 units of 500 one-event ranges fail
-  together, each resident simulation timed out at 1,800 s; its range requests
-  waited behind about 18,000 such calls, made about 40 a minute, with its 128
-  slots idle and the pilot's range cache full. The batch pilot now queues
+  or more, inside the loop that answers the payload's range requests. In job
+  6254767 (task 41445, 27 October) one slot whose resident simulation had died
+  failed 961 units of 500 one-event ranges, one after another, in no time each
+  (EPICPROD_PAYLOAD.md, Resident Event Service units); the job's range requests
+  waited behind their 480,000 messages, sent on at about 40 a minute, with its
+  128 slots idle and the pilot's range cache full. The batch pilot now queues
   failed ranges for the executor's pass, which sends them in bulk, 2,000 a
   call, and tells the payload through `EPICPROD_SWITCH_ES_FAILED_UNIT` that it
   takes a failed unit as one message (payload 0.25.32). A failed report is

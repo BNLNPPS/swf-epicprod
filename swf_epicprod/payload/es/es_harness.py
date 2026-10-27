@@ -1002,6 +1002,10 @@ def main():
         # The slots' containers start clean: the switch goes as a setting.
         args.env = (args.env or []) + ['EPICPROD_SWITCH_ES_RESIDENT_UNIT=1']
         args.prestage = True
+        if os.environ.get('EPICPROD_SWITCH_ES_RESIDENT_RESTART') == '1':
+            # A slot's dead resident simulation is restarted, a few times at
+            # most, and then the slot takes no more units (resident_sim.py).
+            args.env.append('EPICPROD_SWITCH_ES_RESIDENT_RESTART=1')
         if os.environ.get('EPICPROD_SWITCH_ES_RECO_ASYNC') == '1':
             # A unit's reconstruction finishes in the background while its
             # slot simulates the next (resident_unit.asynchronous).
@@ -1130,7 +1134,7 @@ def main():
             # One message for the unit, which the batch pilot reports from its
             # own pass (EPICPROD_SWITCH_ES_FAILED_UNIT, set by that pilot): a
             # message a range held the pilot's range answers behind a server
-            # call each (job 6254767, 18,000 for 36 failed units).
+            # call each (job 6254767: 480,000 for one slot's 961 failed units).
             feed.report('EPICPROD_ES_FAILED_V1 ' + json.dumps({
                 'ids': range_ids, 'message': str(extra or record.get('message', 'failed'))[:300]},
                 separators=(',', ':')))
