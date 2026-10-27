@@ -32,12 +32,18 @@ def build(baseline,output):
     # acquisition (es_batch.acquire_count), not one per core.
     s=replace_once(s,'        if not self.event_ranges_cache:\n            event_ranges = self.get_event_ranges()\n','        if not self.event_ranges_cache:\n            from pilot.user.epic.es_batch import acquire_count\n            event_ranges = self.get_event_ranges(acquire_count(self.corecount))\n')
     s=replace_once(s,'            event_range = self.event_ranges_cache.pop(0)\n            return event_range','            if max_ranges == 1:\n                return self.event_ranges_cache.pop(0)\n            count = min(max_ranges, len(self.event_ranges_cache))\n            return [self.event_ranges_cache.pop(0) for _ in range(count)]')
-    s=replace_once(s,"            if message.startswith('ERR'):","            if message.startswith('EPICPROD_ES_RESULT_V1 '):\n                from pilot.user.epic.es_batch import decode_result\n                return decode_result(message, self.__payload['job'].jobid)\n            if message.startswith('ERR'):")
+    s=replace_once(s,"            if message.startswith('ERR'):","            if message.startswith('EPICPROD_ES_RESULT_V1 '):\n                from pilot.user.epic.es_batch import decode_result\n                return decode_result(message, self.__payload['job'].jobid)\n            if message.startswith('EPICPROD_ES_FAILED_V1 '):\n                from pilot.user.epic.es_batch import decode_failed\n                return decode_failed(message, self.__payload['job'].jobid)\n            if message.startswith('ERR'):")
+    # A payload message the pilot cannot handle is logged and its ranges left
+    # to the server, which releases them with the job's other unfinished
+    # ranges; it never stops the ES process, which would end the payload's feed.
+    s=replace_once(s,'            raise RunPayloadFailure(f"Failed to handle out message: {e}") from e','            from pilot.user.epic.es_batch import enabled\n            if not enabled():\n                raise RunPayloadFailure(f"Failed to handle out message: {e}") from e\n            logger.error(f"payload message not handled, its ranges left to the server: {e}; {message[:300]}")')
     # The job's ranges from a cache filled at its start and refilled by its own
     # thread, straight from the server (es_batch.Prefetch), when
     # EPICPROD_ES_PREFETCH_RANGES is set; otherwise the refill below.
     s=replace_once(s,'        logger.debug(f"number of cached event ranges: {len(self.event_ranges_cache)}")\n','        from pilot.user.epic.es_batch import prefetch_take\n        taken = prefetch_take(self, max_ranges)\n        if taken is not None:\n            return taken\n        logger.debug(f"number of cached event ranges: {len(self.event_ranges_cache)}")\n')
-    s=replace_once(s,"        self.init()\n        logger.debug('initialization finished.')\n","        self.init()\n        from pilot.user.epic.es_batch import prefetch_start\n        prefetch_start(self, self.__payload['job'], self.__stop)\n        logger.debug('initialization finished.')\n")
+    # The payload is told, through the environment it inherits, that this pilot
+    # takes a failed unit as one message (es_batch.advertise).
+    s=replace_once(s,"        self.init()\n        logger.debug('initialization finished.')\n","        from pilot.user.epic.es_batch import advertise, prefetch_start\n        advertise()\n        self.init()\n        prefetch_start(self, self.__payload['job'], self.__stop)\n        logger.debug('initialization finished.')\n")
     s=replace_once(s,'                event_ranges = self.get_event_range_to_payload()',"                from pilot.user.epic.es_batch import request_count\n                event_ranges = self.get_event_range_to_payload(request_count(message))")
     s=replace_once(s,'            event_ranges = self.get_event_ranges_hook(num_ranges)',"            from pilot.user.epic.es_batch import enabled, throttle_acquire\n            if enabled():\n                throttle_acquire(self)\n                num_ranges = max(num_ranges, 256)\n            event_ranges = self.get_event_ranges_hook(num_ranges)")
     put(key,s)
@@ -47,6 +53,13 @@ def build(baseline,output):
         if not enabled():
             raise RuntimeError('This candidate must run with its explicit batch-channel gate')
         return pack_reports(self.__queued_out_messages)
+''')
+    # Failed ranges are queued for the executor's pass and sent in bulk
+    # (es_batch.report_failed), never a server call each in the ES process's
+    # loop, which answers the payload's range requests (job 6254767).
+    s=replace_method(s,'GenericExecutor','update_failed_event_ranges','''    def update_failed_event_ranges(self, out_messages):
+        from pilot.user.epic.es_batch import queue_failed
+        queue_failed(self, out_messages)
 ''')
     s=replace_method(s,'GenericExecutor','update_finished_event_ranges','''    def update_finished_event_ranges(self, out_messages, output_file, fsize, checksum, storage_id):
         from pilot.user.epic.es_batch import update_finished
@@ -59,7 +72,7 @@ def build(baseline,output):
     # EPICPROD_ES_REPORT_AT_ONCE=1 every pass (each five seconds) does the
     # same, so a close is credited as it stands; otherwise periodic stage-outs
     # keep their archives.
-    s=replace_once(s,"        job = self.get_job()\n        if self.__queued_out_messages:\n            if force or","        job = self.get_job()\n        from pilot.user.epic.es_batch import report_at_once, report_now\n        if self.__queued_out_messages and (force or report_at_once()):\n            count = len(self.__queued_out_messages)\n            report_now(self, self.__queued_out_messages, final=force)\n            logger.info(f'reported {count} messages straight to the server' + (' at the end' if force else ''))\n            return\n        if self.__queued_out_messages:\n            if force or")
+    s=replace_once(s,"        job = self.get_job()\n        if self.__queued_out_messages:\n            if force or","        job = self.get_job()\n        from pilot.user.epic.es_batch import report_at_once, report_failed, report_now\n        if self.__queued_out_messages and (force or report_at_once()):\n            count = len(self.__queued_out_messages)\n            report_now(self, self.__queued_out_messages, final=force)\n            logger.info(f'reported {count} messages straight to the server' + (' at the end' if force else ''))\n            report_failed(self, final=force)\n            return\n        report_failed(self, final=force)\n        if self.__queued_out_messages:\n            if force or")
     put(key,s)
     # The job's log archive goes beside the renamed work directory, in the
     # pilot's home, not in the process's current directory: the ES executor

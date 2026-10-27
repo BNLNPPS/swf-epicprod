@@ -75,6 +75,82 @@ def decode_result(message, expected_pandaid):
             'events': events, 'cpu': body.get('wall', 0), 'wall': body.get('wall', 0)}
 
 
+# A failed unit, one message (EPICPROD_SWITCH_ES_FAILED_UNIT, which this pilot
+# sets for its payload): before it the harness sent one ERR message a range,
+# and the pilot reported each with a server call of its own, a second or more,
+# inside the loop that answers the payload's range requests. Job 6254767
+# (2026-10-27) had 36 units of 500 one-event ranges fail together; its range
+# requests waited behind about 18,000 such calls, hours, with every slot idle.
+FAILED_PREFIX = 'EPICPROD_ES_FAILED_V1 '
+
+
+def advertise():
+    """Before the payload starts: tell it this pilot takes a failed unit as
+    one message. The payload inherits the pilot's environment."""
+    if enabled():
+        os.environ['EPICPROD_SWITCH_ES_FAILED_UNIT'] = '1'
+
+
+def decode_failed(message, expected_pandaid):
+    """A failed unit's message as the executor's failed message. Never
+    raises: the ES process stops on a message it cannot handle, so a
+    malformed report is logged and its ranges left to the server, which
+    releases them with the job's other unfinished ranges."""
+    try:
+        body = json.loads(message[len(FAILED_PREFIX):])
+        ids = [rid for rid in body.get('ids') or []
+               if isinstance(rid, str) and re.fullmatch(r'\d+-\d+-\d+-\d+-\d+', rid)
+               and int(rid.split('-')[1]) == int(expected_pandaid)]
+        text = str(body.get('message') or 'failed')[:300]
+    except (TypeError, ValueError, AttributeError) as exc:
+        logger.error(f'unreadable failed-unit message, its ranges left to the server: {exc}; {message[:300]}')
+        ids, text = [], 'unreadable'
+    return {'id': ids[0] if ids else 'none', 'ids': ids[:MAX_MESSAGE_RANGES], 'status': 'failed', 'message': text}
+
+
+def queue_failed(executor, messages):
+    """The executor's failed ranges, queued for its next pass (report_failed);
+    never a server call here, in the loop that answers the payload."""
+    pending = executor.__dict__.setdefault('_epic_failed', collections.deque())
+    pending.extend(messages)
+
+
+def report_failed(executor, final=False):
+    """Send the queued failed ranges to the server in bulk, REPORT_RANGES a
+    call, from the executor's pass. A call that fails puts them back for the
+    next pass, 30 s on; at the job's end they are left, and the server releases
+    them with the job's other unfinished ranges, as it does failed ones
+    (job_complex_module.check_fine_grained_processing): a failed report is
+    bookkeeping, and no event depends on it."""
+    pending = getattr(executor, '_epic_failed', None)
+    if not pending or (not final and time.time() < getattr(executor, '_epic_failed_retry_at', 0)):
+        return
+    from pilot.common.errorcodes import ErrorCodes
+    messages = []
+    while pending:
+        messages.append(pending.popleft())
+    ranges = [{'eventRangeID': rid, 'eventStatus': 'failed', 'errorCode': ErrorCodes.UNKNOWNPAYLOADFAILURE}
+              for message in messages for rid in message.get('ids', [message['id']]) if rid != 'none']
+    for first in range(0, len(ranges), REPORT_RANGES):
+        batch = ranges[first:first + REPORT_RANGES]
+        try:
+            data = _server('update_event_ranges', {'event_ranges': json.dumps([{'eventRanges': batch}]), 'version': 1})
+            if answers(data, len(batch)) is None:
+                raise RuntimeError(f'update_event_ranges answered {str(data)[:300]}')
+        except Exception as exc:                              # noqa: BLE001
+            rest = [{'id': r['eventRangeID'], 'ids': [r['eventRangeID']]} for r in ranges[first:]]
+            if final:
+                logger.warning(f'{len(rest)} failed ranges unreported at the end: {exc}; '
+                               'the server releases them with the job')
+            else:
+                logger.warning(f'report of {len(rest)} failed ranges failed: {exc}; again in 30 s')
+                pending.extendleft(reversed(rest))
+                executor._epic_failed_retry_at = time.time() + 30
+            return
+    if ranges:
+        logger.info(f'reported {len(ranges)} failed ranges of {len(messages)} messages')
+
+
 def range_events(messages):
     """The events of each range of ``messages``, in report order: a unit's
     events spread evenly over its ranges, one a range when it gives none."""

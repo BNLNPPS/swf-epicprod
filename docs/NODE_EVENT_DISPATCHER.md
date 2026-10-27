@@ -297,7 +297,12 @@ end of a job, and what a preempted job has shipped is kept, not rerun:
   and an `es_no_progress_limit` action raises the `es_no_progress`
   alarm for the file (2026-10-01; before, every no-progress close-out
   was sent `failed`, and a routine spot preemption read as a failed
-  job). Both are
+  job). A job whose harness has waited `es_closeout.starve_s` (600 s) for
+  the answer to a range request (the record's `channel.waiting_s`, payload
+  0.25.32) is closed out the same way while its record is still fresh: the
+  pilot answers from the ranges it holds and gives up on an empty cache
+  within 300 s, so such a pilot no longer feeds its node (job 6254767,
+  NERSC_PERLMUTTER.md, The batch pilot, Failed units). Both are
   production-role calls, and the server archives the job through the
   fine-grained accounting above. Each close-out is an `es_closeout` action.
   `tools/es_force_finish.py` does the same for one job by hand. A node

@@ -277,6 +277,21 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   on a stop the executor stops that manager first, so a stopping pilot's last
   reports were aborted and marked failed. The server takes a range update
   without a zip record, and fine-grained credit counts finished ranges.
+- **Failed units.** The harness reported a failed unit with one message a
+  range, and the pilot sent each to the server in a call of its own, a second
+  or more, inside the loop that answers the payload's range requests. Job
+  6254767 (task 41445, 27 October) had 36 units of 500 one-event ranges fail
+  together, each resident simulation timed out at 1,800 s; its range requests
+  waited behind about 18,000 such calls, made about 40 a minute, with its 128
+  slots idle and the pilot's range cache full. The batch pilot now queues
+  failed ranges for the executor's pass, which sends them in bulk, 2,000 a
+  call, and tells the payload through `EPICPROD_SWITCH_ES_FAILED_UNIT` that it
+  takes a failed unit as one message (payload 0.25.32). A failed report is
+  bookkeeping only: the server releases a failed range to the next job with
+  the job's other unfinished ranges. A payload message the pilot cannot handle
+  is logged and its ranges left to the server; it no longer stops the ES
+  process. The close-out recovers a node whose feed starves for any other
+  reason (NODE_EVENT_DISPATCHER.md, Preemption).
 - **The job's log.** The ES executor leaves the pilot process in the job's work
   directory, and the pilot's `create_log` wrote the archive there, then renamed
   the directory away before tar ran, so no log was made and the stage-out

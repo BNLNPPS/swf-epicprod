@@ -204,16 +204,18 @@ class ChannelFeed:
         # own asking (job 6074509: about 250 ranges a second for 440 wanted).
         self.requests, self.ranges, self.wait_s = 0, 0, 0.0
         self.answers = deque(maxlen=500)    # (seconds to answer, ranges) of the latest requests
+        self.asked_at = None                # the unanswered request's start: a starved feed (es_closeout)
 
     def exchange(self, request):
         with self.lock:
-            asked = time.monotonic()
+            asked = self.asked_at = time.monotonic()
             self.sock.send_raw(request)
             while True:
                 size, buf = self.sock.try_recv_raw()
                 if size != -1:
                     break
                 time.sleep(0.01)            # the pilot's own message cadence (esmessage.py)
+            self.asked_at = None
             self.wait_s += time.monotonic() - asked
             self.answers.append(time.monotonic() - asked)
         return buf.decode('utf8') if isinstance(buf, bytes) else str(buf)
@@ -223,7 +225,9 @@ class ChannelFeed:
         pilot's answer times over the latest 500 requests."""
         recent = sorted(self.answers)
         pick = (lambda q: round(recent[min(len(recent) - 1, int(q * len(recent)))], 3)) if recent else (lambda q: None)
+        asked = self.asked_at
         return {'requests': self.requests, 'ranges': self.ranges, 'wait_s': round(self.wait_s, 1),
+                'waiting_s': round(time.monotonic() - asked, 1) if asked is not None else 0.0,
                 'answer_s_median': pick(0.5), 'answer_s_p90': pick(0.9),
                 'answer_s_max': round(recent[-1], 3) if recent else None}
 
@@ -991,6 +995,8 @@ def main():
     # when the server runs dry only the units in flight and the last close
     # remain, well inside the pilot's 30 minutes after "No more events".
     batch_channel = os.environ.get('EPICPROD_SWITCH_ES_BATCH_CHANNEL') == '1'
+    failed_unit = batch_channel and os.environ.get('EPICPROD_SWITCH_ES_FAILED_UNIT') == '1'
+    log(f"failed units: {'one message a unit' if failed_unit else 'one message a range'}")
     resident_units = os.environ.get('EPICPROD_SWITCH_ES_RESIDENT_UNIT') == '1'
     if resident_units:
         # The slots' containers start clean: the switch goes as a setting.
@@ -1108,7 +1114,7 @@ def main():
         # The pilot takes one report per 10 ms pass; what it has not taken
         # yet is the backlog the final grace must cover.
         now = time.time()
-        messages = 1 if ok and batch_channel else len(range_ids)
+        messages = 1 if (ok and batch_channel) or (not ok and failed_unit) else len(range_ids)
         backlog[0] = max(0.0, backlog[0] - (now - backlog[1]) * PILOT_REPORTS_PER_S) + messages
         backlog[1] = now
         if ok and batch_channel:
@@ -1117,6 +1123,16 @@ def main():
             feed.report('EPICPROD_ES_RESULT_V1 ' + json.dumps({
                 'output': os.path.join(slot.outbox, uid, 'unit.json'),
                 'ids': range_ids, 'wall': wall, 'events': int(record.get('events') or 0) or len(range_ids)},
+                separators=(',', ':')))
+            reported[0] += 1
+            return
+        if not ok and failed_unit:
+            # One message for the unit, which the batch pilot reports from its
+            # own pass (EPICPROD_SWITCH_ES_FAILED_UNIT, set by that pilot): a
+            # message a range held the pilot's range answers behind a server
+            # call each (job 6254767, 18,000 for 36 failed units).
+            feed.report('EPICPROD_ES_FAILED_V1 ' + json.dumps({
+                'ids': range_ids, 'message': str(extra or record.get('message', 'failed'))[:300]},
                 separators=(',', ':')))
             reported[0] += 1
             return
