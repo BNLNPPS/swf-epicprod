@@ -11,9 +11,9 @@ import shlex
 # range_events (swf-monitor scripts/evgen_panda_submit.py). The payload, the
 # close-out and the batch pilot take ranges of any size
 # (NODE_EVENT_DISPATCHER.md); the stock pilot counts a range as one event, so
-# ranges above one need the batch channel. Held off until a Perlmutter task
-# of ten-event ranges is credited in full.
-JEDI_FINE_GRAINED_RANGES = False
+# ranges above one need the batch channel. On since 2026-10-27: Perlmutter
+# task 41444 (3,200 ranges of ten events) was credited in full, 32,000 events.
+JEDI_FINE_GRAINED_RANGES = True
 
 
 def definition(settings):

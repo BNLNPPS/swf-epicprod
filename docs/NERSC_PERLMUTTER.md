@@ -391,7 +391,10 @@ production holds one node; a paused task does not hold it. Tests and any other
 tasks on the queue run beside production on nodes of their own and hold
 nothing: the five-node target is soft, not a limit. Each task is 3,000,000 fresh 5 GeV
 neutron-gun events at 3–50 degrees in one job, in the shape above with
-500-event units and 120-second closes, four at a time. On Perlmutter a
+500-event units and 120-second closes, four at a time, and from 27 October
+ranges of ten events (`range_events`, JEDI's `nEventsPerFineGrainedRange`;
+test task 41444 was credited 32,000 events in 3,200 such ranges), a tenth of
+the range rows, server reports and job-insertion time of single-event ranges. On Perlmutter a
 neutron simulates in 0.289 s with reconstruction running beside it (job
 6074509, 6,337 units) and reconstructs in about 0.1 s (job 6071469), so a fed
 node keeps about 45 reconstruction members busy: 48 shared members from 26

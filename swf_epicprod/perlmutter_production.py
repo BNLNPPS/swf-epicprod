@@ -17,8 +17,10 @@ AUTHORITY = '01a17817-55fd-7551-be68-d05dbb102492'
 # 6071469). One job takes the whole task: nJobs is events // events_per_job.
 # Reconstruction at 0.10 s an event against 440 events a second simulated
 # (0.289 s on 128 slots, job 6074509) keeps about 45 members busy: 48 shared
-# members, about 2.85 GB private each.
-SHAPE = dict(events_per_job=EVENTS, unit_events=500, close_s=120, close_concurrency=4,
+# members, about 2.85 GB private each. Ranges of ten events (task 41444) carry
+# a tenth of the range rows, server reports and event-log lines of one-event
+# ranges, and the job's insertion a tenth of its time.
+SHAPE = dict(events_per_job=EVENTS, unit_events=500, range_events=10, close_s=120, close_concurrency=4,
              deadline_s=14100, margin_s=600, memory_mb_per_core=1350, slots='128',
              pilot_cores=256, resident_sim=True, resident_unit=True, fast_merge=True,
              batch_channel=True, parallel_start=True, reco_pool=48, reco_async=True,
