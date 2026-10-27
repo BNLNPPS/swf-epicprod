@@ -2225,7 +2225,7 @@ _PROCESS_CATEGORY = {
 #: decay/charge, beam config, and the rest onto the first-created tag.
 _PHYSICS_MATCH_FIELDS = (
     'process', 'beam_energy_electron', 'beam_energy_hadron',
-    'beam_species', 'nucleon', 'q2_range', 'decay_mode', 'hadron_charge',
+    'beam_species', 'nucleon', 'q2_range', 'x_range', 'decay_mode', 'hadron_charge',
     'helicity', 'polarization', 'beam_polarization', 'coherence', 'model',
     'beam_config',
     'state', 'mechanism', 'final_state', 'channel', 'mass',
