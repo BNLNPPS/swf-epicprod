@@ -72,6 +72,12 @@ def build(baseline,output):
     s=replace_once(s,'    fullpath = os.path.join(current_dir, logfile_name)  # /some/path/to/dirname/log.tgz','    fullpath = os.path.join(pilot_home, logfile_name)  # beside the renamed work directory')
     s=replace_once(s,'        cmd = f"pwd;tar cvfz {fullpath} {tarball_name} --dereference --one-file-system; echo $?"','        cmd = f"tar cvfz {fullpath} {tarball_name} --dereference --one-file-system || [ $? -eq 1 ]"')
     put(key,s)
+    # An Event Service job's log is its harness's files, logs cut to head and
+    # tail and failed units whole, not the detector data copied into each slot
+    # (es_batch.trim_log_dir; 149 MB to 40 MB for log test 41452).
+    key='pilot/user/epic/common.py';s=data['pilot3/'+key].decode()
+    s=replace_once(s,'    remove_root_files(workdir, outputfiles)\n','    remove_root_files(workdir, outputfiles)\n\n    from pilot.user.epic.es_batch import enabled as es_batch_enabled, trim_log_dir\n    if es_batch_enabled():\n        trim_log_dir(workdir)\n')
+    put(key,s)
     key='pilot/info/configinfo.py';s=data['pilot3/'+key].decode()
     s=replace_once(s,'import ast','import ast\nfrom pilot.user.epic.es_batch import stageout_gap')
     s=replace_once(s,"            'es_stageout_gap': 601,  # in seconds, for testing: FIXME LATER,","            'es_stageout_gap': stageout_gap(),\n            'zip_time_gap': stageout_gap(),")

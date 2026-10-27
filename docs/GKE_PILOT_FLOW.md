@@ -423,7 +423,9 @@ debug pod with that setting started the payload image as uid 1000
 `native-runtime-google-es-batch-f4aa806`: Google's site files with the batch
 pilot archive `b2655eaa` that Perlmutter runs (NERSC_PERLMUTTER.md, The batch
 pilot), which counts a unit's events rather than its ranges, so tasks may take
-ranges of several events. From 2026-10-26 08:07 ET it was
+ranges of several events: the feeder's samples carry ranges of ten events from
+2026-10-27 (test task 41453, 420 ranges, 4,200 events, credited in full). From
+2026-10-26 08:07 ET it was
 `native-runtime-google-es-batch-7a16c78`: the launcher and helpers of commit
 7a16c78 with the batch-channel pilot archive `26e9264e`, the pilot Perlmutter
 runs (NERSC_PERLMUTTER.md, Controlling the pilot on the test queue). It differs

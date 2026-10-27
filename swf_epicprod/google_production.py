@@ -41,7 +41,11 @@ def reserve_sample():
     # Continuous simulation as on Perlmutter: reconstruction runs off the
     # slots' critical path on three shared EICrecon members, on the CPU the
     # pod's limit gives above its fourteen-core request (GKE_PILOT_FLOW.md).
-    shape = dict(events_per_job=EVENTS_PER_JOB, unit_events=250, close_s=300, deadline_s=14100,
+    # Ranges of ten events (25 to a unit), as on Perlmutter: a tenth of the
+    # range rows, server reports and event-log lines; the pods' batch pilot
+    # counts a unit's events, not its ranges (runtime 18e2802 on).
+    shape = dict(events_per_job=EVENTS_PER_JOB, unit_events=250, range_events=10, batch_channel=True,
+                 close_s=300, deadline_s=14100,
                  margin_s=600, memory_mb_per_core=6000, slots='auto', pilot_cores=14,
                  resident_sim=True, resident_unit=True, fast_merge=True,
                  report_barrier=True, reco_pool=3, reco_async=True)

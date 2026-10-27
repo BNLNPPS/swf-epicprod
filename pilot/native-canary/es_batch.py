@@ -358,3 +358,71 @@ def post_finished(executor, messages):
         logger.warning(f'the server took {taken} of {len(ranges)} finished ranges')
     executor.get_job().nevents += int(round(sum(
         e for e, v in zip(range_events(messages), returned) if v is True)))
+
+
+# The job's log, economically (NERSC_PERLMUTTER.md, The job's log). Log test
+# 41452's 149 MB were two thirds detector data copied into every slot and a
+# third logs and per-unit records; the data and the records of units that
+# succeeded leave (the harness record carries those), a failed unit stays whole,
+# and a log keeps its head and its tail.
+LOG_KEEP_HEAD = 64 * 1024
+LOG_KEEP_TAIL = 192 * 1024
+LOG_DATA_DIRS = ('run/calibrations', 'run/fieldmaps', 'run/gdml', 'handoff')
+
+
+def cut_log(path, head=LOG_KEEP_HEAD, tail=LOG_KEEP_TAIL):
+    """Keep a log's first ``head`` and last ``tail`` bytes, with a line saying
+    how much was cut between them. Returns the bytes cut."""
+    size = os.path.getsize(path)
+    if size <= head + tail:
+        return 0
+    with open(path, 'rb') as handle:
+        first = handle.read(head)
+        handle.seek(size - tail)
+        last = handle.read()
+    gone = size - head - tail
+    with open(path, 'wb') as handle:
+        handle.write(first)
+        handle.write(f'\n[... {gone} bytes cut for the job log (es_batch.trim_log_dir) ...]\n'.encode())
+        handle.write(last)
+    return gone
+
+
+def trim_log_dir(workdir):
+    """Reduce an Event Service job's work directory to its log before the
+    pilot archives it: the harness's own files, every log cut to its head and
+    tail, failed units whole; no detector data and no records of units that
+    succeeded. A file that cannot be handled is said and left."""
+    import shutil
+    root = Path(workdir) / 'es_work'
+    if not root.is_dir():
+        return
+    removed = cut = 0
+    seen = set()                        # the slots' data copies are hard links of one another
+    for slot in root.glob('slot*'):
+        for name in LOG_DATA_DIRS:
+            target = slot / name
+            if target.exists():
+                for f in target.rglob('*'):
+                    if f.is_file() and not f.is_symlink():
+                        st = f.stat()
+                        if (st.st_dev, st.st_ino) not in seen:
+                            seen.add((st.st_dev, st.st_ino))
+                            removed += st.st_size
+                shutil.rmtree(target, ignore_errors=True)
+        for unit in (slot / 'outbox').glob('*'):
+            if not unit.is_dir() or (unit / 'error.json').exists():
+                continue
+            for record in unit.glob('*.json'):
+                try:
+                    removed += record.stat().st_size
+                    record.unlink()
+                except OSError as exc:
+                    logger.warning(f'job log: {record} not removed: {exc}')
+    for path in root.rglob('*'):
+        if path.is_file() and not path.is_symlink() and path.suffix in ('.log', '.txt', '.out', '.err'):
+            try:
+                cut += cut_log(path)
+            except OSError as exc:
+                logger.warning(f'job log: {path} not cut: {exc}')
+    logger.info(f'job log: {removed} bytes of data and unit records removed, {cut} bytes cut from logs')
