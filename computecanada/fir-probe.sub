@@ -1,0 +1,23 @@
+# One ePIC test probe to the Fir ARC CE (CA-SFU-T2), with a PanDA IAM
+# token for that CE; no pilot, no PanDA job.
+universe = grid
+grid_resource = arc https://lcg-atlas-ce2.fir.alliancecan.ca:443/arex
+executable = fir-probe.sh
+transfer_executable = True
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+output = fir-probe.$(Cluster).out
+error = fir-probe.$(Cluster).err
+log = fir-probe.$(Cluster).log
+scitokens_file = /data/atlpan/fir-test/fir-ce2.token
+arc_resources = <QueueName>cpubase_bycore_b4</QueueName> \
+                <SlotRequirement> \
+                    <NumberOfSlots>1</NumberOfSlots> \
+                    <SlotsPerHost>1</SlotsPerHost> \
+                </SlotRequirement> \
+                <IndividualPhysicalMemory>2000000000</IndividualPhysicalMemory> \
+                <WallTime>3600</WallTime> \
+                <TotalCPUTime>3600</TotalCPUTime>
++ProjectName = "eic"
+periodic_remove = (JobStatus == 1 && (CurrentTime - EnteredCurrentStatus) > 86400)
+queue 1
