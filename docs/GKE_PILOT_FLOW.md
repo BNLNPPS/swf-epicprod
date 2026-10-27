@@ -358,7 +358,7 @@ requested from the PanDA team, regenerates the ranges it left.
 | `cpu_limit` | `'15.8'` | each pod's CPU limit, above its request so the shared reconstruction can use the CPU the node's system pods leave idle; the harness still runs 14 slots (`ATHENA_PROC_NUMBER` follows `cpu`) |
 | `getjobrequests` | 5 | job requests before an idle pilot exits |
 | `proxy`, `secret_name` | as above, `epicprod-pilot-proxy` | the credential |
-| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle; since 2026-10-26 08:07 ET `native-runtime-google-es-batch-7a16c78` (below) |
+| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle; since 2026-10-27 16:05 ET `native-runtime-google-es-batch-f4aa806` (below) |
 | `native_image` | `/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable` | the image containing the pilot's Python and the payload |
 | `es_channel` | `.../canary/es-channel-py313-debian13` | the channel matching Python 3.13 in that image |
 | `queuedata` | `.../canary/queuedata/BNL_ePIC_GOOGLE_es.json` | existing ES storage/cadence overrides, preserved from the previous launcher |
@@ -419,7 +419,11 @@ debug pod with that setting started the payload image as uid 1000
 
 ## Operating limits
 
-**The ES batch channel.** Since 2026-10-26 08:07 ET the runtime is
+**The ES batch channel.** Since 2026-10-27 16:05 ET the runtime is
+`native-runtime-google-es-batch-f4aa806`: Google's site files with the batch
+pilot archive `b2655eaa` that Perlmutter runs (NERSC_PERLMUTTER.md, The batch
+pilot), which counts a unit's events rather than its ranges, so tasks may take
+ranges of several events. From 2026-10-26 08:07 ET it was
 `native-runtime-google-es-batch-7a16c78`: the launcher and helpers of commit
 7a16c78 with the batch-channel pilot archive `26e9264e`, the pilot Perlmutter
 runs (NERSC_PERLMUTTER.md, Controlling the pilot on the test queue). It differs
