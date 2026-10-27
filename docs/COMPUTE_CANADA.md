@@ -92,7 +92,10 @@ As of 27 October 2026, 12:22 ET, after site administration's mapping changes,
 both CEs are reachable from pandaharvester01 over TLS with the grid
 certification authorities, and both refuse the token: HTCondor's ping is
 answered 403 Forbidden, and the REST job and delegation endpoints answer 500 to
-a token minted for each CE. Probe jobs 27669 (ce2) and 27686 (ce1) wait.
+a token minted for each CE. The answers are the same with no token and with
+six audience and scope variants of it (`GET /arex` 403; job and delegation
+calls 500), so the CE fails before it evaluates a token. Probe jobs 27669
+(ce2) and 27686 (ce1) wait.
 
 ## Building the queue
 
