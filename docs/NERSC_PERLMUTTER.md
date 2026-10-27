@@ -256,7 +256,12 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   straight from the server, up to 10,000 ranges an acquisition, whenever they
   hold fewer than half of that, about seven minutes of a fed node. The size is
   in events, so ten-event ranges do not make it 2M events (es_batch 18e2802); the payload is answered from the cache, and "No more events"
-  only when the server has none left. With `EPICPROD_ES_REPORT_AT_ONCE=1` the
+  only when the server has none left. The server marks an acquisition's ranges
+  sent before it answers, so an answer cut off in transit defers them to the
+  task's next job: a PanDA server restart at 12:17:32 ET on 27 October cut the
+  answer to job 6252252's acquisition of events 90,002 to 100,001 (7,956 of
+  about 2.2 MB sent), and job 6254762 ran those 10,000 events. With
+  `EPICPROD_ES_REPORT_AT_ONCE=1` the
   executor's pass, every five seconds, sends the queued unit reports straight
   to the server, 2,000 ranges a call, so a close is credited as it stands and
   the periodic receipt archive goes unused. Ranges a job holds when it ends are
