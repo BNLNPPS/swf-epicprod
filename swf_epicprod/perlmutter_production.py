@@ -3,6 +3,11 @@
 from .google_production import register_plan, reserve, task_inventory
 
 QUEUE = 'NERSC_Perlmutter_epic_es'
+# The nodes production runs on: the feeder adds a sample only while fewer of
+# its own samples have a job or a live task (each sample is one job on one
+# node). One until stable production is validated, then five (Torre,
+# 2026-10-27); the production dashboard's title row shows it.
+NODES = 1
 # A job's insertion writes one JEDI_Events row per unprocessed event in one
 # transaction, inside JEDI's fixed 600 s limit on storeJobs: 6,000,000 took
 # 563-596 s for a first job and never fit for a retry of 5,750,520 (task
@@ -119,8 +124,9 @@ def replenish(created_by='es-closeout'):
         # whole production sample: once its first job is cut, the rest of the
         # sample runs as any other.
         extra = trial()
-        if (active or jobs or tasks) and not extra:
-            result.update(outcome='steady', reason='the node has its work')
+        if max(len(active), jobs, len(tasks)) >= NODES and not extra:
+            result.update(outcome='steady', reason='the node has its work' if NODES == 1
+                          else f'the {NODES} nodes have their work')
         else:
             from pcs import services
             from pcs.commands import build_evgen_task_params
