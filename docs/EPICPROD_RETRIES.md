@@ -272,6 +272,22 @@ attempt completed is the one with the most rows, the latest of equals;
 when a task's attempts were cut differently, the preview names the one
 it counts against ("M of the N jobs of attempt 2").
 
+Chunk indices are padded to at least four digits and may exceed 9999;
+the manifest, delivered-row key and file-event reader accept the same
+indices, including diverted copies. A nonblank malformed manifest line
+invalidates the whole exact record. Submission still records its PanDA
+association, with the rejected-row counts instead of a partial manifest.
+
+Older records ending a file at chunk 9999 need verification against the
+submitted row count. `nEvents` supplies that count only for the no-input
+serial dispatcher with one pseudo-event per job; it is not a general
+physics-event-to-row conversion. A mismatch, or an unavailable comparable
+count, blocks residual preview and exclusion acceptance until the record
+is explicitly repaired. A preview does not replace a suspect record.
+Repair uses the exact submitted sandbox CSV, retaining the previous record
+and checking row count, event sum and the canonical `rows_sha256` digest;
+an exactly 10,000-chunk input alone is not evidence of truncation.
+
 The `PandaTasks` association records what the attempt covers:
 `residual_of`, the row coverage ("M of N rows"), the registered and
 unarrived file counts per checked DID, and how the manifest was

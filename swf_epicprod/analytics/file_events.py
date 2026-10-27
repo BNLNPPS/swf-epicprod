@@ -376,11 +376,12 @@ CHUNK_RE = None
 
 def source_of(name):
     """(source basename, chunk index) parsed from a delivered file
-    name — '<source>.<NNNN>.<stage suffixes>' — or (None, None)."""
+    name — '<source>.<NNNN>.<stage suffixes>', four digits or more — or
+    (None, None)."""
     import re
     global CHUNK_RE
     if CHUNK_RE is None:
-        CHUNK_RE = re.compile(r'^(?P<src>.+)\.(?P<chunk>\d{4})\.')
+        CHUNK_RE = re.compile(r'^(?P<src>.+)\.(?P<chunk>\d{4,})\.')
     match = CHUNK_RE.match(os.path.basename(name))
     if not match:
         return None, None

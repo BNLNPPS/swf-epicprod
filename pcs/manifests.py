@@ -36,10 +36,9 @@ import time
 from datetime import datetime, timezone
 
 MANIFEST_ROW_RE = re.compile(
-    r'^(?P<file>[^,\s]+),(?P<ext>[^,\s]+),(?P<nevents>\d+),(?P<chunk>\d{4})$')
+    r'^(?P<file>[^,\s]+),(?P<ext>[^,\s]+),(?P<nevents>\d+),(?P<chunk>\d{4,})$')
 TARBALL_RE = re.compile(r'jobO\.[0-9a-f]{32}\.tar\.gz')
 SOURCE_URL_RE = re.compile(r'"sourceURL":\s*"([^"]+)"')
-N_EVENTS_RE = re.compile(r'"nEvents":\s*(\d+)')
 CACHE_FETCH_TIMEOUT = 60
 
 
@@ -50,9 +49,12 @@ class ManifestUnavailable(Exception):
 
 # ---------------------------------------------------------------- rows
 
-def parse_rows(text):
-    """The manifest rows of a CSV text as (file, ext, nevents, chunk)."""
-    rows = []
+def parse_manifest(text):
+    """(rows, rejected) of a CSV text: the manifest rows as (file, ext,
+    nevents, chunk), and the nonblank lines that are not rows. A text with
+    any rejected line is not an exact manifest: its rows are a part of
+    the attempt, never the whole of it."""
+    rows, rejected = [], []
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -61,7 +63,27 @@ def parse_rows(text):
         if m:
             rows.append((m['file'], m['ext'], int(m['nevents']),
                          int(m['chunk'])))
+        else:
+            rejected.append(line)
+    return rows, rejected
+
+
+def parse_rows(text):
+    """Read a complete manifest; never return only its parseable portion."""
+    rows, rejected = parse_manifest(text)
+    if rejected:
+        raise ManifestUnavailable(
+            f'manifest has {len(rejected)} nonblank lines that are not rows')
     return rows
+
+
+def rejection(rejected, total):
+    """The record of a manifest that did not parse whole: kept on the
+    attempt in place of a record, so the shortfall is a fact on the row
+    rather than a short manifest taken as exact."""
+    return {'rows_given': total, 'rows_rejected': len(rejected),
+            'recorded_at': datetime.now(timezone.utc).isoformat(
+                timespec='seconds')}
 
 
 def format_rows(rows):
@@ -114,6 +136,32 @@ def record_of(panda_tasks):
     return (panda_tasks.metadata or {}).get('manifest') or None
 
 
+def _stops_at_9999(entry):
+    if 'chunks' in entry:
+        return max((int(c) for _n, c in entry['chunks']), default=-1) == 9999
+    return int(entry.get('nchunks') or 0) == 10000
+
+
+def truncation(panda_tasks, record):
+    """Why a stored record needs verification, or None. Before the
+    row reader accepted chunks above 9999 it kept each file's chunks
+    0..9999 and dropped the rest without a word, so a record with a file
+    that stops at chunk 9999 is a candidate, and it is short when the
+    attempt was submitted with more rows than it holds. A genuine
+    10,000-chunk file, which the row count agrees with, stands."""
+    if not any(_stops_at_9999(e) for e in (record or {}).get('files') or []):
+        return None
+    expected = attempt_row_count(panda_tasks.jedi_task_id)
+    if expected == record.get('rows'):
+        return None
+    if expected is None:
+        return (f"the record stops at chunk 9999 and its {record.get('rows')} "
+                "rows cannot be checked against a submitted CSV-row count")
+    return (f"the record holds {record.get('rows')} rows and the attempt "
+            f"was submitted with {expected}; verify the exact sandbox CSV "
+            "before using this record")
+
+
 def make_record(rows, source):
     """The compact record of ``rows`` with its provenance."""
     record = compact(rows)
@@ -129,6 +177,7 @@ def store(panda_tasks, rows, source):
     record = make_record(rows, source)
     meta = dict(panda_tasks.metadata or {})
     meta['manifest'] = record
+    meta.pop('manifest_rejected', None)
     panda_tasks.metadata = meta
     panda_tasks.save(update_fields=['metadata', 'updated_at'])
     return record
@@ -159,11 +208,28 @@ def sandbox_ref(jedi_task_id):
 
 
 def attempt_row_count(jedi_task_id):
-    """The number of jobs the attempt was submitted with: ``nEvents`` in
-    its task parameters, which the legacy submitter and ours both set to
-    the manifest's row count."""
-    m = N_EVENTS_RE.search(_taskparams(jedi_task_id))
-    return int(m.group(1)) if m else None
+    """The row count of a one-CSV-row-per-pseudo-event attempt, else None.
+
+    ``nEvents`` is a row count only for the no-input serial dispatcher,
+    with one pseudo-event per job. Other task modes count physics events.
+    """
+    text = _taskparams(jedi_task_id)
+    if not text:
+        return None
+    try:
+        params = json.loads(text)
+    except (TypeError, ValueError) as exc:
+        raise ManifestUnavailable('the attempt task parameters are not valid JSON') from exc
+    if not isinstance(params, dict):
+        raise ManifestUnavailable('the attempt task parameters are not an object')
+    if (params.get('noInput') is not True
+            or params.get('nEventsPerJob') != 1
+            or not any(isinstance(p, dict) and p.get('param_type') == 'pseudo_input'
+                       and 'SEQNUMBER' in str(p.get('value', ''))
+                       for p in params.get('jobParameters') or [])):
+        return None
+    count = params.get('nEvents')
+    return count if type(count) is int and count > 0 else None
 
 
 def fetch_from_cache(jedi_task_id):
@@ -189,21 +255,32 @@ def fetch_from_cache(jedi_task_id):
     if r.status_code != 200:
         raise ManifestUnavailable(
             f'sandbox fetch returned HTTP {r.status_code}')
-    best = []
+    best, best_rejected, best_name, ambiguous = [], [], None, False
     try:
         with tarfile.open(fileobj=io.BytesIO(r.content), mode='r:gz') as tar:
             for member in tar.getmembers():
                 if not member.isfile() or not member.name.endswith('.csv'):
                     continue
-                rows = parse_rows(
+                rows, rejected = parse_manifest(
                     tar.extractfile(member).read().decode('utf-8', 'replace'))
-                if len(rows) > len(best):
-                    best = rows
+                if len(rows) + len(rejected) > len(best) + len(best_rejected):
+                    best, best_rejected, best_name = rows, rejected, member.name
+                    ambiguous = False
+                elif (rows or rejected) and len(rows) + len(rejected) == len(best) + len(best_rejected):
+                    ambiguous |= rows != best or rejected != best_rejected
     except (tarfile.TarError, OSError) as e:
         raise ManifestUnavailable(f'sandbox {tarball} unreadable: {e}')
     if not best:
         raise ManifestUnavailable(
             f'sandbox {tarball} holds no manifest rows')
+    if ambiguous:
+        raise ManifestUnavailable(f'sandbox {tarball} has ambiguous manifest CSVs')
+    if best_rejected:
+        raise ManifestUnavailable(
+            f'sandbox {tarball} manifest {best_name} has '
+            f'{len(best_rejected)} lines that are not manifest rows; '
+            f'its {len(best)} rows are not '
+            f'the whole attempt')
     return best
 
 
@@ -399,6 +476,12 @@ def attempt_manifest(task, panda_tasks, delivered_keys=None):
             'consistency': None}
     rows, exact = None, False
     rec = record_of(panda_tasks)
+    short = truncation(panda_tasks, rec) if rec else None
+    if short:
+        raise ManifestUnavailable(
+            f'the stored attempt manifest needs repair: {short}. '
+            'Repair and verify the record explicitly before previewing a residual; '
+            'this preview has not changed it.')
     if rec:
         rows, exact = expand(rec), rec.get('source') != 'reconstructed'
         info['source'] = f"record ({rec.get('source')})"

@@ -52,6 +52,12 @@ def _attempt_rows(task, context):
     except manifests.ManifestUnavailable as exc:
         raise ServiceError(str(exc), status=409) from exc
     record = manifests.record_of(attempt)
+    try:
+        issue = manifests.truncation(attempt, record) if record else None
+    except manifests.ManifestUnavailable as exc:
+        raise ServiceError(str(exc), status=409) from exc
+    if issue:
+        raise ServiceError('The stored attempt manifest needs repair; preview again after repair.', status=409)
     if not record or record.get('source') == 'reconstructed':
         raise ServiceError('The exact preview manifest is no longer available; preview again.', status=409)
     rows = manifests.expand(record)

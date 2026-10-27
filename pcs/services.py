@@ -6457,8 +6457,17 @@ def prodtask_record_submission(*, task, jedi_task_id, new_status='submitted',
                                        if isinstance(d, dict) and d.get('dataset')]
         if manifest_rows:
             from . import manifests
-            parsed = manifests.parse_rows('\n'.join(str(r) for r in manifest_rows))
-            if parsed:
+            parsed, rejected = manifests.parse_manifest(
+                '\n'.join(str(r) for r in manifest_rows))
+            if rejected:
+                # A short manifest is never recorded as the attempt's:
+                # the association stands, the shortfall is kept as a
+                # fact, and a residual goes to the sandbox instead.
+                meta.pop('manifest', None)
+                meta['manifest_rejected'] = manifests.rejection(
+                    rejected, len(parsed) + len(rejected))
+            elif parsed:
+                meta.pop('manifest_rejected', None)
                 meta['manifest'] = manifests.make_record(parsed, 'submission')
         row.metadata = meta
         if not row.out_ds:
