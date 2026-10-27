@@ -19,6 +19,24 @@ class NativeBatchTests(unittest.TestCase):
   self.assertEqual(result['ids'],ids());self.assertEqual(result['id'],ids()[0])
   for bad in [ids()+ids()[:1],ids()[:-1]+['41299-99-12345-250-1'],ids()[:2]+ids(4,2)]:
    with self.assertRaises(ValueError):b.decode_result(wire(bad),6010000)
+ def test_ten_event_ranges_decode_and_count_events(self):
+  tens=[f'41431-6010000-12345-{i}-1' for i in range(951,1051,10)]
+  result=b.decode_result(b.RESULT_PREFIX+json.dumps({'ids':tens,'output':'/w/unit.json','wall':1,'events':100}),6010000)
+  self.assertEqual(result['ids'],tens);self.assertEqual(result['events'],100)
+  self.assertEqual(b.decode_result(wire(ids()),6010000)['events'],250)
+  for bad in [tens[:2]+tens[3:],[tens[1],tens[0]],tens[:1]+tens[:1]]:
+   with self.assertRaises(ValueError):b.decode_result(b.RESULT_PREFIX+json.dumps({'ids':bad,'output':'/w/u.json'}),6010000)
+  e=types.SimpleNamespace(job=types.SimpleNamespace(nevents=0));e.get_job=lambda:e.job
+  e.update_events=lambda body:{'Returns':[True]*len(json.loads(body['eventRanges'])[0]['eventRanges'])+[False]}
+  b.update_finished(e,[result],'r.tar',1,{},1);self.assertEqual(e.job.nevents,100)
+ def test_post_finished_counts_events_of_taken_ranges(self):
+  tens=[f'41431-6010000-12345-{i}-1' for i in range(1,41,10)]
+  e=types.SimpleNamespace(job=types.SimpleNamespace(nevents=0));e.get_job=lambda:e.job
+  with patch.object(b,'_server',return_value={'Returns':[True,True,False,True,False]}):
+   b.post_finished(e,[{'id':tens[0],'ids':tens,'events':40}])
+  self.assertEqual(e.job.nevents,30)
+  with patch.object(b,'_server',return_value={'Returns':[True]}):
+   with self.assertRaises(RuntimeError):b.post_finished(e,[{'id':tens[0],'ids':tens,'events':40}])
  def test_config_provider_override_uses_explicit_safe_interval(self):
   with patch.dict(os.environ,{'EPICPROD_ES_STAGEOUT_GAP':'300'}):self.assertEqual(b.stageout_gap(),300)
   with patch.dict(os.environ,{'EPICPROD_ES_STAGEOUT_GAP':'60'}):

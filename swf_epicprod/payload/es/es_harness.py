@@ -1112,9 +1112,12 @@ def main():
         backlog[0] = max(0.0, backlog[0] - (now - backlog[1]) * PILOT_REPORTS_PER_S) + messages
         backlog[1] = now
         if ok and batch_channel:
+            # events: the batch pilot counts the job's events from it, not
+            # one a range (ten-event ranges, task 41431).
             feed.report('EPICPROD_ES_RESULT_V1 ' + json.dumps({
                 'output': os.path.join(slot.outbox, uid, 'unit.json'),
-                'ids': range_ids, 'wall': wall}, separators=(',', ':')))
+                'ids': range_ids, 'wall': wall, 'events': int(record.get('events') or 0) or len(range_ids)},
+                separators=(',', ':')))
             reported[0] += 1
             return
         for rid in range_ids:

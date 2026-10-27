@@ -55,15 +55,47 @@ def decode_result(message, expected_pandaid):
         if p[1] != int(expected_pandaid):
             raise ValueError('ES result belongs to another consumer')
         parts.append(p)
-    if len(set(ids)) != len(ids) or any(
+    # One unit is a run of the job's ranges in one file and attempt. Their ids
+    # step by the range size: one for one-event ranges, ten for ten-event ranges
+    # (nEventsPerFineGrainedRange). A step of one refused every unit of several
+    # ten-event ranges; task 41431 credited 161 of its 738 units.
+    step = parts[1][3] - parts[0][3] if len(parts) > 1 else 1
+    if len(set(ids)) != len(ids) or step < 1 or any(
             p[:3] + p[4:] != parts[0][:3] + parts[0][4:] or
-            (i and p[3] != parts[i - 1][3] + 1) for i, p in enumerate(parts)):
+            (i and p[3] != parts[i - 1][3] + step) for i, p in enumerate(parts)):
         raise ValueError('ES result must be one contiguous owned unit')
     output = body.get('output')
     if not isinstance(output, str) or not output.startswith('/'):
         raise ValueError('ES result must name its absolute unit record')
+    # The unit's events, from payload 0.25.31; one a range before it.
+    events = body.get('events')
+    if not isinstance(events, int) or isinstance(events, bool) or events < len(ids):
+        events = len(ids)
     return {'id': ids[0], 'ids': ids, 'output': output, 'status': 'finished',
-            'cpu': body.get('wall', 0), 'wall': body.get('wall', 0)}
+            'events': events, 'cpu': body.get('wall', 0), 'wall': body.get('wall', 0)}
+
+
+def range_events(messages):
+    """The events of each range of ``messages``, in report order: a unit's
+    events spread evenly over its ranges, one a range when it gives none."""
+    out = []
+    for message in messages:
+        n = len(message.get('ids', [message['id']]))
+        out.extend([(message.get('events') or n) / n] * n)
+    return out
+
+
+def answers(response, n):
+    """The server's answers to ``n`` range updates: the first ``n`` of its
+    Returns. What follows them answers no range and is ignored (until
+    2026-10-27 the PostgreSQL job event-count statement appended a False);
+    fewer than ``n`` is a call that failed."""
+    returned = response.get('Returns') if isinstance(response, dict) else None
+    if isinstance(returned, str):
+        returned = json.loads(returned)
+    if not isinstance(returned, list) or len(returned) < n:
+        return None
+    return returned[:n]
 
 
 def stageout_gap(default=601):
@@ -112,25 +144,17 @@ def update_finished(executor, messages, output, size, checksum, storage):
 def send_finished(executor, messages, zip_file):
     ranges = [{'eventRangeID': rid, 'eventStatus': 'finished'}
               for message in messages for rid in message.get('ids', [message['id']])]
+    weights = range_events(messages)
     for first in range(0, len(ranges), API_BATCH_RANGES):
         batch = ranges[first:first + API_BATCH_RANGES]
         chunk = {'eventRanges': batch}
         if zip_file is not None:
-            chunk['zipFile'] = dict(zip_file, numEvents=len(batch))
+            chunk['zipFile'] = dict(zip_file, numEvents=int(round(sum(weights[first:first + API_BATCH_RANGES]))))
         response = executor.update_events({'version': 1, 'eventRanges': json.dumps([chunk])})
-        returned = response.get('Returns') if isinstance(response, dict) else None
-        if isinstance(returned, str):
-            returned = json.loads(returned)
-        # panda-server commits the range updates, then sets the job's nEvents;
-        # on PostgreSQL that statement's :PandaID bind is missing from its
-        # parameters (:pandaID; task_event_module.py updateEventRanges), and
-        # the handler appends one False after the per-range answers. The
-        # ranges are committed and their answers stand.
-        if isinstance(returned, list) and len(returned) == len(batch) + 1 and returned[-1] is False:
-            returned = returned[:-1]
-        if not isinstance(returned, list) or len(returned) != len(batch) or any(v is not True for v in returned):
+        returned = answers(response, len(batch))
+        if returned is None or any(v is not True for v in returned):
             raise RuntimeError('PanDA did not acknowledge the entire owned event batch')
-    executor.get_job().nevents += len(ranges)
+    executor.get_job().nevents += int(round(sum(weights)))
 
 
 def throttle_acquire(process):
@@ -303,15 +327,11 @@ def post_finished(executor, messages):
     ranges = [{'eventRangeID': rid, 'eventStatus': 'finished'}
               for message in messages for rid in message.get('ids', [message['id']])]
     data = _server('update_event_ranges', {'event_ranges': json.dumps([{'eventRanges': ranges}]), 'version': 1})
-    returned = data.get('Returns') if isinstance(data, dict) else None
-    if isinstance(returned, str):
-        returned = json.loads(returned)
-    # The PostgreSQL job event-count statement's trailing False (send_finished).
-    if isinstance(returned, list) and len(returned) == len(ranges) + 1 and returned[-1] is False:
-        returned = returned[:-1]
-    if not isinstance(returned, list) or len(returned) != len(ranges):
+    returned = answers(data, len(ranges))
+    if returned is None:
         raise RuntimeError(f'update_event_ranges answered {str(data)[:300]}')
     taken = sum(v is True for v in returned)
     if taken < len(ranges):
         logger.warning(f'the server took {taken} of {len(ranges)} finished ranges')
-    executor.get_job().nevents += taken
+    executor.get_job().nevents += int(round(sum(
+        e for e, v in zip(range_events(messages), returned) if v is True)))
