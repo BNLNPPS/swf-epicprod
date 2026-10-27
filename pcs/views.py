@@ -68,6 +68,7 @@ from .models import (
 )
 from .serializers import _redact_contact
 from . import services
+from .physics_match import NUM
 
 PROD_CONFIG_SCOUT_MODE_PREF = 'prod_config_scout_mode'
 
@@ -6130,9 +6131,10 @@ BEAM_CONFIG_WORDS = {'hiacc': 'high acceptance', 'hidiv': 'high divergence'}
 
 def _range_words(value, symbol):
     """'Q2 10 to 100' from 'q2_10to100', 'Q2 > 1' from 'minQ2=1', 'x 0.001
-    to 1' from 'x_0.001to1'; the raw value when it is neither."""
+    to 1' from 'x_0.001to1', 'x 1e-4 to 1e-3' from 'x_1e-4to1e-3'; the raw
+    value when it is neither."""
     text = str(value or '')
-    m = re.fullmatch(r'(?:q2|x)_([\d.]+)to([\d.]+|INF)', text, re.IGNORECASE)
+    m = re.fullmatch(rf'(?:q2|x)_({NUM})to({NUM}|INF)', text, re.IGNORECASE)
     if m:
         return (f'{symbol} > {m.group(1)}' if m.group(2).upper() == 'INF'
                 else f'{symbol} {m.group(1)} to {m.group(2)}')

@@ -39,6 +39,31 @@ _BEAM_RE    = re.compile(r'^\d+x\d+$')
 #: tasknames (the submission pipeline replaces '='); both normalize to the
 #: '=' form so either source matches the same tag.
 _Q2_RE      = re.compile(r'^(minQ2[=-]\d+|q2_\S+)$')
+#: A range bound as the paths write it: decimal or exponent (0.001, 1e-4, 1E+0).
+NUM = r'(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
+#: Bjorken-x window, ``x_<lo>to<hi>`` (x_0.001to1, x_1e-4to1e-3). Without it
+#: the x bins of one species and beam derived as one sample and the first
+#: approved bin stood for the rest (pythia6-lhapdf 1.1.0, 2026-10-27).
+_X_RE       = re.compile(rf'^x_({NUM})to({NUM})$')
+
+
+def _x_range(tok):
+    """``tok`` when it is an x window with ordered bounds in [0, 1], else None."""
+    m = _X_RE.match(tok)
+    if not m:
+        return None
+    lo, hi = float(m.group(1)), float(m.group(2))
+    return tok if 0 <= lo < hi <= 1 else None
+
+
+def invalid_x_window(path):
+    """The first ``x_`` path segment that is not a valid x window, or ''.
+    A path naming its x bin badly has no identity: read without the bin it
+    would derive as the binless sample."""
+    for seg in (path or '').split('/'):
+        if seg.startswith('x_') and not _x_range(seg):
+            return seg
+    return ''
 #: an ion beam: 'e' and an element symbol, with or without its mass number
 #: (eAu, eHe3, eAg). A list of species dropped an unlisted one silently and
 #: the path derived as an ep sample (eAg, 2026-10-18). The symbol must be an
@@ -123,7 +148,7 @@ def derive_physics(path, beam=''):
     the signal-free p6001 physics tag plus a k background tag.
     """
     segs = _physics_area_segments(path)
-    if not segs:
+    if not segs or invalid_x_window(path):
         return None
     area, rest = segs[0], segs[1:]
 
@@ -173,6 +198,7 @@ def derive_physics(path, beam=''):
             if _BEAM_RE.match(tok):
                 sig['beam_energy_electron'], sig['beam_energy_hadron'] = _beam_split(tok)
             elif _Q2_RE.match(tok):       sig['q2_range'] = tok.replace('minQ2-', 'minQ2=')
+            elif _x_range(tok):           sig['x_range'] = tok
             elif _is_ion(tok):            ions.append(tok)
             elif tok in _NUCLEON:         nucleons.append(tok)
             elif tok in _BEAMCONFIG:      sig['beam_config'] = tok
@@ -271,6 +297,22 @@ def derive_background(path):
 _EVGEN_NAMES = ('EpIC', 'BeAGLE', 'sartre', 'eSTARlight', 'eicMesonSFGen',
                 'lAger', 'rapgap', 'DEMPgen', 'DJANGOH', 'GETaLM')
 _PYTHIA_RE = re.compile(r'^[Pp]ythia[ _]?(\d)(.*)$')
+#: Named pythia builds whose version is the next path segment
+#: (``pythia6-lhapdf/1.1.0``). Split as one token it read as pythia6 at
+#: version '6-lhapdf', which no EvGen tag carries. pythia6-eic has the same
+#: shape but ~30 bound PCs derive from its current reading; it joins this set
+#: only with a reviewed repair of those bindings.
+_NAMED_BUILDS = {'pythia6-lhapdf'}
+_SEG_VERSION_RE = re.compile(r'^v?\d+(\.\d+)+$')
+
+
+def _named_build(segs):
+    """(generator, version) from a named build followed by its version
+    segment, or None."""
+    for name, ver in zip(segs, segs[1:]):
+        if name.lower() in _NAMED_BUILDS and _SEG_VERSION_RE.match(ver):
+            return name.lower(), ver
+    return None
 
 
 def _split_gen_token(tok):
@@ -358,7 +400,19 @@ def derive_evgen(path, gen_version=''):
         repo = gv.split('github.com/', 1)[1].split('/releases', 1)[0].split('/')[-1]
         if repo:
             return _with_rad({'generator': repo, 'generator_version': release})
-    for tok in [release, gv, *segs]:
+    # A named build is read before the token split, which would take its
+    # name for '<family><version>' — from the release tag first, then the path.
+    build = _named_build([s for s in gv.split('/') if s])
+    if build:
+        return _with_rad({'generator': build[0], 'generator_version': build[1]})
+    for tok in (release, gv):
+        g, v = _split_gen_token(tok)
+        if g:
+            return _with_rad({'generator': g, 'generator_version': v})
+    build = _named_build(segs)
+    if build:
+        return _with_rad({'generator': build[0], 'generator_version': build[1]})
+    for tok in segs:
         g, v = _split_gen_token(tok)
         if g:
             return _with_rad({'generator': g, 'generator_version': v})

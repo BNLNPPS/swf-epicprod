@@ -16,7 +16,7 @@ import logging
 from django.db import transaction
 
 from .physics_match import (derive_background, derive_evgen, derive_physics,
-                            single_particle_angle)
+                            invalid_x_window, single_particle_angle)
 from .physics_config import config_name
 
 _log = logging.getLogger(__name__)
@@ -48,6 +48,10 @@ def derive_registered_sample(did):
     if not tail:
         return None, 'no EVGEN path'
     path = f'EVGEN/{tail}'
+    bad_x = invalid_x_window(path)
+    if bad_x:
+        return None, (f'invalid x window {bad_x!r} in {path}: '
+                      'expected x_<lo>to<hi> with 0 <= lo < hi <= 1')
     derived = derive_physics(path, beam=_beam_from({}, path))
     if derived is None:
         return None, f'no physics area recognized in {path}'
