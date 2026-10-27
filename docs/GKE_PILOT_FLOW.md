@@ -358,7 +358,7 @@ requested from the PanDA team, regenerates the ranges it left.
 | `cpu_limit` | `'15.8'` | each pod's CPU limit, above its request so the shared reconstruction can use the CPU the node's system pods leave idle; the harness still runs 14 slots (`ATHENA_PROC_NUMBER` follows `cpu`) |
 | `getjobrequests` | 5 | job requests before an idle pilot exits |
 | `proxy`, `secret_name` | as above, `epicprod-pilot-proxy` | the credential |
-| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle; since 2026-10-27 18:17 ET `native-runtime-google-es-batch-d3a74e0` (below) |
+| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle; since 2026-10-27 18:40 ET `native-runtime-google-es-batch-cf2c580` (below) |
 | `native_image` | `/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable` | the image containing the pilot's Python and the payload |
 | `es_channel` | `.../canary/es-channel-py313-debian13` | the channel matching Python 3.13 in that image |
 | `queuedata` | `.../canary/queuedata/BNL_ePIC_GOOGLE_es.json` | existing ES storage/cadence overrides, preserved from the previous launcher |
@@ -419,13 +419,16 @@ debug pod with that setting started the payload image as uid 1000
 
 ## Operating limits
 
-**The ES batch channel.** Since 2026-10-27 18:17 ET the runtime is
-`native-runtime-google-es-batch-d3a74e0`: Google's site files with the batch
-pilot archive `9024592a` that Perlmutter runs, which reports failed ranges in
-bulk from the executor's pass rather than one server call each inside the loop
-that answers the payload's range requests, and writes the ES job's log
-(NERSC_PERLMUTTER.md, The batch pilot, Failed units and The job's log). From
-16:05 ET it was `native-runtime-google-es-batch-f4aa806`, archive `b2655eaa`,
+**The ES batch channel.** Since 2026-10-27 18:40 ET the runtime is
+`native-runtime-google-es-batch-cf2c580`: Google's site files with the batch
+pilot archive `cb2b9bce` that Perlmutter runs, which takes back from PanDA's
+record the ranges of an acquisition whose answer a PanDA restart cut off,
+reports failed ranges in bulk from the executor's pass rather than one server
+call each inside the loop that answers the payload's range requests, and
+writes the ES job's log (NERSC_PERLMUTTER.md, The batch pilot: PanDA restarts,
+Failed units, The job's log). From 18:17 ET it was
+`native-runtime-google-es-batch-d3a74e0` (archive `9024592a`, without the
+restart recovery); from 16:05 ET `native-runtime-google-es-batch-f4aa806`, archive `b2655eaa`,
 which counts a unit's events rather than its ranges, so tasks may take
 ranges of several events: the feeder's samples carry ranges of ten events from
 2026-10-27 (test task 41453, 420 ranges, 4,200 events, credited in full). From
