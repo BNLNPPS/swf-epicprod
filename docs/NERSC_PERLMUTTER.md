@@ -197,6 +197,16 @@ back to another pilot.
   machine's running and pending jobs and partition state (swf-monitor
   `docs/POOL_REPORTER.md`). The node-exclusion check runs before pilot
   startup.
+- **Staggered starts.** Nodes granted together would start their payloads
+  together and load the storage doors in step, whichever path submitted them
+  (the feeder, a trial, a test). Before the pilot starts, each node takes the
+  next start slot, at least 300 s (`START_GAP_S`) after the previous node's,
+  from a record on the community file system under a mkdir lock, and waits for
+  it; a node alone starts at once. The record is public at
+  `https://portal.nersc.gov/cfs/m3763/panda/start-slots/last`, and each launch
+  record states the slot it took. A record that cannot be used is stated and
+  the node starts at once: the stagger relieves pressure and never stops a
+  launch.
 - **Admission.** Image admission reads the same public launcher URL through
   the cached product `perlmutter_pilot_runtime` (five-minute refresh,
   fifteen-minute maximum evidence age) and derives the exact image and pinned

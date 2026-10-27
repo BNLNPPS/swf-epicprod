@@ -237,6 +237,53 @@ export MACHINEFEATURES=$WORKDIR/sitefeatures
 mkdir -p "$MACHINEFEATURES"
 printf '%s\n' "$DEADLINE_AT" > "$MACHINEFEATURES/shutdowntime"
 export EPICPROD_MIN_TIME_FOR_NEW_JOB=600
+
+# OURS: staggered starts (docs/NERSC_PERLMUTTER.md, The launcher and the
+# native pilot). Nodes granted together would start their payloads together
+# and load the storage doors in step. Each node takes the next start slot, at
+# least START_GAP_S after the previous node's, from a record on the community
+# file system that every worker of the account shares; a mkdir lock makes the
+# read and the write one step. A node alone starts at once. The record is
+# public beside the launch records:
+#   https://portal.nersc.gov/cfs/m3763/panda/start-slots/last
+# A record that cannot be used is said and the node starts at once: the
+# stagger relieves pressure and never stops a launch.
+START_SLOTS=/global/cfs/cdirs/m3763/www/panda/start-slots
+START_GAP_S=300
+claim_start_slot() {
+    local lock=$START_SLOTS/lock last now slot t0
+    umask 022
+    mkdir -p "$START_SLOTS" 2>/dev/null || return 1
+    t0=$(date +%s)
+    until mkdir "$lock" 2>/dev/null; do
+        # A holder keeps the lock for milliseconds; one a minute old belongs
+        # to a node that died holding it.
+        (( $(date +%s) - $(stat -c %Y "$lock" 2>/dev/null || date +%s) > 60 )) && rmdir "$lock" 2>/dev/null
+        (( $(date +%s) - t0 > 120 )) && return 1
+        sleep 1
+    done
+    last=$(cat "$START_SLOTS/last" 2>/dev/null)
+    [[ $last =~ ^[0-9]+$ ]] || last=0
+    now=$(date +%s)
+    slot=$(( last + START_GAP_S > now ? last + START_GAP_S : now ))
+    if ! { echo "$slot" > "$START_SLOTS/last.$$" && mv -f "$START_SLOTS/last.$$" "$START_SLOTS/last"; }; then
+        rm -f "$START_SLOTS/last.$$"; rmdir "$lock"; return 1
+    fi
+    rmdir "$lock"
+    echo "$slot"
+}
+if START_SLOT=$(claim_start_slot); then
+    START_WAIT=$(( START_SLOT - $(date +%s) ))
+    if (( START_WAIT > 0 )); then
+        log "start slot $(date -u -d "@$START_SLOT" +%H:%M:%SZ): waiting ${START_WAIT}s, ${START_GAP_S}s after the previous node's start"
+        sleep "$START_WAIT"
+    else
+        log "start slot now: no node started in the last ${START_GAP_S}s"
+    fi
+else
+    log "start slot record $START_SLOTS unusable; starting without a stagger"
+fi
+
 SECONDS_LEFT=$(( DEADLINE_AT - $(date +%s) ))
 (( SECONDS_LEFT > EPICPROD_MIN_TIME_FOR_NEW_JOB )) \
     || { log 'commissioning worker has insufficient time left; no pilot started'; exit 73; }
