@@ -177,6 +177,7 @@ def throttle_acquire(process):
 # reach the server at all. Both paths go to the server directly instead.
 ACQUIRE_MAX = 10000         # ranges in one acquisition
 REPORT_RANGES = 2000        # ranges in one report
+FIRST_ACQUIRE = 256        # ranges in the first acquisition, before the range size is known
 TAKE_GIVE_UP_S = 300        # an empty cache the server does not refill: answer "No more events"
 
 
@@ -192,25 +193,41 @@ def _server(endpoint, body):
 
 
 def prefetch_size():
-    """EPICPROD_ES_PREFETCH_RANGES: the ranges a job holds on the node; unset is off."""
-    raw = os.environ.get('EPICPROD_ES_PREFETCH_RANGES', '')
+    """EPICPROD_ES_PREFETCH_EVENTS: the events a job holds on the node, in its
+    ranges; unset is off. EPICPROD_ES_PREFETCH_RANGES, the name from before
+    ranges of several events, is read the same way."""
+    raw = (os.environ.get('EPICPROD_ES_PREFETCH_EVENTS')
+           or os.environ.get('EPICPROD_ES_PREFETCH_RANGES', ''))
     if not raw or not enabled():
         return 0
     if not raw.isdigit() or not 1000 <= int(raw) <= 1000000:
-        raise ValueError('EPICPROD_ES_PREFETCH_RANGES must be 1000..1000000 on a batch pilot')
+        raise ValueError('EPICPROD_ES_PREFETCH_EVENTS must be 1000..1000000 on a batch pilot')
     return int(raw)
 
 
+def range_span(rng):
+    """The events of one range the server handed out (startEvent..lastEvent)."""
+    try:
+        return max(1, int(rng['lastEvent']) - int(rng['startEvent']) + 1)
+    except (KeyError, TypeError, ValueError):
+        return 1
+
+
 class Prefetch:
-    """The job's ranges, acquired from its start and refilled whenever fewer
-    than half of ``size`` are held, ACQUIRE_MAX a call, until the server has
-    none left. Ranges a job holds when it ends are released by the server's
-    fine-grained accounting with every other range it did not finish."""
+    """The job's ranges, acquired from its start and refilled whenever they
+    hold fewer than half of ``size`` events, ACQUIRE_MAX ranges a call, until
+    the server has none left. The size is in events, so a node holds the same
+    work whatever the range size: 200,000 ranges of ten events would have held
+    two thirds of a 3M-event task. Ranges a job holds when it ends are released
+    by the server's fine-grained accounting with every other range it did not
+    finish."""
 
     def __init__(self, job, size, stopped):
         self.ident = {'job_id': int(job.jobid), 'jobset_id': int(job.jobsetid), 'task_id': int(job.taskid)}
         self.size, self.stopped = size, stopped
         self.ranges = collections.deque()
+        self.held = 0                   # events in self.ranges
+        self.span = 1                   # events a range, from the last acquisition
         self.exhausted = False
         self.calls = self.failures = 0
         self.cond = threading.Condition()
@@ -221,10 +238,12 @@ class Prefetch:
         backoff = 0
         while not self.stopped.is_set():
             with self.cond:
-                if self.exhausted or len(self.ranges) >= self.size // 2:
+                if self.exhausted or self.held >= self.size // 2:
                     self.cond.wait(1.0)
                     continue
-                want = min(ACQUIRE_MAX, self.size - len(self.ranges))
+                want = min(ACQUIRE_MAX, max(1, (self.size - self.held) // self.span))
+                if not self.calls:
+                    want = min(want, FIRST_ACQUIRE)     # learns the range size first
             try:
                 got = _server('acquire_event_ranges', dict(self.ident, n_ranges=want)) or []
                 backoff = 0
@@ -238,6 +257,8 @@ class Prefetch:
                 self.calls += 1
                 if got:
                     self.ranges.extend(got)
+                    self.held += sum(range_span(r) for r in got)
+                    self.span = range_span(got[0])
                 else:
                     self.exhausted = True
                     logger.info(f'range prefetch: the server has no more ranges after {self.calls} calls')
@@ -254,16 +275,18 @@ class Prefetch:
                                  f'({self.failures} failed calls); answering no more events')
                     break
                 self.cond.wait(1.0)
-            return [self.ranges.popleft() for _ in range(min(count, len(self.ranges)))]
+            out = [self.ranges.popleft() for _ in range(min(count, len(self.ranges)))]
+            self.held -= sum(range_span(r) for r in out)
+            return out
 
 
 def prefetch_start(process, job, stopped):
     """At the ES process's start, before the payload asks: a Prefetch on it
-    when EPICPROD_ES_PREFETCH_RANGES is set."""
+    when EPICPROD_ES_PREFETCH_EVENTS is set."""
     size = prefetch_size()
     if size:
         process._epic_prefetch = Prefetch(job, size, stopped)
-        logger.info(f'range prefetch: holding up to {size} ranges, {ACQUIRE_MAX} an acquisition')
+        logger.info(f'range prefetch: holding up to {size} events, {ACQUIRE_MAX} ranges an acquisition')
 
 
 def prefetch_take(process, max_ranges):

@@ -4,11 +4,15 @@ import hashlib
 import shlex
 
 # Events per range of a fine-grained task above one need JEDI to cut such
-# ranges: its job generator gives a fine-grained task single-event ranges
-# (pandajedi JobGenerator), and the submitter drops nEventsPerWorker for one
-# (swf-monitor scripts/evgen_panda_submit.py), since that parameter alone
-# makes a task ordinary Event Service, with its merge. The payload and the
-# close-out take ranges of any size (NODE_EVENT_DISPATCHER.md).
+# ranges: upstream's job generator gives a fine-grained task single-event
+# ranges, and our server's local patch adds the task parameter
+# nEventsPerFineGrainedRange (split rule FR; distcomp-services
+# patches/fine-grained-range-size), which the submitter sets from
+# range_events (swf-monitor scripts/evgen_panda_submit.py). The payload, the
+# close-out and the batch pilot take ranges of any size
+# (NODE_EVENT_DISPATCHER.md); the stock pilot counts a range as one event, so
+# ranges above one need the batch channel. Held off until a Perlmutter task
+# of ten-event ranges is credited in full.
 JEDI_FINE_GRAINED_RANGES = False
 
 
@@ -51,6 +55,9 @@ def definition(settings):
         if k > 1 and not JEDI_FINE_GRAINED_RANGES:
             raise ValueError('production ES range_events above 1 needs JEDI ranges of several events '
                              'for fine-grained tasks')
+        if k > 1 and not cfg.get('batch_channel'):
+            raise ValueError('production ES range_events above 1 needs the batch channel: '
+                             'the stock pilot counts a range as one event')
     if 'parallel_start' in cfg and type(cfg['parallel_start']) is not bool:
         raise ValueError('production ES parallel_start must be a boolean')
     if 'fast_merge' in cfg and type(cfg['fast_merge']) is not bool:

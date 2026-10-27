@@ -37,6 +37,21 @@ class NativeBatchTests(unittest.TestCase):
   self.assertEqual(e.job.nevents,30)
   with patch.object(b,'_server',return_value={'Returns':[True]}):
    with self.assertRaises(RuntimeError):b.post_finished(e,[{'id':tens[0],'ids':tens,'events':40}])
+ def test_prefetch_holds_events_not_ranges(self):
+  served=[0]
+  def server(endpoint,body):
+   n=body['n_ranges'];first=served[0];served[0]+=n
+   return [{'eventRangeID':f'41431-6010000-1-{10*(first+i)+1}-1','startEvent':10*(first+i),'lastEvent':10*(first+i)+9} for i in range(n)] if first<5000 else []
+  job=types.SimpleNamespace(jobid=6010000,jobsetid=6010001,taskid=41431);stop=threading.Event()
+  with patch.object(b,'_server',side_effect=server):
+   p=b.Prefetch(job,20000,stop);time.sleep(0.5)
+   with p.cond:self.assertLessEqual(p.held,20000);self.assertGreaterEqual(p.held,10000);self.assertEqual(p.held,10*len(p.ranges))
+   got=p.take(100)
+   with p.cond:self.assertEqual(p.held,10*len(p.ranges))
+   stop.set()
+  self.assertEqual(len(got),100)
+  with patch.dict(os.environ,{'EPICPROD_ES_PREFETCH_EVENTS':'200000'}):self.assertEqual(b.prefetch_size(),200000)
+  with patch.dict(os.environ,{'EPICPROD_ES_PREFETCH_RANGES':'150000'}):self.assertEqual(b.prefetch_size(),150000)
  def test_config_provider_override_uses_explicit_safe_interval(self):
   with patch.dict(os.environ,{'EPICPROD_ES_STAGEOUT_GAP':'300'}):self.assertEqual(b.stageout_gap(),300)
   with patch.dict(os.environ,{'EPICPROD_ES_STAGEOUT_GAP':'60'}):

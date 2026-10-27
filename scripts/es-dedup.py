@@ -27,9 +27,11 @@ rule, so the RSE's reaper removes its replica. The clean copy's name carries a
 "d" after the close index (<stem>.<pandaid>.<close>d.eicrecon.edm4eic.root).
 apply without --execute prints what it would do.
 
-EventHeader IDs are zero-based; PanDA's job_processID is the one-based event
-number, so an ID is job_processID - 1 (es-readback.py, the payload's
-startEvent - 1 offset).
+EventHeader IDs are zero-based; a range covers the one-based events
+def_min_eventid..def_max_eventid (its startEvent..lastEvent), so its IDs are
+def_min_eventid - 1 .. def_max_eventid - 1 (es-readback.py, the payload's
+startEvent - 1 offset). A range holds one event or, with
+nEventsPerFineGrainedRange, several.
 """
 import argparse
 import json
@@ -83,11 +85,11 @@ def plan(args):
                     'bytes': f.get('bytes'), 'pandaid': job_of(f['name']), 'url': urls[0],
                     'rses': sorted((r.get('rses') or {}).keys())})
     with connections['panda'].cursor() as cursor:
-        cursor.execute('SELECT pandaid, job_processid FROM doma_panda.jedi_events '
+        cursor.execute('SELECT pandaid, def_min_eventid, def_max_eventid FROM doma_panda.jedi_events '
                        'WHERE jeditaskid = %s AND status IN (3, 6)', [args.task])
         credit = {}
-        for pandaid, process in cursor.fetchall():
-            credit.setdefault(int(pandaid), []).append(int(process) - 1)
+        for pandaid, first, last in cursor.fetchall():
+            credit.setdefault(int(pandaid), []).extend(range(int(first) - 1, int(last)))
     result = {'dataset': args.dataset, 'task': args.task, 'files': out,
               'credited': {str(k): sorted(v) for k, v in credit.items()},
               'registered_events': sum(f['events'] for f in out),

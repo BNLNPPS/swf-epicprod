@@ -899,7 +899,7 @@ def main():
     ap.add_argument('--env', action='append')
     ap.add_argument('--summary', default='es_summary.json')
     ap.add_argument('--events-per-unit', type=int, default=int(os.environ.get('ES_EVENTS_PER_UNIT', '0')),
-                    help='consecutive events per unit for a fine-grained task (one event per range); 0 = one range per unit')
+                    help='consecutive events per unit for a fine-grained task, whole ranges of one or more events; 0 = one range per unit')
     ap.add_argument('--close-s', type=float, default=float(os.environ.get('ES_CLOSE_S', '0')),
                     help='seconds between closes: the units since the last close merged into one file and registered; 0 = each unit registers its own')
     ap.add_argument('--close-max-files', type=int, default=int(os.environ.get('ES_CLOSE_MAX_FILES', '0')),
