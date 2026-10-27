@@ -200,6 +200,8 @@ def _parse_catalog_filters(request):
         'pre_tdr_use': request.GET.get('pre_tdr_use') == '1',
         'early_science_use': request.GET.get('early_science_use') == '1',
         'other_use': request.GET.get('other_use') == '1',
+        'queue': (request.GET.get('queue') or '').strip(),
+        'site': (request.GET.get('site') or '').strip(),
     }
 
 
@@ -478,15 +480,17 @@ def _campaign_data(campaign):
     ) or {}
 
 
-def _current_catalog_tasks(campaign, catalog_view, progress_snapshot, timings=None):
+def _current_catalog_tasks(campaign, catalog_view, progress_snapshot, timings=None, task_ids=None):
+    """The catalog's annotated rows: a campaign's tasks, or with ``task_ids``
+    those tasks, whatever their campaign (the queue view)."""
     def load_tasks():
-        return list(
-            ProdTask.objects.select_related(
-                'campaign', 'dataset', 'prod_config', 'request',
-                'dataset__physics_tag', 'dataset__evgen_tag', 'dataset__simu_tag',
-                'dataset__reco_tag', 'dataset__background_tag',
-            ).filter(campaign=campaign).order_by('-updated_at')
+        rows = ProdTask.objects.select_related(
+            'campaign', 'dataset', 'prod_config', 'request',
+            'dataset__physics_tag', 'dataset__evgen_tag', 'dataset__simu_tag',
+            'dataset__reco_tag', 'dataset__background_tag',
         )
+        rows = rows.filter(pk__in=task_ids) if task_ids is not None else rows.filter(campaign=campaign)
+        return list(rows.order_by('-updated_at'))
     tasks = _timed(
         timings,
         'task query',
@@ -525,6 +529,25 @@ def _current_catalog_tasks(campaign, catalog_view, progress_snapshot, timings=No
             detail_fn=lambda rows: f'{len(rows)} rows',
         )
     return tasks
+
+
+def _queue_tasks(queues):
+    """The PCS tasks behind the production tasks sent to ``queues`` and not
+    ended (census.sent_production_tasks, the front's own selection, paused
+    tasks included), those JEDI tasks no PCS task is associated with yet, how
+    many JEDI tasks there are (one PCS task can stand behind several
+    attempts), and the paused ones."""
+    from monitor_app.panda.census import sent_production_tasks
+    from .models import PandaTasks
+    sent = sent_production_tasks(queues)
+    jedi_ids = [task_id for task_id, _ in sent]
+    by_jedi = {}
+    for jedi_id, prod_id in (PandaTasks.objects.filter(jedi_task_id__in=jedi_ids)
+                             .values_list('jedi_task_id', 'prod_task_id')):
+        by_jedi.setdefault(jedi_id, prod_id)
+    prod_ids = list(dict.fromkeys(by_jedi[j] for j in jedi_ids if j in by_jedi))
+    return (prod_ids, [j for j in jedi_ids if j not in by_jedi], len(jedi_ids),
+            [task_id for task_id, status in sent if status == 'paused'])
 
 
 def _cached_current_task_list_html(campaign, catalog_view, context,
@@ -5523,6 +5546,28 @@ def pcs_catalog(request):
         'progress_refreshed_for_request': progress_refreshed_for_request,
         'progress_refresh_error': progress_refresh_error,
     }
+    if filters['queue']:
+        # The queue view (?queue=A,B&site=NAME): what has been sent to an
+        # allocation, the PCS tasks behind the production tasks sent to its
+        # queues and not ended, whatever their campaign, in the catalog's
+        # rows; the dashboard's TASKS link opens it. A short list, built on
+        # each request.
+        queue_ids = [q.strip() for q in filters['queue'].split(',') if q.strip()]
+        prod_ids, unassociated, panda_count, paused = _timed(
+            timings, 'queue tasks', lambda: _queue_tasks(queue_ids),
+            detail_fn=lambda value: f'{len(value[0])} PCS tasks, {len(value[1])} unassociated')
+        tasks = _current_catalog_tasks(None, 'catalog', progress_snapshot, timings=timings, task_ids=prod_ids)
+        context.update(
+            queue_filter=', '.join(queue_ids), queue_site=filters['site'] or ', '.join(queue_ids),
+            queue_unassociated=unassociated, queue_paused=paused,
+            queue_panda_count=panda_count,
+            task_list_html=render_to_string('pcs/_task_list_filter.html', {
+                'tasks': tasks, 'catalog_view': 'catalog', 'columns_mode': 'full',
+                'status_choices': PRODTASK_STATUS_CHOICES,
+                'ai_executed_names': _executed_proposal_names()}),
+            task_list_cache_hit=False, task_list_cache_rendered_at='', task_list_cache_stale=False,
+            task_list_cache_miss_suppressed=False)
+        return render(request, 'pcs/pcs_catalog.html', context)
     task_list_html, task_list_cache_hit, task_list_cache_meta = _cached_current_task_list_html(
         progress_campaign, catalog_view, context, progress_snapshot, timings=timings)
     context['task_list_html'] = task_list_html

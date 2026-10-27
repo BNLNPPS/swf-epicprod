@@ -271,6 +271,16 @@ dashboard links. Four feeds are relevant:
 
 Feed implementation remains in the source subsystems.
 
+The queue view, `?queue=<queue>[,<queue>]&site=<name>`, answers what has been
+sent to an allocation: the PCS tasks behind the production tasks sent to those
+queues that have not ended, paused ones included, whatever their campaign, in
+the catalog's rows, under the heading "Tasks sent to <name>" with the count of
+PanDA tasks (one PCS task can stand behind several attempts). The selection is
+the one the production front counts (swf-monitor `census.sent_production_tasks`;
+the front's count leaves out paused tasks); the heading names the paused ones. A PanDA task no PCS task is
+associated with yet is listed by its id. The dashboard's TASKS link under each
+site's name opens it (PROD_DASHBOARD.md).
+
 ## 7. Filters and Selection
 
 Catalog filters cover the fields used to find task sets: campaign stage,
