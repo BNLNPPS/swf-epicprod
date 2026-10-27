@@ -345,13 +345,15 @@ if (( rc != 0 )); then
         | tail -12 || true
 fi
 # The pilot's steps between the payload's end and its own exit, which decide
-# how long the node stays allocated after the work (docs/NERSC_PERLMUTTER.md,
-# The end of a job): selected timestamped step lines, nothing credential-like.
+# how long the node stays allocated after the work and whether its last
+# reports reach the server (docs/NERSC_PERLMUTTER.md, The end of a job): the
+# ES process's handling of the payload's messages, the executor's reports and
+# the end steps; selected timestamped lines, nothing credential-like.
 log "native pilot end of job:"
 sed -r 's/\x1B\[[0-9;]*[[:alpha:]]//g' native-pilot-console.log \
     | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:,]+ \|' \
-    | grep -E 'ESProcess finished|receipt archive|final report|tar/zip event ranges|stag(ing|ed) output file|failed to stage out|ES generic executor finished|final server update|this job has now completed|report files in Harvester mode|proceeding with|thread has finished|clean|work dir|pilot has finished|exit code' \
+    | grep -E 'ESProcess finished|receipt archive|final report|tar/zip event ranges|stag(ing|ed) output file|failed to stage out|ES generic executor finished|final server update|this job has now completed|report files in Harvester mode|proceeding with|thread has finished|clean|size of work dir|pilot has finished|exit code|handling out message|reported [0-9]+ messages|report of [0-9]+ messages|server took|range prefetch|update_event_ranges|Failed to handle|exception caught|PilotException|Stop has been set|stop is set|Payload finished|main loop|Message thread|monitor is checking|No more events|esprocess|ESProcess' \
     | grep -viE 'token|secret|passw|authori|bearer|x509|proxy|cert|pre-merge' \
-    | sed -r 's/[A-Za-z0-9+\/=_-]{40,}/<long value>/g' | cut -c1-200 | tail -60 || true
+    | sed -r 's/[A-Za-z0-9+\/=_-]{40,}/<long value>/g' | cut -c1-240 | tail -150 || true
 log "native pilot finished with code $rc"
 exit "$rc"
