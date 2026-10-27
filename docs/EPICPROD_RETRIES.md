@@ -288,6 +288,20 @@ Repair uses the exact submitted sandbox CSV, retaining the previous record
 and checking row count, event sum and the canonical `rows_sha256` digest;
 an exactly 10,000-chunk input alone is not evidence of truncation.
 
+`scripts/repair_attempt_manifest.py --jedi-taskid <PanDA task id>` runs
+that verification read-only, under the normal production-host Django
+environment (run from `<swf-monitor>/src` using its venv). It prints the
+CSV's row count, physics-event sum and canonical digest, with the
+comparable submitted count when available. Missing or non-row task
+parameters do not prevent verification from an unambiguous exact CSV.
+To apply, supply `--apply --rows <reviewed rows> --events <reviewed sum>
+--sha256 <reviewed digest> --reason <reason>`. Apply rechecks these
+values, locks the attempt and refuses if its manifest changed during
+verification. It preserves unrelated metadata and retains the prior
+manifest under `manifest_superseded`, with the operating account, time
+and reason. The repair and its `attempt_manifest_repair` action-stream
+record commit together; a failed audit write rolls back the repair.
+
 The `PandaTasks` association records what the attempt covers:
 `residual_of`, the row coverage ("M of N rows"), the registered and
 unarrived file counts per checked DID, and how the manifest was

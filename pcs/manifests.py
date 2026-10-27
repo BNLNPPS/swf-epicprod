@@ -30,6 +30,7 @@ the attempt, never resolved silently.
 import hashlib
 import io
 import json
+import logging
 import re
 import tarfile
 import time
@@ -40,6 +41,7 @@ MANIFEST_ROW_RE = re.compile(
 TARBALL_RE = re.compile(r'jobO\.[0-9a-f]{32}\.tar\.gz')
 SOURCE_URL_RE = re.compile(r'"sourceURL":\s*"([^"]+)"')
 CACHE_FETCH_TIMEOUT = 60
+logger = logging.getLogger(__name__)
 
 
 class ManifestUnavailable(Exception):
@@ -453,7 +455,14 @@ def choose_attempt(task, jedi_task_id=None):
     best, best_key = None, None
     for r in rows:
         rec = record_of(r)
-        n = rec['rows'] if rec else (attempt_row_count(r.jedi_task_id) or 0)
+        if rec:
+            n = rec['rows']
+        else:
+            try:
+                n = attempt_row_count(r.jedi_task_id) or 0
+            except ManifestUnavailable as exc:
+                logger.warning('attempt %s row count unavailable: %s', r.jedi_task_id, exc)
+                n = 0
         key = (n, r.try_number)
         if best_key is None or key > best_key:
             best, best_key = r, key

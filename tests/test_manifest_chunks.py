@@ -8,10 +8,12 @@ import io
 import json
 import tarfile
 import unittest
+from copy import deepcopy
 from types import SimpleNamespace
 from unittest import mock
 
 from pcs import manifests
+from pcs import manifest_repair
 from pcs.commands import _residual_rows, reco_row_key
 from swf_epicprod.analytics.delivery_daily import count_each_row_once
 from swf_epicprod.analytics.file_events import source_of
@@ -160,6 +162,15 @@ class AttemptUnits(unittest.TestCase):
             with self.assertRaises(manifests.ManifestUnavailable):
                 manifests.attempt_row_count(41367)
 
+    def test_unreadable_attempt_does_not_hide_a_usable_sibling(self):
+        bad = SimpleNamespace(jedi_task_id=1, try_number=2, metadata={})
+        good = SimpleNamespace(jedi_task_id=2, try_number=1, metadata={})
+        task = SimpleNamespace(panda_tasks=SimpleNamespace(all=lambda: [bad, good]))
+        with mock.patch.object(manifests, 'attempt_row_count', side_effect=[
+                manifests.ManifestUnavailable('bad taskparams'), 7230]), \
+                self.assertLogs('pcs.manifests', level='WARNING'):
+            self.assertIs(manifests.choose_attempt(task), good)
+
 
 class Sandbox(unittest.TestCase):
 
@@ -182,6 +193,7 @@ class Sandbox(unittest.TestCase):
             with self.assertRaisesRegex(manifests.ManifestUnavailable, 'not the whole attempt'):
                 manifests.fetch_from_cache(41367)
 
+
     def test_valid_five_digit_sandbox_rows_are_complete(self):
         rows = [(EVGEN, 'hepmc3.tree.root', 100, c) for c in (9999, 10000, 49999)]
         response = SimpleNamespace(status_code=200, content=self.archive(
@@ -200,6 +212,70 @@ class Sandbox(unittest.TestCase):
             with self.assertRaisesRegex(manifests.ManifestUnavailable, 'ambiguous'):
                 manifests.fetch_from_cache(41367)
 
+
+class ExplicitRepair(unittest.TestCase):
+
+    def setUp(self):
+        self.rows = [(EVGEN, 'hepmc3.tree.root', 100, c) for c in (9999, 10000, 49999)]
+        self.old = manifests.make_record(self.rows[:1], 'submission')
+        self.attempt = SimpleNamespace(jedi_task_id=41367, task_name='composed.task',
+                                       metadata={'manifest': self.old, 'other': {'value': 1}})
+
+    def prepare(self, count=3):
+        with mock.patch.object(manifests, 'fetch_from_cache', return_value=self.rows), \
+                mock.patch.object(manifests, 'attempt_row_count', return_value=count):
+            return manifest_repair.prepare(self.attempt)
+
+    def replacement(self, prepared, metadata=None, **overrides):
+        args = {'rows': 3, 'events': 300, 'sha256': manifests.rows_sha256(self.rows),
+                'actor': 'operator', 'reason': 'verify exact submitted CSV'}
+        args.update(overrides)
+        return manifest_repair.replacement(
+            self.attempt.metadata if metadata is None else metadata, prepared, **args)
+
+    def test_dry_run_reads_exact_csv_without_changing_the_attempt(self):
+        before = deepcopy(self.attempt.metadata)
+        plan = self.prepare()
+        self.assertEqual((plan['summary']['rows'], plan['summary']['events']), (3, 300))
+        self.assertEqual(plan['summary']['sha256'], manifests.rows_sha256(self.rows))
+        self.assertEqual(self.attempt.metadata, before)
+
+    def test_known_submitted_count_must_agree(self):
+        with self.assertRaisesRegex(manifests.ManifestUnavailable, 'attempt declares'):
+            self.prepare(count=4)
+
+    def test_exact_csv_can_repair_a_record_with_unknown_count_units(self):
+        plan = self.prepare(count=None)
+        self.assertEqual(plan['summary']['count_basis'], 'exact sandbox CSV alone')
+        self.assertEqual(self.replacement(plan)['manifest']['rows'], 3)
+
+    def test_replacement_keeps_prior_record_and_concurrent_unrelated_metadata(self):
+        plan = self.prepare()
+        current = deepcopy(self.attempt.metadata)
+        current['other']['value'] = 2
+        fixed = self.replacement(plan, current)
+        self.assertEqual(fixed['other']['value'], 2)
+        self.assertEqual(fixed['manifest']['source'], 'cache')
+        self.assertEqual(fixed['manifest']['rows'], 3)
+        previous = fixed['manifest_superseded'][-1]
+        self.assertEqual(previous['manifest'], self.old)
+        self.assertEqual(previous['by'], 'operator')
+        self.assertIn('reason', previous)
+        self.assertEqual(self.attempt.metadata['manifest'], self.old)
+
+    def test_changed_manifest_is_not_overwritten(self):
+        plan = self.prepare()
+        current = deepcopy(self.attempt.metadata)
+        current['manifest']['rows'] = 2
+        with self.assertRaisesRegex(ValueError, 'record changed'):
+            self.replacement(plan, current)
+
+    def test_all_reviewed_values_and_a_reason_are_required(self):
+        plan = self.prepare()
+        for invalid in ({'rows': 4}, {'events': 400}, {'sha256': '0' * 64},
+                        {'actor': ''}, {'reason': ''}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.replacement(plan, **invalid)
 
 if __name__ == '__main__':
     unittest.main()
