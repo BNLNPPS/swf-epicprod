@@ -29,6 +29,9 @@ def main():
                        or not args.reason.strip()):
         parser.error('--apply requires reviewed --rows, --events, --sha256 and --reason')
 
+    # The documented working directory supplies swf_monitor_project;
+    # this checkout supplies the PCS code being verified.
+    sys.path.insert(0, str(Path.cwd()))
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'swf_monitor_project.settings')
     import django
