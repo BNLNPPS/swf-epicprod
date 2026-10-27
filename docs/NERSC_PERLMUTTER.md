@@ -375,8 +375,10 @@ that stood.
 
 `swf_epicprod.perlmutter_production` runs at the end of each five-minute ES
 close-out cycle. With `perlmutter_production.enabled=true` it adds a task only
-when the queue has no job and no other live task, so the queue never holds two
-nodes; a paused task does not hold it. Each task is 3,000,000 fresh 5 GeV
+when none of its own samples has a job or a live task on the queue, so
+production holds one node; a paused task does not hold it. Tests and any other
+tasks on the queue run beside production on nodes of their own and hold
+nothing: the five-node target is soft, not a limit. Each task is 3,000,000 fresh 5 GeV
 neutron-gun events at 3–50 degrees in one job, in the shape above with
 500-event units and 120-second closes, four at a time. On Perlmutter a
 neutron simulates in 0.289 s with reconstruction running beside it (job

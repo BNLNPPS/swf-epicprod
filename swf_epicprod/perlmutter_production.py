@@ -60,17 +60,36 @@ def shaped(task, extra):
     return task
 
 
+def feeder_task_ids():
+    """The PanDA task ids of every sample this feeder made."""
+    from pcs.models import ProdTask
+    ids = set()
+    for task in ProdTask.objects.filter(overrides__has_key=MARKER):
+        if task.panda_task_id:
+            ids.add(int(task.panda_task_id))
+        ids.update(int(a.jedi_task_id) for a in task.panda_tasks.all() if a.jedi_task_id)
+    return sorted(ids)
+
+
 def occupancy():
-    """The queue's jobs and its other live tasks: anything there holds a new
-    task, so the queue runs one node outside a trial."""
+    """The jobs and live tasks of the feeder's own samples on the queue: they
+    hold a new sample, so production runs one node outside a trial. A test or
+    any other task on the queue runs beside it on a node of its own and holds
+    nothing (Torre, 2026-10-27: tests run concurrently with production; five
+    nodes is a soft target, not a limit)."""
     from django.db import connections
+    ids = feeder_task_ids()
+    if not ids:
+        return 0, []
     with connections['panda'].cursor() as cursor:
-        cursor.execute('SELECT count(*) FROM doma_panda.jobsactive4 WHERE computingsite=%s', [QUEUE])
-        jobs = cursor.fetchone()[0]
-        cursor.execute('SELECT count(*) FROM doma_panda.jobsdefined4 WHERE computingsite=%s', [QUEUE])
-        jobs += cursor.fetchone()[0]
-        cursor.execute('SELECT jeditaskid FROM doma_panda.jedi_tasks WHERE site=%s AND status = ANY(%s)',
-                       [QUEUE, list(LIVE_TASK_STATES)])
+        jobs = 0
+        for table in ('jobsactive4', 'jobsdefined4'):
+            cursor.execute(f'SELECT count(*) FROM doma_panda.{table} WHERE computingsite=%s AND jeditaskid = ANY(%s)',
+                           [QUEUE, ids])
+            jobs += cursor.fetchone()[0]
+        cursor.execute('SELECT jeditaskid FROM doma_panda.jedi_tasks '
+                       'WHERE site=%s AND status = ANY(%s) AND jeditaskid = ANY(%s)',
+                       [QUEUE, list(LIVE_TASK_STATES), ids])
         tasks = [row[0] for row in cursor.fetchall()]
     return jobs, tasks
 
