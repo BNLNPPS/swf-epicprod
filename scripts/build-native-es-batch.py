@@ -61,6 +61,17 @@ def build(baseline,output):
     # keep their archives.
     s=replace_once(s,"        job = self.get_job()\n        if self.__queued_out_messages:\n            if force or","        job = self.get_job()\n        from pilot.user.epic.es_batch import report_at_once, report_now\n        if self.__queued_out_messages and (force or report_at_once()):\n            count = len(self.__queued_out_messages)\n            report_now(self, self.__queued_out_messages, final=force)\n            logger.info(f'reported {count} messages straight to the server' + (' at the end' if force else ''))\n            return\n        if self.__queued_out_messages:\n            if force or")
     put(key,s)
+    # The job's log archive goes beside the renamed work directory, in the
+    # pilot's home, not in the process's current directory: the ES executor
+    # leaves the pilot in the job's work directory (baseexecutor.set_payload),
+    # which create_log renames away before tar writes, so no archive was made
+    # and the log stage-out failed (job 6258483, pilot error 1165). Tar's own
+    # exit status decides, where `; echo $?` had reported success; its exit 1
+    # (a file changed while read) still leaves a whole archive.
+    key='pilot/control/data.py';s=data['pilot3/'+key].decode()
+    s=replace_once(s,'    fullpath = os.path.join(current_dir, logfile_name)  # /some/path/to/dirname/log.tgz','    fullpath = os.path.join(pilot_home, logfile_name)  # beside the renamed work directory')
+    s=replace_once(s,'        cmd = f"pwd;tar cvfz {fullpath} {tarball_name} --dereference --one-file-system; echo $?"','        cmd = f"tar cvfz {fullpath} {tarball_name} --dereference --one-file-system || [ $? -eq 1 ]"')
+    put(key,s)
     key='pilot/info/configinfo.py';s=data['pilot3/'+key].decode()
     s=replace_once(s,'import ast','import ast\nfrom pilot.user.epic.es_batch import stageout_gap')
     s=replace_once(s,"            'es_stageout_gap': 601,  # in seconds, for testing: FIXME LATER,","            'es_stageout_gap': stageout_gap(),\n            'zip_time_gap': stageout_gap(),")

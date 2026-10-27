@@ -144,10 +144,16 @@ def render_job(template, cfg, name=None):
     # gate: that pilot fetches 256 ranges per server call and refuses ES
     # stage-out without it (NERSC_PERLMUTTER.md, Bounded ES batch-channel
     # correction). A legacy-channel payload still gets one range per request.
+    # Each close is reported as it stands, 2,000 ranges a call, as on
+    # Perlmutter: a spot node lost later loses only work not yet closed, and
+    # no report approaches the pilot's 120 s HTTP limit (10,000 ranges a call
+    # took the server 22 to 33 s). A pilot before es_batch's report_at_once
+    # ignores the variable.
     batch = cfg.get('es_batch_channel')
     if batch:
         exports.update(EPICPROD_SWITCH_ES_BATCH_CHANNEL='1',
-                       EPICPROD_ES_STAGEOUT_GAP=str(int(batch['stageout_s'])))
+                       EPICPROD_ES_STAGEOUT_GAP=str(int(batch['stageout_s'])),
+                       EPICPROD_ES_REPORT_AT_ONCE='1')
     command = ['bash', '/pilotdir/epic-native-pilot.sh', '-q', queue,
                '-i', 'PR', '-j', 'managed', '-t', '-w', 'generic',
                '--pilot-user', 'epic', '--url', 'https://pandaserver01.sdcc.bnl.gov',

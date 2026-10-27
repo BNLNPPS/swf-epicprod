@@ -277,6 +277,12 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   on a stop the executor stops that manager first, so a stopping pilot's last
   reports were aborted and marked failed. The server takes a range update
   without a zip record, and fine-grained credit counts finished ranges.
+- **The job's log.** The ES executor leaves the pilot process in the job's work
+  directory, and the pilot's `create_log` wrote the archive there, then renamed
+  the directory away before tar ran, so no log was made and the stage-out
+  failed with error 1165 (job 6258483; the reason ES tasks had no log dataset
+  from September). The batch build puts the archive in the pilot's home, beside
+  the renamed directory, and lets tar's exit status decide.
 
 ## Event Service jobs on Perlmutter
 

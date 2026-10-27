@@ -433,7 +433,11 @@ interval to the pod. The pilot fetches 256 ranges per server call, at least
 two seconds apart. The legacy channel fetched twice the core count per call:
 on job 6050590 that supplied about 26 events a second against the 39 that
 fourteen resident slots use. The payload's harness inherits the gate and uses
-the batch channel on these pods, so a task does not set it. Pods started
+the batch channel on these pods, so a task does not set it. The controller also
+exports `EPICPROD_ES_REPORT_AT_ONCE=1`: a pilot from runtime `18e2802` on reports
+each close as it stands, 2,000 ranges a call, so a lost spot node loses only work
+not yet closed, and no report nears the pilot's 120 s HTTP limit (10,000 ranges
+a call took the server 22 to 33 s); an older pilot ignores it. Pods started
 before the change finish on the previous runtime. Setting
 `gke_pilots.native_runtime` back restores it.
 
