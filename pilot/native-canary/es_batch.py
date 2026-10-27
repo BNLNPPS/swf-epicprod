@@ -256,6 +256,16 @@ ACQUIRE_MAX = 10000         # ranges in one acquisition
 REPORT_RANGES = 2000        # ranges in one report
 FIRST_ACQUIRE = 256        # ranges in the first acquisition, before the range size is known
 TAKE_GIVE_UP_S = 300        # an empty cache the server does not refill: answer "No more events"
+# PanDA marks an acquisition's ranges sent to the job, committed, before it
+# answers; an answer lost on the way (a server restart mid-answer, a broken
+# connection) leaves them sent to the job and unknown to the pilot. PanDA's
+# record of the job's ranges is the state: after a failed acquisition the
+# prefetch reads it back and takes every range sent to this job that it never
+# received. A PanDA restart at 12:17:32 ET on 2026-10-27 cut such an answer to
+# job 6252252 (events 90,002-100,001), which then waited for the job's end
+# and a job of its own. The read waits RECONCILE_DELAY_S after the failure, so
+# a request the server was still finishing has committed.
+RECONCILE_DELAY_S = 60
 
 
 def _server(endpoint, body):
@@ -264,6 +274,17 @@ def _server(endpoint, body):
     from pilot.util.config import config
     url = os.environ.get('PANDA_SERVER_URL', config.Pilot.pandaserver)
     res = https.request2(f'{url}/api/v1/event/{endpoint}', json_body=body, panda=True)
+    if not isinstance(res, dict) or not res.get('success'):
+        raise RuntimeError(f'{endpoint} refused: {str(res)[:300]}')
+    return res.get('data')
+
+
+def _server_get(endpoint, params):
+    """One GET of the server's event API."""
+    from pilot.util import https
+    from pilot.util.config import config
+    url = os.environ.get('PANDA_SERVER_URL', config.Pilot.pandaserver)
+    res = https.request2(f'{url}/api/v1/event/{endpoint}', params=params, panda=True, method='GET')
     if not isinstance(res, dict) or not res.get('success'):
         raise RuntimeError(f'{endpoint} refused: {str(res)[:300]}')
     return res.get('data')
@@ -297,7 +318,8 @@ class Prefetch:
     work whatever the range size: 200,000 ranges of ten events would have held
     two thirds of a 3M-event task. Ranges a job holds when it ends are released
     by the server's fine-grained accounting with every other range it did not
-    finish."""
+    finish. A failed acquisition is reconciled against PanDA's record of the
+    job's ranges (_reconcile), so a lost answer loses nothing."""
 
     def __init__(self, job, size, stopped):
         self.ident = {'job_id': int(job.jobid), 'jobset_id': int(job.jobsetid), 'task_id': int(job.taskid)}
@@ -306,14 +328,75 @@ class Prefetch:
         self.held = 0                   # events in self.ranges
         self.span = 1                   # events a range, from the last acquisition
         self.exhausted = False
-        self.calls = self.failures = 0
+        self.calls = self.failures = self.recovered = 0
+        self.received = {}              # file id: bytearray, 1 at each process id received
+        self.files = {}                 # file id: a received range's fields, the file's own
+        self.lost_at = None             # when an acquisition failed and was not yet reconciled
         self.cond = threading.Condition()
         self.thread = threading.Thread(target=self._fill, name='es-prefetch', daemon=True)
         self.thread.start()
 
+    def _note(self, ranges):
+        """Record ranges as received, and each file's own fields."""
+        for rng in ranges:
+            parts = str(rng.get('eventRangeID', '')).split('-')
+            if len(parts) != 5 or not parts[3].isdigit():
+                continue
+            seen, process = self.received.setdefault(parts[2], bytearray()), int(parts[3])
+            if process >= len(seen):
+                seen.extend(bytes(process + 1 - len(seen)))
+            seen[process] = 1
+            self.files.setdefault(parts[2], {k: v for k, v in rng.items()
+                                             if k not in ('eventRangeID', 'startEvent', 'lastEvent')})
+
+    def _was_received(self, parts):
+        seen = self.received.get(parts[2])
+        return seen is not None and int(parts[3]) < len(seen) and seen[int(parts[3])] == 1
+
+    def _reconcile(self):
+        """Take back the ranges PanDA has sent to this job that the pilot never
+        received. Runs on the prefetch's own thread, so no acquisition is in
+        flight while PanDA's record is read; the ranges of a fine-grained job
+        are full ranges of the job's range size, and a range's process id is
+        its first event (production_es.py requires events divisible by it)."""
+        ident = {'task_id': self.ident['task_id'], 'panda_id': self.ident['job_id']}
+        try:
+            data = _server_get('get_event_range_statuses', {'job_task_ids': json.dumps([ident])}) or {}
+        except Exception as exc:                              # noqa: BLE001
+            self.lost_at = time.monotonic()
+            logger.warning(f'range reconciliation failed: {exc}; again in {RECONCILE_DELAY_S} s')
+            return
+        statuses = data.get(str(ident['panda_id'])) or data.get(ident['panda_id']) or {}
+        found, unknown = [], 0
+        with self.cond:
+            for rid, state in statuses.items():
+                parts = str(rid).split('-')
+                if (state or {}).get('status') != 'sent' or len(parts) != 5 or not parts[3].isdigit():
+                    continue
+                if self._was_received(parts):
+                    continue
+                fields = self.files.get(parts[2])
+                if fields is None:
+                    unknown += 1
+                    continue
+                start = int(parts[3])
+                found.append(dict(fields, eventRangeID=rid, startEvent=start, lastEvent=start + self.span - 1))
+            if found:
+                self._note(found)
+                self.ranges.extend(found)
+                self.held += sum(range_span(r) for r in found)
+                self.recovered += len(found)
+            self.lost_at = None
+            self.cond.notify_all()
+        logger.warning(f'range reconciliation: PanDA holds {len(statuses)} ranges of this job; '
+                       f'{len(found)} sent and never received are taken back'
+                       + (f'; {unknown} of a file this pilot has no range of' if unknown else ''))
+
     def _fill(self):
         backoff = 0
         while not self.stopped.is_set():
+            if self.lost_at is not None and time.monotonic() - self.lost_at >= RECONCILE_DELAY_S:
+                self._reconcile()
             with self.cond:
                 if self.exhausted or self.held >= self.size // 2:
                     self.cond.wait(1.0)
@@ -326,13 +409,17 @@ class Prefetch:
                 backoff = 0
             except Exception as exc:                          # noqa: BLE001
                 self.failures += 1
+                if self.lost_at is None:
+                    self.lost_at = time.monotonic()
                 backoff = min(60, max(2, 2 * backoff))
-                logger.warning(f'range prefetch failed ({self.failures}): {exc}; again in {backoff} s')
+                logger.warning(f'range prefetch failed ({self.failures}): {exc}; again in {backoff} s; '
+                               f'reconciled with PanDA in {RECONCILE_DELAY_S} s')
                 self.stopped.wait(backoff)
                 continue
             with self.cond:
                 self.calls += 1
                 if got:
+                    self._note(got)
                     self.ranges.extend(got)
                     self.held += sum(range_span(r) for r in got)
                     self.span = range_span(got[0])
@@ -342,11 +429,13 @@ class Prefetch:
                 self.cond.notify_all()
 
     def take(self, count):
-        """Up to ``count`` ranges; none only when the server has none left,
-        or when it has refilled nothing for TAKE_GIVE_UP_S."""
+        """Up to ``count`` ranges; none only when the server has none left and
+        no failed acquisition awaits reconciliation, or when nothing has come
+        for TAKE_GIVE_UP_S."""
         deadline = time.monotonic() + TAKE_GIVE_UP_S
         with self.cond:
-            while not self.ranges and not self.exhausted and not self.stopped.is_set():
+            while (not self.ranges and (not self.exhausted or self.lost_at is not None)
+                   and not self.stopped.is_set()):
                 if time.monotonic() > deadline:
                     logger.error(f'range prefetch: nothing for {TAKE_GIVE_UP_S} s '
                                  f'({self.failures} failed calls); answering no more events')

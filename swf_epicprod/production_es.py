@@ -52,6 +52,11 @@ def definition(settings):
         k = cfg['range_events']
         if type(k) is not int or k <= 0 or cfg['unit_events'] % k:
             raise ValueError('production ES range_events must be a positive divisor of unit_events')
+        if cfg['events'] % k:
+            # Every range full: the batch pilot rebuilds a range it never
+            # received from its first event and the range size (es_batch.py,
+            # Prefetch._reconcile).
+            raise ValueError('production ES range_events must divide the events')
         if k > 1 and not JEDI_FINE_GRAINED_RANGES:
             raise ValueError('production ES range_events above 1 needs JEDI ranges of several events '
                              'for fine-grained tasks')
