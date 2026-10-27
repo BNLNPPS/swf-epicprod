@@ -1,0 +1,55 @@
+{
+  "source_proposals": ["rs-3881", "rs-3882", "rs-3884", "rs-3886", "rs-3887", "rs-3888"],
+  "pcs": ["pc6778", "pc6779", "pc6781", "pc6698", "pc6699", "pc6700"],
+  "expected_editions": 12,
+  "items": [
+    {
+      "did": "epic:/EVGEN/SIDIS/pythia6-lhapdf/1.1.0/eAg_EPPS16_noradcor/9x115/x_1e-2to1e-1",
+      "campaign": "26.07",
+      "comment": "Re-proposed after the bounded pythia6-lhapdf identity repair in PRs 13 and 14; replaces stale rs-3881.",
+      "files": 10,
+      "events": 20245406,
+      "registered_at": "Tue, 27 Oct 2026 13:25:33 UTC"
+    },
+    {
+      "did": "epic:/EVGEN/SIDIS/pythia6-lhapdf/1.1.0/eAg_EPPS16_noradcor/9x115/x_1e-3to1e-2",
+      "campaign": "26.07",
+      "comment": "Re-proposed after the bounded pythia6-lhapdf identity repair in PRs 13 and 14; replaces stale rs-3882.",
+      "files": 10,
+      "events": 23528655,
+      "registered_at": "Tue, 27 Oct 2026 13:35:33 UTC"
+    },
+    {
+      "did": "epic:/EVGEN/SIDIS/pythia6-lhapdf/1.1.0/eAu_EPPS16_noradcor/9x100/x_1e-3to1e-2",
+      "campaign": "26.07",
+      "comment": "Re-proposed after the bounded pythia6-lhapdf identity repair in PRs 13 and 14; replaces stale rs-3884.",
+      "files": 10,
+      "events": 22509970,
+      "registered_at": "Tue, 27 Oct 2026 13:42:33 UTC"
+    },
+    {
+      "did": "epic:/EVGEN/SIDIS/pythia6-lhapdf/1.1.0/eAu_EPPS16_noradcor/9x100/x_1e-4to1e-3",
+      "campaign": "26.07",
+      "comment": "Re-proposed after the bounded pythia6-lhapdf identity repair in PRs 13 and 14; replaces stale rs-3886.",
+      "files": 10,
+      "events": 4264110,
+      "registered_at": "Tue, 27 Oct 2026 13:50:33 UTC"
+    },
+    {
+      "did": "epic:/EVGEN/SIDIS/pythia6-lhapdf/1.1.0/ep_noradcor/9x130/x_1e-2to1e-1",
+      "campaign": "26.07",
+      "comment": "Re-proposed after the bounded pythia6-lhapdf identity repair in PRs 13 and 14; replaces stale rs-3887.",
+      "files": 10,
+      "events": 15425734,
+      "registered_at": "Tue, 27 Oct 2026 13:51:33 UTC"
+    },
+    {
+      "did": "epic:/EVGEN/SIDIS/pythia6-lhapdf/1.1.0/ep_noradcor/9x130/x_1e-4to1e-3",
+      "campaign": "26.07",
+      "comment": "Re-proposed after the bounded pythia6-lhapdf identity repair in PRs 13 and 14; replaces stale rs-3888.",
+      "files": 10,
+      "events": 8288775,
+      "registered_at": "Tue, 27 Oct 2026 13:51:33 UTC"
+    }
+  ]
+}
