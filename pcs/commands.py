@@ -642,6 +642,13 @@ def _evgen_manifest_from_inputs(task, events_per_job):
     file registered without one is one job at that count. Resolution is a
     public ``eicread`` read of JLab Rucio.
 
+    With the dataset's included expected-events target, the rows stop at
+    the first one that reaches it: the input usually holds more events
+    than the target, and every file expanded ran ~10x it (JEDI 41354,
+    pc6783-6786, 2026-10-27). The cut is at a row boundary, never a
+    shortened row, since the payload seeks ``ichunk x nevents``; DIDs and
+    their files are taken in name order so a rebuild keeps the same rows.
+
     Raises ValueError if the task has no matched input or it resolves to no
     files — a task with no real input must fail loudly, never submit empty.
     """
@@ -651,13 +658,14 @@ def _evgen_manifest_from_inputs(task, events_per_job):
         raise ValueError(
             'task has no matched Rucio EVGEN input (run the EVGEN matcher first)')
     rows = []
-    for inp in matched:
+    for inp in sorted(matched, key=lambda i: i.get('did') or ''):
         did = inp.get('did') or ''
         scope, sep, name = did.partition(':')
         if not sep:
             scope, name = 'epic', did
         files = []
-        for f in fetch_jlab_rucio_did_files(scope, name):
+        for f in sorted(fetch_jlab_rucio_did_files(scope, name),
+                        key=lambda f: f.get('name') or ''):
             fname = f.get('name') or ''
             rel = fname[len('/EVGEN/'):] if fname.startswith('/EVGEN/') else fname.lstrip('/')
             head, _, base = rel.rpartition('/')
@@ -679,6 +687,14 @@ def _evgen_manifest_from_inputs(task, events_per_job):
         raise ValueError(
             'matched Rucio EVGEN DID(s) resolved to no files: '
             f'{[i.get("did") for i in matched]}')
+    ds = task.dataset
+    target = ds.expected_events if (ds.expected_events_source or '') == 'included' else None
+    if target and target > 0:
+        total = 0
+        for n, row in enumerate(rows, 1):
+            total += int(row.split(',')[2])
+            if total >= target:
+                return rows[:n]
     return rows
 
 
