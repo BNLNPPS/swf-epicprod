@@ -376,7 +376,7 @@ that stood.
 `swf_epicprod.perlmutter_production` runs at the end of each five-minute ES
 close-out cycle. With `perlmutter_production.enabled=true` it adds a task only
 when the queue has no job and no other live task, so the queue never holds two
-nodes; a paused task does not hold it. Each task is 6,000,000 fresh 5 GeV
+nodes; a paused task does not hold it. Each task is 3,000,000 fresh 5 GeV
 neutron-gun events at 3–50 degrees in one job, in the shape above with
 500-event units and 120-second closes, four at a time. On Perlmutter a
 neutron simulates in 0.289 s with reconstruction running beside it (job
@@ -388,6 +388,18 @@ close's merge and registration carry (about 35 MB/s, task 41262), hence the
 concurrent closes (`ES_CLOSE_CONCURRENCY`). One fed node makes about 1.6
 million events and 250 GB of RECO an hour. A task that one job does not
 finish continues in the next job on its remaining ranges.
+
+The task size is bounded by job insertion. Inserting a job writes one
+`JEDI_Events` row for every unprocessed event, in one transaction, and a
+retry first cancels the rows of the job before; JEDI allows `storeJobs` 600
+seconds, fixed in code (`pandajedi/jedicore/Interaction.py`). A first job of
+6,000,000 events took 563 to 596 s (tasks 41287, 41299, 41316); retries took
+464 s for 2,984,763 remaining events and 233 s for 82,747. The retries of
+41287 (10,212 events credited) and 41316 (5,750,520 remaining) never fit: each attempt
+timed out, was rolled back and was repeated ten minutes later, without
+end, and the queue stood empty behind the live task. Tasks are therefore
+3,000,000 events: about 300 s for a first job and at most about 400 s for a
+retry, and a job that a fed node runs dry ends after about two hours.
 
 PCS sample identities `pOP000001` onward share the seed ledger of Google's
 feeder (GKE_PILOT_FLOW.md): every seed is disjoint from the source production

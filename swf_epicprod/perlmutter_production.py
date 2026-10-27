@@ -3,7 +3,11 @@
 from .google_production import register_plan, reserve, task_inventory
 
 QUEUE = 'NERSC_Perlmutter_epic_es'
-EVENTS = 6000000
+# A job's insertion writes one JEDI_Events row per unprocessed event in one
+# transaction, inside JEDI's fixed 600 s limit on storeJobs: 6,000,000 took
+# 563-596 s for a first job and never fit for a retry of 5,750,520 (task
+# 41316), so the task is half that (NERSC_PERLMUTTER.md, Production).
+EVENTS = 3000000
 MARKER = 'perlmutter_production'
 AUTHORITY = '01a17817-55fd-7551-be68-d05dbb102492'
 # The four-hour shape of task 41262 (NERSC_PERLMUTTER.md, Event Service jobs
