@@ -207,8 +207,8 @@ back to another pilot.
 
 ### The batch pilot
 
-The runtime is `native-runtime-perlmutter-es-batch-09d8404`, pilot archive
-`2374008b00c73983e48e038dc60ee514b3de001bcdb3bd6216624eae34bdc89c`, built
+The runtime is `native-runtime-perlmutter-es-batch-18e2802`, pilot archive
+`b2655eaa69bdd96b6f359fd583a7b72b32cbf92658c3cb10badd405e66919a88`, built
 from the approved native archive `9532f30b` by
 `scripts/build-native-es-batch.py`, staged by `scripts/stage-native-runtime.py`
 from committed helpers and frozen assets, and published by
@@ -241,10 +241,11 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   (task 41299) alternated between about 400 events a second and 5- to
   15-minute windows of about 50, with acquisitions 4 s apart fed and 50 to 60 s
   apart starved, about 215 a second overall. The launcher sets
-  `EPICPROD_ES_PREFETCH_RANGES=200000`: the ES process fills a cache of ranges
-  at its start, and a thread of its own refills it straight from the server,
-  10,000 an acquisition, whenever fewer than half are held, about seven minutes
-  of a fed node; the payload is answered from the cache, and "No more events"
+  `EPICPROD_ES_PREFETCH_EVENTS=200000`: the ES process fills a cache of ranges
+  holding 200,000 events at its start, and a thread of its own refills it
+  straight from the server, up to 10,000 ranges an acquisition, whenever they
+  hold fewer than half of that, about seven minutes of a fed node. The size is
+  in events, so ten-event ranges do not make it 2M events (es_batch 18e2802); the payload is answered from the cache, and "No more events"
   only when the server has none left. With `EPICPROD_ES_REPORT_AT_ONCE=1` the
   executor's pass, every five seconds, sends the queued unit reports straight
   to the server, 2,000 ranges a call, so a close is credited as it stands and

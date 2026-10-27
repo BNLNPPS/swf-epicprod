@@ -10,9 +10,9 @@ PQ=${1:?panda queue}
 ACCESS_POINT=${2:?harvester access point}
 HARVESTER_DIR=/global/common/software/m3763/panda-harvester
 QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/$PQ
-RUNTIME_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/native-runtime-perlmutter-es-batch-09d8404.tar.gz
-RUNTIME_SHA256=1881490a0ff4442f41cc2d0f13f47b46da835c38319f952605ed964430ee6fef
-PILOT_SHA256=2374008b00c73983e48e038dc60ee514b3de001bcdb3bd6216624eae34bdc89c
+RUNTIME_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/native-runtime-perlmutter-es-batch-18e2802.tar.gz
+RUNTIME_SHA256=22b9a74b08997a78f35bf2b06fcee1936a0dd5735306f0fbc7a009377c86f63c
+PILOT_SHA256=b2655eaa69bdd96b6f359fd583a7b72b32cbf92658c3cb10badd405e66919a88
 ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py313-debian13.tar.gz
 ES_CHANNEL_SHA256=0993145fb66b52fc759fafe01bd5cef80ead0f3fb47d721feae6aa2a61a0d0ae
 IMAGE=/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable
@@ -221,10 +221,11 @@ export EPICPROD_ES_CHANNEL=$WORKDIR/es-channel
 export PILOT_ES_EXECUTOR_TYPE=generic
 export EPICPROD_SWITCH_ES_BATCH_CHANNEL=1
 export EPICPROD_ES_STAGEOUT_GAP=300
-# The job's ranges held on the node from its start, refilled straight from
-# the server below half (about seven minutes of a fed node at 200,000), and
-# each close credited as it stands, not at the stage-out gap (es_batch.py).
-export EPICPROD_ES_PREFETCH_RANGES=200000
+# The job's ranges held on the node from its start, 200,000 events of them,
+# refilled straight from the server below half (about seven minutes of a fed
+# node), and each close credited as it stands, not at the stage-out gap
+# (es_batch.py). The size is in events whatever the range size.
+export EPICPROD_ES_PREFETCH_EVENTS=200000
 export EPICPROD_ES_REPORT_AT_ONCE=1
 export STORAGEDATA_SERVER_URL=file://$WORKDIR/ddmendpoints.json
 export EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
