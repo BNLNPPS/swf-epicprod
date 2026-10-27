@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 _ET = ZoneInfo('America/New_York')
 from urllib.request import urlopen
-from urllib.parse import quote as urlquote
+from urllib.parse import quote as urlquote, urlencode
 from django.utils.html import escape
 from django.shortcuts import render, get_object_or_404, redirect
 from django.template.loader import render_to_string
@@ -531,23 +531,63 @@ def _current_catalog_tasks(campaign, catalog_view, progress_snapshot, timings=No
     return tasks
 
 
-def _queue_tasks(queues):
-    """The PCS tasks behind the production tasks sent to ``queues`` and not
-    ended (census.sent_production_tasks, the front's own selection, paused
-    tasks included), those JEDI tasks no PCS task is associated with yet, how
-    many JEDI tasks there are (one PCS task can stand behind several
-    attempts), and the paused ones."""
-    from monitor_app.panda.census import sent_production_tasks
+def prod_tasks_in_flight(request):
+    """The production tasks in flight: those sent to a queue and not ended,
+    paused ones included (swf-monitor census.sent_production_tasks_by_queue,
+    the production front's own selection), grouped by allocation as the
+    dashboard names its sites, with the PCS tasks behind them in the catalog's
+    rows. ``?site=NAME`` shows one allocation; the dashboard's TASKS link under
+    each site's name opens it so (docs/EPICPROD_TASK_CATALOG.md)."""
+    from monitor_app.comp_snapshot import get_snapshot
+    from monitor_app.panda.census import sent_production_tasks_by_queue
+    from monitor_app.short_names import short_name
     from .models import PandaTasks
-    sent = sent_production_tasks(queues)
-    jedi_ids = [task_id for task_id, _ in sent]
+    from swf_epicprod import queues as registry
+    by_queue = sent_production_tasks_by_queue()
+    allocation, site_names = {}, {}
+    try:
+        for site in get_snapshot().get('sites') or []:
+            site_names[site.get('id')] = site.get('name')
+            for queue in site.get('queues') or []:
+                allocation[queue.get('id')] = site.get('name')
+    except Exception as exc:                                   # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            f'tasks in flight: no site names from the comp snapshot ({exc}); queues named instead')
+
+    def allocation_of(queue):
+        # A queue the dashboard does not show, a retired one, still belongs
+        # to its site in the queue registry (OSG's BNL_OSG_EPIC_PROD_1).
+        entry = registry.get(queue) or {}
+        return allocation.get(queue) or site_names.get(entry.get('site')) or short_name(queue)
+
+    groups = {}
+    for queue, sent in by_queue.items():
+        name = allocation_of(queue)
+        group = groups.setdefault(name, {'name': name, 'queues': [], 'sent': []})
+        group['queues'].append(queue)
+        group['sent'].extend(sent)
+    site = (request.GET.get('site') or '').strip()
+    shown = [g for g in groups.values() if not site or g['name'] == site]
+    jedi_ids = [task_id for g in shown for task_id, _ in g['sent']]
     by_jedi = {}
     for jedi_id, prod_id in (PandaTasks.objects.filter(jedi_task_id__in=jedi_ids)
                              .values_list('jedi_task_id', 'prod_task_id')):
         by_jedi.setdefault(jedi_id, prod_id)
+    for g in groups.values():
+        g['count'] = len(g['sent'])
+        g['paused'] = [task_id for task_id, status in g['sent'] if status == 'paused']
+        g['unassociated'] = [task_id for task_id, _ in g['sent']
+                             if g in shown and task_id not in by_jedi]
     prod_ids = list(dict.fromkeys(by_jedi[j] for j in jedi_ids if j in by_jedi))
-    return (prod_ids, [j for j in jedi_ids if j not in by_jedi], len(jedi_ids),
-            [task_id for task_id, status in sent if status == 'paused'])
+    tasks = _current_catalog_tasks(None, 'catalog', None, task_ids=prod_ids)
+    task_list_html = render_to_string('pcs/_task_list_filter.html', {
+        'tasks': tasks, 'catalog_view': 'catalog', 'columns_mode': 'full',
+        'status_choices': PRODTASK_STATUS_CHOICES, 'ai_executed_names': _executed_proposal_names()})
+    ordered = sorted(groups.values(), key=lambda g: (-g['count'], g['name']))
+    return render(request, 'pcs/prod_tasks_in_flight.html', {
+        'site': site, 'groups': ordered, 'shown': [g for g in ordered if g in shown],
+        'total': sum(g['count'] for g in ordered), 'task_list_html': task_list_html,
+    })
 
 
 def _cached_current_task_list_html(campaign, catalog_view, context,
@@ -5029,6 +5069,11 @@ def pcs_catalog(request):
     build_start = time.perf_counter() if CATALOG_BUILD_TIMING_ENABLED else None
     timings = [] if CATALOG_BUILD_TIMING_ENABLED else None
     filters = _timed(timings, 'parse filters', lambda: _parse_catalog_filters(request))
+    if filters['queue'] or filters['site']:
+        # What has been sent to an allocation is the page of production
+        # tasks in flight; links made for the catalog land there.
+        target = reverse('pcs:prod_tasks_in_flight')
+        return redirect(target + ('?' + urlencode({'site': filters['site']}) if filters['site'] else ''))
     inflow = _campaigns_with_inflow()
     active_lifecycle = (request.GET.get('lifecycle') or '').strip()
     producing_campaign_name = ''
@@ -5546,28 +5591,6 @@ def pcs_catalog(request):
         'progress_refreshed_for_request': progress_refreshed_for_request,
         'progress_refresh_error': progress_refresh_error,
     }
-    if filters['queue']:
-        # The queue view (?queue=A,B&site=NAME): what has been sent to an
-        # allocation, the PCS tasks behind the production tasks sent to its
-        # queues and not ended, whatever their campaign, in the catalog's
-        # rows; the dashboard's TASKS link opens it. A short list, built on
-        # each request.
-        queue_ids = [q.strip() for q in filters['queue'].split(',') if q.strip()]
-        prod_ids, unassociated, panda_count, paused = _timed(
-            timings, 'queue tasks', lambda: _queue_tasks(queue_ids),
-            detail_fn=lambda value: f'{len(value[0])} PCS tasks, {len(value[1])} unassociated')
-        tasks = _current_catalog_tasks(None, 'catalog', progress_snapshot, timings=timings, task_ids=prod_ids)
-        context.update(
-            queue_filter=', '.join(queue_ids), queue_site=filters['site'] or ', '.join(queue_ids),
-            queue_unassociated=unassociated, queue_paused=paused,
-            queue_panda_count=panda_count,
-            task_list_html=render_to_string('pcs/_task_list_filter.html', {
-                'tasks': tasks, 'catalog_view': 'catalog', 'columns_mode': 'full',
-                'status_choices': PRODTASK_STATUS_CHOICES,
-                'ai_executed_names': _executed_proposal_names()}),
-            task_list_cache_hit=False, task_list_cache_rendered_at='', task_list_cache_stale=False,
-            task_list_cache_miss_suppressed=False)
-        return render(request, 'pcs/pcs_catalog.html', context)
     task_list_html, task_list_cache_hit, task_list_cache_meta = _cached_current_task_list_html(
         progress_campaign, catalog_view, context, progress_snapshot, timings=timings)
     context['task_list_html'] = task_list_html

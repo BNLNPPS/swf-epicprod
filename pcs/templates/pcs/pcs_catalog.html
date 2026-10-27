@@ -593,14 +593,6 @@
   </details>
   {% endif %}
 
-  {% if queue_filter %}
-  <div class="mb-2" style="font-size:1.05rem">
-    <strong>Tasks sent to {{ queue_site }}</strong> ({{ queue_panda_count }} PanDA task{{ queue_panda_count|pluralize }} not ended, on {{ queue_filter }})
-    {% if queue_paused %}&middot; paused: {% for jedi_id in queue_paused %}<a href="{% url 'monitor_app:panda_task_detail' jedi_id %}">{{ jedi_id }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}
-    {% for jedi_id in queue_unassociated %}&middot; <a href="{% url 'monitor_app:panda_task_detail' jedi_id %}">PanDA task {{ jedi_id }}</a> (no PCS task yet) {% endfor %}
-    &middot; <a href="{% url 'pcs:pcs_catalog' %}">All tasks</a>
-  </div>
-  {% endif %}
   {% if task_list_html %}
     {{ task_list_html|safe }}
   {% else %}

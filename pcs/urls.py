@@ -79,6 +79,7 @@ urlpatterns = [
     # offered to the physics group whose configuration it proves and the
     # offer is a link they can open.
     path('trials/', views.trials_list, name='trials_list'),
+    path('in-flight/', views.prod_tasks_in_flight, name='prod_tasks_in_flight'),
     path('trials/<path:name>/', views.trial_detail, name='trial_detail'),
     path('stash/', views.stash_page, name='stash_page'),
     path('storage/', views.storage_listings_home, name='storage_listings_home'),
