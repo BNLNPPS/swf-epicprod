@@ -88,14 +88,29 @@ in `fir-probe.<cluster>.out`.
 
 ## State
 
-As of 27 October 2026, 12:22 ET, after site administration's mapping changes,
-both CEs are reachable from pandaharvester01 over TLS with the grid
-certification authorities, and both refuse the token: HTCondor's ping is
-answered 403 Forbidden, and the REST job and delegation endpoints answer 500 to
-a token minted for each CE. The answers are the same with no token and with
-six audience and scope variants of it (`GET /arex` 403; job and delegation
-calls 500), so the CE fails before it evaluates a token. Probe jobs 27669
-(ce2) and 27686 (ce1) wait.
+As of 27 October 2026, 13:05 ET, both CEs are reachable from pandaharvester01
+over TLS with the grid certification authorities, and both refuse us at user
+mapping. A-REX's answer carries its reason in the HTTP status line: `GET /arex`
+gets `403 User can't be assigned configuration` and the REST job and delegation
+calls get `500 User can't be assigned configuration`, which is A-REX's answer
+when it cannot assign the request a local account. It is the same with our
+token, with a grid proxy as TLS client certificate, and with no credential, so
+nothing we present maps to the ePIC account. Read the status line, not only the
+code (`curl -D -`): the 403 and 500 bodies are empty.
+
+Our requests leave over IPv6, from `2620:12f:f001:1::17`, to
+`2607:f8f0:690:3::127:72` (ce2) and `2607:f8f0:690:3::127:71` (ce1); a site
+searching its logs for our IPv4 address finds nothing. Site administration was
+given the `authtokens` line our token must match:
+
+```
+[authgroup: epic]
+authtokens = fe4a61df-87b1-418b-8fd1-fd8a50eb4394 https://panda-iam-doma.cern.ch/ * * *
+```
+
+with a mapping of that group to the ePIC account and, where `[arex/ws/jobs]`
+has `allowaccess` lines, one for it. Probe jobs 27669 (ce2) and 27686 (ce1)
+wait.
 
 ## Building the queue
 
