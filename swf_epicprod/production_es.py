@@ -111,6 +111,11 @@ def definition(settings):
         raise ValueError('production ES reco_async needs resident_unit')
     if 'report_barrier' in cfg and type(cfg['report_barrier']) is not bool:
         raise ValueError('production ES report_barrier must be a boolean')
+    for key in ('handoff_in_place', 'unit_local', 'input_names'):
+        if key in cfg and type(cfg[key]) is not bool:
+            raise ValueError(f'production ES {key} must be a boolean')
+    if cfg.get('input_names') and not evgen:
+        raise ValueError('production ES input_names needs EVGEN input')
     if 'notice' in cfg and type(cfg['notice']) is not bool:
         raise ValueError('production ES notice must be a boolean')
     if 'preempt_at_s' in cfg and (type(cfg['preempt_at_s']) is not int or cfg['preempt_at_s'] <= 0):
@@ -157,6 +162,22 @@ def apply(spec, settings):
         env['EPICPROD_SWITCH_ES_GUN_EVENTS'] = '1'
     if cfg.get('resident_sim'):
         env['EPICPROD_SWITCH_RESIDENT_SIM'] = '1'
+    # In the sandbox's environment file, as canary 41481 carried them: run.sh,
+    # the resident units and the harness each read them there
+    # (EPICPROD_PAYLOAD.md, Resident Event Service units).
+    if cfg.get('handoff_in_place'):
+        # A unit's RECO is written in its handoff directory: on Perlmutter's
+        # scratch the handoff's move between directories was served one unit
+        # at a time across the node from 28 October (job 6289946).
+        env['EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE'] = '1'
+    if cfg.get('unit_local'):
+        # No unit makes a PanDA token request, catalog query or log upload
+        # of its own; the close registers and the job's log carries the units'.
+        env['EPICPROD_SWITCH_ES_UNIT_LOCAL'] = '1'
+    if cfg.get('input_names'):
+        # Units and closes are named from the job's own EVGEN file, not the
+        # manifest's first row (task 41479's job on run002 closed as run001).
+        env['EPICPROD_SWITCH_ES_INPUT_NAMES'] = '1'
     prefix = {
         'ES_WORKER_PROXY': '1',
         'ES_PAYLOAD_IMAGE': spec['containerImage'], 'ES_SLOTS': cfg['slots'],

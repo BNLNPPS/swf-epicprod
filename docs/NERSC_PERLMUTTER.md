@@ -507,19 +507,45 @@ The pressure front feeds the queue (its feed switch on): a whole-node queue
 draws from the ready pool only tasks over a registered EVGEN sample
 (`front.open_to`, the entry's `evgen_es` mark), and its feed stages the
 task's input and sets its `event_service` shape before the submission
-request (`front.feed_task`, `evgen_es.prepare`). The queue holds one task at
-a time, as the gun feeder did: it takes the next task when nothing of its
-own is committed or active there, whatever the task's hours (`front.decide`,
-`node_occupied`), since such a task is days of one node, past any hours mark
-(p4497, 5.4 million events: about 54 h). JEDI makes the task's jobs, one per
-file, at once (41479: nine activated within two minutes), and in pull mode the
-harvester gives each activated job a worker, a whole node; the harvester's
-worker limit on the queue, one, holds production to one node, the jobs
-running one after another (distcomp-services perlmutter-harvester/CHANGES.md,
-2026-10-28). A test beside production needs that limit raised for its run. The task's EVGEN files may
+request (`front.feed_task`, `evgen_es.prepare`). The queue is sized in nodes,
+not hours, since such a task is days of nodes (p4499, 14.5 million events:
+about 150 node-hours). JEDI makes the task's jobs, one per file, at once
+(41479: nine activated within two minutes), and in pull mode the harvester
+gives each activated job a worker, a whole node, up to its worker ceiling on
+the queue (distcomp-services perlmutter-harvester/CHANGES.md). The ceiling is
+the node count; the front's `front.queue.<queue>.nodes` is set with it, and
+the queue takes the next task while its own work fills fewer nodes than that:
+its production jobs not started or running, its files JEDI has not made jobs
+of, and at least one node for each live task (`front.decide`,
+`node_occupied`). Jobs beyond the ceiling wait activated for a node; a test
+beside production takes one of the ceiling's nodes. The task's EVGEN files may
 be staged ahead (`scripts/evgen-es-stage.py`), so the feed only checks them.
 `scripts/evgen-es-submit.py <task> --by NAME --reason TEXT` submits one by
 hand the same way; `--dry-run` prints the PanDA spec.
+
+The production shape carries three payload switches, which canary 41481 runs
+together: `EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE` (a unit's RECO is written in
+its handoff directory), `EPICPROD_SWITCH_ES_UNIT_LOCAL` (no unit makes a PanDA
+token request, catalog query or log upload of its own) and
+`EPICPROD_SWITCH_ES_INPUT_NAMES` (units and closes named from the job's own
+EVGEN file), set in the sandbox's environment file (`production_es.apply`).
+From 28 October each unit's handoff, whose one move of a file between
+directories on `/pscratch` the first switch removes, was served one at a time
+across the node: in job 6289946 the 128 first units passed validation within
+9 s of each other and completed their handoffs a median 10 s apart over 21
+minutes, and resident units waited 30 to 80 minutes from simulated to done,
+0.4 to 3 events a second a node against 27.8 (task 41262). The gun feeder's
+shape carries the first two.
+
+The jobs of a task share one event count per file, the smallest of its files'
+full counts in whole ranges (`evgen_es.event_service`), and JEDI stops at the
+manifest's total. A manifest covers each file in whole jobs of the ordinary
+shape and leaves its tail of a few thousand events, so a job reads that tail,
+which no task covers, and the task reaches its total as many events short of
+its last file's coverage: p4499 reads 62,295 events past the coverage of
+run001 to run007 and leaves 62,300 covered events of run008 unread (p4498:
+21,834 and 21,841 of run003). The total is the manifest's and no event is read
+twice; the events read are not exactly the manifest's.
 
 The next step is five nodes on the preempt QOS, which charges half after a
 job's first two hours, with six-hour jobs and then eight (Torre's mail to

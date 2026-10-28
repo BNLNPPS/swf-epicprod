@@ -68,6 +68,11 @@ def reserve(prefix, events, shape, site, marker, authority):
         samples = set()
         for task in ProdTask.objects.filter(overrides__has_key='event_service'):
             es = task.overrides['event_service']
+            if es.get('input') == 'evgen':
+                # An Event Service task over EVGEN files (evgen_es.py) takes
+                # no gun seeds; read as a gun row it stopped every feeder's
+                # reservation from 28 October, 09:13 ET (KeyError 'row').
+                continue
             stem = es['row'].split(',')[0].rsplit('/', 1)[1]
             reserved.extend(seed_intervals(stem, int(es['events'])))
             samples.add(task.overrides.get('production_sample_prefix'))

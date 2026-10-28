@@ -29,7 +29,9 @@ defaults on first read, so every knob is visible on the System page:
 - ``front.queue.<queue>.feed`` (False), ``.h_low`` (8), ``.h_high``
   (24), ``.j_max`` (0 = none), ``.t_max`` (0 = none), ``.breaker`` ('closed'),
   ``.feed_exempt`` (''): with the feed off, the reason the queue is fed
-  by its own feeder rather than the front (``scripts/front-feed.py``).
+  by its own feeder rather than the front (``scripts/front-feed.py``);
+  ``.nodes`` (1): for a whole-node queue, the nodes its work is to fill,
+  set with the harvester's worker ceiling (``decide``).
 - ``front.idle_move.mode`` ('active'), ``.max_per_cycle`` (4),
   ``.cooldown_h`` (12): the idle-queue move (``swf_epicprod.idle_move``).
 
@@ -58,7 +60,8 @@ from swf_epicprod.regulation import CAPACITY_POOLS, RETIRED_QUEUES, throttler_ve
 logger = logging.getLogger(__name__)
 
 QUEUE_DEFAULTS = {'feed': False, 'h_low': 8.0, 'h_high': 24.0,
-                  'j_max': 0, 't_max': 0, 'breaker': 'closed', 'feed_exempt': ''}
+                  'j_max': 0, 't_max': 0, 'breaker': 'closed', 'feed_exempt': '',
+                  'nodes': 1}
 MODES = ('shadow', 'active')
 FEED_SOURCE = 'pcs_front_feed'
 HEARTBEAT_S = 3600
@@ -710,24 +713,35 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         return [('degraded', fast['code'], rec(gate_reason=fast['reason']))]
     if feeds:
         return [('awaiting_observation', 'awaiting_observation', rec())]
+    from .queues import whole_node
+    if whole_node(queue):
+        # A whole-node queue is sized in nodes, not hours: each job holds a
+        # node for its allocation, and an Event Service task over EVGEN input
+        # is days of nodes (p4499: 14.5 million events, about 150 node-hours),
+        # past any hours mark. The queue takes the next task while its own
+        # work fills fewer nodes than its target, set with the harvester's
+        # worker ceiling: its production jobs not started or running, the
+        # files JEDI has not yet made jobs of, and at least one node for each
+        # live task, which holds one between a job's end and the next.
+        nodes = max(int(qs.get('nodes') or 1), 1)
+        jobs = int(q.get('not_started_production') or 0) + sum(
+            int((v or {}).get('production') or 0)
+            for s, v in (q.get('by_status') or {}).items() if s in ('running', 'starting'))
+        occupied = max(jobs + ungenerated, tasks_active)
+        base.update(nodes=nodes, nodes_occupied=occupied)
+        if occupied >= nodes:
+            return [('supplied', 'node_occupied', rec())]
+        if not eligible:
+            return [('no_work', 'no_eligible_task', rec())]
+        candidate = eligible[0]
+        state = 'fed' if mode == 'active' else 'would_feed'
+        return [(state, f"{state}:{candidate['task']}", rec(candidate))]
     if committed_h is None:
         return [('held', 'no_calibration', rec())]
     if committed_h >= h_low:
         return [('supplied', 'supplied', rec())]
     if not eligible:
         return [('no_work', 'no_eligible_task', rec())]
-    from .queues import whole_node
-    if whole_node(queue):
-        # One task at a time on a whole node, as the gun feeder holds it:
-        # the queue takes the next task when nothing of its own is committed
-        # or active there, whatever the task's hours. An Event Service task
-        # over EVGEN input is days of one node (p4497: 5.4 million events,
-        # about 54 h), past any hours mark (2026-10-28).
-        if committed_h > 0 or tasks_active:
-            return [('supplied', 'node_occupied', rec())]
-        candidate = eligible[0]
-        state = 'fed' if mode == 'active' else 'would_feed'
-        return [(state, f"{state}:{candidate['task']}", rec(candidate))]
 
     out = []
     committed, fed_rows, fed = committed_h, inflight_rows, 0

@@ -41,7 +41,8 @@ SHAPE = dict(unit_events=100, range_events=10, close_s=300, close_concurrency=4,
              deadline_s=14100, margin_s=600, memory_mb_per_core=1500, slots='128',
              pilot_cores=256, resident_sim=True, resident_unit=True, fast_merge=True,
              batch_channel=True, parallel_start=True, reco_pool=32, reco_async=True,
-             report_barrier=True, notice=True, job_log=True)
+             report_barrier=True, notice=True, job_log=True,
+             handoff_in_place=True, unit_local=True, input_names=True)
 
 
 def capable(task, cfg=None):

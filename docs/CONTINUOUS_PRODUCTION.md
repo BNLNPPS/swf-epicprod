@@ -194,6 +194,10 @@ action-stream event with its editor:
   running). Off on every queue since 2026-10-21, and off by default: the
   job throttler bounds the activated pool and the high-water mark bounds
   what is committed to a queue, in hours rather than tasks.
+- `nodes`, for a whole-node queue (Perlmutter, one job per node), the nodes
+  its work is to fill; 1 by default. It is set with the harvester's worker
+  ceiling on the queue, which is where the node count is enforced
+  (NERSC_PERLMUTTER.md, EVGEN input in production).
 - `feed`, the per-queue switch; `front.enabled`, the global switch.
 
 `scripts/front-feed.py QUEUE on|off|exempt --by NAME --reason TEXT --decision-ref REF`
@@ -329,7 +333,7 @@ task cap; `max_per_cycle` and the activation window bound a cycle.
 | held | queue feed off or exempt, or front off; a declared downtime in force or starting within `h_high` hours (checked right after the breaker, ahead of the measured gates: a declaration is not a fault, the breaker stays closed and the hold lifts itself when the window ends); a feed that would pass `h_high`; the task or job cap; a task that cannot be sized; no calibration for the queue | hold | `queue_off`, `queue_exempt`, `front_off`, `declared`, `would_exceed_high`, `task_cap`, `job_cap`, `unsized_task`, `no_calibration` |
 | oversize | the next eligible task alone exceeds `h_high` (phase one) | hold for the operator's decision | `oversize_task` |
 | no work | nothing in `ready` is eligible for the queue | hold; the page states the starvation | `no_eligible_task` |
-| node occupied | a whole-node queue (Perlmutter, one job per node) with a task of its own committed or active | hold; with none, the next eligible task is fed whatever its hours, one at a time (NERSC_PERLMUTTER.md, EVGEN input in production) | `node_occupied` |
+| node occupied | a whole-node queue (Perlmutter, one job per node) whose own work fills its `nodes`: production jobs not started or running, plus files JEDI has not made jobs of, and at least one node for each live task | hold; below it, the next eligible task is fed whatever its hours, one a cycle, ahead of the calibration and depth checks, which measure hours (NERSC_PERLMUTTER.md, EVGEN input in production) | `node_occupied` |
 
 Three rules cover delayed observation. A submission counts as
 committed depth for one activation window, so the loop never feeds
