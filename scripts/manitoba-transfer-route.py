@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 from dotenv import dotenv_values
-from rucio.common.exception import AccessDenied, Duplicate
+from rucio.common.exception import AccessDenied, CannotAuthenticate, Duplicate
 
 from swf_epicprod.jlab_auth import rucio_client
 
@@ -45,14 +45,19 @@ def main():
                 result['outcome'] = 'concurrently_created'
             except AccessDenied as error:
                 result.update(outcome='access_denied', error=str(error))
-        result['after'] = client.get_distance(source, target)
+            except CannotAuthenticate as error:
+                result.update(outcome='authentication_failed', error=str(error))
+        # A 401 can make the Rucio client attempt an interactive refresh;
+        # make a fresh token client for this read without repeating the POST.
+        reader = rucio_client(account='eicprod', proxy=None, timeout=30)
+        result['after'] = reader.get_distance(source, target)
     args.state.parent.mkdir(parents=True, exist_ok=True)
     with args.state.open('w') as output:
         args.state.chmod(0o600)
         json.dump(result, output, indent=2, default=str)
         output.write('\n')
     print(json.dumps(result, default=str))
-    return 1 if result['outcome'] == 'access_denied' else 0
+    return 1 if result['outcome'] in ('access_denied', 'authentication_failed') else 0
 
 
 if __name__ == '__main__':
