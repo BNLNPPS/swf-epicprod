@@ -155,7 +155,7 @@ The nightly `panda_sandbox_keepalive` step of the `catalog_sync` chain
 (EPICPROD_OPS.md) touches the sandbox tarball of every task worth
 keeping retryable, which resets the modification time the purge reads.
 Candidates are EIC tasks — the epic VO, or working group `EIC` under
-any VO (production runs as `vo='wlcg'`, `workinggroup='EIC'`) — in a
+any VO (legacy production uses `vo='wlcg'`, `workinggroup='EIC'`) — in a
 non-final state, plus tasks
 `finished`, `failed` or `exhausted` within SysConfig
 `panda_sandbox_keepalive_final_days` (default 30). So native retry is

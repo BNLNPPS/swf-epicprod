@@ -1,8 +1,8 @@
 # ePIC output registration in PanDA
 
 `swf_epicprod.panda.EpicAdderPlugin` is the ePIC adder, selected through
-PanDA's `adder_plugins` configuration for both `wlcg` (production) and
-`epic` (tests). It subclasses the upstream `AdderSimplePlugin` and keeps
+PanDA's `adder_plugins` configuration for both `epic` (new submissions)
+and `wlcg` (legacy tasks). It subclasses the upstream `AdderSimplePlugin` and keeps
 its Rucio registration, retries and error reporting.
 
 The ePIC plugin excludes file records whose status is `nooutput` or

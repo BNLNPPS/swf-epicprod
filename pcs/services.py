@@ -8682,6 +8682,7 @@ def standard_prodconfig_values(edition):
     # named here so a new campaign's configuration cannot inherit an unset
     # one from whatever row happens to be the template.
     values['data'] = {**(values.get('data') or {}),
+                      'vo': 'epic',
                       'log_rse': STANDARD_CONFIG_LOG_RSE}
     return values
 

@@ -189,7 +189,7 @@ def build_panda_command(task):
     parts.append(f'--prodSourceLabel {prod_source}')
 
     # VO
-    vo = data.get('vo', 'wlcg')
+    vo = 'epic'  # New submissions use one VO, including legacy configs.
     parts.append(f'--vo {vo}')
 
     # Processing type
@@ -394,7 +394,7 @@ def build_task_params(task):
         # Identity
         'taskName': out_ds_name,
         'userName': task.created_by,
-        'vo': data.get('vo', 'eic'),
+        'vo': 'epic',
         'workingGroup': working_group,
         'campaign': ds.detector_version,
 
@@ -1411,7 +1411,7 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
                         or {}).get('submitted_by') or '')
     spec = {
         'outDS': out_ds,
-        'vo': data.get('vo', 'epic'),
+        'vo': 'epic',
         'userName': submitted_by or task.created_by,
         'workingGroup': cfg.get('panda_working_group') or 'EIC',
         'site': site,

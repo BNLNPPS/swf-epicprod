@@ -31,20 +31,19 @@ sites puts a saturated queue and a starved one in the same group: a
 skip starves the starved one and a pass overfills the saturated one.
 For the `wlcg` and `epic` VOs JEDI registers `GenJobThrottler`, which
 returns unthrottled for a work queue without a share, as the ePIC work
-queues are. Production tasks carry `wlcg`: the server was commissioned
-with the generic JEDI plugins under that key, and the production
-team's recipe and PCS's Standard Production configuration both submit
-`vo wlcg`, `prodSourceLabel managed`. The `epic` VO carries the test
-paths (canary probes, GPU tests, client-API test submissions).
+queues are. The server was commissioned under `wlcg`; those existing
+tasks retain their VO. New submissions use `epic`, with
+`prodSourceLabel managed` for production and `test` for test traffic.
+Both VO names remain supported by the server plugins and maintenance.
 
 ## The ePIC engine
 
 `EpicProdJobThrottler`, a `JobThrottlerBase` subclass beside the ATLAS
 one, registered for both VOs. It keeps the ATLAS rule and the ATLAS
 configuration keys and applies them per site. JEDI's site statistics
-are per VO, so each registration sees its own VO's jobs at a site;
-with production on `wlcg` alone that is the reading wanted, and the
-`epic` limits bound the test traffic separately.
+are per VO; the engine sums equivalent work queues from `epic` and
+`wlcg` before deciding, so old and new production share one allowance.
+Production and test queues remain separate.
 
 Statistics per site come from the taskbuffer's
 `getJobStatisticsByResourceTypeSite`: for each computing site of the
@@ -63,10 +62,15 @@ finds no site with jobs at all is charged to a standing reading at the
 default floor, never uncapped.
 
 Configuration per site, from the `config` table (component
-`epic_job_throttler`, app `jedi`, one set of rows per VO, `wlcg` for
-production and `epic`), a work-queue-wide value as the fallback and the
+`epic_job_throttler`, app `jedi`, canonical VO `epic`), a work-queue-wide value as the fallback and the
 engine's built-in default last; `scripts/jedi-throttler-config.sh`
 reads and sets the rows:
+
+For both calling VOs, each setting comes from the `epic` site override,
+then its wide setting, then the corresponding legacy `wlcg` values.
+This includes MODE and POOLS. Tune `epic`; legacy work follows the same
+policy. A missing or failed statistics read for either equivalent work
+queue holds generation rather than treating its workload as zero.
 
 | Key | Meaning | Built-in default |
 |---|---|---|
@@ -187,10 +191,11 @@ return a temporary error and hold generation. Throttle mode also requires
 the actual JEDI generation-lock configuration and site-exclusion support.
 The ledger reserves under one lock across reading, decision and durable
 write, using atomic replacement. Malformed or unwritable ledgers hold
-generation. Keys include VO and work-queue ID; resource types share grants.
+generation. Keys name the logical work queue, shared by both VOs and
+all resource types. Production and test queues have separate reservations.
 Successful enforced decisions emit `REGULATION_OK` runtime evidence. The
 server reporter supplies that evidence to the front, which requires fresh
-successful decisions for both VOs as well as their current throttle modes
+successful decisions for both VOs as well as the effective canonical throttle mode
 before trusting `front.jedi_throttled`.
 
 Registration in `panda_jedi.cfg`, section `[jobthrottle]`:
@@ -198,8 +203,10 @@ Registration in `panda_jedi.cfg`, section `[jobthrottle]`:
     modConfig = wlcg:any:swf_epicprod.jedi.EpicProdJobThrottler:EpicProdJobThrottler,epic:any:swf_epicprod.jedi.EpicProdJobThrottler:EpicProdJobThrottler
 
 The configuration rows (component `epic_job_throttler`, app `jedi`)
-are keyed by VO as well: `MODE` and the limits for `wlcg` govern
-production; the `epic` rows govern the test traffic.
+remain keyed by VO for compatibility. The `epic` rows govern both names;
+legacy `wlcg` values are fallbacks only. The active OSG pool contains
+BNL_OSG_PanDA_1; the retired BNL_OSG_EPIC_PROD_1 has its own draining
+pool, preserving its isolation from active production.
 
 The engine needs `swf_epicprod` importable by JEDI's interpreter and, for
 the site exclusion to take effect, the generator change of the previous
