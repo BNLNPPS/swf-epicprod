@@ -223,6 +223,36 @@ Credit is JEDI_Events status 3 or 6.
 Its records are kept under
 `/data/wenauseic/swf-incident-archives/es-dedup-20261026/`.
 
+## EVGEN input
+
+A task over a registered EVGEN sample runs on Google as on Perlmutter (NERSC_PERLMUTTER.md, EVGEN input
+in production): its input is read where its catalog says it resides, the whole task's input is staged at
+the site before the task starts, and each job reads its own file at the site. The site's copy is the
+cluster's Cloud Storage bucket, `gs://epicprod-esinput-us-east4/esinput` (US-EAST4, the cluster's region),
+named by `gke_pilots.site_input_gcs`.
+
+- **Staging.** `swf_epicprod/gcs_stage.py` copies the files the task's manifest covers into the bucket from
+  the replicas their catalog lists, with a Kubernetes Job in the cluster: the nodes' service account writes
+  Cloud Storage, which the agent's own account cannot. The job reads each file with `xrdcp` from ATLAS's
+  tools on CVMFS and the pilots' proxy Secret, checks it against the catalog's adler32, uploads it and reads
+  its size back; a file already there at its catalog size is left as it is. The job's success is the record
+  that the task's input is in the bucket (the task's `site_input`); the task is held until then. One 5.2 GB
+  file took 141 s from JLab, pod start included (28 October).
+- **The pod.** With `gke_pilots.site_input_gcs` set the pilot pods get `EPICPROD_SITE_INPUT_GCS` and a
+  pod-level cache, `/pilotdir/esinput`. The batch pilot fetches the job's file in-region with the node's
+  credential from the metadata server, checks it against the catalog's size and adler32 and links it into the
+  job (`es_batch.fetch_site_staged`, `link_site_staged`); a later job of the same pod on the same file uses
+  the cache. Runtime `native-runtime-google-es-batch-7595097` (archive `d44fb763`) carries it.
+- **The shape.** `evgen_es.GOOGLE_SHAPE`: the gun feeder's pod shape (14 slots, three shared reconstruction
+  members, 6 GB a core, four-hour ceiling) with the EVGEN switches Perlmutter runs, 100-event units, direct
+  access and the site's copy (`site_input`). A file JEDI leaves out of the task runs as its tail
+  (`evgen_es.tails`).
+- **PanDA.** The catalog map's `site_staged` names `BNL_ePIC_GOOGLE_es`, so JEDI holds a task's files at the
+  queue and activates its jobs (distcomp-services panda-server CHANGES.md).
+
+Google takes no EVGEN task from the ready pool until this path has passed its canary: its front feed is off
+and its gun feeder takes no EVGEN task (`google_production.reserve`).
+
 ## Why the agent, not Harvester
 
 Harvester sizes a queue's workers from its CRIC settings. On
