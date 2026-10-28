@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from swf_epicprod import queues
-from swf_epicprod.front import recommend, place_unplaced, task_need
+from swf_epicprod.front import open_to, recommend, task_need
 
 IMAGE1 = '/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.1-stable'
 IMAGE3 = '/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable'
@@ -48,9 +48,7 @@ class ImageAdmissionTests(unittest.TestCase):
         self.assertEqual(recommend(state, need, dispatch=dispatch)['recommended'], 'GREX')
         with patch.object(queues, 'dispatch_capabilities', return_value=dispatch):
             entry = {'need': need, 'problems': [], 'level': 1, 'created_at': ''}
-            backlog = {'unplaced': [entry]}
-            place_unplaced(backlog, state['queues'], state['placement'], ['OSG'])
-            self.assertEqual(backlog['unplaced'], [entry])
+            self.assertEqual(open_to([entry], 'OSG', state), [])
             self.assertIn(IMAGE3, entry['unplaced_reason'])
 
 

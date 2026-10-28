@@ -388,13 +388,37 @@ required and served images in the reason. Manual placement, saved queue
 choices and the final submission doer enforce the same check; unavailable
 image evidence refuses submission rather than guessing.
 
-**The front's placement.** Each cycle, the front sends unplaced
-`ready` tasks to the queue the recommendation names, among the queues
-it feeds (feed switch on, and calibrated, since an uncalibrated queue
-holds with `no_calibration`). A queue the last cycle held at its task
-or job cap is passed over while another fed queue can take the work. The feed places the task on that queue and
-records the recommendation. A task no such queue is open to stays in
-the ready pool marked unplaced, with the reason.
+**The front's placement.** Ready tasks hold no queue: they are agnostic
+by definition (Torre Wenaus, 2026-10-28). Until then the front placed
+every unplaced ready task on its best-ranked queue each cycle, before any
+queue needed work, so all six ready tasks sat under OSG while GREX, its
+feed just switched back on, decided `no_work` at 0 h of its 8 h low mark.
+Now the unplaced tasks form one ready pool, and a queue takes a task from
+it only when it decides to feed, below its low mark. The queues the front
+feeds (feed switch on, and calibrated, since an uncalibrated queue holds
+with `no_calibration`) decide in the recommendation's order with no
+task's limits, the neediest first (`draw_order`), with this cycle's feed
+switches. Each draws the pool's tasks open to it by the recommendation's
+own reading (no red gate, a fit to its limits and image; `open_to`),
+together with the tasks placed on it, in priority order; a task it
+feeds leaves the pool, placed on that queue with the recommendation
+recorded. A task too large for one queue's high mark stays in the pool
+for the next. What no queue took stays unplaced, with the reason: not
+ready, no queue the front feeds, or in the pool until a queue open to it
+falls below its low mark (`left_in_pool`). The ready hours size an
+unplaced task at the median walltime of the queue first in line.
+
+A queue under an operator core limit (`pilot.queue.<queue>.worker_limit`,
+below) is sized at the limit: its ceiling is the smaller of its observed
+peak and the limit, and its hours at capacity scale to match
+(`core_limited`). GREX held to 296 cores was otherwise sized at the 949 it
+once ran, so its 8 to 24 h marks committed three times the work the limit
+can run.
+
+Re-placing a task is a person's decision (Torre Wenaus, 2026-10-28:
+"HUMANS GATE THE RE-PLACEMENT"): the Site control re-places a task not
+yet in PanDA, and its Move re-places the unstarted work of one in PanDA
+(below). The idle-queue move is the only automatic re-placement.
 
 **Reading and releasing a placement.** `pcs.services.prodtask_site_source(task)`
 says where a task's queue comes from: `trial`, `task` (the

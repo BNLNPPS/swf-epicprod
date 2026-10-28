@@ -91,6 +91,11 @@ def setting(key, default):
     return SysConfig.get_setting(key, default)
 
 
+def _config():
+    from monitor_app.models import SysConfig
+    return SysConfig.get_config()
+
+
 def queue_settings(queue):
     out = {}
     for key, default in QUEUE_DEFAULTS.items():
@@ -427,7 +432,7 @@ def ready_backlog():
             entry['problems'].append(f'reading the task failed: {type(exc).__name__}: {exc}')
         by_queue.setdefault(queue, []).append(entry)
     for entries in by_queue.values():
-        entries.sort(key=lambda e: (bool(e['problems']), e['level'] or 9, e['created_at']))
+        entries.sort(key=ENTRY_ORDER)
     return by_queue
 
 
@@ -452,41 +457,91 @@ def _stored_pilots():
 CAP_HOLDS = ('task_cap', 'job_cap')
 
 
-def place_unplaced(backlog, decisions, placement, feedable):
-    """Move each unplaced ready task in ``backlog`` to the queue
-    ``recommend`` names for it among ``feedable``, recording the
-    recommendation on the entry (``placement``), which rides to the feed.
-    A task no feedable queue is open to stays unplaced, with the reason.
-    Pure over its arguments; mutates ``backlog``."""
-    entries = backlog.pop(UNPLACED, [])
-    left = []
-    state = {'queues': decisions, 'placement': placement}
-    # A queue the last cycle held at its task or job cap takes no new task
-    # now; while another fed queue can, the work goes there (2026-10-20:
-    # BNL_OSG_EPIC_PROD_1, held at its task cap by a task being moved off
-    # it, drew twelve ready tasks every cycle while BNL_OSG_PanDA_1 sat
-    # empty).
-    open_queues = [q for q in feedable
-                   if (decisions.get(q) or {}).get('reason') not in CAP_HOLDS] or list(feedable)
-    for entry in entries:
-        if entry.get('problems') or not feedable:
-            entry['unplaced_reason'] = ('no queue the front feeds' if not feedable
-                                        else 'not ready')
-            left.append(entry)
+ENTRY_ORDER = lambda e: (bool(e['problems']), e['level'] or 9, e['created_at'])  # noqa: E731
+
+
+def draw_order(queues, feedable, state):
+    """The order in which queues draw on the ready pool: the feedable
+    queues as the recommendation ranks them with no task's limits (need,
+    then depth, then start latency), then the rest. Ready tasks hold no
+    queue (Torre Wenaus, 2026-10-28: "READY QUEUE TASKS ARE AGNOSTIC, BY
+    DEFINITION"): a queue takes one only when it is below its low mark,
+    and the neediest asks first."""
+    rows = recommend(state, None, feedable)['rows'] if feedable else []
+    ranked = [r['queue'] for r in sorted((r for r in rows if r.get('rank')),
+                                         key=lambda r: r['rank'])]
+    return ranked + [q for q in queues if q not in ranked]
+
+
+def open_to(pool, queue, state):
+    """The ready pool's entries ``queue`` may take: ready (no readiness
+    problem) and open to it by the recommendation's own reading (feed on,
+    no red gate, a fit to its limits and image). Each is returned as a
+    copy carrying its placement on the queue, which rides to the feed; an
+    entry the queue may not take keeps the reason as ``unplaced_reason``
+    and the queues it is open to as ``open_to``. Mutates only those two
+    fields of ``pool``'s entries."""
+    out = []
+    for entry in pool:
+        if entry.get('problems'):
+            entry['unplaced_reason'] = 'not ready'
             continue
-        result = recommend(state, entry.get('need'), open_queues)
-        if not result['recommended']:
+        result = recommend(state, entry.get('need'), [queue])
+        if result['recommended'] != queue:
             entry['unplaced_reason'] = result['reason']
-            left.append(entry)
             continue
-        entry['placement'] = {'recommended': result['recommended'],
-                              'reason': result['reason']}
-        backlog.setdefault(result['recommended'], []).append(entry)
-    for entries_q in backlog.values():
-        entries_q.sort(key=lambda e: (bool(e['problems']), e['level'] or 9, e['created_at']))
-    if left:
-        backlog[UNPLACED] = left
-    return backlog
+        entry.setdefault('open_to', []).append(queue)
+        out.append(dict(entry, placement={'recommended': queue, 'reason': result['reason']}))
+    return out
+
+
+def left_in_pool(pool, feedable):
+    """The pool's entries no queue took this cycle, each with why. Pure
+    apart from setting ``unplaced_reason``."""
+    for entry in pool:
+        if entry.get('problems'):
+            entry['unplaced_reason'] = 'not ready'
+        elif not feedable:
+            entry['unplaced_reason'] = 'no queue the front feeds'
+        elif entry.get('open_to'):
+            entry['unplaced_reason'] = ('in the ready pool until a queue open to it falls '
+                                        'below its low mark: ' + ', '.join(entry['open_to']))
+        entry.pop('open_to', None)
+    return pool
+
+
+def core_limits(cfg):
+    """{queue: cores} for each queue under an active operator core limit
+    (``pilot.queue.<queue>.worker_limit``, scripts/worker-limit.py)."""
+    out = {}
+    for key, control in (cfg or {}).items():
+        if not (key.startswith('pilot.queue.') and key.endswith('.worker_limit')):
+            continue
+        if isinstance(control, dict) and control.get('active') and isinstance(
+                control.get('core_limit'), int) and control['core_limit'] > 0:
+            out[key[len('pilot.queue.'):-len('.worker_limit')]] = control['core_limit']
+    return out
+
+
+def core_limited(census, limits):
+    """The census with each limited queue's ceiling at most its core limit
+    and its hours at capacity scaled to match: a queue held to 296 cores
+    is sized at 296, not at the 949 it once ran (2026-10-28, GREX). Pure;
+    returns a new census."""
+    if not census or not limits:
+        return census
+    queues = dict(census.get('queues') or {})
+    for queue, limit in limits.items():
+        q = queues.get(queue)
+        ceiling = int((q or {}).get('ceiling') or 0)
+        if not q or ceiling <= limit:
+            continue
+        q = dict(q, ceiling=limit, ceiling_observed=ceiling, ceiling_source='core limit')
+        for key in ('hours_at_capacity', 'pool_runnable_h', 'pool_ungenerated_h'):
+            if q.get(key) is not None:
+                q[key] = round(q[key] * ceiling / limit, 2)
+        queues[queue] = q
+    return dict(census, queues=queues)
 
 
 # The decision
@@ -647,7 +702,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
     return out
 
 
-def hours_summary(backlog, latest):
+def hours_summary(backlog, latest, unplaced_queue=None):
     """The two quantities the front balances. Pure.
 
     ``ready``: the work queued in ready, in job-hours (one slot busy for
@@ -661,7 +716,8 @@ def hours_summary(backlog, latest):
     ready = {'by_priority': {'1': 0.0, '2': 0.0, '3': 0.0, 'unset': 0.0},
              'by_queue': {}, 'total': 0.0, 'unsized_tasks': 0}
     for queue, entries in backlog.items():
-        d = latest.get(queue) or {}
+        # An unplaced task is sized at the queue first in line to draw.
+        d = latest.get(unplaced_queue if queue == UNPLACED else queue) or {}
         median_h = d.get('median_walltime_h')
         for e in entries:
             rows = e.get('rows')
@@ -1053,6 +1109,9 @@ def run_cycle(*, dry_run=False, created_by='front'):
         _safe('queue inventory', sync_queue_inventory, failed('queue inventory'))
 
     census = _safe('census', queue_census, failed('census'))
+    # A queue under an operator core limit is sized at the limit.
+    limits = _safe('core limits', lambda: core_limits(_config()), lambda exc: {})
+    census = core_limited(census, limits)
     backlog = _safe('backlog', ready_backlog, failed('backlog'))
     if backlog is None:
         backlog = {}
@@ -1091,19 +1150,25 @@ def run_cycle(*, dry_run=False, created_by='front'):
             'limits': _safe(f'{queue} limits', lambda: queue_limits(queue), None),
         }
 
-    # Unplaced ready tasks go to the recommended queue among those the
-    # front may feed: switched on and calibrated (an uncalibrated queue
-    # is held, no_calibration). The ranking reads the previous cycle's
-    # stored decisions with this cycle's gates and limits.
+    # Ready tasks hold no queue (CONTINUOUS_PRODUCTION.md, The front's
+    # placement): the unplaced ones form one pool, and a queue the front
+    # may feed (switched on and calibrated) draws on it when it decides
+    # to feed, the neediest first. The ranking reads the previous cycle's
+    # stored decisions with this cycle's switches, gates and limits.
     feedable = [q for q in queues
                 if enabled and settings_by_queue[q].get('feed')
                 and ((census or {}).get('queues', {}).get(q) or {})
                 .get('hours_at_capacity') is not None]
-    _safe('placing unplaced tasks',
-          lambda: place_unplaced(backlog, _stored_decisions(), placement, feedable),
-          failed('placing unplaced tasks'))
+    pool = backlog.pop(UNPLACED, [])
+    stored = _safe('stored decisions', _stored_decisions, lambda exc: {})
+    draw_state = {'queues': {q: dict(stored.get(q) or {},
+                                     feed_switch=bool(settings_by_queue[q].get('feed')))
+                             for q in queues},
+                  'placement': placement}
+    order = _safe('draw order', lambda: draw_order(queues, feedable, draw_state),
+                  lambda exc: list(queues))
 
-    for queue in queues:
+    for queue in order:
         settings = settings_by_queue[queue]
         gates = placement[queue]['gates']
         canary, declared = gates['canary'], gates['declared']
@@ -1117,9 +1182,12 @@ def run_cycle(*, dry_run=False, created_by='front'):
                          {'queue': queue, 'mode': mode, 'ready_total': len(backlog.get(queue, [])),
                           'ready_eligible': 0, 'h_low': settings['h_low'], 'h_high': settings['h_high']})]
         else:
+            drawn = (_safe(f'{queue} ready pool', lambda: open_to(pool, queue, draw_state),
+                           lambda exc: []) if queue in feedable else [])
+            candidates = sorted(backlog.get(queue, []) + drawn, key=ENTRY_ORDER)
             outcomes = _safe(
                 f'{queue} decision',
-                lambda: decide(queue, census_q, backlog.get(queue, []), settings,
+                lambda: decide(queue, census_q, candidates, settings,
                                {'canary': canary, 'credential': credential,
                                 'declared': declared, 'regulator': regulator}, feeds,
                                enabled=enabled, mode=mode, max_per_cycle=max_per_cycle,
@@ -1131,6 +1199,12 @@ def run_cycle(*, dry_run=False, created_by='front'):
                                'ready_total': len(backlog.get(queue, [])), 'ready_eligible': 0})])
             if mode == 'active' and not dry_run:
                 outcomes = _apply_feeds(outcomes, created_by=created_by)
+            # A task this queue took leaves the pool for its queue.
+            taken = {r.get('candidate_pk') for st, _reason, r in outcomes if st in FEED_STATES}
+            for entry in drawn:
+                if entry['pk'] in taken:
+                    backlog.setdefault(queue, []).append(entry)
+            pool = [e for e in pool if e['pk'] not in taken]
         last = _safe(f'{queue} last decision', lambda: _last_decision(queue), None)
         last_extra = (last or {}).get('extra_data') or {}
         stale = (last is not None and (t0 - last['timestamp']).total_seconds() >= HEARTBEAT_S)
@@ -1163,11 +1237,14 @@ def run_cycle(*, dry_run=False, created_by='front'):
                 **{k: v for k, v in record.items() if k != 'queue'}), failed(f'{queue} record'))
             written += 1
 
+    if pool:
+        backlog[UNPLACED] = left_in_pool(pool, feedable)
     latest = {}
     for d in decisions:
         latest[d['queue']] = d
-    hours = _safe('hours summary', lambda: hours_summary(backlog, latest),
-                  failed('hours summary'))
+    hours = _safe('hours summary', lambda: hours_summary(
+        backlog, latest, unplaced_queue=next(iter(feedable and order), None)),
+        failed('hours summary'))
 
     # A queue with no ready work takes unstarted tasks waiting at another
     # (CONTINUOUS_PRODUCTION.md, Idle-queue move).

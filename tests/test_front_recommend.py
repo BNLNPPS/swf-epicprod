@@ -13,8 +13,8 @@ def setUpModule():
 def tearDownModule():
     _closed.stop()
 
-from swf_epicprod.front import (fit_problems, gate_blockers, place_unplaced, recommend,
-                                 stall_signal)
+from swf_epicprod.front import (core_limited, core_limits, draw_order, fit_problems,
+                                 gate_blockers, left_in_pool, open_to, recommend, stall_signal)
 
 GREEN = {'canary': {'status': 'healthy', 'red': False},
          'credential': {'red': False}, 'declared': {'red': False},
@@ -178,46 +178,55 @@ def _entry(name, problems=(), level=1):
             'problems': list(problems), 'created_at': '2026-09-30T00:00:00'}
 
 
-class PlaceUnplacedTest(unittest.TestCase):
-    def _placement(self):
-        return {'A': {'gates': GREEN, 'limits': LIMITS},
-                'B': {'gates': GREEN, 'limits': LIMITS}}
+class ReadyPoolTest(unittest.TestCase):
+    """Ready tasks hold no queue (Torre Wenaus, 2026-10-28): a queue below
+    its low mark draws on the pool, the neediest first."""
 
-    def test_goes_to_recommended_feedable_queue(self):
-        backlog = {'unplaced': [_entry('t1')], 'A': []}
-        decisions = {'A': _decision(committed_h=6.0), 'B': _decision(committed_h=1.0)}
-        place_unplaced(backlog, decisions, self._placement(), ['A', 'B'])
-        self.assertNotIn('unplaced', backlog)
-        self.assertEqual(backlog['B'][0]['task'], 't1')
-        self.assertEqual(backlog['B'][0]['placement']['recommended'], 'B')
+    def _state(self, a=6.0, b=1.0, **more):
+        return _state(A=(dict(_decision(committed_h=a), **more), GREEN, LIMITS),
+                      B=(_decision(committed_h=b), GREEN, LIMITS))
 
-    def test_only_feedable_queues(self):
-        backlog = {'unplaced': [_entry('t1')]}
-        decisions = {'A': _decision(committed_h=6.0), 'B': _decision(committed_h=1.0)}
-        place_unplaced(backlog, decisions, self._placement(), ['A'])
-        self.assertEqual(backlog['A'][0]['task'], 't1')
+    def test_the_neediest_queue_draws_first(self):
+        self.assertEqual(draw_order(['A', 'B', 'C'], ['A', 'B'], self._state()), ['B', 'A', 'C'])
+        self.assertEqual(draw_order(['A', 'B'], [], self._state()), ['A', 'B'])
 
-    def test_queue_held_at_a_cap_is_passed_over(self):
-        # A ranks first on depth but was held at its task cap last cycle.
-        backlog = {'unplaced': [_entry('t1')]}
-        held = dict(_decision(committed_h=0.0), state='held', reason='task_cap')
-        decisions = {'A': held, 'B': _decision(committed_h=5.0)}
-        place_unplaced(backlog, decisions, self._placement(), ['A', 'B'])
-        self.assertEqual(backlog['B'][0]['task'], 't1')
+    def test_a_drawn_task_carries_its_placement_and_the_pool_stays_agnostic(self):
+        pool = [_entry('t1')]
+        drawn = open_to(pool, 'A', self._state())
+        self.assertEqual(drawn[0]['placement']['recommended'], 'A')
+        self.assertNotIn('placement', pool[0])
+        self.assertEqual(open_to(pool, 'B', self._state())[0]['placement']['recommended'], 'B')
 
-    def test_every_queue_at_a_cap_still_places(self):
-        backlog = {'unplaced': [_entry('t1')]}
-        held = dict(_decision(committed_h=0.0), state='held', reason='job_cap')
-        decisions = {'A': held, 'B': dict(held, committed_h=5.0)}
-        place_unplaced(backlog, decisions, self._placement(), ['A', 'B'])
-        self.assertEqual(backlog['A'][0]['task'], 't1')
+    def test_a_queue_with_its_feed_off_or_a_task_not_ready_draws_nothing(self):
+        self.assertEqual(open_to([_entry('t1')], 'A', self._state(feed_switch=False)), [])
+        self.assertEqual(open_to([_entry('t1', problems=['x'])], 'A', self._state()), [])
 
-    def test_not_ready_or_nothing_feedable_stays(self):
-        backlog = {'unplaced': [_entry('t1', problems=['x']), _entry('t2')]}
-        place_unplaced(backlog, {}, self._placement(), [])
-        self.assertEqual([e['task'] for e in backlog['unplaced']], ['t1', 't2'])
-        self.assertEqual(backlog['unplaced'][1]['unplaced_reason'], 'no queue the front feeds')
+    def test_what_no_queue_took_says_why(self):
+        pool = [_entry('t1', problems=['x']), _entry('t2'), _entry('t3')]
+        open_to(pool, 'A', self._state())
+        left_in_pool(pool, ['A'])
+        self.assertEqual(pool[0]['unplaced_reason'], 'not ready')
+        self.assertIn('below its low mark: A', pool[1]['unplaced_reason'])
+        self.assertNotIn('open_to', pool[1])
+        self.assertEqual(left_in_pool([_entry('t4')], [])[0]['unplaced_reason'],
+                         'no queue the front feeds')
 
+
+class CoreLimitTest(unittest.TestCase):
+    def test_a_limited_queue_is_sized_at_its_limit(self):
+        census = {'queues': {'G': {'ceiling': 949, 'hours_at_capacity': 1.0},
+                             'O': {'ceiling': 4000, 'hours_at_capacity': 2.0}}}
+        out = core_limited(census, {'G': 296, 'O': 5000})
+        self.assertEqual((out['queues']['G']['ceiling'], out['queues']['G']['hours_at_capacity']),
+                         (296, 3.21))
+        self.assertEqual(out['queues']['O'], census['queues']['O'])
+        self.assertEqual(census['queues']['G']['ceiling'], 949)
+
+    def test_only_active_limits_count(self):
+        cfg = {'pilot.queue.G.worker_limit': {'active': True, 'core_limit': 296},
+               'pilot.queue.O.worker_limit': {'active': False, 'core_limit': 100},
+               'pilot.queue.G.enabled': False}
+        self.assertEqual(core_limits(cfg), {'G': 296})
 
 if __name__ == '__main__':
     unittest.main()
