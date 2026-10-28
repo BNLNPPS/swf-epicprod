@@ -6,6 +6,7 @@ Tag list views use server-side DataTables via monitor_app._datatable_base.html.
 Read operations are public; create/edit/lock require login.
 """
 import json
+import copy
 import logging
 import re
 import time
@@ -560,33 +561,57 @@ def prod_tasks_in_flight(request):
         entry = registry.get(queue) or {}
         return allocation.get(queue) or site_names.get(entry.get('site')) or short_name(queue)
 
-    groups = {}
-    for queue, sent in by_queue.items():
-        name = allocation_of(queue)
-        group = groups.setdefault(name, {'name': name, 'queues': [], 'sent': []})
-        group['queues'].append(queue)
-        group['sent'].extend(sent)
-    site = (request.GET.get('site') or '').strip()
-    shown = [g for g in groups.values() if not site or g['name'] == site]
-    jedi_ids = [task_id for g in shown for task_id, _ in g['sent']]
+    # Each PCS task once, as its newest PanDA attempt in flight shows it: the
+    # allocation, the queue and PanDA's own state ("Past Output" and the
+    # other PCS record states say nothing about a task in flight).
+    newest, unassociated = {}, {}
+    jedi_all = [task_id for sent in by_queue.values() for task_id, _ in sent]
     by_jedi = {}
-    for jedi_id, prod_id in (PandaTasks.objects.filter(jedi_task_id__in=jedi_ids)
+    for jedi_id, prod_id in (PandaTasks.objects.filter(jedi_task_id__in=jedi_all)
                              .values_list('jedi_task_id', 'prod_task_id')):
         by_jedi.setdefault(jedi_id, prod_id)
-    for g in groups.values():
-        g['count'] = len(g['sent'])
-        g['paused'] = [task_id for task_id, status in g['sent'] if status == 'paused']
-        g['unassociated'] = [task_id for task_id, _ in g['sent']
-                             if g in shown and task_id not in by_jedi]
-    prod_ids = list(dict.fromkeys(by_jedi[j] for j in jedi_ids if j in by_jedi))
+    for queue, sent in by_queue.items():
+        name = allocation_of(queue)
+        for task_id, status in sent:
+            prod_id = by_jedi.get(task_id)
+            if prod_id is None:
+                unassociated.setdefault(name, []).append(task_id)
+            elif prod_id not in newest or task_id > newest[prod_id]['jedi']:
+                newest[prod_id] = {'jedi': task_id, 'status': status, 'queue': queue, 'site': name}
+    groups = {}
+    for info in newest.values():
+        group = groups.setdefault(info['site'], {'name': info['site'], 'count': 0, 'paused': 0})
+        group['count'] += 1
+        group['paused'] += info['status'] == 'paused'
+    for name in unassociated:
+        groups.setdefault(name, {'name': name, 'count': 0, 'paused': 0})
+    site = (request.GET.get('site') or '').strip()
+    prod_ids = [pid for pid, info in newest.items() if not site or info['site'] == site]
     tasks = _current_catalog_tasks(None, 'catalog', None, task_ids=prod_ids)
+    for t in tasks:
+        info = newest[t.pk]
+        t.status = info['status']
+        t.queue_cell = {'kind': 'panda', 'label': info['site'], 'site': info['site'],
+                        'title': f"PanDA task {info['jedi']} on {info['queue']}"}
+        # A page for physicists: a person's address shows as its name.
+        if t.requestor and '@' in t.requestor:
+            t.requestor = t.requestor.split('@', 1)[0]
+        requests = []
+        for record in getattr(t, 'pc_requests', None) or []:
+            who = getattr(record, 'requestor', None)
+            if who and '@' in who:
+                record = copy.copy(record)      # the projection's own records stay whole
+                record.requestor = who.split('@', 1)[0]
+            requests.append(record)
+        if requests:
+            t.pc_requests = requests
     task_list_html = render_to_string('pcs/_task_list_filter.html', {
-        'tasks': tasks, 'catalog_view': 'catalog', 'columns_mode': 'full',
+        'tasks': tasks, 'catalog_view': 'catalog', 'columns_mode': 'full', 'in_flight': True,
         'status_choices': PRODTASK_STATUS_CHOICES, 'ai_executed_names': _executed_proposal_names()})
     ordered = sorted(groups.values(), key=lambda g: (-g['count'], g['name']))
     return render(request, 'pcs/prod_tasks_in_flight.html', {
-        'site': site, 'groups': ordered, 'shown': [g for g in ordered if g in shown],
-        'total': sum(g['count'] for g in ordered), 'task_list_html': task_list_html,
+        'site': site, 'groups': ordered, 'total': len(newest), 'task_list_html': task_list_html,
+        'unassociated': [j for name, ids in unassociated.items() if not site or name == site for j in ids],
     })
 
 
