@@ -54,6 +54,13 @@ exclusion is the node guard's black-hole node exclusion.
 `scripts/set-osg-site-exclusions.py` sets the undesired-site list and lifts
 exact-site exclusions.
 
+Sakib's decisions reach production operations through TeamComms (Torre,
+28 October 2026). The broker authenticates each message's author: Sakib
+himself, or whichever AI session he operates at the time, which the broker
+records under him as its operator. Session ids change; the operator is the
+identity. The decision's message or Capcom notice id is cited in the
+action's record.
+
 Torre, 25 October 2026: the watcher also acts on routine production-service
 recovery, weighing the cost of an ongoing outage against a bounded,
 reversible remedy. Moving disposable caches, preserving and verifying
