@@ -26,6 +26,7 @@ server's own ``rucio.cfg`` under JEDI's ``VIRTUAL_ENV`` (``vo = eic``,
 PanDA's catalog), which JLab's refuses as a failed authentication::
 
     {"catalogs": [{"name": "jlab", "scopes": ["epic"], "name_prefixes": ["/"], "lfn_basename": true,
+                   "site_staged": ["NERSC_Perlmutter_epic_es"],
                    "client": {"rucio_host": ..., "auth_host": ..., "account": ...,
                               "auth_type": "userpass", "creds": {...}, "vo": "def",
                               "ca_cert": false}}]}
@@ -165,8 +166,25 @@ class EpicDDMClient(upstream.AtlasDDMClient):
             return super().listReplicasPerDataset(datasetName, *args, **kwargs)
 
     def getAvailableFiles(self, datasetSpec, *args, **kwargs):
-        with routed(datasetSpec.datasetName):
-            return super().getAvailableFiles(datasetSpec, *args, **kwargs)
+        with routed(datasetSpec.datasetName) as entry:
+            result = super().getAvailableFiles(datasetSpec, *args, **kwargs)
+        staged = set((entry or {}).get('site_staged') or [])
+        if not staged:
+            return result
+        # A queue that stages its own inputs ahead of their jobs (the map's
+        # site_staged; Perlmutter's copy on its community file system, made
+        # before the task is submitted, swf_epicprod/nersc_stage.py) holds
+        # the dataset's files on its local disk: JEDI marks them ready and
+        # the job is activated, as for a replica at the site's own storage.
+        status, available = result if isinstance(result, tuple) else (None, result)
+        if not isinstance(available, dict):
+            return result
+        for site in list(available) + [k for k in (args[0] if args else kwargs.get('site_endpoint_map') or {})
+                                       if k not in available]:
+            if site in staged:
+                entry_map = available.setdefault(site, {'localdisk': [], 'localtape': [], 'cache': [], 'remote': []})
+                entry_map['localdisk'] = list(datasetSpec.Files)
+        return (status, available) if isinstance(result, tuple) else available
 
     def jedi_list_replicas_with_dataset(self, datasetName, *args, **kwargs):
         with routed(datasetName):
