@@ -57,34 +57,65 @@ def capable(task, cfg=None):
     return str((cfg.get('data') or {}).get('workflow_mode') or 'external_evgen') != 'internal_evgen'
 
 
-def prepare(task, proxy):
-    """Stage the task's input and set its ``event_service`` override, saved:
-    what a feed to a whole-node queue does before the submission request."""
-    staged = stage(task, proxy)
+class InputStaging(RuntimeError):
+    """The task's input is being copied to its site; it starts when there."""
+
+
+def prepare(task, proxy, site=''):
+    """The task's input as its catalog holds it, staged at the site it is
+    brokered to before it starts, and its ``event_service`` override set,
+    saved: what a feed to a whole-node queue does before the submission
+    request. Raises ``InputStaging`` while the site's copy is being made
+    (the copy job is started, once, here); the front then holds the task,
+    placed on the queue, and submits it at a later cycle."""
+    staged = catalog_input(task)
     if SHAPE.get('nersc_input'):
-        # The job reads its file at NERSC: a task whose files are not all
-        # there yet is not fed; the standing stager copies them ahead
-        # (scripts/evgen-es-nersc-stage.py stage-ready), never this cycle.
-        from .nersc_iri import Client
-        from .nersc_stage import missing
-        absent = missing(Client(), staged['files'])
-        if absent:
-            raise RuntimeError(f'{len(absent)} of the task\'s {len(staged["files"])} EVGEN files are not '
-                               'yet at NERSC; the standing stager copies them ahead')
+        from .nersc_stage import ensure_staged
+        done, detail = ensure_staged(task, staged, proxy)
+        if not done:
+            raise InputStaging(detail)
     task.overrides = dict(task.overrides or {}, event_service=event_service(task, staged))
     task.save(update_fields=['overrides'])
     return staged
 
 
+def catalog_input(task):
+    """The task's input where it resides, read from its catalog: the
+    registered sample's dataset (the task's input dataset) and the files its
+    manifest covers, each with its catalog name, size, adler32 and full
+    event count, and the manifest's total. Nothing is copied or registered
+    anywhere: ``{dataset, files: [{name, lfn, scope, bytes, adler32,
+    events, used_events}], events}``, ``lfn`` the name's last component."""
+    did = ((task.overrides or {}).get('registered_sample') or {}).get('did')
+    if not did:
+        raise ValueError(f'{task.composed_name}: no registered sample to read the input from')
+    files, events = coverage(task)
+    jlab = _jlab()
+    out = []
+    for path, entry in files.items():
+        name = f'/EVGEN/{path}.{entry["ext"]}'
+        meta = jlab.get_metadata(JLAB_SCOPE, name)
+        if meta.get('events') in (None, ''):
+            raise ValueError(f'{JLAB_SCOPE}:{name} carries no event count in its catalog')
+        out.append({'name': name, 'lfn': os.path.basename(name), 'scope': JLAB_SCOPE,
+                    'bytes': int(meta['bytes']), 'adler32': meta['adler32'],
+                    'events': int(meta['events']), 'used_events': entry['events']})
+    return {'dataset': did, 'files': out, 'events': events}
+
+
 def event_service(task, staged):
-    """The task's ``event_service`` override for its staged input: one job
-    per file over the files' common event count and the task capped at its
+    """The task's ``event_service`` override for its input: one job per file
+    over the files' common event count and the task capped at its
     manifest's total, both in whole ranges (the batch pilot rebuilds a range
-    from its first event and the range size)."""
+    from its first event and the range size). An input read from its
+    catalog names its files (``input_files``), which JEDI takes from the
+    dataset and no others."""
     k = SHAPE['range_events']
     per_file = min(f['events'] for f in staged['files']) // k * k
+    names = [f['name'] for f in staged['files'] if f.get('name')]
     return dict(SHAPE, input='evgen', input_dataset=staged['dataset'], files=len(staged['files']),
-                events_per_file=per_file, events=staged['events'] // k * k)
+                events_per_file=per_file, events=staged['events'] // k * k,
+                **({'input_files': names} if names else {}))
 
 
 def coverage(task):
@@ -144,6 +175,17 @@ def stage(task, proxy):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def _jlab():
+    """JLab's catalog, read-only, as the JLab Rucio MCP tools read it."""
+    from django.conf import settings
+    from rucio.client import Client
+    return Client(rucio_host=settings.RUCIO_JLAB_URL, auth_host=settings.RUCIO_JLAB_URL,
+                  account=settings.RUCIO_JLAB_ACCOUNT, auth_type='userpass',
+                  creds={'username': settings.RUCIO_JLAB_USERNAME,
+                         'password': settings.RUCIO_JLAB_PASSWORD},
+                  ca_cert=False, timeout=40)
 
 
 def _catalogs(proxy):

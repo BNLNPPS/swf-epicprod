@@ -728,11 +728,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
             int((v or {}).get('production') or 0)
             for s, v in (q.get('by_status') or {}).items() if s in ('running', 'starting'))
         occupied = max(jobs + ungenerated, tasks_active)
-        # The task the queue takes next: its input is staged ahead at the
-        # site from this record alone (scripts/evgen-es-nersc-stage.py
-        # stage-ready), so what is copied there is what the front allocates.
-        base.update(nodes=nodes, nodes_occupied=occupied,
-                    next_task=eligible[0]['task'] if eligible else '')
+        base.update(nodes=nodes, nodes_occupied=occupied)
         if occupied >= nodes:
             return [('supplied', 'node_occupied', rec())]
         if not eligible:
@@ -1104,12 +1100,21 @@ def feed_task(candidate_pk, created_by='front', site='', placement=None, kind='s
     else:
         from .queues import whole_node
         if whole_node(site):
-            # The task's EVGEN files staged at BNL and its Event Service
-            # shape set before the request (evgen_es.py); the request itself
-            # refuses a whole-node queue any task without one.
-            from .evgen_es import prepare
+            # The task's input read from its catalog, staged at the site, and
+            # its Event Service shape set before the request (evgen_es.py);
+            # the request itself refuses a whole-node queue any task without
+            # one. While the site's copy is made the task is placed on the
+            # queue, so no other queue takes it, and held (InputStaging).
+            from .evgen_es import InputStaging, prepare
             from .gke_pilots import settings as gke_settings
-            prepare(task, gke_settings()['proxy'])
+            try:
+                prepare(task, gke_settings()['proxy'], site=site)
+            except InputStaging:
+                from pcs.commands import pinned_site
+                from pcs.services import prodtask_place
+                if pinned_site(task) != site:
+                    prodtask_place(task, site, changed_by=created_by, placement=placement)
+                raise
         prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE,
                                 site=site, placement=placement)
     return task
@@ -1134,6 +1139,12 @@ def _apply_feeds(outcomes, *, created_by):
                       site=record.get('queue', '') if placed else '',
                       placement=placed, kind=record.get('candidate_kind') or 'submit')
         except Exception as exc:  # noqa: BLE001
+            from .evgen_es import InputStaging
+            if isinstance(exc, InputStaging):
+                # A hold, not a fault: the input is being copied to the site
+                # the task is placed on, and it starts when there.
+                applied.append(('held', 'input_staging', dict(record, detail=str(exc))))
+                continue
             logger.exception('front: feed of %s (pk %s) refused', record.get('candidate'), pk)
             applied.append(('error', 'feed_failed',
                             dict(record, error=f'{type(exc).__name__}: {exc}')))

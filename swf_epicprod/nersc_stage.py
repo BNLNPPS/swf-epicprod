@@ -189,3 +189,69 @@ def wait_job(client, job_id, timeout_s, poll_s=15):
                 or time.time() > deadline:
             return state
         time.sleep(poll_s)
+
+
+# Slurm job states in which a copy job is still under way.
+RUNNING = ('pending', 'queued', 'running', 'configuring', 'new', 'active', 'submitted', 'completing')
+
+
+def job_state(client, job_id):
+    state = client.job(job_id)
+    status = state.get('status') or {}
+    return str(status.get('state') if isinstance(status, dict) else status).lower()
+
+
+def catalog_urls(files):
+    """{lfn: source URL} for files read from their catalog
+    (``evgen_es.catalog_input``): the replica the catalog lists for each,
+    an available disk replica, by the catalog's priority. The source is
+    whatever Rucio says holds the file, never a fixed door."""
+    from .evgen_es import _jlab
+    jlab = _jlab()
+    dids = [{'scope': f['scope'], 'name': f['name']} for f in files]
+    urls = {}
+    for rep in jlab.list_replicas(dids, schemes=['root']):
+        states = rep.get('states') or {}
+        choices = sorted(((meta.get('priority') or 99, pfn) for pfn, meta in (rep.get('pfns') or {}).items()
+                          if meta.get('type') == 'DISK' and states.get(meta.get('rse')) == 'AVAILABLE'))
+        if choices:
+            urls[os.path.basename(rep['name'])] = choices[0][1]
+    absent = [f['lfn'] for f in files if f['lfn'] not in urls]
+    if absent:
+        raise RuntimeError(f'no available disk replica in the catalog for {absent}')
+    return urls
+
+
+def ensure_staged(task, staged, proxy, client=None):
+    """``(True, detail)`` once every file of the task's input
+    (``evgen_es.catalog_input``) is at NERSC at its catalog size; else one
+    copy job of the missing files is under way, started here if none is,
+    and ``(False, detail)``. The job in flight is the task's
+    ``overrides['site_input']``."""
+    client = client or Client()
+    todo = missing(client, staged['files'])
+    overrides = dict(task.overrides or {})
+    record = overrides.get('site_input') or {}
+    if not todo:
+        if record:
+            overrides.pop('site_input', None)
+            task.overrides = overrides
+            task.save(update_fields=['overrides'])
+        return True, f'all {len(staged["files"])} input files at NERSC'
+    running = False
+    if record.get('job_id'):
+        try:
+            running = job_state(client, record['job_id']) in RUNNING
+        except Exception:                                    # noqa: BLE001
+            running = True          # an unreadable state is not a reason to copy twice
+    if not running:
+        ensure_proxy(client, proxy)
+        sample = next((p for p in task.composed_name.split('.') if p[:1] == 'p' and p[1:].isdigit()), 'task')
+        name = f'stage-{sample}-' + time.strftime('%Y%m%dT%H%M%S')
+        job_id = client.submit(job_spec(name, copy_script(todo, catalog_urls(todo), COPIER)))
+        record = {'job_id': job_id, 'name': name, 'submitted_at': time.time(), 'files': len(todo)}
+        overrides['site_input'] = record
+        task.overrides = overrides
+        task.save(update_fields=['overrides'])
+    return False, (f'{len(todo)} of {len(staged["files"])} input files being copied to NERSC '
+                   f'(job {record["job_id"]})')

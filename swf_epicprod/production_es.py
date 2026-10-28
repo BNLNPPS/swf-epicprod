@@ -118,6 +118,9 @@ def definition(settings):
         raise ValueError('production ES input_names needs EVGEN input')
     if cfg.get('nersc_input') and not evgen:
         raise ValueError('production ES nersc_input needs EVGEN input')
+    if 'input_files' in cfg and (not evgen or not isinstance(cfg['input_files'], list)
+                                 or len(cfg['input_files']) != cfg['files']):
+        raise ValueError('production ES input_files must name each of its EVGEN files')
     if 'notice' in cfg and type(cfg['notice']) is not bool:
         raise ValueError('production ES notice must be a boolean')
     if 'preempt_at_s' in cfg and (type(cfg['preempt_at_s']) is not int or cfg['preempt_at_s'] <= 0):
@@ -258,6 +261,10 @@ def apply(spec, settings):
                 noLog=not cfg.get('job_log'), workerProxy=True, event_service=dict(cfg), **shape)
     if cfg.get('range_events', 1) > 1:
         spec['fineGrainedRangeEvents'] = cfg['range_events']
+    if evgen and cfg.get('input_files'):
+        # The input read where it resides: the catalog's dataset, limited to
+        # the files the manifest covers (JEDI's template ``files``).
+        spec['inputFiles'] = list(cfg['input_files'])
     return spec
 
 
