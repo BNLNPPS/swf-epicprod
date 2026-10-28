@@ -45,8 +45,8 @@ level; it does not ask. The pause is reversible and its
 wrong-case cost is essentially nil, while the benefit is enormous. Every
 other task operation keeps its gate.
 
-Excluding an OSG glidein site is Torre's decision only (28 October 2026:
-no session has standing authority to blacklist a site). His 24 October
+Excluding an OSG glidein site is Torre's and Sakib's decision (Torre,
+28 October 2026); no session has standing authority to blacklist a site. His 24 October
 word excluded NotreDame alone; it was later written up as a standing
 exception for the watcher, which he never authorized. The only automated
 exclusion is the node guard's black-hole node exclusion.

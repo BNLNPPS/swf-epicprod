@@ -83,7 +83,8 @@ executes and verifies. Every action in the authenticated-operator tier
 is pushed.
 
 The watcher has no authority to exclude an OSG glidein site (Torre,
-28 October 2026); a site failure is pushed with the site's finished and
+28 October 2026); site exclusion is his and Sakib's decision, and a site
+failure is pushed with the site's finished and
 failed jobs over the incident and the days before it. The node guard's
 black-hole node exclusion is the only automated exclusion. Every wake
 instructs the existing session to reread its current brief, so updated

@@ -930,8 +930,8 @@ jobs in six hours and repeated node-guard black holes across its hosts.
 adds the hard exact-site requirement to the active production pull
 description and each already-idle production pilot, retaining all other
 requirements and a dated template backup. It never edits or removes a
-running worker. A site exclusion is Torre's decision only; no session
-holds standing authority for one (28 October 2026).
+running worker. A site exclusion is Torre's and Sakib's decision; no
+session holds standing authority for one (28 October 2026).
 
 On 27 October 2026 the watcher excluded IRISHEP-SSL-UCHICAGO and UChicago
 at 15:38 ET. Since 14:30 ET they had finished 20 jobs and failed 81, on

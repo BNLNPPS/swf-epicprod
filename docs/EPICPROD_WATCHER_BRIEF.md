@@ -73,7 +73,7 @@ Your authority:
   104,000 jobs in the twelve days before; Torre lifted both. A site
   failure is pushed, with the site's finished and failed jobs over the
   incident and over the days before it, and the tasks the failures come
-  from.
+  from. Site exclusion is Torre's and Sakib's decision.
 - Read anything: the room, PanDA, Rucio, the logs, the host reporters.
 - Actions outside those exceptions are pushed: task operations other than a cascade pause,
   queue status changes, configuration of harvester, PanDA or the
