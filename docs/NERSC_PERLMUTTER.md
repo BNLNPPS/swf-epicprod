@@ -505,8 +505,14 @@ with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
   the door path of the manifest's first row; every unit records its source
   file. JEDI takes the files at their common event count
   (`nEventsPerInputFile`) and stops at the manifest's total (`nEvents`),
-  both in whole ten-event ranges; the last file is taken only part way. A
-  job works to its four-hour deadline and the next continues the file's
+  both in whole ten-event ranges. It takes no file part way: a file whose
+  count would pass the total is left out, with every file after it, so the
+  file the manifest covers only part way runs as a task of its own, a later
+  attempt of the same PCS task over the events the manifest takes from it
+  (`evgen_es.tails`, the attempt's own setup in its `event_service`
+  metadata). The front queues a task's tails with it;
+  `scripts/evgen-es-tail.py <task>` queues those of a task already
+  submitted. A job works to its four-hour deadline and the next continues the file's
   remaining ranges. The rest is 41262's shape: 128 slots, 100-event units,
   closes every 300 s, 32 shared reconstruction members, 1,500 MB a core,
   with the production gun's ten-event ranges, concurrent closes, job log and
@@ -582,14 +588,13 @@ minutes, and resident units waited 30 to 80 minutes from simulated to done,
 shape carries the first two.
 
 The jobs of a task share one event count per file, the smallest of its files'
-full counts in whole ranges (`evgen_es.event_service`), and JEDI stops at the
-manifest's total. A manifest covers each file in whole jobs of the ordinary
-shape and leaves its tail of a few thousand events, so a job reads that tail,
-which no task covers, and the task reaches its total as many events short of
-its last file's coverage: p4499 reads 62,295 events past the coverage of
-run001 to run007 and leaves 62,300 covered events of run008 unread (p4498:
-21,834 and 21,841 of run003). The total is the manifest's and no event is read
-twice; the events read are not exactly the manifest's.
+full counts in whole ranges (`evgen_es.event_service`). A manifest covers each
+file in whole jobs of the ordinary shape and leaves its tail of a few thousand
+events, so a job reads that tail, which no task covers. p4498 runs run001 and
+run002 in task 41494 and the first 996,790 events of run003 in its tail, task
+41497: the manifest's 5,680,057 events and 21,834 of the files' uncovered
+tails. No event is read twice; the events read are not exactly the
+manifest's.
 
 The next step is five nodes on the preempt QOS, which charges half after a
 job's first two hours, with six-hour jobs and then eight (Torre's mail to
