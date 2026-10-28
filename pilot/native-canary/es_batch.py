@@ -592,3 +592,40 @@ def trim_log_dir(workdir):
             except OSError as exc:
                 logger.warning(f'job log: {path} not cut: {exc}')
     logger.info(f'job log: {removed} bytes of data and unit records removed, {cut} bytes cut from logs')
+
+
+def site_input_dirs():
+    """The directories where this site stages a job's inputs ahead of it
+    (the launcher's EPICPROD_SITE_INPUT_DIRS, colon-separated): on Perlmutter
+    the community file system copy (swf_epicprod/nersc_stage.py)."""
+    return [d for d in os.environ.get('EPICPROD_SITE_INPUT_DIRS', '').split(':') if d]
+
+
+def link_site_staged(files, workdir):
+    """Inputs staged at the site, linked into the job's directory and marked
+    delivered, so the pilot asks no catalog for a replica: a job's input
+    resides wherever its catalog says, and the site's copy is made ahead of
+    the job (docs/NERSC_PERLMUTTER.md, EVGEN input in production). A copy is
+    taken only at the catalog's size. Returns the files left to the normal
+    transfer."""
+    dirs = site_input_dirs()
+    if not dirs:
+        return list(files)
+    remaining = []
+    for fspec in files:
+        name = os.path.basename(fspec.lfn)
+        staged = next((os.path.join(d, name) for d in dirs if os.path.isfile(os.path.join(d, name))), None)
+        size = int(getattr(fspec, 'filesize', 0) or 0)
+        if not staged or (size and os.path.getsize(staged) != size):
+            logger.warning(f'input {fspec.lfn}: no copy at the site at its catalog size ({staged}); '
+                           'left to the transfer')
+            remaining.append(fspec)
+            continue
+        link = os.path.join(workdir, name)
+        if os.path.lexists(link):
+            os.unlink(link)
+        os.symlink(staged, link)
+        fspec.turl = 'file://' + staged
+        fspec.status, fspec.status_code = 'transferred', 0
+        logger.info(f'input {fspec.lfn}: the site copy {staged} linked as {link}')
+    return remaining

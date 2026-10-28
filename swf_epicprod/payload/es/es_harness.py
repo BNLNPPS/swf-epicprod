@@ -902,6 +902,7 @@ def unit_spec(members, per_unit, file_path, ext, stamp):
 
 
 ESINPUT_PREFIX = 'group.EIC.esinput.'
+EVGEN_PREFIX = '/EVGEN/'
 
 
 def job_file_path(file_path, ext, lfn):
@@ -911,6 +912,10 @@ def job_file_path(file_path, ext, lfn):
     the row's own path for any other input (a gun plan, a canary's file)."""
     name = os.path.basename(lfn or '')
     suffix = '.' + ext
+    # The catalog's own name of the file (epic:/EVGEN/<path>.<ext>): the path
+    # is the file's EVGEN-relative path, whatever row the manifest begins with.
+    if (lfn or '').startswith(EVGEN_PREFIX) and lfn.endswith(suffix):
+        return lfn[len(EVGEN_PREFIX):-len(suffix)]
     if not (name.startswith(ESINPUT_PREFIX) and name.endswith(suffix)):
         return file_path
     source = name[len(ESINPUT_PREFIX):-len(suffix)]
@@ -927,10 +932,13 @@ def find_input(job_dir, lfn):
     if os.environ.get('EPICPROD_SWITCH_ES_NERSC_INPUT') == '1':
         # Staged ahead at NERSC (swf_epicprod/nersc_stage.py CFS_DIR).
         dirs.append(NERSC_INPUT_DIR)
+    # A catalog name may be a path (/EVGEN/...): the copy is named by its
+    # last component, in the job's directory and in a site's staging alike.
     for base in (job_dir, os.getcwd(), *dirs):
-        p = os.path.join(base, lfn)
-        if os.path.isfile(p):
-            return p
+        for name in dict.fromkeys((lfn, os.path.basename(lfn or ''))):
+            p = os.path.join(base, name.lstrip('/'))
+            if name and os.path.isfile(p):
+                return p
     return None
 
 

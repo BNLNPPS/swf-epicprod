@@ -47,6 +47,11 @@ def build(baseline,output):
     s=replace_once(s,'                event_ranges = self.get_event_range_to_payload()',"                from pilot.user.epic.es_batch import request_count\n                event_ranges = self.get_event_range_to_payload(request_count(message))")
     s=replace_once(s,'            event_ranges = self.get_event_ranges_hook(num_ranges)',"            from pilot.user.epic.es_batch import enabled, throttle_acquire\n            if enabled():\n                throttle_acquire(self)\n                num_ranges = max(num_ranges, 256)\n            event_ranges = self.get_event_ranges_hook(num_ranges)")
     put(key,s)
+    # Inputs staged at the site ahead of the job are linked in and marked
+    # delivered; only the rest go to the transfer (es_batch.link_site_staged).
+    key='pilot/control/data.py';s=data['pilot3/'+key].decode()
+    s=replace_once(s,'            client.transfer(job.indata, activity=activity, **kwargs)\n','            from pilot.user.epic.es_batch import link_site_staged\n            remaining = link_site_staged(job.indata, workdir)\n            if remaining:\n                client.transfer(remaining, activity=activity, **kwargs)\n')
+    put(key,s)
     key='pilot/eventservice/workexecutor/plugins/genericexecutor.py';s=data['pilot3/'+key].decode()
     s=replace_method(s,'GenericExecutor','tarzip_output_es','''    def tarzip_output_es(self):
         from pilot.user.epic.es_batch import enabled, pack_reports

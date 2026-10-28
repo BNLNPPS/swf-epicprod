@@ -250,6 +250,9 @@ export EPICPROD_ES_STAGEOUT_GAP=300
 # (es_batch.py). The size is in events whatever the range size.
 export EPICPROD_ES_PREFETCH_EVENTS=200000
 export EPICPROD_ES_REPORT_AT_ONCE=1
+# Inputs staged at this site ahead of their jobs (swf_epicprod/nersc_stage.py):
+# the pilot links a staged copy into the job and asks no catalog for it.
+export EPICPROD_SITE_INPUT_DIRS=/global/cfs/cdirs/m3763/epicprod/esinput
 export STORAGEDATA_SERVER_URL=file://$WORKDIR/ddmendpoints.json
 export EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
 export APPTAINERENV_EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
