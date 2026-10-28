@@ -247,9 +247,9 @@ def run(queues, *, enabled, mode, dry_run, created_by,
         if not trip:
             continue
         evidence = dict(sample, rule='rolling', **rolling)
-        # Torre, 2026-10-28: "26 of last 50 jobs failed, on 14 hosts. last 50
-        # attempts failed, on 7 hosts."
-        what = (f"last {rolling['consecutive_failed']} attempts failed"
+        # Torre, 2026-10-28: "26 of last 50 jobs failed, on 14 hosts." and "last 50
+        # jobs failed."
+        what = (f"last {rolling['consecutive_failed']} jobs failed"
                 if rolling['trigger'] == 'consecutive' else
                 f"{rolling['window_failed']} of last {rolling['counted']} jobs failed")
         message = (f"{sample['taskname']}: {what}, on {rolling['run_hosts'] if rolling['trigger'] == 'consecutive' else rolling['window_hosts']} hosts"
