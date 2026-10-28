@@ -49,6 +49,9 @@ DEFAULTS = {
                    'es-channel-py313-debian13'),
     'queuedata': ('/cvmfs/eic.opensciencegrid.org/panda/pilot/canary/'
                   'queuedata/BNL_ePIC_GOOGLE_es.json'),
+    # The Cloud Storage place of a task's staged EVGEN input, bucket/prefix
+    # (swf_epicprod/gcs_stage.py); empty, the pods fetch nothing from it.
+    'site_input_gcs': '',
 }
 
 
@@ -149,6 +152,12 @@ def render_job(template, cfg, name=None):
     # no report approaches the pilot's 120 s HTTP limit (10,000 ranges a call
     # took the server 22 to 33 s). A pilot before es_batch's report_at_once
     # ignores the variable.
+    # A task's EVGEN input staged in the cluster's bucket: the batch pilot
+    # fetches the job's file in-region into the pod, kept for the pod's next
+    # job (es_batch.link_site_staged; GKE_PILOT_FLOW.md, EVGEN input).
+    if cfg.get('site_input_gcs'):
+        exports.update(EPICPROD_SITE_INPUT_GCS=str(cfg['site_input_gcs']),
+                       EPICPROD_SITE_INPUT_CACHE='/pilotdir/esinput')
     batch = cfg.get('es_batch_channel')
     if batch:
         exports.update(EPICPROD_SWITCH_ES_BATCH_CHANNEL='1',
