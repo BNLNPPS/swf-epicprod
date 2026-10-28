@@ -46,6 +46,13 @@ AXES = {'beam': ('Beam (GeV)', 'Q² (GeV²)'), 'single': ('Energy', 'Angle')}
 TRY_RE = re.compile(r'^try\d+$')
 # Areas left out: background samples are mixing inputs, not production signal.
 SKIPPED_AREAS = ('BACKGROUNDS',)
+# Event-service samples, named by a site-letter discriminator after the gun
+# sample (3to50deg.gES1): the validation runs (gES, pES, gRS, gRU) and the
+# Google and Perlmutter feeders' samples (gOP, pOP). No production request
+# asks for them, so they are in no grid; their output path carries the
+# discriminator ahead of the physics area (/RECO/<v>/<config>/gOP000001/
+# SINGLE/...), which would otherwise read as a background chain.
+ES_VALIDATION_RE = re.compile(r'\.[gp][A-Z]{2}\d+$')
 DOOR_PREFIX = '/volatile/eic/EPIC'
 
 
@@ -193,12 +200,16 @@ def build_status_grids(campaign_name):
     completion = {r['pc']: r for r in ((entry or {}).get('pcs') or [])}
 
     # The campaign's configurations and an edition of each, for the link.
+    # An ES validation sample's configuration is left out, so its output
+    # places no cell and it is not counted as unplaced.
     edition_by_pc = {}
-    for label, name in (Dataset.objects
-                        .filter(campaign=campaign, physics_config__isnull=False)
-                        .order_by('pk')
-                        .values_list('physics_config__label', 'composed_name')):
-        edition_by_pc.setdefault(label, name)
+    for label, name, sample in (Dataset.objects
+                                .filter(campaign=campaign, physics_config__isnull=False)
+                                .order_by('pk')
+                                .values_list('physics_config__label', 'composed_name',
+                                             'sample_name')):
+        if not ES_VALIDATION_RE.search(sample or ''):
+            edition_by_pc.setdefault(label, name)
 
     # The configurations behind each EVGEN path, three ways: an EVGEN-stage
     # record that matched the registered dataset; the produced output (the
@@ -224,7 +235,8 @@ def build_status_grids(campaign_name):
     task_pc = {t.composed_name: t.dataset.physics_config.label
                for t in (ProdTask.objects
                          .filter(campaign=campaign, dataset__physics_config__isnull=False)
-                         .select_related('dataset__physics_config'))}
+                         .select_related('dataset__physics_config'))
+               if not ES_VALIDATION_RE.search(t.dataset.sample_name or '')}
     convention = evgen_convention_paths_cached() or {}
     for path, info in convention.items():
         if path.startswith('/EVGEN/'):
