@@ -28,24 +28,36 @@ from swf_epicprod.gke_pilots import settings as gke_settings
 from swf_epicprod.nersc_iri import Client
 
 
-def stage_dataset(client, proxy, did, wait):
-    """A registered input dataset at BNL (``scope:name``) copied to NERSC."""
+def stage_dataset(client, proxy, did, wait, names=()):
+    """A dataset's files copied to NERSC from where its catalog says they
+    reside: an ``epic:/EVGEN/...`` dataset from JLab's catalog (``names``, if
+    given, limits it to those file names), any other from PanDA's (a BNL
+    registration, as the earlier canaries' inputs)."""
     import tempfile
-    from swf_epicprod.evgen_es import STAGE_DIR, _catalogs
+    from swf_epicprod.evgen_es import STAGE_DIR, _catalogs, _jlab
     scope, name = did.split(':', 1)
     nersc_stage.ensure_proxy(client, proxy)
-    with tempfile.TemporaryDirectory(prefix='nersc-stage-proxy-', dir=STAGE_DIR) as temp:
-        private = Path(temp) / 'proxy'
-        private.write_bytes(Path(proxy).read_bytes())
-        private.chmod(0o600)
-        bnl, _ = _catalogs(str(private))
-        files = [{'lfn': f['name'], 'bytes': f['bytes'], 'adler32': f['adler32']}
-                 for f in bnl.list_files(scope, name)]
-    todo = nersc_stage.missing(client, files)
+    if name.startswith('/'):
+        jlab = _jlab()
+        files = [{'name': f['name'], 'lfn': os.path.basename(f['name']), 'scope': f['scope'],
+                  'bytes': f['bytes'], 'adler32': f['adler32']}
+                 for f in jlab.list_files(scope, name)
+                 if not names or f['name'] in names or os.path.basename(f['name']) in names]
+        todo = nersc_stage.missing(client, files)
+        sources = nersc_stage.catalog_urls(todo) if todo else {}
+    else:
+        with tempfile.TemporaryDirectory(prefix='nersc-stage-proxy-', dir=STAGE_DIR) as temp:
+            private = Path(temp) / 'proxy'
+            private.write_bytes(Path(proxy).read_bytes())
+            private.chmod(0o600)
+            bnl, _ = _catalogs(str(private))
+            files = [{'lfn': f['name'], 'bytes': f['bytes'], 'adler32': f['adler32']}
+                     for f in bnl.list_files(scope, name)]
+        todo = nersc_stage.missing(client, files)
+        sources = nersc_stage.bnl_urls(proxy, [f['lfn'] for f in todo]) if todo else {}
     print(f'{did}: {len(files)} files, {len(todo)} to copy')
     if not todo:
         return
-    sources = nersc_stage.bnl_urls(proxy, [f['lfn'] for f in todo])
     job_name = 'stage-dataset-' + time.strftime('%Y%m%dT%H%M%S')
     job_id = client.submit(nersc_stage.job_spec(job_name, nersc_stage.copy_script(todo, sources, nersc_stage.COPIER)))
     print('submitted', job_id, job_name)
@@ -63,6 +75,7 @@ def main():
                                            'stage-dataset', 'job'))
     parser.add_argument('target', nargs='?')
     parser.add_argument('--wait', action='store_true')
+    parser.add_argument('--files', help='stage-dataset: only these file names (comma-separated)')
     args = parser.parse_args()
     client = Client()
     proxy = gke_settings()['proxy']
@@ -79,7 +92,8 @@ def main():
         print(json.dumps(state)[:800])
         print(client.view(f'{nersc_stage.JOB_DIR}/{name}.out'))
     elif args.action == 'stage-dataset':
-        stage_dataset(client, proxy, args.target, args.wait)
+        stage_dataset(client, proxy, args.target, args.wait,
+                      names=[n for n in (args.files or '').split(',') if n])
     elif args.action == 'job':
         print(json.dumps(client.job(args.target), indent=1)[:2000])
     else:
