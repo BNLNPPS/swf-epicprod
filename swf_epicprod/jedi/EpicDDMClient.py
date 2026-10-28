@@ -33,7 +33,6 @@ PanDA's catalog), which JLab's refuses as a failed authentication::
 """
 import json
 import os
-import sys
 import threading
 import uuid
 from contextlib import contextmanager
@@ -135,47 +134,12 @@ def routed(did):
         _local.catalog = previous
 
 
-TASK_FILE_EVENTS = 'epicFileEvents'
-
-
-def task_file_events(depth=12):
-    """The per-file event counts the task being read names, ``{lfn:
-    events}`` in its parameters (``epicFileEvents``), else {}. JEDI's
-    contents feeder lists a task's input through this interface and holds
-    the task's parameters as ``taskParamMap`` in the calling frame; nothing
-    else passes the task to a DDM interface."""
-    frame = sys._getframe(1)
-    for _ in range(depth):
-        if frame is None:
-            break
-        params = frame.f_locals.get('taskParamMap')
-        if isinstance(params, dict):
-            return params.get(TASK_FILE_EVENTS) or {}
-        frame = frame.f_back
-    return {}
-
-
 class EpicDDMClient(upstream.AtlasDDMClient):
     """The upstream interface with input-facing methods routed per DID."""
 
     def getFilesInDataset(self, datasetName, *args, **kwargs):
         with routed(datasetName):
-            result = super().getFilesInDataset(datasetName, *args, **kwargs)
-        events = task_file_events()
-        if not events:
-            return result
-        # A task that names its files' event counts (an EVGEN task's manifest
-        # covers its last file only part way): JEDI reads each file's count
-        # from the listing (useRealNumEvents), so the listing carries the
-        # task's counts in place of the catalog's full ones, and JEDI's total
-        # (nEvents), their sum, takes every file (docs/NERSC_PERLMUTTER.md,
-        # EVGEN input in production).
-        status, files = result if isinstance(result, tuple) else (None, result)
-        if isinstance(files, dict):
-            for entry in files.values():
-                if isinstance(entry, dict) and entry.get('lfn') in events:
-                    entry['events'] = int(events[entry['lfn']])
-        return result
+            return super().getFilesInDataset(datasetName, *args, **kwargs)
 
     def getDatasetMetaData(self, datasetName, *args, **kwargs):
         with routed(datasetName):

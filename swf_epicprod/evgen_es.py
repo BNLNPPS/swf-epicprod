@@ -111,21 +111,13 @@ def event_service(task, staged):
     catalog names its files (``input_files``), which JEDI takes from the
     dataset and no others."""
     k = SHAPE['range_events']
-    if any(f.get('name') for f in staged['files']):
-        # An input read from its catalog: each file at the events the
-        # manifest takes from it, in whole ranges, and the task at their sum,
-        # so JEDI takes every file and the last only as far as the manifest
-        # (``file_events``; JEDI's useRealNumEvents with the counts the DDM
-        # interface gives the listing, swf_epicprod/jedi/EpicDDMClient.py).
-        # JEDI knows a path-named catalog's files by their last component.
-        file_events = OrderedDict((f['lfn'], f['used_events'] // k * k) for f in staged['files']
-                                  if f['used_events'] // k * k > 0)
-        return dict(SHAPE, input='evgen', input_dataset=staged['dataset'], files=len(file_events),
-                    events_per_file=max(file_events.values()), events=sum(file_events.values()),
-                    input_files=list(file_events), file_events=dict(file_events))
+    # JEDI knows a path-named catalog's files by their last component
+    # (swf_epicprod/jedi/EpicDDMClient.py, lfn_basename).
+    names = [f['lfn'] for f in staged['files'] if f.get('name')]
     per_file = min(f['events'] for f in staged['files']) // k * k
     return dict(SHAPE, input='evgen', input_dataset=staged['dataset'], files=len(staged['files']),
-                events_per_file=per_file, events=staged['events'] // k * k)
+                events_per_file=per_file, events=staged['events'] // k * k,
+                **({'input_files': names} if names else {}))
 
 
 def coverage(task):
