@@ -875,6 +875,24 @@ def unit_spec(members, per_unit, file_path, ext, stamp):
     return spec
 
 
+ESINPUT_PREFIX = 'group.EIC.esinput.'
+
+
+def job_file_path(file_path, ext, lfn):
+    """The EVGEN-relative path of the job's own input file: the manifest
+    row's directory with the source name of the staged copy
+    (``group.EIC.esinput.<source name>.<ext>``, swf_epicprod/evgen_es.py);
+    the row's own path for any other input (a gun plan, a canary's file)."""
+    name = os.path.basename(lfn or '')
+    suffix = '.' + ext
+    if not (name.startswith(ESINPUT_PREFIX) and name.endswith(suffix)):
+        return file_path
+    source = name[len(ESINPUT_PREFIX):-len(suffix)]
+    if not source or '/' in source:
+        return file_path
+    return os.path.join(os.path.dirname(file_path), source)
+
+
 def find_input(job_dir, lfn):
     for base in (job_dir, os.getcwd()):
         p = os.path.join(base, lfn)
@@ -1321,6 +1339,14 @@ def main():
             if input_path is None:
                 input_path = find_input(os.path.dirname(args.sandbox), pool.first().get('LFN', '')) or ''
             log(f"input: {input_path or 'not staged; the payload reads the door per range'}")
+            # The job's own EVGEN file names its units and closes, never the
+            # manifest's first row: task 41479's job on run002 closed its
+            # events as run001 (2026-10-28).
+            job_path = (job_file_path(file_path, ext, pool.first().get('LFN', ''))
+                        if os.environ.get('EPICPROD_SWITCH_ES_INPUT_NAMES') == '1' else file_path)
+            if job_path != file_path:
+                log(f"EVGEN file: {job_path} (the manifest's first row names {file_path})")
+                file_path = job_path
             slots = [Slot(i, args, input_path) for i in range(args.slots)]
             log(f"{len(slots)} slots started")
         if taking and slots and not held:
