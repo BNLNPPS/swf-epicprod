@@ -41,7 +41,9 @@ if set(current) != set(names) or any((d or {}).get('vo') != 'epic' for d in curr
 actor = os.environ['SWF_REMOTE_CLAUDE_USER']
 if not User.objects.filter(username=actor).exists():
     raise RuntimeError('Configured acting account does not exist')
-prior = AppLog.objects.filter(extra_data__incident_key=incident).first()
+prior = AppLog.objects.filter(
+    app_name='epicprod', timestamp__gte='2026-10-28T19:58:00Z',
+    extra_data__incident_key=incident).first()
 report = {'incident_key': incident, 'corrective_of': ids, 'templates': names,
           'configured_actor': actor, 'templates_at_approved_target': True,
           'original_records_preserved': True, 'audit_id': prior.pk if prior else None}
