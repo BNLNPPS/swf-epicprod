@@ -16,7 +16,7 @@ from pathlib import Path
 import time
 
 from dotenv import dotenv_values
-from rucio.common.exception import DuplicateRule, RequestNotFound
+from rucio.common.exception import AccessDenied, DuplicateRule, RequestNotFound
 
 from swf_epicprod.jlab_auth import rucio_client
 
@@ -43,6 +43,7 @@ def diagnostics(client, files, rule):
     result['locks'] = [{k: row.get(k) for k in ('name', 'state', 'rse')}
                        for row in client.list_replica_locks(rule['id'])]
     result['transfers'] = []
+    result['diagnostic_errors'] = []
     if rule['state'] != 'OK':
         for entry in files:
             for historical, method in ((False, client.list_request_by_did),
@@ -52,6 +53,11 @@ def diagnostics(client, files, rule):
                     rows = [reply] if isinstance(reply, dict) else list(reply)
                 except RequestNotFound:
                     rows = []
+                except AccessDenied as error:
+                    result['diagnostic_errors'].append({
+                        'method': method.__name__, 'name': entry['name'],
+                        'error': str(error)})
+                    continue
                 for row in rows:
                     result['transfers'].append({'name': entry['name'],
                         'historical': historical,
