@@ -650,7 +650,11 @@ def window_activity(campaign, window_start, window_end):
     initiated = []
     completed = []
     failed = []
+    from swf_epicprod.quiet_end import quiet_task_ids
+    quiet = quiet_task_ids()            # ended quietly: no production figure (EPICPROD_OPS.md)
     for tid, name, status, created, modified in tasks:
+        if int(tid) in quiet:
+            continue
         if (created and window_start.replace(tzinfo=None) <= created
                 < window_end.replace(tzinfo=None)):
             initiated.append({'jeditaskid': tid, 'name': name, 'status': status})

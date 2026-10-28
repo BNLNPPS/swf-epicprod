@@ -579,11 +579,13 @@ def prod_tasks_in_flight(request):
         pk for pk, overrides in ProdTask.objects.filter(pk__in=set(by_jedi.values()))
         .values_list('pk', 'overrides')
         if 'event_service' in (overrides or {}) and not any(m in overrides for m in feeders)}
+    from swf_epicprod.quiet_end import quiet_task_ids
+    quiet = quiet_task_ids()
     for queue, sent in by_queue.items():
         name = allocation_of(queue)
         for task_id, status in sent:
             prod_id = by_jedi.get(task_id)
-            if prod_id in commissioning:
+            if prod_id in commissioning or task_id in quiet:
                 continue
             if prod_id is None:
                 unassociated.setdefault(name, []).append(task_id)
