@@ -301,6 +301,9 @@ verification. It preserves unrelated metadata and retains the prior
 manifest under `manifest_superseded`, with the operating account, time
 and reason. The repair and its `attempt_manifest_repair` action-stream
 record commit together; a failed audit write rolls back the repair.
+The repaired record retains the sandbox verification bound to its row
+count and digest, so a verified boundary record remains usable when the
+submitted row count is unavailable.
 
 The `PandaTasks` association records what the attempt covers:
 `residual_of`, the row coverage ("M of N rows"), the registered and

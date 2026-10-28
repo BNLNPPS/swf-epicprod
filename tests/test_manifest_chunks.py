@@ -249,6 +249,24 @@ class ExplicitRepair(unittest.TestCase):
         self.assertEqual(plan['summary']['count_basis'], 'exact sandbox CSV alone')
         self.assertEqual(self.replacement(plan)['manifest']['rows'], 3)
 
+    def test_verified_boundary_record_stays_usable_without_submitted_count(self):
+        self.rows = rows_of(10000)
+        plan = self.prepare(count=None)
+        fixed = self.replacement(plan, rows=10000, events=1000000,
+                                 sha256=manifests.rows_sha256(self.rows))
+        with mock.patch.object(manifests, 'attempt_row_count') as count:
+            self.assertIsNone(manifests.truncation(self.attempt, fixed['manifest']))
+        count.assert_not_called()
+
+    def test_verification_does_not_cover_changed_boundary_rows(self):
+        self.rows = rows_of(10000)
+        plan = self.prepare(count=None)
+        fixed = self.replacement(plan, rows=10000, events=1000000,
+                                 sha256=manifests.rows_sha256(self.rows))
+        fixed['manifest']['files'][0]['nevents'] = 101
+        with mock.patch.object(manifests, 'attempt_row_count', return_value=None):
+            self.assertIn('cannot be checked', manifests.truncation(self.attempt, fixed['manifest']))
+
     def test_replacement_keeps_prior_record_and_concurrent_unrelated_metadata(self):
         plan = self.prepare()
         current = deepcopy(self.attempt.metadata)

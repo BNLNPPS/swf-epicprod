@@ -59,5 +59,8 @@ def replacement(metadata, prepared, *, rows, events, sha256, actor, reason):
                                     ('rows', 'events', 'sha256', 'count_basis', 'submitted_rows')}})
     result['manifest_superseded'] = history
     result['manifest'] = deepcopy(prepared['record'])
+    result['manifest']['sandbox_verification'] = {
+        'rows': summary['rows'], 'sha256': summary['sha256'],
+        'by': actor, 'at': history[-1]['at']}
     result.pop('manifest_rejected', None)
     return result

@@ -153,6 +153,11 @@ def truncation(panda_tasks, record):
     10,000-chunk file, which the row count agrees with, stands."""
     if not any(_stops_at_9999(e) for e in (record or {}).get('files') or []):
         return None
+    verification = record.get('sandbox_verification') or {}
+    if verification.get('sha256') == record.get('sha256') and verification.get('rows') == record.get('rows'):
+        rows = expand(record)
+        if len(rows) == record['rows'] and rows_sha256(rows) == verification['sha256']:
+            return None
     expected = attempt_row_count(panda_tasks.jedi_task_id)
     if expected == record.get('rows'):
         return None
