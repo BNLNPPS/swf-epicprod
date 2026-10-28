@@ -6,6 +6,7 @@ input in production).
     evgen-es-nersc-stage.py proxy                 our proxy to NERSC, private
     evgen-es-nersc-stage.py probe                 what a transfer node offers
     evgen-es-nersc-stage.py stage TASK [--wait]   copy the task's missing files
+    evgen-es-nersc-stage.py stage-dataset DID [--wait]  a registered input dataset (a canary's)
     evgen-es-nersc-stage.py stage-ready           every ready EVGEN task the front
                                                   can feed a whole-node queue; by cron
     evgen-es-nersc-stage.py job JOBID             a transfer job's state
@@ -62,6 +63,35 @@ def stage_task(client, proxy, name, inflight):
     return f'{name}: {len(todo)} of {len(staged["files"])} files to copy, job {job_id} ({job_name})'
 
 
+def stage_dataset(client, proxy, did, wait):
+    """A registered input dataset at BNL (``scope:name``) copied to NERSC."""
+    import tempfile
+    from swf_epicprod.evgen_es import STAGE_DIR, _catalogs
+    scope, name = did.split(':', 1)
+    nersc_stage.ensure_proxy(client, proxy)
+    with tempfile.TemporaryDirectory(prefix='nersc-stage-proxy-', dir=STAGE_DIR) as temp:
+        private = Path(temp) / 'proxy'
+        private.write_bytes(Path(proxy).read_bytes())
+        private.chmod(0o600)
+        bnl, _ = _catalogs(str(private))
+        files = [{'lfn': f['name'], 'bytes': f['bytes'], 'adler32': f['adler32']}
+                 for f in bnl.list_files(scope, name)]
+    todo = nersc_stage.missing(client, files)
+    print(f'{did}: {len(files)} files, {len(todo)} to copy')
+    if not todo:
+        return
+    sources = nersc_stage.bnl_urls(proxy, [f['lfn'] for f in todo])
+    job_name = 'stage-dataset-' + time.strftime('%Y%m%dT%H%M%S')
+    job_id = client.submit(nersc_stage.job_spec(job_name, nersc_stage.copy_script(todo, sources, nersc_stage.COPIER)))
+    print('submitted', job_id, job_name)
+    if wait:
+        nersc_stage.wait_job(client, job_id, timeout_s=nersc_stage.DURATION_S)
+        print(client.view(f'{nersc_stage.JOB_DIR}/{job_name}.out'))
+        left = nersc_stage.missing(client, files)
+        print(f'{len(left)} files still missing at NERSC')
+        raise SystemExit(1 if left else 0)
+
+
 def stage_ready(client, proxy):
     """Stage every ready EVGEN-ES task's input at NERSC ahead of its feed,
     one copy job a task at a time: a task whose copy is still running is
@@ -94,7 +124,7 @@ def stage_ready(client, proxy):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('action', choices=('proxy', 'probe', 'mdprobe', 'ioprobe', 'quota', 'stage',
-                                           'stage-ready', 'job'))
+                                           'stage-ready', 'stage-dataset', 'job'))
     parser.add_argument('target', nargs='?')
     parser.add_argument('--wait', action='store_true')
     args = parser.parse_args()
@@ -114,6 +144,8 @@ def main():
         print(client.view(f'{nersc_stage.JOB_DIR}/{name}.out'))
     elif args.action == 'stage-ready':
         stage_ready(client, proxy)
+    elif args.action == 'stage-dataset':
+        stage_dataset(client, proxy, args.target, args.wait)
     elif args.action == 'job':
         print(json.dumps(client.job(args.target), indent=1)[:2000])
     else:
