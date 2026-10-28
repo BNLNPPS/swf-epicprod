@@ -933,6 +933,16 @@ removes both:
   RECO to the harness makes none of these calls; without it a node's 128 slots
   made 128 token requests and 128 catalog queries together at the job's start
   (task 41479, 2026-10-28).
+- From 28 October on Perlmutter, each unit's handoff, after its validation and
+  before its outcome marker, was served one unit at a time across the node, 6
+  to 23 s each, so units waited for it in turn: first units 3 to 45 minutes,
+  resident units a median 51 minutes from simulated to done (job 6289946), and
+  a node made about 0.4 events a second against 27.8 (task 41262). The
+  handoff's one move of a file between directories is the step it removes:
+  with `EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE=1` a unit's RECO is written in its
+  handoff directory, on both the `run.sh` and the resident path, and a failed
+  resident unit's RECO is removed. `run.sh` stamps each handoff step in the
+  unit's `payload.log`.
 
 On Google, with the batch channel and the fast merge, the median turnaround is
 0.7 s and fourteen slots keep 93% of the job's core-time in units, 82% in saved

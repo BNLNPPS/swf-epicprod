@@ -151,6 +151,16 @@ def asynchronous():
     return os.environ.get('EPICPROD_SWITCH_ES_RECO_ASYNC') == '1'
 
 
+def handoff_in_place(env):
+    """EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE=1: a unit's RECO is written in its
+    handoff directory, so the handoff moves no file between directories. On
+    Perlmutter's scratch from 28 October the handoff, whose one such move this
+    removes, was served one unit at a time across the node, 6 to 23 s each, and
+    a node's units waited for it in turn, up to 88 minutes (jobs 6289946 to
+    6314067)."""
+    return env.get('EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE') == '1' and bool(env.get('EPICPROD_RECO_HANDOFF'))
+
+
 def simulate(template, chunk, label, start, count, out, env, scratch):
     """The unit's simulation through the slot's resident npsim; returns what
     reconstruct() takes. Raises on a failed step, with the reason, and then
@@ -159,7 +169,12 @@ def simulate(template, chunk, label, start, count, out, env, scratch):
     skip = start - 1
     taskname, seed = identity(template, chunk, label, skip)
     full = scratch / template['full_dir'] / f'{taskname}.edm4hep.root'
-    reco = scratch / template['reco_dir'] / f'{taskname}.eicrecon.edm4eic.root'
+    if handoff_in_place(env):
+        # The RECO is written where the harness takes it: the handoff moves
+        # nothing between directories (handoff_in_place).
+        reco = Path(env['EPICPROD_RECO_HANDOFF']) / f'{taskname}.eicrecon.edm4eic.root'
+    else:
+        reco = scratch / template['reco_dir'] / f'{taskname}.eicrecon.edm4eic.root'
     full.parent.mkdir(parents=True, exist_ok=True)
     reco.parent.mkdir(parents=True, exist_ok=True)
     state = Path(env['EPICPROD_SIM_STATE'])
@@ -219,10 +234,16 @@ def reconstruct(template, unit, out, env):
         handoff = Path(env['EPICPROD_RECO_HANDOFF'])
         handoff.mkdir(parents=True, exist_ok=True)
         moved = handoff / reco.name
-        shutil.move(str(reco), str(moved))
+        if reco != moved:
+            shutil.move(str(reco), str(moved))
         terms = dict(template['handoff'], file=str(moved), events=events)
         resident_sim.write_json(handoff / f'{taskname}.handoff.json', terms)
         return dict(terms, handoff_file=str(handoff / f'{taskname}.handoff.json'))
+    except BaseException:
+        # A failed unit's RECO written in place is not left for the close.
+        if handoff_in_place(env):
+            Path(reco).unlink(missing_ok=True)
+        raise
     finally:
         shutil.rmtree(unit['scratch'], ignore_errors=True)
 

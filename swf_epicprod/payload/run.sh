@@ -668,6 +668,15 @@ if [ -n "${EPICPROD_RECO_HANDOFF:-}" ] && [ "${EPICPROD_SWITCH_ES_UNIT_LOCAL:-0}
   ES_UNIT_LOCAL=1
   COPYLOG=false
 fi
+# With EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE=1 an Event Service unit writes its
+# RECO in its handoff directory, so the handoff moves no file between
+# directories (es/resident_unit.py, handoff_in_place).
+ES_HANDOFF_IN_PLACE=0
+if [ -n "${EPICPROD_RECO_HANDOFF:-}" ] && [ "${EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE:-0}" = "1" ]; then
+  ES_HANDOFF_IN_PLACE=1
+  RECO_TEMP=${EPICPROD_RECO_HANDOFF}
+  mkdir -p "${RECO_TEMP}"
+fi
 
 # Before any work, ask the catalog of record about this job's output. A
 # retry of a job whose earlier attempt already delivered the RECO file has
@@ -1314,8 +1323,12 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
     # instead of to the catalog; the harness merges a close's units into
     # one file and registers that (es/es_close.sh), under the same
     # dataset, metadata, lifetime and preservation this unit would have.
+    echo "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ) handoff: start"
     mkdir -p "${EPICPROD_RECO_HANDOFF}"
-    mv "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" "${EPICPROD_RECO_HANDOFF}/${TASKNAME}.eicrecon.edm4eic.root"
+    if [ "${ES_HANDOFF_IN_PLACE}" -ne 1 ]; then
+      mv "${RECO_TEMP}/${TASKNAME}.eicrecon.edm4eic.root" "${EPICPROD_RECO_HANDOFF}/${TASKNAME}.eicrecon.edm4eic.root"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ) handoff: RECO moved"
+    fi
     jq -n --arg file "${EPICPROD_RECO_HANDOFF}/${TASKNAME}.eicrecon.edm4eic.root" \
           --arg events "${RECO_EVENTS:-}" --arg dataset "/${RECO_DIR}" --arg rse "${OUT_RSE:-EIC-XRD}" \
           --arg name "$(basename "${BASENAME}")" --argjson metadata "${METADATA_JSON_RECO}" \
@@ -1327,7 +1340,7 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
             preserve: ($preserve == "yes"), preserve_door: $preserve_door, preserve_prefix: $preserve_prefix,
             preserve_timeout: ($preserve_timeout | tonumber? // 600)}' \
        > "${EPICPROD_RECO_HANDOFF}/${TASKNAME}.handoff.json"
-    echo "RECO handed to the harness: ${EPICPROD_RECO_HANDOFF}/${TASKNAME}.eicrecon.edm4eic.root (${RECO_EVENTS:-?} events)"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ) RECO handed to the harness: ${EPICPROD_RECO_HANDOFF}/${TASKNAME}.eicrecon.edm4eic.root (${RECO_EVENTS:-?} events)"
     # Resident units (EPICPROD_SWITCH_ES_RESIDENT_UNIT, es/resident_unit.py):
     # this unit's request, names, seed and registration terms are the
     # slot's template, which its later units take in place of this script.
@@ -1350,6 +1363,7 @@ if [ "${COPYRECO:-false}" == "true" ] ; then
               npsim_args: $npsim[0], handoff: ($handoff[0] | del(.file, .events))}' \
         > "${EPICPROD_UNIT_TEMPLATE}.tmp" && mv -f "${EPICPROD_UNIT_TEMPLATE}.tmp" "${EPICPROD_UNIT_TEMPLATE}" \
         || echo "unit template not written; the slot keeps this path"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ) handoff: unit template written"
     fi
     stage registration deferred "/${RECO_DIR}/${TASKNAME}.eicrecon.edm4eic.root"
   elif [ "${USERUCIO:-false}" == "true" ] ; then
