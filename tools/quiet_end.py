@@ -6,10 +6,13 @@ For each PanDA task: it must have a PCS task, must not have ended, and must
 have no active or defined job (a running Event Service job ends quietly by the
 close-out, tools/es_force_finish.py, which credits what it saved). The intent
 is recorded first, ``ProdTask.overrides['quiet_end'] = {by, at, reason}``, so
-the production readers leave the task out before PanDA changes its state;
-then PanDA's soft finish is sent, which kills nothing, and the task ends
-finished. Recorded as a quiet_end action, off the live screen. Dry run unless
---apply.
+the production readers leave the task out. PanDA's soft finish, which kills
+nothing, is sent only when JEDI will end the task finished: at least one input
+file finished and no fail-on-goal rule (FG). Otherwise JEDI would end it
+failed ("failed since no file was successfully processed", 2026-10-27: tasks
+41203 to 41316), so the task is left as it is in PanDA, paused, carrying the
+marker alone. Recorded as a quiet_end action, off the live screen. Dry run
+unless --apply.
 
 Runs in the deployed monitor's environment on swf-testbed, on an operator's
 word:
@@ -54,13 +57,23 @@ def main():
                 cursor.execute(f'SELECT count(*) FROM doma_panda.{table} WHERE jeditaskid=%s', [task_id])
                 jobs += int(cursor.fetchone()[0])
             status = row[0] if row else None
+            cursor.execute('''SELECT COALESCE(SUM(d.nfilesfinished), 0), MAX(t.splitrule)
+                              FROM doma_panda.jedi_tasks t LEFT JOIN doma_panda.jedi_datasets d
+                                ON d.jeditaskid = t.jeditaskid AND d.masterid IS NULL
+                               AND d.type IN ('input', 'pseudo_input')
+                              WHERE t.jeditaskid = %s''', [task_id])
+            files_done, splitrule = cursor.fetchone() or (0, None)
+            fail_on_goal = any(tok.split('=')[0] == 'FG' for tok in (splitrule or '').split(','))
+            finish = bool(files_done) and not fail_on_goal
             why = ('no PanDA task' if row is None else
                    'no PCS task' if link is None else
                    f'already {status}' if status in ENDED else
                    f'{jobs} active or defined jobs (end a running ES job by the close-out)' if jobs else None)
-            line = f'{task_id} {status} jobs={jobs} ' + (link.prod_task.composed_name if link else '-')
-            (refused if why else plan).append((task_id, link, line + (f'  REFUSED: {why}' if why else '')))
-    for _, _, line in plan + refused:
+            line = (f'{task_id} {status} jobs={jobs} files_finished={files_done} '
+                    + ('PanDA finish' if finish else 'marker only, stays as it is in PanDA') + ' '
+                    + (link.prod_task.composed_name if link else '-'))
+            (refused if why else plan).append((task_id, link, finish, line + (f'  REFUSED: {why}' if why else '')))
+    for *_, line in plan + refused:
         print(line)
     if refused:
         sys.exit(f'ERROR: {len(refused)} task(s) refused; nothing done')
@@ -69,14 +82,17 @@ def main():
         return 0
 
     at = timezone.now().isoformat()
-    for task_id, link, _ in plan:
+    for task_id, link, _, _ in plan:
         task = link.prod_task
         task.overrides = dict(task.overrides or {})
         task.overrides[quiet_end.MARKER] = {'by': args.by, 'at': at, 'reason': args.reason,
                                             'jedi_task_id': task_id}
         task.save(update_fields=['overrides'])
     quiet_end.invalidate()
-    results = quiet_end.finish_in_pclient([task_id for task_id, _, _ in plan])
+    to_finish = [task_id for task_id, _, finish, _ in plan if finish]
+    results = quiet_end.finish_in_pclient(to_finish) if to_finish else []
+    results += [{'task_id': task_id, 'ok': True, 'response': 'marker only; PanDA state left as it is'}
+                for task_id, _, finish, _ in plan if not finish]
     for r in results:
         print(f"{r['task_id']} finish: {'ok' if r.get('ok') else 'FAILED'} {r.get('response') or r.get('error')}")
         log_epicprod_action(

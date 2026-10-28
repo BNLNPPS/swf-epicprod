@@ -1,8 +1,9 @@
 """A task ended quietly (docs/EPICPROD_OPS.md, Quiet end).
 
 A commissioning test or a stopped task is ended without a trace in the
-production record: no job is touched, the task ends ``finished`` in PanDA, and
-the production readers leave it out. The intent is recorded on the PCS task,
+production record: no job is touched, the production readers leave it out, and
+PanDA is told to finish it only when JEDI will end it ``finished`` (at least
+one input file finished; otherwise JEDI ends it ``failed``). The intent is recorded on the PCS task,
 ``ProdTask.overrides['quiet_end'] = {by, at, reason}``, before PanDA is told to
 finish it; ``tools/quiet_end.py`` does both.
 
