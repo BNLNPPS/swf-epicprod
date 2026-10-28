@@ -272,6 +272,39 @@ attempt completed is the one with the most rows, the latest of equals;
 when a task's attempts were cut differently, the preview names the one
 it counts against ("M of the N jobs of attempt 2").
 
+Chunk indices are padded to at least four digits and may exceed 9999;
+the manifest, delivered-row key and file-event reader accept the same
+indices, including diverted copies. A nonblank malformed manifest line
+invalidates the whole exact record. Submission still records its PanDA
+association, with the rejected-row counts instead of a partial manifest.
+
+Older records ending a file at chunk 9999 need verification against the
+submitted row count. `nEvents` supplies that count only for the no-input
+serial dispatcher with one pseudo-event per job; it is not a general
+physics-event-to-row conversion. A mismatch, or an unavailable comparable
+count, blocks residual preview and exclusion acceptance until the record
+is explicitly repaired. A preview does not replace a suspect record.
+Repair uses the exact submitted sandbox CSV, retaining the previous record
+and checking row count, event sum and the canonical `rows_sha256` digest;
+an exactly 10,000-chunk input alone is not evidence of truncation.
+
+`scripts/repair_attempt_manifest.py --jedi-taskid <PanDA task id>` runs
+that verification read-only, under the normal production-host Django
+environment (run from `<swf-monitor>/src` using its venv). It prints the
+CSV's row count, physics-event sum and canonical digest, with the
+comparable submitted count when available. Missing or non-row task
+parameters do not prevent verification from an unambiguous exact CSV.
+To apply, supply `--apply --rows <reviewed rows> --events <reviewed sum>
+--sha256 <reviewed digest> --reason <reason>`. Apply rechecks these
+values, locks the attempt and refuses if its manifest changed during
+verification. It preserves unrelated metadata and retains the prior
+manifest under `manifest_superseded`, with the operating account, time
+and reason. The repair and its `attempt_manifest_repair` action-stream
+record commit together; a failed audit write rolls back the repair.
+The repaired record retains the sandbox verification bound to its row
+count and digest, so a verified boundary record remains usable when the
+submitted row count is unavailable.
+
 The `PandaTasks` association records what the attempt covers:
 `residual_of`, the row coverage ("M of N rows"), the registered and
 unarrived file counts per checked DID, and how the manifest was

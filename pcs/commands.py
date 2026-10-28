@@ -977,7 +977,7 @@ def _gun_manifest(task, path, stem, events_per_job):
 # A diverted registration carries the attempt's mark after the chunk
 # (``<stem>.<chunk>.p<mark>.eicrecon.edm4eic.root``, register_to_rucio
 # derived_did_name): the same row, a second copy.
-RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4})(?:\.p\w+)?\.eicrecon\.edm4eic\.root$')
+RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4,})(?:\.p\w+)?\.eicrecon\.edm4eic\.root$')
 TRY_SEGMENT_RE = re.compile(r'^try\d+$')
 
 
