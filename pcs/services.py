@@ -6614,6 +6614,43 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
     return task
 
 
+def prodtask_submit_tail(*, task, event_service, changed_by='', source='evgen_es_tail'):
+    """Queue one tail of an EVGEN Event Service task: an attempt of its own
+    (``.tryN``) over a file JEDI leaves out of the task, carrying the setup
+    the spec is built from (``metadata['event_service']``; swf_epicprod/
+    evgen_es.py, tails), on the queue the task is placed on. The task's
+    other attempts are untouched. Returns the attempt."""
+    import json as _json
+    from swf_epicprod.production_es import definition
+    from .commands import pinned_site
+    definition(event_service)
+    site = pinned_site(task)
+    if not site:
+        raise ServiceError(f'{task.name} is placed on no queue; a tail runs where the task runs.', status=409)
+    refuse_closed_queue(site, task=task)
+    panda_tasks = prodtask_allocate_panda_tasks(task=task, source=source)
+    meta = dict(panda_tasks.metadata or {}, event_service=dict(event_service),
+                tail_files=list(event_service['input_files']))
+    if changed_by:
+        meta['submitted_by'] = changed_by
+    panda_tasks.metadata = meta
+    panda_tasks.site = site
+    panda_tasks.save(update_fields=['metadata', 'site', 'updated_at'])
+    msg = {'msg_type': 'submit_evgen_task', 'namespace': 'prodops', 'task_name': task.name,
+           'panda_tasks_id': panda_tasks.pk, 'panda_task_name': panda_tasks.task_name,
+           'owner': task.created_by, 'residual': False}
+    from monitor_app.activemq_connection import ActiveMQConnectionManager
+    try:
+        triggered = ActiveMQConnectionManager().send_message('/queue/epicprod.ops', _json.dumps(msg))
+    except Exception as e:
+        panda_tasks.delete()
+        raise ServiceError(f'Could not reach the prod-ops agent queue: {e}', status=503)
+    if not triggered:
+        panda_tasks.delete()
+        raise ServiceError('Tail submission could not be queued (ops-agent queue unreachable).', status=503)
+    return panda_tasks
+
+
 def _prodtask_associated_jedi_ids(task):
     ids = []
     if task.panda_task_id:

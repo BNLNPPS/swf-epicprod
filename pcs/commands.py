@@ -1285,6 +1285,12 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
     data = cfg.get('data') or {}
 
     event_service = (task.overrides or {}).get('event_service')
+    # An attempt with a setup of its own (an EVGEN task's tail, the file JEDI
+    # leaves out: swf_epicprod/evgen_es.py, tails) is built from it.
+    attempt_es = (getattr(panda_tasks, 'metadata', None) or {}).get('event_service') \
+        if panda_tasks is not None else None
+    if attempt_es:
+        event_service = attempt_es
     if event_service:
         if residual:
             raise ValueError('production ES uses native event retries; row-based residual rerun is not supported')

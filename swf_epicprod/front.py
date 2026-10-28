@@ -1087,8 +1087,9 @@ def feed_task(candidate_pk, created_by='front', site='', placement=None, kind='s
                               prodtask_rerun_residual_request,
                               prodtask_submit_request)
     task = ProdTask.objects.get(pk=candidate_pk)
+    staged = None
     if kind in ('submit', 'rerun_entire'):
-        _prepare_whole_node(task, site, created_by, placement)
+        staged = _prepare_whole_node(task, site, created_by, placement)
     if kind == 'rerun_residual':
         prodtask_rerun_residual_request(task=task, site=site, placement=placement,
                                         changed_by=created_by)
@@ -1102,6 +1103,14 @@ def feed_task(candidate_pk, created_by='front', site='', placement=None, kind='s
     else:
         prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE,
                                 site=site, placement=placement)
+    if staged is not None:
+        # The files JEDI leaves out of the task run as tasks of their own
+        # (evgen_es.tails), queued with it.
+        from pcs.services import prodtask_submit_tail
+        from .evgen_es import tails
+        task.refresh_from_db()
+        for shape in tails(task, staged=staged):
+            prodtask_submit_tail(task=task, event_service=shape, changed_by=created_by)
     return task
 
 
@@ -1112,16 +1121,17 @@ def _prepare_whole_node(task, site, created_by, placement):
     shape set afresh before the request (evgen_es.py), for a submission and a
     new attempt alike; the request refuses a whole-node queue any task
     without one. While the site's copy is made the task is placed on the
-    queue, so no other queue takes it, and held (InputStaging)."""
+    queue, so no other queue takes it, and held (InputStaging). Returns the
+    task's input as its catalog holds it, None for any other queue."""
     from pcs.commands import pinned_site
     from .queues import whole_node
     target = site or pinned_site(task)
     if not whole_node(target):
-        return
+        return None
     from .evgen_es import InputStaging, prepare
     from .gke_pilots import settings as gke_settings
     try:
-        prepare(task, gke_settings()['proxy'], site=target)
+        return prepare(task, gke_settings()['proxy'], site=target)
     except InputStaging:
         if pinned_site(task) != target:
             from pcs.services import prodtask_place

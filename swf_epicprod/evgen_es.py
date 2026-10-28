@@ -120,6 +120,33 @@ def event_service(task, staged):
                 **({'input_files': names} if names else {}))
 
 
+def tails(task, shape=None, staged=None):
+    """The setups of the files JEDI leaves out of the task, one task each.
+    JEDI takes the task's files in order at one count each
+    (``events_per_file``) and stops at the first whose count would pass the
+    task's total (``events``), leaving it and those after it out entirely, so
+    a manifest that covers its last file only part way loses that file
+    (p4498, task 41494: run003's 996,791 covered events). Each file left out
+    runs as its own task of the same PCS task, over the events the manifest
+    takes from it, in whole ranges: one file at one count, which JEDI takes
+    whole. ``[]`` when JEDI takes every file."""
+    shape = shape or (task.overrides or {}).get('event_service') or {}
+    if shape.get('input') != 'evgen' or not shape.get('input_files'):
+        return []
+    staged = staged or catalog_input(task)
+    covered = {f['lfn']: f['used_events'] for f in staged['files']}
+    k = shape.get('range_events') or SHAPE['range_events']
+    taken, out = 0, []
+    for name in shape['input_files']:
+        if not out and taken + shape['events_per_file'] <= shape['events']:
+            taken += shape['events_per_file']
+            continue
+        events = covered.get(name, 0) // k * k
+        if events > 0:
+            out.append(dict(shape, input_files=[name], files=1, events_per_file=events, events=events))
+    return out
+
+
 def coverage(task):
     """The files the task's manifest covers, in manifest order:
     ``(OrderedDict {EVGEN-relative path: {ext, events}}, total events)``,
