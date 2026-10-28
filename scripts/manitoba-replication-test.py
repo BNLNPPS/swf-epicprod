@@ -48,7 +48,8 @@ def diagnostics(client, files, rule):
             for historical, method in ((False, client.list_request_by_did),
                                        (True, client.list_request_history_by_did)):
                 try:
-                    rows = list(method(entry['name'], TARGET, scope='epic'))
+                    reply = method(entry['name'], TARGET, scope='epic')
+                    rows = [reply] if isinstance(reply, dict) else list(reply)
                 except RequestNotFound:
                     rows = []
                 for row in rows:
