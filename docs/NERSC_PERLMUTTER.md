@@ -511,7 +511,12 @@ request (`front.feed_task`, `evgen_es.prepare`). The queue holds one task at
 a time, as the gun feeder did: it takes the next task when nothing of its
 own is committed or active there, whatever the task's hours (`front.decide`,
 `node_occupied`), since such a task is days of one node, past any hours mark
-(p4497, 5.4 million events: about 54 h). The task's EVGEN files may
+(p4497, 5.4 million events: about 54 h). JEDI makes the task's jobs, one per
+file, at once (41479: nine activated within two minutes), and in pull mode the
+harvester gives each activated job a worker, a whole node; the harvester's
+worker limit on the queue, one, holds production to one node, the jobs
+running one after another (distcomp-services perlmutter-harvester/CHANGES.md,
+2026-10-28). A test beside production needs that limit raised for its run. The task's EVGEN files may
 be staged ahead (`scripts/evgen-es-stage.py`), so the feed only checks them.
 `scripts/evgen-es-submit.py <task> --by NAME --reason TEXT` submits one by
 hand the same way; `--dry-run` prints the PanDA spec.
