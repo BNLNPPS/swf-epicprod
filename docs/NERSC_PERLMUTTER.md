@@ -523,6 +523,22 @@ be staged ahead (`scripts/evgen-es-stage.py`), so the feed only checks them.
 `scripts/evgen-es-submit.py <task> --by NAME --reason TEXT` submits one by
 hand the same way; `--dry-run` prints the PanDA spec.
 
+A task's EVGEN files are also staged ahead at NERSC, so that no job pulls its
+3.5 to 5 GB file over the WAN when it starts: `scripts/evgen-es-nersc-stage.py
+stage <task>` (`swf_epicprod/nersc_stage.py`) copies the files not yet there
+from BNL_PROD_DISK_1 to `/global/cfs/cdirs/m3763/epicprod/esinput/<lfn>`,
+each checked against its adler32 and renamed into place. The copy is a Slurm
+job in the transfer QOS (cron architecture) submitted through the IRI API
+(`swf_epicprod/nersc_iri.py`) under its account, `wguan`; it takes xrdcp from
+ATLAS's tools on CVMFS (a transfer node has none of its own and no grid CA
+directory) and reads BNL with our production Rucio proxy, kept at NERSC in
+`/global/homes/w/wguan/epicprod`, mode 700, the proxy mode 600, replaced
+whenever ours is newer (Torre Wenaus, 2026-10-28). p4498 and p4499, eleven
+files and 44 GB, were staged in about four minutes. The harness reads such a
+copy from the directories in `ES_INPUT_DIRS` when the pilot has staged none
+(`es_harness.find_input`); production jobs read it once their shape sets that
+and leaves the input to direct access.
+
 The production shape carries three payload switches, which canary 41481 runs
 together: `EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE` (a unit's RECO is written in
 its handoff directory), `EPICPROD_SWITCH_ES_UNIT_LOCAL` (no unit makes a PanDA

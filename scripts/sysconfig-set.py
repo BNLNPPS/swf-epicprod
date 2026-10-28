@@ -32,7 +32,7 @@ def main():
     parser.add_argument('--reason', required=True)
     parser.add_argument('--decision-ref', required=True)
     args = parser.parse_args()
-    if args.key.startswith('front.queue.'):
+    if args.key.startswith('front.queue.') and args.key.rsplit('.', 1)[1].startswith('feed'):
         parser.error('a front feed is set with scripts/front-feed.py')
     if not args.reason.strip():
         parser.error('a reason is required')

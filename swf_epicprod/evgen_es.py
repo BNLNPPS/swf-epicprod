@@ -179,7 +179,7 @@ def _stage(task, proxy):
                                         'adler32': meta['adler32'],
                                         'meta': {'guid': uuid.uuid4().hex, 'events': meta['events']}}])
         staged.append({'lfn': name, 'events': meta['events'], 'bytes': meta['bytes'],
-                       'used_events': entry['events']})
+                       'adler32': meta['adler32'], 'used_events': entry['events']})
     scope, dataset = input_dataset(task).split(':', 1)
     try:
         bnl.add_dataset(scope, dataset)

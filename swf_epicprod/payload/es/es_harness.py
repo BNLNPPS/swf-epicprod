@@ -894,7 +894,11 @@ def job_file_path(file_path, ext, lfn):
 
 
 def find_input(job_dir, lfn):
-    for base in (job_dir, os.getcwd()):
+    """The job's input file: the pilot's staged copy, else a copy staged ahead
+    at the site, in one of ES_INPUT_DIRS (colon-separated; on Perlmutter the
+    community file system, NERSC_PERLMUTTER.md, EVGEN input in production)."""
+    dirs = [d for d in os.environ.get('ES_INPUT_DIRS', '').split(':') if d]
+    for base in (job_dir, os.getcwd(), *dirs):
         p = os.path.join(base, lfn)
         if os.path.isfile(p):
             return p

@@ -47,9 +47,10 @@ import urllib.request
 
 from django.utils import timezone
 
+from .nersc_iri import DEFAULT_TOKEN_FILE, get as _get, read_token_file  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_TOKEN_FILE = '/data/wguan2/hpc_tokens/nersc_iri_config.yaml'
 DEFAULT_PROJECTS = ['m3763']
 DEFAULT_QUEUES = {'NERSC_Perlmutter_epic': 'm3763', 'NERSC_Perlmutter_epic_es': 'm3763'}
 DEFAULT_CLOSE_AT_USED = 0.9
@@ -59,31 +60,6 @@ PRODUCT_KEY = 'nersc_allocation'
 PRODUCT_TTL_S = 7 * 24 * 3600
 HTTP_TIMEOUT_S = 30
 CAPABILITIES = ('cpu', 'gpu')
-
-
-def read_token_file(path):
-    """(base_url, access_token, age in hours) from the IRI client file,
-    a flat ``key: value`` file. Raises ValueError naming what is missing;
-    the token itself is never logged or returned in a record."""
-    values = {}
-    with open(path) as f:
-        for line in f:
-            key, sep, value = line.partition(':')
-            if sep and not key.lstrip().startswith('#'):
-                values[key.strip()] = value.strip()
-    missing = [k for k in ('base_url', 'access_token') if not values.get(k)]
-    if missing:
-        raise ValueError(f'{path} has no {" or ".join(missing)}')
-    age_h = (time.time() - os.path.getmtime(path)) / 3600.0
-    return values['base_url'].rstrip('/'), values['access_token'], round(age_h, 1)
-
-
-def _get(base_url, token, path):
-    req = urllib.request.Request(f'{base_url}{path}',
-                                 headers={'Authorization': f'Bearer {token}',
-                                          'Accept': 'application/json'})
-    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as resp:
-        return json.loads(resp.read().decode())
 
 
 def summarize(projects, allocations, wanted):
