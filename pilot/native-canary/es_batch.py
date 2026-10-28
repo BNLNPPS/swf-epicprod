@@ -7,6 +7,9 @@ import re
 import tarfile
 import threading
 import time
+import urllib.parse
+import urllib.request
+import zlib
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -601,6 +604,58 @@ def site_input_dirs():
     return [d for d in os.environ.get('EPICPROD_SITE_INPUT_DIRS', '').split(':') if d]
 
 
+def site_input_bucket():
+    """The Cloud Storage place of the site's staged inputs, ``bucket/prefix``
+    (the pod's EPICPROD_SITE_INPUT_GCS): on Google, the copy made when the
+    task is brokered there (swf_epicprod/gcs_stage.py)."""
+    return os.environ.get('EPICPROD_SITE_INPUT_GCS', '').strip('/')
+
+
+def _metadata_token():
+    """An access token of the node's service account, from the metadata
+    server every pod on a Google node reaches."""
+    req = urllib.request.Request(
+        'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+        headers={'Metadata-Flavor': 'Google'})
+    with urllib.request.urlopen(req, timeout=10) as answer:
+        return json.load(answer)['access_token']
+
+
+def fetch_site_staged(name, size, adler32, cache, opener=urllib.request.urlopen, token=None):
+    """The site's copy of ``name`` fetched from its bucket into ``cache``,
+    checked against the catalog's size and adler32 and renamed into place;
+    a copy already there at its size is used as it is. Returns its path;
+    raises on any shortfall."""
+    bucket, _, prefix = site_input_bucket().partition('/')
+    dest = os.path.join(cache, name)
+    if os.path.isfile(dest) and (not size or os.path.getsize(dest) == size):
+        return dest
+    obj = urllib.parse.quote(f'{prefix}/{name}' if prefix else name, safe='')
+    req = urllib.request.Request(
+        f'https://storage.googleapis.com/storage/v1/b/{bucket}/o/{obj}?alt=media',
+        headers={'Authorization': f'Bearer {token or _metadata_token()}'})
+    part, check, got = dest + '.part', 1, 0
+    os.makedirs(cache, exist_ok=True)
+    try:
+        with opener(req, timeout=120) as answer, open(part, 'wb') as out:
+            while True:
+                chunk = answer.read(8 << 20)
+                if not chunk:
+                    break
+                out.write(chunk)
+                check = zlib.adler32(chunk, check)
+                got += len(chunk)
+        if size and got != size:
+            raise RuntimeError(f'{name}: {got} bytes from the bucket, {size} in the catalog')
+        if adler32 and f'{check:08x}' != str(adler32).lower().zfill(8):
+            raise RuntimeError(f'{name}: adler32 {check:08x} from the bucket, {adler32} in the catalog')
+        os.replace(part, dest)
+    finally:
+        if os.path.exists(part):
+            os.unlink(part)
+    return dest
+
+
 def link_site_staged(files, workdir):
     """Inputs staged at the site, linked into the job's directory and marked
     delivered, so the pilot asks no catalog for a replica: a job's input
@@ -608,15 +663,29 @@ def link_site_staged(files, workdir):
     the job (docs/NERSC_PERLMUTTER.md, EVGEN input in production). A copy is
     taken only at the catalog's size. Returns the files left to the normal
     transfer."""
-    dirs = site_input_dirs()
-    if not dirs:
+    dirs, bucket = site_input_dirs(), site_input_bucket()
+    if not dirs and not bucket:
         return list(files)
+    cache = os.environ.get('EPICPROD_SITE_INPUT_CACHE') or workdir
     remaining = []
     for fspec in files:
         name = os.path.basename(fspec.lfn)
         staged = next((os.path.join(d, name) for d in dirs if os.path.isfile(os.path.join(d, name))), None)
         size = int(getattr(fspec, 'filesize', 0) or 0)
-        if not staged or (size and os.path.getsize(staged) != size):
+        if staged and size and os.path.getsize(staged) != size:
+            staged = None
+        if not staged and bucket:
+            # Google: the site's copy is in the cluster's bucket, fetched
+            # in-region into the pod (docs/GKE_PILOT_FLOW.md, EVGEN input).
+            adler32 = (getattr(fspec, 'checksum', None) or {}).get('adler32')
+            started = time.time()
+            try:
+                staged = fetch_site_staged(name, size, adler32, cache)
+                logger.info(f'input {fspec.lfn}: fetched from gs://{bucket} in {time.time() - started:.0f} s')
+            except Exception as exc:                                        # noqa: BLE001
+                logger.warning(f'input {fspec.lfn}: no copy from gs://{bucket}: {exc}')
+                staged = None
+        if not staged:
             logger.warning(f'input {fspec.lfn}: no copy at the site at its catalog size ({staged}); '
                            'left to the transfer')
             remaining.append(fspec)

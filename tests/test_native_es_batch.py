@@ -133,3 +133,47 @@ class NativeBatchTests(unittest.TestCase):
   self.assertEqual([s.given for s in slots],[2]*128)
 
 if __name__=='__main__':unittest.main()
+
+
+class SiteBucketInputTest(unittest.TestCase):
+    """Google: a job's input fetched from the cluster's bucket into the pod
+    and linked into the job, checked against the catalog's size and adler32."""
+
+    def _answer(self, data):
+        import io
+
+        class Answer(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        return lambda req, timeout=None: Answer(data)
+
+    def test_fetch_checks_size_and_adler32(self):
+        import zlib
+        data = b'evgen' * 1000
+        good = f'{zlib.adler32(data):08x}'
+        with tempfile.TemporaryDirectory() as cache, patch.dict(os.environ, {'EPICPROD_SITE_INPUT_GCS': 'bkt/esinput'}):
+            path = b.fetch_site_staged('f.root', len(data), good, cache, opener=self._answer(data), token='t')
+            self.assertEqual(Path(path).read_bytes(), data)
+            with self.assertRaises(RuntimeError):
+                b.fetch_site_staged('g.root', len(data), '00000001', cache, opener=self._answer(data), token='t')
+            self.assertFalse(os.path.exists(os.path.join(cache, 'g.root')))
+            self.assertFalse(os.path.exists(os.path.join(cache, 'g.root.part')))
+
+    def test_link_falls_back_to_transfer_without_a_copy(self):
+        fspec = types.SimpleNamespace(lfn='x.root', filesize=10, checksum={'adler32': '0'}, turl=None,
+                                      status=None, status_code=None)
+        with tempfile.TemporaryDirectory() as work, patch.dict(os.environ, {'EPICPROD_SITE_INPUT_GCS': 'bkt'}), \
+                patch.object(b, 'fetch_site_staged', side_effect=RuntimeError('404')):
+            self.assertEqual(b.link_site_staged([fspec], work), [fspec])
+            self.assertIsNone(fspec.status)
+
+    def test_link_uses_the_fetched_copy(self):
+        fspec = types.SimpleNamespace(lfn='/EVGEN/a/x.root', filesize=5, checksum={'adler32': 'x'}, turl=None,
+                                      status=None, status_code=None)
+        with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as cache:
+            copy = os.path.join(cache, 'x.root'); Path(copy).write_bytes(b'12345')
+            with patch.dict(os.environ, {'EPICPROD_SITE_INPUT_GCS': 'bkt', 'EPICPROD_SITE_INPUT_CACHE': cache}), \
+                    patch.object(b, 'fetch_site_staged', return_value=copy):
+                self.assertEqual(b.link_site_staged([fspec], work), [])
+            self.assertEqual(os.readlink(os.path.join(work, 'x.root')), copy)
+            self.assertEqual(fspec.status, 'transferred')
