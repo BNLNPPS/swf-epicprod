@@ -51,7 +51,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from call_home import CallHome, default_flag, load_job_env, status_key  # noqa: E402
-from es_record import RecordOut, ship_close, trim_unit  # noqa: E402
+from es_record import RecordOut, per_close, ship_close, trim_unit, unshipped  # noqa: E402
 from es_slot import unit_timing  # noqa: E402
 import reco_pool  # noqa: E402
 
@@ -1177,8 +1177,13 @@ def main():
             'taking': taking,
             'notice': summary.get('notice'),
             'workdir': guard.snapshot() if guard else None,
-            'done': [trim_unit(r) for r in list(summary['done'])],
-            'failed': [trim_unit(r) for r in list(summary['failed'])],
+            # With EPICPROD_SWITCH_ES_RECORD_PER_CLOSE a unit leaves this record
+            # once its close's object is in the store (es_record.ship_close);
+            # the counts stand for every unit (es_records.load joins them).
+            'done': [trim_unit(r) for r in unshipped(list(summary['done']))],
+            'failed': [trim_unit(r) for r in unshipped(list(summary['failed']))],
+            'done_count': len(summary['done']), 'failed_count': len(summary['failed']),
+            'shipped_closes': sorted(ship_close.shipped),
             'closes': [{k: c.get(k) for k in ('index', 'ok', 'outcome', 'events', 'started_at',
                                                'ended_at', 'wall_s', 'did')}
                        for c in list(summary['closes'])],
@@ -1539,7 +1544,12 @@ def main():
     shipped.stop()
     summary['ended_at'] = time.time()
     with open(args.summary, 'w') as f:
-        json.dump(summary, f)
+        # The job report the pilot ships as metadata carries the units no
+        # close shipped, and the counts: the rest are in the store already,
+        # never exported whole at the job's end.
+        json.dump(dict(summary, done=unshipped(summary['done']), failed=unshipped(summary['failed']),
+                       done_count=len(summary['done']), failed_count=len(summary['failed']),
+                       shipped_closes=sorted(ship_close.shipped)) if per_close() else summary, f)
     return 3 if summary.get('slots_exited') else 0
 
 

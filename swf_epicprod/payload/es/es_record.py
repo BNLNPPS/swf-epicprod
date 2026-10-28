@@ -81,6 +81,7 @@ def ship_close(close, units):
     key = close_key(close.get('index'))
 
     def put():
+        ok = False
         try:
             ok, detail = put_object(
                 body, os.environ['REPORT_OUT_BUCKET'].strip(), key,
@@ -93,6 +94,8 @@ def ship_close(close, units):
             ok, detail = False, str(e)
         if not ok:
             print(f'[es_record] {key} failed: {detail}', file=sys.stderr, flush=True)
+        else:
+            ship_close.shipped.add(close.get('index'))
 
     thread = threading.Thread(target=put, name=f'es-close-{close.get("index")}', daemon=True)
     thread.start()
@@ -100,6 +103,23 @@ def ship_close(close, units):
 
 
 ship_close.sent = 0
+# The indexes of closes whose object the store took: their units are
+# preserved there, and with EPICPROD_SWITCH_ES_RECORD_PER_CLOSE the job's
+# record and its end-of-job summary no longer carry them.
+ship_close.shipped = set()
+
+
+def per_close():
+    return os.environ.get('EPICPROD_SWITCH_ES_RECORD_PER_CLOSE') == '1'
+
+
+def unshipped(units):
+    """The units the job's record still carries: all of them, or with
+    EPICPROD_SWITCH_ES_RECORD_PER_CLOSE those of no close the store took."""
+    if not per_close():
+        return list(units)
+    shipped = set(ship_close.shipped)
+    return [u for u in units if u.get('close') is None or u.get('close') not in shipped]
 
 
 class RecordOut:
