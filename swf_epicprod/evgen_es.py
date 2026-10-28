@@ -44,6 +44,26 @@ SHAPE = dict(unit_events=100, range_events=10, close_s=300, close_concurrency=4,
              report_barrier=True, notice=True, job_log=True)
 
 
+def capable(task, cfg=None):
+    """True for a task this path can run: a registered EVGEN sample read as
+    external EVGEN (not an internal generator), not yet submitted."""
+    if task.panda_task_id is not None:
+        return False
+    if not ((task.overrides or {}).get('registered_sample') or {}).get('did'):
+        return False
+    cfg = cfg if cfg is not None else task.get_effective_config()
+    return str((cfg.get('data') or {}).get('workflow_mode') or 'external_evgen') != 'internal_evgen'
+
+
+def prepare(task, proxy):
+    """Stage the task's input and set its ``event_service`` override, saved:
+    what a feed to a whole-node queue does before the submission request."""
+    staged = stage(task, proxy)
+    task.overrides = dict(task.overrides or {}, event_service=event_service(task, staged))
+    task.save(update_fields=['overrides'])
+    return staged
+
+
 def event_service(task, staged):
     """The task's ``event_service`` override for its staged input: one job
     per file over the files' common event count and the task capped at its

@@ -440,6 +440,10 @@ def ready_backlog():
             entry['rows'] = (int(queued['rows']) if entry['kind'] == 'rerun_residual'
                              and (queued or {}).get('rows') else task_rows(task, cfg))
             entry['need'] = task_need(cfg, rows=entry['rows'])
+            # A whole-node queue (Perlmutter) takes only what the Event
+            # Service can run over EVGEN input (open_to, feed_task).
+            from .evgen_es import capable
+            entry['evgen_es'] = entry['kind'] == 'submit' and capable(task, cfg)
             if queue != UNPLACED:
                 from .queues import dispatch_capabilities, image_problem
                 problem = image_problem(entry['need']['container_image'],
@@ -524,10 +528,18 @@ def open_to(pool, queue, state):
     entry the queue may not take keeps the reason as ``unplaced_reason``
     and the queues it is open to as ``open_to``. Mutates only those two
     fields of ``pool``'s entries."""
+    from .queues import whole_node
+    node = whole_node(queue)
     out = []
     for entry in pool:
         if entry.get('problems'):
             entry['unplaced_reason'] = 'not ready'
+            continue
+        if node and not entry.get('evgen_es'):
+            # One job per whole node: Event Service work only (Torre Wenaus,
+            # 2026-10-28: "NO MORE SINGLE CORE 1/128 EFF WORK IN PERL EVER").
+            entry['unplaced_reason'] = (f'{queue} takes Event Service work only; '
+                                        f'not a registered EVGEN sample')
             continue
         result = recommend(state, entry.get('need'), [queue])
         if result['recommended'] != queue:
@@ -1060,6 +1072,14 @@ def feed_task(candidate_pk, created_by='front', site='', placement=None, kind='s
         prodtask_place_unplaced(task=task, site=site, changed_by=created_by,
                                 placement=placement)
     else:
+        from .queues import whole_node
+        if whole_node(site):
+            # The task's EVGEN files staged at BNL and its Event Service
+            # shape set before the request (evgen_es.py); the request itself
+            # refuses a whole-node queue any task without one.
+            from .evgen_es import prepare
+            from .gke_pilots import settings as gke_settings
+            prepare(task, gke_settings()['proxy'])
         prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE,
                                 site=site, placement=placement)
     return task

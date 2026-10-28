@@ -503,9 +503,14 @@ with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
   manifest's first row with the job's PanDA id and close number, while each
   unit's record carries its true source file.
 
-`scripts/evgen-es-submit.py <task> --by NAME --reason TEXT` stages, sets the
-task's `event_service` override and queues the submission on
-`NERSC_Perlmutter_epic_es`; `--dry-run` prints the PanDA spec.
+The pressure front feeds the queue (its feed switch on): a whole-node queue
+draws from the ready pool only tasks over a registered EVGEN sample
+(`front.open_to`, the entry's `evgen_es` mark), and its feed stages the
+task's input and sets its `event_service` shape before the submission
+request (`front.feed_task`, `evgen_es.prepare`). The task's EVGEN files may
+be staged ahead (`scripts/evgen-es-stage.py`), so the feed only checks them.
+`scripts/evgen-es-submit.py <task> --by NAME --reason TEXT` submits one by
+hand the same way; `--dry-run` prints the PanDA spec.
 
 The next step is five nodes on the preempt QOS, which charges half after a
 job's first two hours, with six-hour jobs and then eight (Torre's mail to
