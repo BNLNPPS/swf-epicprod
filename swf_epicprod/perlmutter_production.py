@@ -30,7 +30,7 @@ SHAPE = dict(events_per_job=EVENTS, unit_events=500, range_events=10, close_s=12
              pilot_cores=256, resident_sim=True, resident_unit=True, fast_merge=True,
              batch_channel=True, parallel_start=True, reco_pool=48, reco_async=True,
              report_barrier=True, notice=True, job_log=True,
-             handoff_in_place=True, unit_local=True)
+             handoff_in_place=True, unit_local=True, local_scratch=True)
 # JEDI states in which a task has, or is about to make, a job. A paused task
 # makes none.
 LIVE_TASK_STATES = ('registered', 'defined', 'assigning', 'ready', 'pending', 'scouting',

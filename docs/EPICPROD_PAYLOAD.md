@@ -943,6 +943,18 @@ removes both:
   handoff directory, on both the `run.sh` and the resident path, and a failed
   resident unit's RECO is removed. `run.sh` stamps each handoff step in the
   unit's `payload.log`.
+- The step after a resident unit's reconstruction was still served one unit
+  at a time across the node, about a minute each (canary 41481), while
+  `/pscratch` measured healthy from a login node. A job's own small transient
+  files stay off the shared file system: with `EPICPROD_SWITCH_ES_LOCAL_SCRATCH=1`
+  the units' scratch (the simulation output, removed after reconstruction) is
+  in the node's `/tmp`; with `EPICPROD_SWITCH_ES_LOCAL_WORK=1` the whole
+  harness work tree is (slot inboxes, unit records and markers, handed-off
+  RECO, merges, the reconstruction pool's locks and state), and only the logs
+  stay on the shared tree at their usual paths. The work-directory guard then
+  also holds new units while the node has under 40 GB of memory available.
+  Each resident unit records its steps after the reconstruction's reply
+  (`post_reco`: pool bookkeeping, checks, handoff, scratch removal).
 
 On Google, with the batch channel and the fast merge, the median turnaround is
 0.7 s and fourteen slots keep 93% of the job's core-time in units, 82% in saved

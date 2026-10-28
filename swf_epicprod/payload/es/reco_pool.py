@@ -124,6 +124,14 @@ def acquire(pool, members, prefer=0):
         time.sleep(POLL_S)
 
 
+def member_log(pool, member):
+    """A member's log: beside the slots' logs when the work tree is in node
+    memory (EPICPROD_ES_POOL_LOG_DIR, es_harness), else in the pool."""
+    d = os.environ.get('EPICPROD_ES_POOL_LOG_DIR') or pool
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, f'{member}.log')
+
+
 def start(pool, member, compact, startup_s):
     """Start the member's EICrecon, as run.sh starts a slot's own, and wait
     for its socket. Returns its state."""
@@ -131,7 +139,7 @@ def start(pool, member, compact, startup_s):
     if os.path.exists(sock):
         os.unlink(sock)                     # a dead member's socket
     began = time.time()
-    log = open(os.path.join(pool, f'{member}.log'), 'ab')
+    log = open(member_log(pool, member), 'ab')
     child = subprocess.Popen(
         ['eicrecon', f'-Pdd4hep:xml_files={compact}', f'-Ppodio:managed_socket_path={sock}',
          '-Pjana:warmup_timeout=0', '-Pjana:timeout=0'],
@@ -141,7 +149,7 @@ def start(pool, member, compact, startup_s):
     while not os.path.exists(sock):
         if child.poll() is not None:
             raise RuntimeError(f'reco pool member {member} exited {child.returncode} before its socket appeared; '
-                               f'see {os.path.join(pool, f"{member}.log")}')
+                               f'see {member_log(pool, member)}')
         if time.monotonic() >= deadline:
             child.kill()
             raise RuntimeError(f'reco pool member {member} gave no socket in {startup_s} s')

@@ -111,7 +111,7 @@ def definition(settings):
         raise ValueError('production ES reco_async needs resident_unit')
     if 'report_barrier' in cfg and type(cfg['report_barrier']) is not bool:
         raise ValueError('production ES report_barrier must be a boolean')
-    for key in ('handoff_in_place', 'unit_local', 'input_names'):
+    for key in ('handoff_in_place', 'unit_local', 'input_names', 'local_scratch'):
         if key in cfg and type(cfg[key]) is not bool:
             raise ValueError(f'production ES {key} must be a boolean')
     if cfg.get('input_names') and not evgen:
@@ -178,6 +178,12 @@ def apply(spec, settings):
         # Units and closes are named from the job's own EVGEN file, not the
         # manifest's first row (task 41479's job on run002 closed as run001).
         env['EPICPROD_SWITCH_ES_INPUT_NAMES'] = '1'
+    if cfg.get('local_scratch'):
+        # The units' scratch in the node's /tmp, off the shared file system:
+        # on Perlmutter the step after a resident unit's reconstruction, which
+        # removes that scratch, was served one unit at a time across the node
+        # (canary 41481).
+        env['EPICPROD_SWITCH_ES_LOCAL_SCRATCH'] = '1'
     prefix = {
         'ES_WORKER_PROXY': '1',
         'ES_PAYLOAD_IMAGE': spec['containerImage'], 'ES_SLOTS': cfg['slots'],

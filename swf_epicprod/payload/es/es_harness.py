@@ -70,6 +70,10 @@ WORKDIR_HOLD = 0.7             # of the pilot's work-directory limit: no new uni
 NOTICE_CLOSE_S = 30            # a preemption's notice: how long a running close has to stand
 WORKDIR_RESUME = 0.5           # units start again once the closes bring it under this
 WORKDIR_CHECK_S = 60           # the guard's measuring interval
+# EPICPROD_SWITCH_ES_LOCAL_WORK: the work tree in node memory, so the guard
+# also holds new units while the node has less than this available.
+MEMORY_HOLD_GB = 40
+MEMORY_RESUME_GB = 60
 
 
 def meminfo_kb(field):
@@ -133,6 +137,9 @@ class WorkdirGuard:
     def __init__(self, job_dir, limit, interval=WORKDIR_CHECK_S):
         self.job_dir, self.limit, self.interval = job_dir, limit, interval
         self.size, self.peak, self.held, self.holds = None, 0, False, 0
+        # A work tree in node memory (EPICPROD_SWITCH_ES_LOCAL_WORK) counts
+        # with the job directory, and the node's available memory holds too.
+        self.extra, self.memory_floor, self.mem_available = [], False, None
         self._lock = threading.Lock()
         self._stop = threading.Event()
 
@@ -149,13 +156,18 @@ class WorkdirGuard:
 
     def measure(self):
         with self._lock:
-            self.size = tree_bytes(self.job_dir)
+            self.size = tree_bytes(self.job_dir) + sum(tree_bytes(d) for d in self.extra)
             self.peak = max(self.peak, self.size)
-            if not self.held and self.size >= WORKDIR_HOLD * self.limit:
+            kb = meminfo_kb('MemAvailable') if self.memory_floor else None
+            self.mem_available = kb
+            low = kb is not None and kb < MEMORY_HOLD_GB * 1e6
+            if not self.held and (self.size >= WORKDIR_HOLD * self.limit or low):
                 self.held, self.holds = True, self.holds + 1
                 log(f"work directory {self.size / 1e9:.1f} GB of the pilot's {self.limit / 1e9:.1f} GB "
-                    f"limit: no new unit; closing what is held")
-            elif self.held and self.size < WORKDIR_RESUME * self.limit:
+                    f"limit" + (f", {kb / 1e6:.0f} GB of memory available" if kb is not None else '')
+                    + ": no new unit; closing what is held")
+            elif (self.held and self.size < WORKDIR_RESUME * self.limit
+                    and (kb is None or kb > MEMORY_RESUME_GB * 1e6)):
                 self.held = False
                 log(f"work directory {self.size / 1e9:.1f} GB: units start again")
             return self.size
@@ -183,7 +195,7 @@ class WorkdirGuard:
 
     def snapshot(self):
         return {'bytes': self.size, 'peak_bytes': self.peak, 'limit_bytes': self.limit,
-                'held': self.held, 'holds': self.holds}
+                'held': self.held, 'holds': self.holds, 'mem_available_kb': self.mem_available}
 
 
 class ChannelFeed:
@@ -293,6 +305,8 @@ def container_command(args, inner, extra_binds=()):
     runtime = shutil.which('apptainer') or shutil.which('singularity') or \
         '/cvmfs/atlas.cern.ch/repo/containers/sw/apptainer/x86_64-el8/current/bin/apptainer'
     cmd = [runtime, 'exec', '--cleanenv', '-B', args.sandbox, '-B', args.work]
+    if getattr(args, 'shared_work', args.work) != args.work:
+        cmd += ['-B', args.shared_work]
     for b in extra_binds:
         cmd += ['-B', b]
     if os.path.isdir('/cvmfs'):
@@ -304,7 +318,7 @@ def container_command(args, inner, extra_binds=()):
 def slot_log_tail(slot, lines=5):
     """The last lines of a slot's log, on one line, for the harness log."""
     try:
-        with open(os.path.join(slot.work, 'slot.log'), errors='replace') as f:
+        with open(slot.log_path, errors='replace') as f:
             tail = f.read().splitlines()[-lines:]
     except OSError as e:
         return f"(slot.log unreadable: {e})"
@@ -406,6 +420,8 @@ class Close:
         self.units = units                      # [(slot, uid, record, range_ids)]
         self.dir = os.path.join(args.work, 'closes', f'{index:04d}')
         os.makedirs(self.dir, exist_ok=True)
+        self.log_path = os.path.join(args.shared_work, 'closes', f'{index:04d}', 'container.log')
+        os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
         first = units[0][2]['handoff']
         self.name = f"{first['name']}.{os.environ.get('PANDAID') or 'loopback'}.{index:04d}.eicrecon.edm4eic.root"
         handoffs = [u[2]['handoff']['handoff_file'] for u in units]
@@ -418,7 +434,7 @@ class Close:
                  f"{shlex.quote(self.dir)} {shlex.quote(self.name)} --handoffs {shlex.quote(manifest)}")
         self.started = time.time()
         self.proc = subprocess.Popen(container_command(args, inner),
-                                     stdout=open(os.path.join(self.dir, 'container.log'), 'w'),
+                                     stdout=open(self.log_path, 'w'),
                                      stderr=subprocess.STDOUT, start_new_session=args.own_sessions)
         log(f"close {index}: {len(units)} unit(s), {sum(int(u[2]['handoff'].get('events') or 0) for u in units)} events -> {self.name} (pid {self.proc.pid})")
 
@@ -485,7 +501,11 @@ class Slot:
         if getattr(args, 'local_scratch', None):
             binds.append(args.local_scratch)
         cmd = container_command(args, inner, extra_binds=binds)
-        self.log = open(os.path.join(self.work, 'slot.log'), 'w')
+        # The slot's log stays on the shared tree, where it is read while the
+        # job runs, whatever the work tree (EPICPROD_SWITCH_ES_LOCAL_WORK).
+        self.log_path = os.path.join(args.shared_work, f'slot{index:03d}', 'slot.log')
+        os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+        self.log = open(self.log_path, 'w')
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT,
                                      start_new_session=args.own_sessions)
         log(f"slot {index} started (pid {self.proc.pid})")
@@ -971,6 +991,16 @@ def main():
         ap.error('--close-concurrency must be positive')
     args.sandbox = os.path.abspath(args.sandbox)
     args.work = os.path.abspath(args.work)
+    # EPICPROD_SWITCH_ES_LOCAL_WORK=1: everything the job makes and discards
+    # itself (the slots' inboxes, unit records and markers, the units'
+    # scratch and handed-off RECO, the closes' merges, the reconstruction
+    # pool's locks and state) in the node's memory, off the shared file
+    # system; only the logs stay there, at their usual paths. On Perlmutter's
+    # /pscratch such per-unit file operations were served one unit at a time
+    # across the node (canaries 41481, 2026-10-28).
+    args.shared_work = args.work
+    if os.environ.get('EPICPROD_SWITCH_ES_LOCAL_WORK') == '1':
+        args.work = os.path.join('/tmp', f'epicprod-es-{os.getpid()}', 'es_work')
     args.payload = os.path.abspath(args.payload or os.path.join(args.sandbox, 'payload'))
     if not args.image:
         log("ERROR: no image (--image or ES_PAYLOAD_IMAGE)")
@@ -1002,11 +1032,20 @@ def main():
         except (OSError, ValueError) as error:
             log(f'allocation deadline unavailable: {error}')
     os.makedirs(args.work, exist_ok=True)
+    os.makedirs(args.shared_work, exist_ok=True)
+    if args.work != args.shared_work:
+        st = os.statvfs(args.work)
+        log(f"work tree in node memory: {args.work}, {st.f_bavail * st.f_frsize / 1e9:.1f} GB free; "
+            f"logs in {args.shared_work}")
+        # The reconstruction pool's members log beside the slots' logs.
+        args.env = (args.env or []) + [f'EPICPROD_ES_POOL_LOG_DIR={reco_pool.job_pool(args.shared_work)}']
     slots, summary = [], {'stamp': args.stamp, 'slots': args.slots, 'image': args.image,
                           'done': [], 'failed': [], 'closes': [], 'untaken_at_deadline': False,
                           'interrupted': [], 'unshipped': [],
                           'started_at': started}
     guard = WorkdirGuard.from_env()
+    if guard and args.work != args.shared_work:
+        guard.extra, guard.memory_floor = [args.work], True
     if guard:
         log(f"work-directory guard: {guard.job_dir}, units held from "
             f"{WORKDIR_HOLD * guard.limit / 1e9:.1f} GB of the pilot's {guard.limit / 1e9:.1f} GB limit")
@@ -1481,6 +1520,8 @@ def main():
         log(f'reco pool: {ended_members} members ended')
     if getattr(args, 'local_scratch', None):
         shutil.rmtree(args.local_scratch, ignore_errors=True)
+    if args.work != args.shared_work:
+        shutil.rmtree(os.path.dirname(args.work), ignore_errors=True)
     summary['wall_s'] = round(time.time() - started, 1)
     ended['at'] = time.time()
     shipped.stop()
