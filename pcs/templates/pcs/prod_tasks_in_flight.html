@@ -3,6 +3,14 @@
 {% block title %}Prod tasks in flight{% if site %}: {{ site }}{% endif %} - PCS{% endblock %}
 
 {% block content %}
+<style>
+/* Prod tasks in flight: the filters flow along the line, compact. */
+#pcs-tlf-bar[data-hide-empty] .pcs-tlf-bar-row:not(:first-child) {
+  display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: .35em; margin-right: 1.6em;
+}
+#pcs-tlf-bar[data-hide-empty] .pcs-tlf-bar-row[hidden],
+#pcs-tlf-bar[data-hide-empty] [data-toggle][hidden] { display: none !important; }
+</style>
 {# The production tasks sent to each allocation that have not ended, paused   #}
 {# ones included, as their newest PanDA attempt shows them, for physicists     #}
 {# (docs/EPICPROD_TASK_CATALOG.md).                                            #}
