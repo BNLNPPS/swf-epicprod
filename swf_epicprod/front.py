@@ -1125,8 +1125,9 @@ def _prepare_whole_node(task, site, created_by, placement):
     task's input as its catalog holds it, None for any other queue."""
     from pcs.commands import pinned_site
     from .queues import whole_node
+    from .evgen_es import SITES
     target = site or pinned_site(task)
-    if not whole_node(target):
+    if not whole_node(target) and target not in SITES:
         return None
     from .evgen_es import InputStaging, prepare
     from .gke_pilots import settings as gke_settings

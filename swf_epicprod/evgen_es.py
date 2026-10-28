@@ -45,6 +45,28 @@ SHAPE = dict(unit_events=100, range_events=10, close_s=300, close_concurrency=4,
              handoff_in_place=True, unit_local=True, input_names=True, local_scratch=True,
              nersc_input=True, local_work=True, record_per_close=True)
 
+# Google's shape (BNL_ePIC_GOOGLE_es, docs/GKE_PILOT_FLOW.md): the gun
+# feeder's proven pod shape (14 slots, three shared reconstruction members,
+# 6 GB a core) with the EVGEN pieces Perlmutter proved: units and closes named
+# from the job's own file, no per-unit token or catalog call, the RECO written
+# in its handoff, per-close records, 100-event units on spot nodes; the input
+# staged in the cluster's bucket and fetched by the pilot (site_input).
+GOOGLE_SHAPE = dict(unit_events=100, range_events=10, close_s=300, deadline_s=14100,
+                    margin_s=600, memory_mb_per_core=6000, slots='auto', pilot_cores=14,
+                    resident_sim=True, resident_unit=True, fast_merge=True, batch_channel=True,
+                    report_barrier=True, reco_pool=3, reco_async=True, job_log=True,
+                    handoff_in_place=True, unit_local=True, input_names=True, site_input=True,
+                    record_per_close=True)
+
+# The queues an EVGEN task's input is staged at before it starts, with the
+# shape their jobs run and the stager that makes the site's copy.
+SITES = {'NERSC_Perlmutter_epic_es': (SHAPE, 'nersc'),
+         'BNL_ePIC_GOOGLE_es': (GOOGLE_SHAPE, 'gcs')}
+
+
+def site_shape(site):
+    return (SITES.get(site) or (SHAPE, 'nersc'))[0]
+
 
 def capable(task, cfg=None):
     """True for a task this path can run: a registered EVGEN sample read as
@@ -69,12 +91,15 @@ def prepare(task, proxy, site=''):
     (the copy job is started, once, here); the front then holds the task,
     placed on the queue, and submits it at a later cycle."""
     staged = catalog_input(task)
-    if SHAPE.get('nersc_input'):
+    shape, stager = SITES.get(site) or (SHAPE, 'nersc')
+    if stager == 'gcs':
+        from .gcs_stage import ensure_staged
+    else:
         from .nersc_stage import ensure_staged
-        done, detail = ensure_staged(task, staged, proxy)
-        if not done:
-            raise InputStaging(detail)
-    task.overrides = dict(task.overrides or {}, event_service=event_service(task, staged))
+    done, detail = ensure_staged(task, staged, proxy)
+    if not done:
+        raise InputStaging(detail)
+    task.overrides = dict(task.overrides or {}, event_service=event_service(task, staged, shape))
     task.save(update_fields=['overrides'])
     return staged
 
@@ -103,19 +128,20 @@ def catalog_input(task):
     return {'dataset': did, 'files': out, 'events': events}
 
 
-def event_service(task, staged):
+def event_service(task, staged, shape=None):
     """The task's ``event_service`` override for its input: one job per file
     over the files' common event count and the task capped at its
     manifest's total, both in whole ranges (the batch pilot rebuilds a range
     from its first event and the range size). An input read from its
     catalog names its files (``input_files``), which JEDI takes from the
     dataset and no others."""
-    k = SHAPE['range_events']
+    shape = shape or SHAPE
+    k = shape['range_events']
     # JEDI knows a path-named catalog's files by their last component
     # (swf_epicprod/jedi/EpicDDMClient.py, lfn_basename).
     names = [f['lfn'] for f in staged['files'] if f.get('name')]
     per_file = min(f['events'] for f in staged['files']) // k * k
-    return dict(SHAPE, input='evgen', input_dataset=staged['dataset'], files=len(staged['files']),
+    return dict(shape, input='evgen', input_dataset=staged['dataset'], files=len(staged['files']),
                 events_per_file=per_file, events=staged['events'] // k * k,
                 **({'input_files': names} if names else {}))
 

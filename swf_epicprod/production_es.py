@@ -112,13 +112,15 @@ def definition(settings):
     if 'report_barrier' in cfg and type(cfg['report_barrier']) is not bool:
         raise ValueError('production ES report_barrier must be a boolean')
     for key in ('handoff_in_place', 'unit_local', 'input_names', 'local_scratch', 'nersc_input',
-                'local_work', 'record_per_close'):
+                'site_input', 'local_work', 'record_per_close'):
         if key in cfg and type(cfg[key]) is not bool:
             raise ValueError(f'production ES {key} must be a boolean')
     if cfg.get('input_names') and not evgen:
         raise ValueError('production ES input_names needs EVGEN input')
     if cfg.get('nersc_input') and not evgen:
         raise ValueError('production ES nersc_input needs EVGEN input')
+    if cfg.get('site_input') and not evgen:
+        raise ValueError('production ES site_input needs EVGEN input')
     if 'input_files' in cfg and (not evgen or not isinstance(cfg['input_files'], list)
                                  or len(cfg['input_files']) != cfg['files']):
         raise ValueError('production ES input_files must name each of its EVGEN files')
@@ -263,7 +265,8 @@ def apply(spec, settings):
     command += (' python3 evgen_job_dispatcher.py es-production '
                 + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])
                 + ' $PILOT_EVENTRANGECHANNEL'
-                + ('' if evgen and not cfg.get('nersc_input') else ' --accessmode=direct'))
+                + ('' if evgen and not (cfg.get('nersc_input') or cfg.get('site_input'))
+                   else ' --accessmode=direct'))
     if evgen and cfg.get('file_events'):
         # Each file at its own events, the last read only as far as the
         # manifest, and the task at their sum: JEDI reads each file's count
