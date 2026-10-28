@@ -557,6 +557,16 @@ batch pilot links the site copy into the job and asks no catalog for a replica
 (`EPICPROD_SWITCH_ES_NERSC_INPUT`). `scripts/evgen-es-nersc-stage.py stage
 <task>` and `stage-dataset <did>` copy by hand the same way.
 
+`scripts/evgen-es-submit.py <task> --by NAME --reason TEXT` submits a task by
+hand the same way (copy, then the setup built afresh, then the submission;
+`--wait` waits for the copy, `--dry-run` prints the PanDA spec), and with
+`--rerun` makes a new attempt of a task already submitted: a new PanDA task,
+`.tryN`, writing in its own namespace, all of its ranges run again and nothing
+of the earlier attempt reused (Torre Wenaus, 2026-10-28, for p4495 and p4497,
+killed in the attempts of that morning). PCS refuses a submission or rerun to
+a whole-node queue that carries an EVGEN setup from before this chain
+(`prodtask_submit_request`).
+
 The production shape carries three payload switches, which canary 41481 runs
 together: `EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE` (a unit's RECO is written in
 its handoff directory), `EPICPROD_SWITCH_ES_UNIT_LOCAL` (no unit makes a PanDA
