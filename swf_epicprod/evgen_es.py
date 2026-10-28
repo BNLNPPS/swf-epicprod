@@ -112,7 +112,9 @@ def event_service(task, staged):
     dataset and no others."""
     k = SHAPE['range_events']
     per_file = min(f['events'] for f in staged['files']) // k * k
-    names = [f['name'] for f in staged['files'] if f.get('name')]
+    # JEDI knows a path-named catalog's files by their last component
+    # (swf_epicprod/jedi/EpicDDMClient.py, lfn_basename).
+    names = [f['lfn'] for f in staged['files'] if f.get('name')]
     return dict(SHAPE, input='evgen', input_dataset=staged['dataset'], files=len(staged['files']),
                 events_per_file=per_file, events=staged['events'] // k * k,
                 **({'input_files': names} if names else {}))

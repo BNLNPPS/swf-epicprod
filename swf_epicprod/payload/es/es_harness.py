@@ -916,9 +916,12 @@ def job_file_path(file_path, ext, lfn):
     # is the file's EVGEN-relative path, whatever row the manifest begins with.
     if (lfn or '').startswith(EVGEN_PREFIX) and lfn.endswith(suffix):
         return lfn[len(EVGEN_PREFIX):-len(suffix)]
-    if not (name.startswith(ESINPUT_PREFIX) and name.endswith(suffix)):
+    if not name.endswith(suffix):
         return file_path
-    source = name[len(ESINPUT_PREFIX):-len(suffix)]
+    # The staged BNL copy's name, or the catalog name's last component (the
+    # form JEDI knows a path-named catalog's files by): the source file's
+    # name, in the manifest row's sample directory.
+    source = name[len(ESINPUT_PREFIX):-len(suffix)] if name.startswith(ESINPUT_PREFIX) else name[:-len(suffix)]
     if not source or '/' in source:
         return file_path
     return os.path.join(os.path.dirname(file_path), source)

@@ -25,7 +25,7 @@ the catalog needs is named, ``vo`` above all: one left out falls back to the
 server's own ``rucio.cfg`` under JEDI's ``VIRTUAL_ENV`` (``vo = eic``,
 PanDA's catalog), which JLab's refuses as a failed authentication::
 
-    {"catalogs": [{"name": "jlab", "scopes": ["epic"], "name_prefixes": ["/"],
+    {"catalogs": [{"name": "jlab", "scopes": ["epic"], "name_prefixes": ["/"], "lfn_basename": true,
                    "client": {"rucio_host": ..., "auth_host": ..., "account": ...,
                               "auth_type": "userpass", "creds": {...}, "vo": "def",
                               "ca_cert": false}}]}
@@ -89,16 +89,25 @@ class CatalogClient:
     """A Rucio client of one catalog, as the upstream methods use it; files
     listed without a GUID are given their stable one."""
 
-    def __init__(self, entry):
-        self._client = _server_client(**entry['client'])
-
     def __getattr__(self, attr):
         return getattr(self._client, attr)
+
+    def __init__(self, entry):
+        self._client = _server_client(**entry['client'])
+        self._basename = bool(entry.get('lfn_basename'))
 
     def list_files(self, scope, name, *args, **kwargs):
         for f in self._client.list_files(scope, name, *args, **kwargs):
             if not f.get('guid'):
                 f = dict(f, guid=stable_guid(f.get('scope') or scope, f['name']))
+            if self._basename:
+                # A catalog whose names are paths (JLab's /EVGEN/...): JEDI
+                # knows each file by its last component, unique in its
+                # dataset, since the Event Service spec it builds for a job
+                # separates its fields with '/' (es:<n>:<lfn>/<first>/<last>/...)
+                # and a path in the LFN breaks it. The GUID stays the full
+                # name's; the site copy is named by the same last component.
+                f = dict(f, name=f['name'].rsplit('/', 1)[-1])
             yield f
 
 
