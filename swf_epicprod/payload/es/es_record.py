@@ -57,6 +57,51 @@ def configured():
         'REPORT_OUT_BUCKET', 'REPORT_OUT_ACCESS_KEY_ID', 'REPORT_OUT_SECRET_ACCESS_KEY'))
 
 
+# Each close's units leave the node with the close (``close_key``): the
+# bookkeeping of a job ships as it is made, a close at a time, and is not
+# carried whole by every write of the job's record nor exported at its end.
+MAX_CLOSE_WRITES = 4000
+
+
+def close_key(index):
+    pandaid = os.environ.get('PANDAID', '').strip()
+    return f'reports/{pandaid}/close-{int(index):04d}.json' if pandaid.isdigit() else None
+
+
+def ship_close(close, units):
+    """Ship one close and its units' records, ``reports/<job>/close-NNNN.json``,
+    on a thread of its own so the harness never waits on the store. Returns
+    the thread, or None when the store is not configured."""
+    if not configured() or ship_close.sent >= MAX_CLOSE_WRITES:
+        return None
+    ship_close.sent += 1
+    body = json.dumps({'kind': 'es_close', 'version': 1, 'pandaid': os.environ.get('PANDAID'),
+                       'close': close, 'units': [trim_unit(u) for u in units],
+                       'written_at': time.time()}).encode('utf-8')
+    key = close_key(close.get('index'))
+
+    def put():
+        try:
+            ok, detail = put_object(
+                body, os.environ['REPORT_OUT_BUCKET'].strip(), key,
+                os.environ.get('REPORT_OUT_REGION', 'us-east-1'),
+                os.environ['REPORT_OUT_ACCESS_KEY_ID'].strip(),
+                os.environ['REPORT_OUT_SECRET_ACCESS_KEY'].strip(),
+                endpoint=os.environ.get('REPORT_OUT_ENDPOINT', ''),
+                session_token=os.environ.get('REPORT_OUT_SESSION_TOKEN', ''))
+        except Exception as e:                                   # noqa: BLE001
+            ok, detail = False, str(e)
+        if not ok:
+            print(f'[es_record] {key} failed: {detail}', file=sys.stderr, flush=True)
+
+    thread = threading.Thread(target=put, name=f'es-close-{close.get("index")}', daemon=True)
+    thread.start()
+    return thread
+
+
+ship_close.sent = 0
+
+
 class RecordOut:
     """Writes snapshot() to the store every INTERVAL_S and whenever nudged."""
 

@@ -51,7 +51,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from call_home import CallHome, default_flag, load_job_env, status_key  # noqa: E402
-from es_record import RecordOut, trim_unit  # noqa: E402
+from es_record import RecordOut, ship_close, trim_unit  # noqa: E402
 from es_slot import unit_timing  # noqa: E402
 import reco_pool  # noqa: E402
 
@@ -1272,6 +1272,18 @@ def main():
                 else:
                     report(slot, uid, record, False, range_ids, extra=f"close {rec['index']} failed: {rec.get('message')}")
                     summary['failed'].append(record)
+            # The close and its units' records leave the node with it
+            # (es_record.ship_close); with the work tree in node memory their
+            # files there are then removed, so nothing a close finished stays.
+            ship_close({k: rec.get(k) for k in ('index', 'ok', 'outcome', 'events', 'started_at',
+                                                'ended_at', 'wall_s', 'did')},
+                       [dict(u[2], slot=u[0].index) for u in c.units])
+            if args.work != args.shared_work:
+                for slot, uid, record, range_ids in c.units:
+                    shutil.rmtree(os.path.join(slot.outbox, uid), ignore_errors=True)
+                    handoff_file = (record.get('handoff') or {}).get('handoff_file')
+                    if handoff_file:
+                        shutil.rmtree(os.path.dirname(handoff_file), ignore_errors=True)
             shipped.flush()
             log(f"close {rec['index']}: {rec.get('outcome')} {rec.get('did')} "
                 f"({rec.get('events')} events, {len(c.units)} units) in {rec['wall_s']} s"
