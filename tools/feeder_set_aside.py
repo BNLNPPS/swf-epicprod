@@ -76,7 +76,8 @@ def main():
     if status in PAUSABLE:
         record, created = queue_task_operation(
             task=current[0], operation='pause', requested_by=args.requested_by,
-            source='feeder_set_aside', evidence={'marker': args.marker, 'note': args.note})
+            source='feeder_set_aside', evidence={'marker': args.marker, 'note': args.note},
+            reason=args.note)
         print(json.dumps({'pause_operation': str(record.id), 'created': created}))
     task.overrides[args.marker] = dict(entry, reviewed=review)
     task.save(update_fields=['overrides'])

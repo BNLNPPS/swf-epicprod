@@ -45,6 +45,16 @@ level; it does not ask. The pause is reversible and its
 wrong-case cost is essentially nil, while the benefit is enormous. Every
 other task operation keeps its gate.
 
+No task is paused without a recorded reason (Torre Wenaus, 28 October
+2026, after GREX's paused tasks read "no reason recorded" on the
+dashboard). Every pause through our tools carries one: the operation
+record (`swf-monitor monitor_app/panda/operations.py`) refuses a pause
+without it, the task page and the bulk task list ask for it,
+`scripts/task-operation.py` requires `--reason`, and the front's task
+guard records its trip. The production dashboard shows each paused task
+as a red line with who paused it, when and why; a task paused outside our
+tools, directly in PanDA, shows as such, since PanDA keeps no reason.
+
 Excluding an OSG glidein site is Torre's and Sakib's decision (Torre,
 28 October 2026); no session has standing authority to blacklist a site. His 24 October
 word excluded NotreDame alone; it was later written up as a standing

@@ -196,9 +196,11 @@ def _pause(sample, evidence, *, source, created_by, message):
     current = get_task_operation_targets([sample['jeditaskid']])
     if not current or current[0]['status'] not in ACTIVE_STATUSES:
         return {'outcome': 'state_changed'}
+    # Its trip is the pause's recorded reason (no pause without one).
     record, created = queue_task_operation(
         task=current[0], operation='pause', requested_by=created_by,
-        source=source, evidence=evidence)
+        source=source, evidence=evidence,
+        reason=message.split(': ', 1)[-1] if message.startswith('Pausing ') else message)
     if created:
         log_epicprod_action(
             'front', 'task_failure_guard', subject_type='panda_task',

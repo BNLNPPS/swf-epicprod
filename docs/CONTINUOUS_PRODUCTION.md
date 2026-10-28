@@ -783,8 +783,11 @@ Existing allocations finish normally.
 The override operates independently of the shadow pilot regulator.
 Using `off` in place of `N` restores the saved prior limit and clears the
 control. An outside change to the controlled value requires reconciliation
-before the command will overwrite it. The dashboard displays the active
-control's current level in red in place of the weekly average.
+before the command will overwrite it. The active control is a numbered red
+Production now line with its reason, who and when, cited at the site
+panel's upper right (swf-monitor PROD_DASHBOARD.md); the reason says why,
+not only the level (2026-10-28: "Torre: GREX limit lowered from 500 to 300
+cores because it was still showing storage errors at 500").
 
 The third regulator in series with the front and the job throttler. The
 front admits tasks and the throttler paces their generation; neither
