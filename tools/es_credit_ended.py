@@ -56,7 +56,8 @@ def read_record(pandaid, path=None):
     if store is None:
         sys.exit('ERROR: the report store credential is unusable')
     client, bucket, prefix = store
-    return json.loads(client.get_object(Bucket=bucket, Key=f'{prefix}{pandaid}/es.json')['Body'].read())
+    from swf_epicprod import es_records
+    return es_records.load(client, bucket, prefix, pandaid)
 
 
 def main():

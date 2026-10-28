@@ -92,8 +92,8 @@ def observe(task, evidence):
     lines = []
     for job in jobs:
         try:
-            body = client.get_object(Bucket=bucket, Key=f"{prefix}{job['pandaid']}/es.json")['Body'].read()
-            record = json.loads(body)
+            from swf_epicprod import es_records
+            record = es_records.load(client, bucket, prefix, job['pandaid'])
         except client.exceptions.NoSuchKey:
             record = {}
         if evidence and record:

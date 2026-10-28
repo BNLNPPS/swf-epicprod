@@ -37,8 +37,8 @@ def read_record(pandaid, path=None):
                       aws_access_key_id=env['REPORT_SWEEP_ACCESS_KEY_ID'],
                       aws_secret_access_key=env['REPORT_SWEEP_SECRET_ACCESS_KEY'])
     prefix = (env.get('REPORT_SWEEP_PREFIX') or 'reports/').strip('/') + '/'
-    body = s3.get_object(Bucket=env['REPORT_SWEEP_BUCKET'], Key=f'{prefix}{pandaid}/es.json')['Body'].read()
-    return json.loads(body)
+    from swf_epicprod import es_records
+    return es_records.load(s3, env['REPORT_SWEEP_BUCKET'], prefix, pandaid)
 
 
 def main():

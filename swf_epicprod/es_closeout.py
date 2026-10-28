@@ -77,6 +77,8 @@ import sys
 import tempfile
 import time
 
+from . import es_records
+
 PREEMPTED_CODE = 1256          # the pilot's "job killed: worker preempted / lost" family
 CHUNK = 1000
 RECORD_WRITE_CAP = 1500        # payload/es/es_record.py MAX_WRITES
@@ -340,8 +342,7 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
             summary['jobs'] += 1
             d = {'pandaid': pandaid, 'jeditaskid': jeditaskid, 'queue': queue, 'attempt': attempt}
             try:
-                body = client.get_object(Bucket=bucket, Key=f'{prefix}{pandaid}/es.json')['Body'].read()
-                record = json.loads(body.decode('utf-8'))
+                record = es_records.load(client, bucket, prefix, pandaid)
             except Exception as e:                            # noqa: BLE001
                 d.update(act=False, reason='no record' if 'NoSuchKey' in str(e) else f'record unreadable: {e}')
                 decisions.append(d)
