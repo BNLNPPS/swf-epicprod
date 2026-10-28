@@ -200,7 +200,7 @@ def _pause(sample, evidence, *, source, created_by, message):
     record, created = queue_task_operation(
         task=current[0], operation='pause', requested_by=created_by,
         source=source, evidence=evidence,
-        reason=message.split(': ', 1)[-1] if message.startswith('Pausing ') else message)
+        reason=message.split(': ', 1)[-1].split(' (')[0])
     if created:
         log_epicprod_action(
             'front', 'task_failure_guard', subject_type='panda_task',
@@ -239,7 +239,7 @@ def run(queues, *, enabled, mode, dry_run, created_by,
                 result.update(_pause(
                     sample, evidence, source=SOURCE, created_by=created_by,
                     message=(f"Pausing {sample['taskname']}: {sample['failed']} of "
-                             f"{sample['finished'] + sample['failed']} completed jobs failed")))
+                             f"{sample['finished'] + sample['failed']} jobs failed")))
             results.append(result)
         if rolling_mode not in ('shadow', 'active'):
             continue
@@ -247,10 +247,12 @@ def run(queues, *, enabled, mode, dry_run, created_by,
         if not trip:
             continue
         evidence = dict(sample, rule='rolling', **rolling)
-        what = (f"{rolling['consecutive_failed']} consecutive completed attempts failed"
+        # Torre, 2026-10-28: "26 of last 50 jobs failed, on 14 hosts. last 50
+        # attempts failed, on 7 hosts."
+        what = (f"last {rolling['consecutive_failed']} attempts failed"
                 if rolling['trigger'] == 'consecutive' else
-                f"{rolling['window_failed']} of the latest {rolling['counted']} completed attempts failed")
-        message = (f"{sample['taskname']}: {what}, across {rolling['run_hosts'] if rolling['trigger'] == 'consecutive' else rolling['window_hosts']} hosts"
+                f"{rolling['window_failed']} of last {rolling['counted']} jobs failed")
+        message = (f"{sample['taskname']}: {what}, on {rolling['run_hosts'] if rolling['trigger'] == 'consecutive' else rolling['window_hosts']} hosts"
                    f" ({rolling['set_aside']} worker losses set aside)")
         result = dict(evidence, outcome='would_pause')
         if rolling_mode == 'active' and acting and not legacy_trip:
