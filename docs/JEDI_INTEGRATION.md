@@ -77,7 +77,7 @@ Submission chain: `submit_csv.sh` → `submit_panda_api.py` (`client.submit_task
 |---------------|-----------|-------|
 | `taskName` | physical PanDA attempt name | first attempt uses the PCS composed identity; retries/site races append `.tryN`; see [Output dataset and file naming](#output-dataset-and-file-naming) |
 | `userName` | the attempt's `submitted_by`, else `task.created_by` | the user who submitted this attempt (recorded on its `PandaTasks` row at allocation); the task's creator only when no submitter was recorded, so a row created by automation (`association_sweep`, `nightly_cron`) does not take credit for a person's submission |
-| `vo` | `'eic'` | Virtual organization |
+| `vo` | `'epic'` | Canonical VO for new submissions, including reruns from legacy configurations; existing PanDA tasks retain their stored VO |
 | `workingGroup` | `config.panda_working_group` | e.g. `'EIC'` |
 | `campaign` | Derived from detector version | e.g. `'26.02.0'` |
 
@@ -590,7 +590,7 @@ per manifest row.
   an older task fails when each job's pre-process cannot download the
   tarball (executor error 5303). The server API `touch_cache_file` resets
   the file's clock; this doer touches the tarball of every EIC task (epic
-  VO, or working group EIC under any VO, as production runs) in
+  VO, or working group EIC under any VO, including legacy production) in
   a non-final state, plus tasks finished, failed, or exhausted within the
   retention window (SysConfig `panda_sandbox_keepalive_final_days`,
   default 30). Tarball names and their source server come from each task's

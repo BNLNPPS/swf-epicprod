@@ -8,6 +8,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from django.test import TestCase as DjangoTestCase
+from django.test import SimpleTestCase
 
 from pcs.commands import build_evgen_task_params, build_task_params
 from pcs.models import (
@@ -47,12 +48,18 @@ def _make_task():
         detector_version='26.02.0',
         detector_config='epic_craterlake',
         physics_tag=physics_tag,
+        physics_tag_id=1,
         evgen_tag=evgen_tag,
         simu_tag=simu_tag,
         reco_tag=reco_tag,
         block_num=1,
         did=f'group.EIC:{task_name}.b1',
         task_name=task_name,
+        source_location='',
+        background_tag_id=None,
+        sample_name='',
+        metadata={},
+        physics_config_id=None,
     )
 
     cfg = {
@@ -81,11 +88,17 @@ def _make_task():
     return SimpleNamespace(
         dataset=dataset,
         created_by='wenaus',
+        campaign_id=None,
+        dataset_id=None,
+        input_source_location='',
+        overrides={},
+        priority=None,
+        request=None,
         get_effective_config=lambda: cfg,
     )
 
 
-class BuildTaskParamsTest(TestCase):
+class BuildTaskParamsTest(SimpleTestCase):
     def test_matches_design_example(self):
         params = build_task_params(_make_task())
 
@@ -93,7 +106,7 @@ class BuildTaskParamsTest(TestCase):
         self.assertEqual(params['taskName'],
                          'group.EIC.26.02.0.epic_craterlake.p3001.e1.s1.r1')
         self.assertEqual(params['userName'], 'wenaus')
-        self.assertEqual(params['vo'], 'eic')
+        self.assertEqual(params['vo'], 'epic')
         self.assertEqual(params['workingGroup'], 'EIC')
         self.assertEqual(params['campaign'], '26.02.0')
 
@@ -149,7 +162,7 @@ class BuildTaskParamsTest(TestCase):
         self.assertEqual(output_entry['param_type'], 'output')
         self.assertEqual(output_entry['dataset'],
                          'group.EIC:group.EIC.26.02.0.epic_craterlake.p3001.e1.s1.r1')
-        self.assertIn('.${SN}.root', output_entry['value'])
+        self.assertIn('.${SN}.edm4eic.root', output_entry['value'])
         self.assertEqual(output_entry['offset'], 1000)
 
     def test_defaults_when_data_missing(self):
@@ -170,7 +183,7 @@ class BuildTaskParamsTest(TestCase):
         }
         params = build_task_params(task)
 
-        self.assertEqual(params['vo'], 'eic')
+        self.assertEqual(params['vo'], 'epic')
         self.assertEqual(params['workingGroup'], 'EIC')
         self.assertEqual(params['prodSourceLabel'], 'test')
         self.assertEqual(params['processingType'], 'epicproduction')
@@ -196,13 +209,23 @@ class BuildTaskParamsTest(TestCase):
             detector_version='26.02.0',
             detector_config='epic_craterlake',
             physics_tag=physics_tag,
+            physics_tag_id=1,
             evgen_tag=evgen_tag,
             composed_name='group.EIC.26.02.0.epic_craterlake.p3001.e1.s1.r1.sample',
+            expected_events_source='',
+            expected_events=None,
+            metadata={},
+            physics_config_id=None,
             build_dataset_name=lambda: 'group.EIC.26.02.0.epic_craterlake.p3001.e1.s1.r1.sample',
         )
         task = SimpleNamespace(
             composed_name=dataset.composed_name,
             dataset=dataset,
+            overrides={},
+            dataset_id=None,
+            priority=None,
+            request=None,
+            campaign_id=None,
             inputs=[{'did': 'epic:/EVGEN/DIS/NC/sample'}],
             created_by='wenaus',
             get_effective_config=lambda: {
@@ -215,13 +238,14 @@ class BuildTaskParamsTest(TestCase):
                 'copy_log': True,
                 'use_rucio': True,
                 'bg_mixing': False,
-                'data': {'events_per_job': 1},
+                'data': {'events_per_job': 1, 'vo': 'wlcg'},
             },
         )
 
         spec = build_evgen_task_params(task)
 
         self.assertEqual(spec['outDS'], dataset.composed_name)
+        self.assertEqual(spec['vo'], 'epic')
         self.assertEqual(spec['csvBase'], dataset.composed_name)
         self.assertIn(dataset.composed_name, spec['exec'])
 
@@ -435,6 +459,26 @@ class BuildTaskParamsTest(TestCase):
         env = build_evgen_task_params(task, panda_tasks=panda_tasks)['env']
 
         self.assertEqual(env['TAG_PREFIX'], 'legacy/prefix/try3')
+
+
+class VoMigrationAccessTest(SimpleTestCase):
+    def test_only_an_administrator_can_migrate_templates(self):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from pcs.api_views import ProdConfigViewSet
+        request = APIRequestFactory().post('/', {'reason': 'test'}, format='json')
+        force_authenticate(request, user=SimpleNamespace(
+            is_authenticated=True, is_staff=False, username='ordinary'))
+        response = ProdConfigViewSet.as_view({'post': 'migrate_vo'})(request)
+        self.assertEqual(response.status_code, 403)
+
+    def test_migration_requires_a_recorded_reason(self):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from pcs.api_views import ProdConfigViewSet
+        request = APIRequestFactory().post('/', {}, format='json')
+        force_authenticate(request, user=SimpleNamespace(
+            is_authenticated=True, is_staff=True, username='operator'))
+        response = ProdConfigViewSet.as_view({'post': 'migrate_vo'})(request)
+        self.assertEqual(response.status_code, 400)
 
 
 class DatasetMetadataTest(TestCase):

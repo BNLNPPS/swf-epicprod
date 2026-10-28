@@ -17,7 +17,7 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from monitor_app.middleware import TunnelAuthentication
 from rest_framework.decorators import (action, api_view,
     authentication_classes, permission_classes)
-from rest_framework.permissions import (IsAuthenticated, AllowAny,
+from rest_framework.permissions import (IsAuthenticated, IsAdminUser, AllowAny,
     IsAuthenticatedOrReadOnly, SAFE_METHODS, BasePermission)
 
 
@@ -464,8 +464,42 @@ class ProdConfigViewSet(viewsets.ModelViewSet):
         _record_prod_config_scout_pref(self.request.user.username, obj)
 
     def perform_update(self, serializer):
+        old_vo = (serializer.instance.data or {}).get('vo')
         obj = serializer.save()
         _record_prod_config_scout_pref(self.request.user.username, obj)
+        new_vo = (obj.data or {}).get('vo')
+        if new_vo != old_vo:
+            from monitor_app.epicprod_logging import log_epicprod_action
+            log_epicprod_action(
+                'web', 'prodconfig_vo', username=self.request.user.username,
+                subject_type='prod_config', subject_key=obj.name,
+                old_vo=old_vo, new_vo=new_vo,
+                reason=str(self.request.data.get('reason') or 'VO configuration updated'),
+                sublevel='normal', live_default=False)
+
+    @action(detail=False, methods=['post'], url_path='migrate-vo',
+            permission_classes=[IsAdminUser])
+    def migrate_vo(self, request):
+        """Audited administrator cutover of legacy templates for new submissions."""
+        if not request.user.is_staff:
+            return Response({'detail': 'Administrator access is required.'}, status=403)
+        reason = str(request.data.get('reason') or '').strip()
+        if not reason:
+            return Response({'detail': 'A migration reason is required.'}, status=400)
+        from django.db import transaction
+        from monitor_app.epicprod_logging import log_epicprod_action
+        changed = []
+        with transaction.atomic():
+            for config in ProdConfig.objects.select_for_update().filter(data__vo='wlcg'):
+                config.data = {**config.data, 'vo': 'epic'}
+                config.save(update_fields=['data', 'updated_at'])
+                log_epicprod_action(
+                    'web', 'prodconfig_vo', username=request.user.username,
+                    subject_type='prod_config', subject_key=config.name,
+                    old_vo='wlcg', new_vo='epic', reason=reason,
+                    sublevel='normal', live_default=False)
+                changed.append(config.name)
+        return Response({'vo': 'epic', 'changed': changed})
 
 
 def _record_prod_config_scout_pref(username, config):

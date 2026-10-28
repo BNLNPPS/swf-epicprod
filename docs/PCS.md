@@ -398,7 +398,7 @@ real config (see `EPICPROD_TASK_CATALOG.md` on auto-intake).
 | `transformation` | `runGen-00-00-02` | PanDA TRF script name/version |
 | `processing_type` | `epicproduction` | PanDA classification |
 | `prod_source_label` | `managed` | PanDA authorization (managed/test) |
-| `vo` | `wlcg` | Virtual organization |
+| `vo` | `epic` | Virtual organization for new submissions; existing `wlcg` tasks retain their submitted identity |
 | `n_jobs` | `1000` | Jobs per task submission |
 | `events_per_job` | `100` | Events per individual job; stored in `ProdConfig.data` and surfaced as `Events/Job` |
 | `events_per_file` | `1000` | Events per output file |
