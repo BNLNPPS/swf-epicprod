@@ -42,7 +42,8 @@ SHAPE = dict(unit_events=100, range_events=10, close_s=300, close_concurrency=4,
              pilot_cores=256, resident_sim=True, resident_unit=True, fast_merge=True,
              batch_channel=True, parallel_start=True, reco_pool=32, reco_async=True,
              report_barrier=True, notice=True, job_log=True,
-             handoff_in_place=True, unit_local=True, input_names=True, local_scratch=True)
+             handoff_in_place=True, unit_local=True, input_names=True, local_scratch=True,
+             nersc_input=True)
 
 
 def capable(task, cfg=None):
@@ -60,6 +61,16 @@ def prepare(task, proxy):
     """Stage the task's input and set its ``event_service`` override, saved:
     what a feed to a whole-node queue does before the submission request."""
     staged = stage(task, proxy)
+    if SHAPE.get('nersc_input'):
+        # The job reads its file at NERSC: a task whose files are not all
+        # there yet is not fed; the standing stager copies them ahead
+        # (scripts/evgen-es-nersc-stage.py stage-ready), never this cycle.
+        from .nersc_iri import Client
+        from .nersc_stage import missing
+        absent = missing(Client(), staged['files'])
+        if absent:
+            raise RuntimeError(f'{len(absent)} of the task\'s {len(staged["files"])} EVGEN files are not '
+                               'yet at NERSC; the standing stager copies them ahead')
     task.overrides = dict(task.overrides or {}, event_service=event_service(task, staged))
     task.save(update_fields=['overrides'])
     return staged

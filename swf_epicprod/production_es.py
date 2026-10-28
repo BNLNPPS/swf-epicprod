@@ -111,11 +111,13 @@ def definition(settings):
         raise ValueError('production ES reco_async needs resident_unit')
     if 'report_barrier' in cfg and type(cfg['report_barrier']) is not bool:
         raise ValueError('production ES report_barrier must be a boolean')
-    for key in ('handoff_in_place', 'unit_local', 'input_names', 'local_scratch'):
+    for key in ('handoff_in_place', 'unit_local', 'input_names', 'local_scratch', 'nersc_input'):
         if key in cfg and type(cfg[key]) is not bool:
             raise ValueError(f'production ES {key} must be a boolean')
     if cfg.get('input_names') and not evgen:
         raise ValueError('production ES input_names needs EVGEN input')
+    if cfg.get('nersc_input') and not evgen:
+        raise ValueError('production ES nersc_input needs EVGEN input')
     if 'notice' in cfg and type(cfg['notice']) is not bool:
         raise ValueError('production ES notice must be a boolean')
     if 'preempt_at_s' in cfg and (type(cfg['preempt_at_s']) is not int or cfg['preempt_at_s'] <= 0):
@@ -218,6 +220,12 @@ def apply(spec, settings):
     if cfg.get('notice'):
         # A preemption's SIGTERM ends the job in its notice (es_harness.py).
         prefix['EPICPROD_SWITCH_ES_NOTICE'] = '1'
+    if cfg.get('nersc_input'):
+        # The job reads its EVGEN file from the copy staged ahead at NERSC
+        # (swf_epicprod/nersc_stage.py; the harness's ES_INPUT_DIRS), never
+        # pulling it over the WAN at its start (Torre Wenaus, 2026-10-28).
+        from .nersc_stage import CFS_DIR
+        prefix['ES_INPUT_DIRS'] = CFS_DIR
     if cfg.get('preempt_at_s'):
         # A controlled preemption (es_harness.py --preempt-at-s): a test of
         # the close-out of a lost node, never a production shape by itself.
@@ -235,7 +243,8 @@ def apply(spec, settings):
     # the manifest's first row.
     command += (' python3 evgen_job_dispatcher.py es-production '
                 + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])
-                + ' $PILOT_EVENTRANGECHANNEL' + ('' if evgen else ' --accessmode=direct'))
+                + ' $PILOT_EVENTRANGECHANNEL'
+                + ('' if evgen and not cfg.get('nersc_input') else ' --accessmode=direct'))
     if evgen:
         shape = dict(nEventsPerInputFile=cfg['events_per_file'], nEventsPerJob=cfg['events_per_file'],
                      nJobs=cfg['files'], nEvents=cfg['events'])

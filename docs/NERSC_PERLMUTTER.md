@@ -534,10 +534,16 @@ ATLAS's tools on CVMFS (a transfer node has none of its own and no grid CA
 directory) and reads BNL with our production Rucio proxy, kept at NERSC in
 `/global/homes/w/wguan/epicprod`, mode 700, the proxy mode 600, replaced
 whenever ours is newer (Torre Wenaus, 2026-10-28). p4498 and p4499, eleven
-files and 44 GB, were staged in about four minutes. The harness reads such a
-copy from the directories in `ES_INPUT_DIRS` when the pilot has staged none
-(`es_harness.find_input`); production jobs read it once their shape sets that
-and leaves the input to direct access.
+files and 44 GB, were staged in about four minutes. The production EVGEN
+shape reads it there (`nersc_input`): the job leaves its input to direct
+access, which the queue allows over the WAN, so the pilot copies nothing, and
+the harness takes the file from `ES_INPUT_DIRS` (`es_harness.find_input`). The
+feed refuses a task whose files are not all at NERSC (`evgen_es.prepare`);
+`evgen-es-nersc-stage.py stage-ready`, every fifteen minutes by cron on
+swf-testbed (log `/opt/swf-monitor/shared/logs/nersc-stage-cron.log`), stages
+every ready EVGEN task the front marks for the Event Service, at BNL and then
+at NERSC, outside the front's cycle, one copy job a task at a time
+(`/data/swf-tmp/nersc-stage-state.json` names the jobs in flight).
 
 The production shape carries three payload switches, which canary 41481 runs
 together: `EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE` (a unit's RECO is written in
