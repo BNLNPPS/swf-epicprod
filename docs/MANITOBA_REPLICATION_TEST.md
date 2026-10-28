@@ -34,6 +34,17 @@ left to expire normally; existing rules and RSE configuration were unchanged.
 
 ## Published operator procedure
 
+At 22:56 UTC Torre's newly approved attempt to add only the directed
+MANITOBA-XRD -> EIC-XRD distance of one failed with
+`CannotAuthenticate: OIDC authentication failed for account=eicprod`.
+Catalog reads still worked. Fresh readback confirmed the edge remained
+absent and the existing RECO rule remained STUCK with NO_SOURCES.
+The EIC-XRD -> JLAB-TAPE-SE distance of one exists, but effective
+multihop transfer remains untested. Administrator action is pending.
+The bounded procedure is `scripts/manitoba-transfer-route.py`, read-only
+by default and creating only that edge with `--apply`; it keeps existing
+edges and records denied or failed authentication without retrying the POST.
+
 `scripts/manitoba-replication-test.py` defaults to reading these exact two
 DIDs, their rules, locks and transfer diagnostics. `--apply --level RECO`
 creates at most one 24-hour target rule; `--apply --level FULL` requires an
