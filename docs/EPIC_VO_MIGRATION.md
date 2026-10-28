@@ -2,8 +2,9 @@
 
 Torre approved new submissions under `epic` on 25 October 2026, with
 legacy `wlcg` work included in the same regulator allowance. Existing
-tasks retain their identities. The recovered draft is being completed
-under his renewed instruction on 28 October.
+tasks retain their identities. The cutover was deployed and accepted on
+28 October under his renewed instruction to finish it. The recovered
+draft is retained for provenance; the implementation is published on main.
 
 ## Order
 
@@ -35,3 +36,36 @@ distcomp-services/panda-server/CHANGES.md. The task is tracked as
 `swf-epic-vo-migration` in TJAI. Shared regulator accounting does not
 establish a cause for a loss of OSG slots: runnable-job and pilot supply
 must be checked independently.
+
+## Accepted on 28 October
+
+[Task 41495](https://epic-devcloud.org/prod/panda/tasks/41495/) is `done`.
+Its one [job, 6339107](https://epic-devcloud.org/prod/panda/jobs/6339107/),
+finished with VO `epic`, label `managed`, 100 events and no reported
+errors. It ran on BNL_OSG_PanDA_1 from 20:35:02 to 20:43:14 UTC under
+the configured operator account `claude-ec2dev`. JEDI generated it with
+FQAN `/epic/EIC/Role=production` after the shared OSG buffer drained
+below its floor; dispatch followed generation within one second.
+
+The trial's FULL and RECO datasets each contain one 100-event file,
+with an `AVAILABLE` replica at BNL-XRD:
+
+| Level | Bytes | Adler-32 |
+|---|---:|---|
+| FULL | 674526 | 3ac996bd |
+| RECO | 2638652 | 7c4b16c9 |
+
+Both are under
+`epic:/TEST/trial/group.EIC.26.07.3.epic_craterlake.p1108.e37.s11.r11.130to177deg.trial2/`.
+The ordinary PanDA log file is `ready` (79,343 bytes). This is a bounded
+validation sample, not additional campaign production credit.
+
+The focused checks passed: 28 throttler, four regulation-evidence and five
+submission/permission checks. A permission-test mistake changed 19 live
+templates before the regulator cutover. Generation was stopped, the shared
+regulator installed and old grants allowed to expire before resuming.
+The approved `epic` values were retained; the original audit records remain
+unchanged. [Corrective audit 7152516](https://epic-devcloud.org/prod/logs/7152516/)
+identifies the executor and synthetic test identity. Those tests now forbid
+database access, and the migration action also checks administrator access
+inside its body.
