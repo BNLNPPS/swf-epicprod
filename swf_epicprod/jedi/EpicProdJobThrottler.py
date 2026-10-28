@@ -42,7 +42,10 @@ from pandajedi.jediconfig import jedi_config
 from pandajedi.jedicore.MsgWrapper import MsgWrapper
 from pandajedi.jedithrottle.JobThrottlerBase import JobThrottlerBase
 
-from swf_epicprod.jedi.epic_job_throttler import CONFIG_TAGS, LEDGER_TTL_S, GrantLedger, decide, ledger_path, parse_pools, readings_from_stats
+from swf_epicprod.jedi.epic_job_throttler import (
+    CONFIG_TAGS, LEDGER_TTL_S, GrantLedger, combined_statistics, decide,
+    generation_scope, ledger_path, parse_pools, policy_value, readings_from_stats,
+)
 
 logger = PandaLogger().getLogger(__name__.split(".")[-1])
 
@@ -71,6 +74,9 @@ class EpicProdJobThrottler(JobThrottlerBase):
         self.excluded_sites = []
 
     def _config_value(self, vo: str, key: str) -> Any:
+        return policy_value(self._raw_config_value, vo, key)
+
+    def _raw_config_value(self, vo: str, key: str) -> Any:
         return self.taskBufferIF.getConfigValue(self.comp_name, key, self.app, vo)
 
     def _mode(self, vo: str) -> str:
@@ -90,14 +96,11 @@ class EpicProdJobThrottler(JobThrottlerBase):
     def _site_config(self, vo: str, sites: list[str]) -> dict[str, dict[str, Any]]:
         """Per-site limits: ``<TAG>_<site>``, else the work-queue-wide
         ``<TAG>``; a tag with neither is left to the decision's default."""
-        wide = {tag: self._config_value(vo, tag) for tag in CONFIG_TAGS}
         out: dict[str, dict[str, Any]] = {}
         for site in sites:
             cfg: dict[str, Any] = {}
             for tag in CONFIG_TAGS:
-                value = self._config_value(vo, f"{tag}_{site}")
-                if value is None:
-                    value = wide[tag]
+                value = policy_value(self._raw_config_value, vo, tag, site)
                 if value is not None:
                     cfg[tag] = value
             if cfg:
@@ -110,9 +113,10 @@ class EpicProdJobThrottler(JobThrottlerBase):
         header = f"{vo}:{prodSourceLabel} cloud={cloudName} queue={workQueue.queue_name} resource_type={resource_name}:"
         tmp_log.debug(f"{header} start")
 
-        ok, stats = self.taskBufferIF.getJobStatisticsByResourceTypeSite(workQueue)
-        if not ok:
-            tmp_log.error(f"{header} failed to get per-site job statistics")
+        try:
+            stats = combined_statistics(self.taskBufferIF, workQueue)
+        except (ValueError, TypeError) as exc:
+            tmp_log.error(f"{header} failed to get combined per-site job statistics: {exc}")
             return self.retTmpError
 
         # Every site with jobs of any resource type is read: a site's
@@ -133,7 +137,7 @@ class EpicProdJobThrottler(JobThrottlerBase):
                 tmp_log.error(f'{header} regulation prerequisites absent; holding generation')
                 return self.retTmpError
             try:
-                decision = self.ledger.reserve(readings, scope=f'{vo}:{workQueue.queue_id}',
+                decision = self.ledger.reserve(readings, scope=generation_scope(workQueue),
                                                exclusion_honored=EXCLUSION_HONORED)
             except (OSError, ValueError, TypeError) as e:
                 tmp_log.error(f'{header} grant ledger unavailable; holding generation: {e}')
@@ -153,6 +157,7 @@ class EpicProdJobThrottler(JobThrottlerBase):
 
         self.excluded_sites = list(decision.excluded_sites)
         tmp_log.info(f'REGULATION_OK vo={vo} mode=throttle lock=true exclusions=true '
+                     f'accounting=epic+wlcg scope={generation_scope(workQueue)} '
                      f'decision={"SKIP" if decision.throttled else "PASS"}')
         if decision.throttled:
             tmp_log.info(f"{header} SKIP throttled: excluded {self.excluded_sites}")

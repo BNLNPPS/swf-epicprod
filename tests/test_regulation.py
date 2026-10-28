@@ -15,6 +15,8 @@ class RegulationTests(unittest.TestCase):
             vo: {'at': now.isoformat()} for vo in ('wlcg', 'epic')}}}}
         modes = dict(wlcg='throttle', epic='throttle')
         self.assertFalse(throttler_verdict(report, modes, now=now)['red'])
+        self.assertFalse(throttler_verdict(report, dict(modes, wlcg='observe'), now=now)['red'])
+        self.assertFalse(throttler_verdict(report, {'wlcg': 'throttle'}, now=now)['red'])
         self.assertTrue(throttler_verdict(report, dict(modes, epic='observe'), now=now)['red'])
         report['record']['jedi_regulation']['voices']['epic']['at'] = (now - timedelta(minutes=11)).isoformat()
         self.assertTrue(throttler_verdict(report, modes, now=now)['red'])

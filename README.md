@@ -90,6 +90,8 @@ Campaigns:
   queue, the dispatcher, and the tripwire.
 - [EPIC_JOB_THROTTLER.md](docs/EPIC_JOB_THROTTLER.md) — the queue-side
   regulator: a JEDI job throttler paced per PanDA queue.
+- [EPIC_VO_MIGRATION.md](docs/EPIC_VO_MIGRATION.md) — the ordered cutover
+  to epic submissions with shared legacy accounting.
 - [EPIC_ADDER.md](docs/EPIC_ADDER.md) — the ePIC output-registration
   plugin and its handling of absent and failed files.
 - [REGULATION_AUDIT_2026-10-22.md](docs/REGULATION_AUDIT_2026-10-22.md) —

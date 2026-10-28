@@ -4,6 +4,8 @@ ledger over a temporary file."""
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import swf_epicprod.jedi.epic_job_throttler as ejt
 from swf_epicprod.jedi.epic_job_throttler import (
@@ -230,6 +232,72 @@ class LedgerTest(unittest.TestCase):
         other = self.ledger.reserve([site('OSG', nqueuelimit=600)],
                                     scope='epic:2', exclusion_honored=True)
         self.assertEqual(other.max_num_jobs, 300)
+
+
+class SharedVoTests(unittest.TestCase):
+    def setUp(self):
+        self.queues = {
+            vo: SimpleNamespace(VO=vo, queue_id=qid, queue_name='managed',
+                                queue_type='managed', is_global_share=False)
+            for vo, qid in [('epic', 5), ('wlcg', 2)]}
+        self.tb = Mock()
+        self.tb.getWorkQueueMap.return_value.getQueueByName.side_effect = (
+            lambda vo, label, name: self.queues.get(vo)
+            if label == 'managed' and name == 'managed' else None)
+        self.tb.getJobStatisticsByResourceTypeSite.side_effect = lambda q: (
+            True, {'OSG': {'SCORE': {'running': 100 if q.VO == 'epic' else 900,
+                                    'activated': 100 if q.VO == 'epic' else 2700}}})
+
+    def test_both_callers_read_the_same_summed_workload(self):
+        for q in self.queues.values():
+            stats = ejt.combined_statistics(self.tb, q)
+            self.assertEqual(stats['OSG']['SCORE'], {'running': 1000, 'activated': 2800})
+
+    def test_missing_legacy_queue_holds_instead_of_assuming_zero(self):
+        self.tb.getWorkQueueMap.return_value.getQueueByName.return_value = None
+        self.tb.getWorkQueueMap.return_value.getQueueByName.side_effect = None
+        with self.assertRaisesRegex(ValueError, 'missing equivalent'):
+            ejt.combined_statistics(self.tb, self.queues['epic'])
+
+    def test_failed_peer_statistics_hold_generation(self):
+        self.tb.getJobStatisticsByResourceTypeSite.side_effect = (
+            lambda q: (False, {}) if q.VO == 'wlcg' else (True, {}))
+        with self.assertRaisesRegex(ValueError, 'statistics unavailable'):
+            ejt.combined_statistics(self.tb, self.queues['epic'])
+
+    def test_production_and_test_do_not_share_reservations(self):
+        managed = ejt.generation_scope(self.queues['epic'])
+        self.assertEqual(managed, ejt.generation_scope(self.queues['wlcg']))
+        test = SimpleNamespace(VO='epic', queue_id=4, queue_name='test',
+                               queue_type='test', is_global_share=False)
+        self.assertNotEqual(managed, ejt.generation_scope(test))
+
+    def test_cross_vo_concurrent_calls_cannot_double_the_allowance(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = GrantLedger(os.path.join(directory, 'ledger.json'))
+            def reserve(i):
+                q = self.queues['epic' if i % 2 else 'wlcg']
+                decision = ledger.reserve([site('OSG', nqueuelimit=600)],
+                    scope=ejt.generation_scope(q), exclusion_honored=True)
+                return decision.max_num_jobs or 0
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                self.assertEqual(sum(pool.map(reserve, range(16))), 600)
+
+    def test_epic_wide_policy_overrides_legacy_site_policy(self):
+        values = {('epic', 'NQUEUELIMIT'): 3123,
+                  ('wlcg', 'NQUEUELIMIT_OSG'): 9999}
+        fetch = lambda vo, key: values.get((vo, key))
+        for vo in self.queues:
+            self.assertEqual(ejt.policy_value(fetch, vo, 'NQUEUELIMIT', 'OSG'), 3123)
+        values[('epic', 'NQUEUELIMIT_OSG')] = 4000
+        self.assertEqual(ejt.policy_value(fetch, 'wlcg', 'NQUEUELIMIT', 'OSG'), 4000)
+
+    def test_legacy_policy_is_a_fallback_and_missing_mode_stays_missing(self):
+        values = {('wlcg', 'NQUEUELIMIT_OSG'): 3123}
+        fetch = lambda vo, key: values.get((vo, key))
+        self.assertEqual(ejt.policy_value(fetch, 'epic', 'NQUEUELIMIT', 'OSG'), 3123)
+        self.assertIsNone(ejt.policy_value(fetch, 'epic', 'MODE'))
 
 
 class ReadingsTest(unittest.TestCase):

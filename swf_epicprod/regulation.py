@@ -30,9 +30,10 @@ def throttler_verdict(report, modes, *, now=None):
     evidence = ((report or {}).get('record') or {}).get('jedi_regulation') or {}
     if evidence.get('error'):
         reasons.append(evidence['error'])
+    mode = modes.get('epic') if modes.get('epic') is not None else modes.get('wlcg')
+    if mode != 'throttle':
+        reasons.append('effective epic MODE is not throttle')
     for vo in ('wlcg', 'epic'):
-        if modes.get(vo) != 'throttle':
-            reasons.append(f'{vo} MODE is not throttle')
         item = (evidence.get('voices') or {}).get(vo) or {}
         try:
             at = datetime.fromisoformat(item['at'].replace('Z', '+00:00'))

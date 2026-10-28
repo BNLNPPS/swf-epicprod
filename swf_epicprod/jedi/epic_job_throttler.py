@@ -52,6 +52,61 @@ DEFAULT_THRESHOLD = 2.0
 RUNNING_STATES = ("running", "starting")
 NOT_RUN_STATES = ("assigned", "activated")
 CONFIG_TAGS = ("THROTTLE_THRESHOLD", "NQUEUELIMIT", "NRUNNINGCAP", "NQUEUECAP")
+COMPATIBLE_VOS = ("epic", "wlcg")
+
+
+def policy_value(fetch, vo, key, site=None):
+    """Use epic policy for both names, with legacy values as fallback.
+
+    A canonical wide setting precedes a legacy site override, so tuning
+    epic alone cannot leave a different policy on the draining VO.
+    """
+    voices = COMPATIBLE_VOS if vo in COMPATIBLE_VOS else (vo,)
+    keys = (f"{key}_{site}", key) if site is not None else (key,)
+    for voice in voices:
+        for name in keys:
+            value = fetch(voice, name)
+            if value is not None:
+                return value
+    return None
+
+
+def generation_scope(workqueue):
+    """Equivalent queues share grants across VO names and resource types."""
+    if workqueue.VO not in COMPATIBLE_VOS:
+        return f"{workqueue.VO}:{workqueue.queue_id}"
+    kind = 'share' if workqueue.is_global_share else 'queue'
+    return f"epic:{kind}:{workqueue.queue_type}:{workqueue.queue_name}"
+
+
+def combined_statistics(task_buffer, workqueue):
+    """Sum equivalent work queues under both VO names, without mixing labels.
+
+    Missing peer queues or failed reads refuse generation: neither is
+    evidence that the legacy workload has disappeared.
+    """
+    queues = [workqueue]
+    if workqueue.VO in COMPATIBLE_VOS:
+        mapper = task_buffer.getWorkQueueMap()
+        for voice in COMPATIBLE_VOS:
+            if voice == workqueue.VO:
+                continue
+            peer = mapper.getQueueByName(voice, workqueue.queue_type,
+                                        workqueue.queue_name) if mapper else None
+            if peer is None or peer.is_global_share != workqueue.is_global_share:
+                raise ValueError(f'missing equivalent {voice} work queue {workqueue.queue_name}')
+            queues.append(peer)
+    merged = {}
+    for queue in queues:
+        ok, stats = task_buffer.getJobStatisticsByResourceTypeSite(queue)
+        if not ok:
+            raise ValueError(f'statistics unavailable for {queue.VO}:{queue.queue_name}')
+        for site, resources in stats.items():
+            for resource, statuses in resources.items():
+                target = merged.setdefault(site, {}).setdefault(resource, {})
+                for status, count in statuses.items():
+                    target[status] = target.get(status, 0) + int(count)
+    return merged
 # The reading a pass is charged to while no site has jobs at all: a pass
 # with nothing queued anywhere is not unbounded, it is bounded by the
 # default floor and the ledger like any site (2026-09-18: the MCORE
