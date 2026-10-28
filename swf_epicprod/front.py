@@ -716,6 +716,18 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         return [('supplied', 'supplied', rec())]
     if not eligible:
         return [('no_work', 'no_eligible_task', rec())]
+    from .queues import whole_node
+    if whole_node(queue):
+        # One task at a time on a whole node, as the gun feeder holds it:
+        # the queue takes the next task when nothing of its own is committed
+        # or active there, whatever the task's hours. An Event Service task
+        # over EVGEN input is days of one node (p4497: 5.4 million events,
+        # about 54 h), past any hours mark (2026-10-28).
+        if committed_h > 0 or tasks_active:
+            return [('supplied', 'node_occupied', rec())]
+        candidate = eligible[0]
+        state = 'fed' if mode == 'active' else 'would_feed'
+        return [(state, f"{state}:{candidate['task']}", rec(candidate))]
 
     out = []
     committed, fed_rows, fed = committed_h, inflight_rows, 0
