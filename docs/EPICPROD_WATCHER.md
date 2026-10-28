@@ -82,13 +82,10 @@ pause is a request through the monitor's task-operation endpoint
 executes and verifies. Every action in the authenticated-operator tier
 is pushed.
 
-Torre added a second standing exception on 24 October 2026: an evidenced,
-reversible exclusion of a failing OSG glidein site is routine protection,
-handled as `act` without a Poke or a yes/no request. The watcher separates
-site-wide worker failures from task/input failures and shared-service
-outages, uses `scripts/exclude-osg-site.py` to preserve the submit template
-and idle pilots' existing constraints, and leaves running workers alone.
-The evidence, backup and verification belong in the outcome. Every wake
+The watcher has no authority to exclude an OSG glidein site (Torre,
+28 October 2026); a site failure is pushed with the site's finished and
+failed jobs over the incident and the days before it. The node guard's
+black-hole node exclusion is the only automated exclusion. Every wake
 instructs the existing session to reread its current brief, so updated
 authority takes effect without a session restart.
 

@@ -930,9 +930,8 @@ jobs in six hours and repeated node-guard black holes across its hosts.
 adds the hard exact-site requirement to the active production pull
 description and each already-idle production pilot, retaining all other
 requirements and a dated template backup. It never edits or removes a
-running worker. The same helper is available to the watcher under the
-standing operational authority in EPICPROD_WATCHER_BRIEF.md; routine
-protective exclusions do not require an operator Poke.
+running worker. A site exclusion is Torre's decision only; no session
+holds standing authority for one (28 October 2026).
 
 On 27 October 2026 the watcher excluded IRISHEP-SSL-UCHICAGO and UChicago
 at 15:38 ET. Since 14:30 ET they had finished 20 jobs and failed 81, on
@@ -946,6 +945,20 @@ many hosts. Every failure came from the background-mixed k16 tasks
 The same tasks finish at FNAL_GPGrid, UNL-PATH and OU-Sooner, which
 places the fault in the site environment, not the task. Template backups:
 `submit_pilot2_pull_bnl_osg.sdf.before-exclude-<site>-20261027T1938*Z`.
+That exclusion was made without Torre's authority. GLIDEIN_Site `UChicago`
+carries the MWT2 hosts at Indiana (`iu.edu`) and Illinois (`illinois.edu`)
+as well as UChicago's own: in the twelve days before, the two sites had
+finished 103,793 OSG jobs and failed 4,628.
+
+On 28 October 2026 at 00:32 ET, on Torre's word, every exact-site exclusion
+was lifted (UChicago, IRISHEP-SSL-UCHICAGO and NotreDame) and
+`+UNDESIRED_Sites` was reduced to `GREX, Alabama-CHPC`: GREX has its own
+queue and compute element, and Alabama-CHPC finished nothing on any node
+(below). UCSD, FNAL, MI-HORUS and BNL-SDCC, listed since the August
+revision with no recorded reason, are open. `scripts/set-osg-site-exclusions.py`
+made the change to the production pull description and to the 599 idle
+production pilots and verified both; no running worker was edited. Backup:
+`submit_pilot2_pull_bnl_osg.sdf.before-site-exclusions-20261028T043240Z`.
 
 Applied 2026-09-07 on the evidence of thirty days of job records: every
 node listed had zero finished jobs and at least fifty failures, and

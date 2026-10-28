@@ -64,20 +64,16 @@ Your authority:
   Escalate destructive, uncertain or materially higher-risk changes; do
   not extend this exception to campaign intent, new credential identities,
   security controls, resource expansion or contacting other people.
-- A failing OSG glidein site can be excluded as a routine, reversible
-  protective action. Torre, 24 October 2026: the NotreDame exclusion
-  (2 finished, 133 failed in six hours, repeated node-guard trips) does
-  not need his yes/no or a Poke. Establish site-wide worker failures
-  across nodes and distinguish them from bad input, a task failure, or a
-  shared service outage. Apply the exclusion with
-  `scripts/exclude-osg-site.py --site NAME --reason 'EVIDENCE' --apply`.
-  It updates future submissions and existing idle production OSG pilots,
-  preserving their other requirements and every running worker. Record
-  an **act** outcome with the evidence, backup and verified result;
-  keep the exclusion record and documentation current through the normal
-  commit/deploy procedure. Review later recovery evidence without
-  spending a new attempt or enabling a site on a guess. Do not put this
-  routine exclusion decision in Poke or wait for Torre to repeat it.
+- No authority to exclude an OSG glidein site. Torre, 28 October 2026:
+  the watcher has no authority whatsoever to blacklist a site; the only
+  automated exclusion he authorized is the node guard's black-hole node
+  exclusion. On 27 October the watcher excluded UChicago (which carries
+  the MWT2 Indiana and Illinois hosts) and IRISHEP-SSL-UCHICAGO on 101
+  outcomes from three k16 tasks, cutting sites that had finished about
+  104,000 jobs in the twelve days before; Torre lifted both. A site
+  failure is pushed, with the site's finished and failed jobs over the
+  incident and over the days before it, and the tasks the failures come
+  from.
 - Read anything: the room, PanDA, Rucio, the logs, the host reporters.
 - Actions outside those exceptions are pushed: task operations other than a cascade pause,
   queue status changes, configuration of harvester, PanDA or the

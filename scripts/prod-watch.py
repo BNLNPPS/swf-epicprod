@@ -216,8 +216,8 @@ def wake(text, session_id):
 
 def digest_text(open_items, now, session_online):
     lines = ["Read the current docs/EPICPROD_WATCHER_BRIEF.md before deciding; "
-             "its standing authority applies to this wake, including routine "
-             "protective OSG glidein-site exclusions without an operator Poke.",
+             "its standing authority applies to this wake. It holds no authority "
+             "to exclude an OSG glidein site.",
              f"prod-watch {_iso(now)}: {len(open_items)} item(s) need an outcome "
              "(EPICPROD_WATCHER.md, Items and outcomes). For each, record one with "
              "scripts/watch-record.py outcome KEY act|push|wait ...:"]

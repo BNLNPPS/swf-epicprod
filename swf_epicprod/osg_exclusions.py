@@ -30,22 +30,14 @@ QUEUES = ('BNL_OSG_EPIC_PROD_1', 'BNL_OSG_PanDA_1')
 # measurement that put them there; the rest predate this record and are
 # kept as they stand.
 EXCLUDED_SITES = [
-    {'site': 'NotreDame', 'applied': '2026-10-24',
-     'reason': '2 finished and 133 failed in six hours; repeated node-guard '
-               'black holes across the site; excluded from new and idle '
-               'production OSG pilot matchmaking'},
     {'site': 'Alabama-CHPC', 'failed': 13218, 'finished': 0,
      'core_hours': 8052, 'nodes': 19, 'applied': '2026-09-07',
      'reason': 'every node in the record finished nothing; where trial '
                '39305 lost 100 reconstructed events to three timeouts '
                'against the JLab catalog it cannot reach'},
-    {'site': 'UCSD', 'reason': 'excluded before this record was kept'},
-    {'site': 'FNAL', 'reason': 'excluded before this record was kept'},
-    {'site': 'MI-HORUS', 'reason': 'excluded before this record was kept'},
     {'site': 'GREX', 'reason': 'excluded from the OSG pool before this '
                                'record was kept; the dedicated GREX queue '
                                'submits to its own compute element'},
-    {'site': 'BNL-SDCC', 'reason': 'excluded before this record was kept'},
 ]
 
 # Nodes excluded individually, by the Requirements clause. Each sits at a

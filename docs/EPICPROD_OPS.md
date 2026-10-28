@@ -45,16 +45,14 @@ level; it does not ask. The pause is reversible and its
 wrong-case cost is essentially nil, while the benefit is enormous. Every
 other task operation keeps its gate.
 
-Torre, 24 October 2026: routine, reversible exclusion of a failing OSG
-glidein site is also standing authority. The NotreDame case (2 finished,
-133 failed in six hours, repeated black-hole hosts) is acted on and
-recorded, without asking Torre or creating a Poke. Evidence must separate
-a site-wide worker problem from bad input, task failures and a shared
-service outage. `scripts/exclude-osg-site.py` adds the exact site to future
-and already-idle production pilots' matchmaking, keeps the prior
-constraints and a dated template backup, and edits no running workers.
-This exception does not authorize task reruns, resource expansion,
-credential changes or contact with other people.
+Excluding an OSG glidein site is Torre's decision only (28 October 2026:
+no session has standing authority to blacklist a site). His 24 October
+word excluded NotreDame alone; it was later written up as a standing
+exception for the watcher, which he never authorized. The only automated
+exclusion is the node guard's black-hole node exclusion.
+`scripts/exclude-osg-site.py` applies an exclusion he decides, and
+`scripts/set-osg-site-exclusions.py` sets the undesired-site list and lifts
+exact-site exclusions.
 
 Torre, 25 October 2026: the watcher also acts on routine production-service
 recovery, weighing the cost of an ongoing outage against a bounded,
