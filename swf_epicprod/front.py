@@ -728,7 +728,11 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
             int((v or {}).get('production') or 0)
             for s, v in (q.get('by_status') or {}).items() if s in ('running', 'starting'))
         occupied = max(jobs + ungenerated, tasks_active)
-        base.update(nodes=nodes, nodes_occupied=occupied)
+        # The task the queue takes next: its input is staged ahead at the
+        # site from this record alone (scripts/evgen-es-nersc-stage.py
+        # stage-ready), so what is copied there is what the front allocates.
+        base.update(nodes=nodes, nodes_occupied=occupied,
+                    next_task=eligible[0]['task'] if eligible else '')
         if occupied >= nodes:
             return [('supplied', 'node_occupied', rec())]
         if not eligible:

@@ -180,6 +180,11 @@ def apply(spec, settings):
         # Units and closes are named from the job's own EVGEN file, not the
         # manifest's first row (task 41479's job on run002 closed as run001).
         env['EPICPROD_SWITCH_ES_INPUT_NAMES'] = '1'
+    if cfg.get('nersc_input'):
+        # The job reads its EVGEN file from the copy staged ahead at NERSC
+        # (swf_epicprod/nersc_stage.py), never pulling it over the WAN at its
+        # start (Torre Wenaus, 2026-10-28); with direct access below.
+        env['EPICPROD_SWITCH_ES_NERSC_INPUT'] = '1'
     if cfg.get('local_scratch'):
         # The units' scratch in the node's /tmp, off the shared file system:
         # on Perlmutter the step after a resident unit's reconstruction, which
@@ -220,12 +225,6 @@ def apply(spec, settings):
     if cfg.get('notice'):
         # A preemption's SIGTERM ends the job in its notice (es_harness.py).
         prefix['EPICPROD_SWITCH_ES_NOTICE'] = '1'
-    if cfg.get('nersc_input'):
-        # The job reads its EVGEN file from the copy staged ahead at NERSC
-        # (swf_epicprod/nersc_stage.py; the harness's ES_INPUT_DIRS), never
-        # pulling it over the WAN at its start (Torre Wenaus, 2026-10-28).
-        from .nersc_stage import CFS_DIR
-        prefix['ES_INPUT_DIRS'] = CFS_DIR
     if cfg.get('preempt_at_s'):
         # A controlled preemption (es_harness.py --preempt-at-s): a test of
         # the close-out of a lost node, never a production shape by itself.

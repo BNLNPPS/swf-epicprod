@@ -7,8 +7,8 @@ input in production).
     evgen-es-nersc-stage.py probe                 what a transfer node offers
     evgen-es-nersc-stage.py stage TASK [--wait]   copy the task's missing files
     evgen-es-nersc-stage.py stage-dataset DID [--wait]  a registered input dataset (a canary's)
-    evgen-es-nersc-stage.py stage-ready           every ready EVGEN task the front
-                                                  can feed a whole-node queue; by cron
+    evgen-es-nersc-stage.py stage-ready           the task the front allocates next to
+                                                  each whole-node queue; by cron
     evgen-es-nersc-stage.py job JOBID             a transfer job's state
 
 Run in the monitor Django environment with the testbed venv and ~/.env.
@@ -34,16 +34,18 @@ RUNNING = ('pending', 'queued', 'running', 'configuring', 'new', 'active', 'subm
 
 
 def ready_tasks():
-    """The composed names of the ready tasks the front marks EVGEN-ES capable
-    (its stored state, every pool and queue)."""
+    """The task the front allocates to each whole-node queue next (its decision
+    record's ``next_task``, NERSC_Perlmutter_epic_es today), and nothing else:
+    the ready pool is not staged; a queue whose feed is off allocates nothing."""
     from monitor_app.models import CachedProduct
+    from swf_epicprod.queues import whole_node
     p = CachedProduct.objects.filter(key='front_state').first()
     state = p.value if p and not isinstance(p.value, str) else json.loads(p.value) if p else {}
     names = []
-    for entries in (state.get('backlog') or {}).values():
-        for e in entries or []:
-            if e.get('evgen_es') and e.get('task') not in names:
-                names.append(e['task'])
+    for queue, q in (state.get('queues') or {}).items():
+        task = (q or {}).get('next_task')
+        if whole_node(queue) and task and task not in names:
+            names.append(task)
     return names
 
 

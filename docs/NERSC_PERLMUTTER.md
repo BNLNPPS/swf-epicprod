@@ -537,13 +537,17 @@ whenever ours is newer (Torre Wenaus, 2026-10-28). p4498 and p4499, eleven
 files and 44 GB, were staged in about four minutes. The production EVGEN
 shape reads it there (`nersc_input`): the job leaves its input to direct
 access, which the queue allows over the WAN, so the pilot copies nothing, and
-the harness takes the file from `ES_INPUT_DIRS` (`es_harness.find_input`). The
+the harness takes the file from `ES_INPUT_DIRS` (`es_harness.find_input`, switch `EPICPROD_SWITCH_ES_NERSC_INPUT`). The
 feed refuses a task whose files are not all at NERSC (`evgen_es.prepare`);
 `evgen-es-nersc-stage.py stage-ready`, every fifteen minutes by cron on
 swf-testbed (log `/opt/swf-monitor/shared/logs/nersc-stage-cron.log`), stages
-every ready EVGEN task the front marks for the Event Service, at BNL and then
-at NERSC, outside the front's cycle, one copy job a task at a time
-(`/data/swf-tmp/nersc-stage-state.json` names the jobs in flight).
+the one task the front allocates to the queue next (its decision record's
+`next_task`), at BNL and then at NERSC, outside the front's cycle; nothing
+else in the ready pool is copied, and a queue whose feed is off allocates
+nothing (`/data/swf-tmp/nersc-stage-state.json` names the copy jobs in
+flight). A copy is short beside the work it feeds: a six-hour job on three
+nodes takes about 1.8 million DIS events, about one 3.6 GB EVGEN file, which
+copies in about 15 s (275 MB/s, 28 October).
 
 The production shape carries three payload switches, which canary 41481 runs
 together: `EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE` (a unit's RECO is written in

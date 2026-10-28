@@ -21,6 +21,7 @@ import time
 
 from .nersc_iri import Client
 
+# The payload harness reads the same directory (es_harness.NERSC_INPUT_DIR).
 CFS_DIR = '/global/cfs/cdirs/m3763/epicprod/esinput'
 PRIVATE_DIR = '/global/homes/w/wguan/epicprod'
 PROXY = PRIVATE_DIR + '/rucio-proxy'

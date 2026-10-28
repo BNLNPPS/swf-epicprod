@@ -70,6 +70,9 @@ WORKDIR_HOLD = 0.7             # of the pilot's work-directory limit: no new uni
 NOTICE_CLOSE_S = 30            # a preemption's notice: how long a running close has to stand
 WORKDIR_RESUME = 0.5           # units start again once the closes bring it under this
 WORKDIR_CHECK_S = 60           # the guard's measuring interval
+# EPICPROD_SWITCH_ES_NERSC_INPUT: a job's EVGEN file as staged ahead at NERSC
+# on the community file system (swf_epicprod/nersc_stage.py CFS_DIR).
+NERSC_INPUT_DIR = '/global/cfs/cdirs/m3763/epicprod/esinput'
 # EPICPROD_SWITCH_ES_LOCAL_WORK: the work tree in node memory, so the guard
 # also holds new units while the node has less than this available.
 MEMORY_HOLD_GB = 40
@@ -921,6 +924,9 @@ def find_input(job_dir, lfn):
     at the site, in one of ES_INPUT_DIRS (colon-separated; on Perlmutter the
     community file system, NERSC_PERLMUTTER.md, EVGEN input in production)."""
     dirs = [d for d in os.environ.get('ES_INPUT_DIRS', '').split(':') if d]
+    if os.environ.get('EPICPROD_SWITCH_ES_NERSC_INPUT') == '1':
+        # Staged ahead at NERSC (swf_epicprod/nersc_stage.py CFS_DIR).
+        dirs.append(NERSC_INPUT_DIR)
     for base in (job_dir, os.getcwd(), *dirs):
         p = os.path.join(base, lfn)
         if os.path.isfile(p):
