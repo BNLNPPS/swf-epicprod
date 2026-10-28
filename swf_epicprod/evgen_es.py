@@ -124,11 +124,18 @@ def coverage(task):
     """The files the task's manifest covers, in manifest order:
     ``(OrderedDict {EVGEN-relative path: {ext, events}}, total events)``,
     the events being those the manifest's rows take from each file."""
+    from copy import copy
     from pcs.commands import _evgen_manifest_from_inputs, prodtask_events_per_job
-    per_job = prodtask_events_per_job(task)
+    # The manifest at the task's ordinary job size, never at an Event Service
+    # setup's per-file count: a task carrying a setup (an earlier attempt's,
+    # or the one set when it was fed) would otherwise read a different
+    # manifest (p4498: 5,883,137 events in place of 5,680,057).
+    plain = copy(task)
+    plain.overrides = {k: v for k, v in (task.overrides or {}).items() if k != 'event_service'}
+    per_job = prodtask_events_per_job(plain)
     if per_job <= 0:
         raise ValueError(f'{task.composed_name}: no events per job to read its manifest')
-    out = _evgen_manifest_from_inputs(task, per_job)
+    out = _evgen_manifest_from_inputs(plain, per_job)
     rows = out[0] if isinstance(out, tuple) else out
     files = OrderedDict()
     for row in rows:
