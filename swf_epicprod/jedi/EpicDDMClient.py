@@ -20,7 +20,10 @@ Registration, in ``panda_jedi.cfg`` ``[ddm]``::
 
 The catalog map, ``EPIC_CATALOGS`` (default
 ``/opt/panda/etc/panda/epic_catalogs.json``, readable by the JEDI account
-only, since it carries the catalogs' read credentials)::
+only, since it carries the catalogs' read credentials). Every client option
+the catalog needs is named, ``vo`` above all: one left out falls back to the
+server's own ``rucio.cfg`` under JEDI's ``VIRTUAL_ENV`` (``vo = eic``,
+PanDA's catalog), which JLab's refuses as a failed authentication::
 
     {"catalogs": [{"name": "jlab", "scopes": ["epic"], "name_prefixes": ["/"],
                    "client": {"rucio_host": ..., "auth_host": ..., "account": ...,
