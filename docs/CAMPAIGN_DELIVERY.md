@@ -374,7 +374,10 @@ by-priority table carrying the rest.
    EVGEN path reaches. An area (`area=`) shows the grid of each of its
    families, the families with something missing first. A family
    (`family=`) shows its grid alone. A family is an EVGEN path without its beam and Q²
-   segments, its grid beam energy against Q² range; a single-particle
+   segments, its grid beam energy against Q² range. A family binned in
+   Bjorken x (`x_1e-4to1e-3`) runs one beam per species, so it is the path
+   without its species, beam and x segments, its grid species and beam
+   (`ep_noradcor 9x130`) against x range. A single-particle
    family is the particle, its grid energy against angle. A cell is one
    EVGEN sample and reads delivered / target events, coloured complete,
    below target or without one, registered and not produced, or missing
