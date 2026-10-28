@@ -1,6 +1,7 @@
 """Production status grids: per generator family, beam energy against Q²
-range (a single particle: energy against angle), each cell a sample's state
-in one campaign (docs/CAMPAIGN_DELIVERY.md, Surfaces, the status grids).
+range (an x-binned family: species and beam against x; a single particle:
+energy against angle), each cell a sample's state in one campaign
+(docs/CAMPAIGN_DELIVERY.md, Surfaces, the status grids).
 
 A cell is an EVGEN sample. Its state joins three records the system already
 keeps, so the build makes no Rucio or PanDA call:
@@ -34,13 +35,22 @@ BEAM_RE = re.compile(r'^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$')
 # A Q² token: q2_1to10, q2_1000toINF, q2_10_20, q2_0to0.01, q2_5to1e8, minQ2=10.
 Q2_RANGE_RE = re.compile(r'^q2_([\d.]+(?:e\d+)?)(?:to|_)([\d.]+(?:e\d+)?|INF)$', re.IGNORECASE)
 Q2_FLOOR_RE = re.compile(r'^(?:minQ2=|q2_)([\d.]+)$', re.IGNORECASE)
+# A Bjorken-x window: x_1e-4to1e-3, x_0.001to1.
+X_NUM = r'(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
+X_RANGE_RE = re.compile(rf'^x_({X_NUM})to({X_NUM})$')
+# The beam species segment ahead of the beam (ep_noradcor/9x130,
+# eAu_EPPS16_noradcor/9x100). An x-binned family runs one beam per species,
+# so the species and the beam together are its row: one grid of beam
+# against x, not a one-row grid per species.
+SPECIES_RE = re.compile(r'^e(?:p|n|[A-Z][a-z]?)(?:_.+)?$')
 # A single particle's energy and angular range: 100MeV, 10GeV; 3to50deg.
 SINGLE_AREA = 'SINGLE'
 ENERGY_RE = re.compile(r'^([\d.]+)(keV|MeV|GeV|TeV)$')
 ANGLE_RE = re.compile(r'^([\d.]+)to([\d.]+)deg$')
 ENERGY_MEV = {'keV': 1e-3, 'MeV': 1.0, 'GeV': 1e3, 'TeV': 1e6}
 # The axes of a grid: rows, then columns.
-AXES = {'beam': ('Beam (GeV)', 'Q² (GeV²)'), 'single': ('Energy', 'Angle')}
+AXES = {'beam': ('Beam (GeV)', 'Q² (GeV²)'), 'x': ('Species, beam (GeV)', 'Bjorken x'),
+        'single': ('Energy', 'Angle')}
 # A retry segment of a produced output's path (/RECO/<v>/<config>/try2/...),
 # which names the same sample as the base path.
 TRY_RE = re.compile(r'^try\d+$')
@@ -86,18 +96,19 @@ def q2_label(token):
 
 
 def column_label(token):
-    """A column's heading: a Q² range in GeV², or a single particle's
-    angular range in degrees."""
-    hit = ANGLE_RE.match(token or '')
+    """A column's heading: a Q² range in GeV², a Bjorken-x window, or a
+    single particle's angular range in degrees."""
+    hit = ANGLE_RE.match(token or '') or X_RANGE_RE.match(token or '')
     if hit:
-        return f'{hit.group(1)} to {hit.group(2)}°'
+        low, high = hit.groups()
+        return f'x {low} to {high}' if token.startswith('x_') else f'{low} to {high}°'
     if Q2_RANGE_RE.match(token or '') or Q2_FLOOR_RE.match(token or ''):
         return f'Q² {q2_label(token)} GeV²'
     return token or 'all'
 
 
 def _column_order(token):
-    hit = ANGLE_RE.match(token or '')
+    hit = ANGLE_RE.match(token or '') or X_RANGE_RE.match(token or '')
     if hit:
         return (float(hit.group(1)), float(hit.group(2)))
     return _q2_order(token)
@@ -107,7 +118,8 @@ def _row_order(token):
     hit = ENERGY_RE.match(token or '')
     if hit:
         return (float(hit.group(1)) * ENERGY_MEV[hit.group(2)], 0.0)
-    return _beam_order(token)
+    species, _, beam = (token or '').rpartition(' ')
+    return (*_beam_order(beam), species)
 
 
 def _q2_order(token):
@@ -135,21 +147,31 @@ def split_path(path):
     without its beam and Q² segments, the row its beam and the column its Q²
     range; a single particle's (``SINGLE/e+/100MeV/3to50deg``) is the path
     without its energy and angle, the row its energy and the column its
-    angular range, or the segment after the energy (``etaScan``)."""
+    angular range, or the segment after the energy (``etaScan``). An
+    x-binned path (``.../ep_noradcor/9x130/x_1e-4to1e-3``) has its x window
+    for the column and the species segment with the beam for the row
+    (``ep_noradcor 9x130``)."""
     from pcs.physics_match import _KNOWN_AREAS
     tokens = [t for t in path.split('/') if t][1:]  # drop 'EVGEN'
     start = next((i for i, t in enumerate(tokens) if t in _KNOWN_AREAS), None)
     if start is None or tokens[start] in SKIPPED_AREAS:
         return None
     background, tokens = tokens[:start], tokens[start:]
+    species = None  # the index of a species segment folded into the row
     if tokens[0] == SINGLE_AREA:
         beam = next((t for t in tokens if ENERGY_RE.match(t)), '')
         after = tokens[tokens.index(beam) + 1:] if beam else []
         q2 = next((t for t in after if ANGLE_RE.match(t)), after[0] if after else '')
     else:
         beam = next((t for t in tokens if BEAM_RE.match(t)), '')
-        q2 = next((t for t in tokens if Q2_RANGE_RE.match(t) or Q2_FLOOR_RE.match(t)), '')
-    family = '/'.join(t for t in tokens if t not in (beam, q2))
+        x = next((t for t in tokens if X_RANGE_RE.match(t)), '')
+        q2 = x or next((t for t in tokens if Q2_RANGE_RE.match(t) or Q2_FLOOR_RE.match(t)), '')
+        at = tokens.index(beam) if beam else 0
+        if x and at > 0 and SPECIES_RE.match(tokens[at - 1]):
+            species = at - 1
+    family = '/'.join(t for i, t in enumerate(tokens) if i != species and t not in (beam, q2))
+    if species is not None:
+        beam = f'{tokens[species]} {beam}'
     if background:
         family += ', with background ' + '/'.join(background)
     return tokens[0], family, beam, q2, '/EVGEN/' + '/'.join(tokens)
@@ -293,7 +315,8 @@ def build_status_grids(campaign_name):
         by_key = {(c['beam'], c['q2']): c for c in members}
         rows = [{'beam': b or 'all',
                  'cells': [by_key.get((b, q)) for q in q2s]} for b in beams]
-        axes = AXES['single' if area == SINGLE_AREA else 'beam']
+        axes = AXES['single' if area == SINGLE_AREA
+                    else 'x' if any(X_RANGE_RE.match(q or '') for q in q2s) else 'beam']
         grids.append({'area': area, 'family': family,
                       'row_axis': axes[0], 'column_axis': axes[1],
                       'columns': [{'token': q, 'label': column_label(q)} for q in q2s],
