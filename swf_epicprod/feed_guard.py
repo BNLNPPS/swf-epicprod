@@ -52,7 +52,10 @@ def run(queues, *, dry_run=False, created_by='front'):
         if v['clean'] and not dry_run:
             SysConfig.update_config({f'front.queue.{queue}.feed': True,
                                      f'front.queue.{queue}.feed_off_reason': '',
-                                     f'front.queue.{queue}.feed_auto_on': ''}, username=created_by)
+                                     f'front.queue.{queue}.feed_auto_on': '',
+                                     f'front.queue.{queue}.feed_set_by': created_by,
+                                     f'front.queue.{queue}.feed_set_at': timezone.now().isoformat()},
+                                    username=created_by)
             row['switched_on'] = True
             log_epicprod_action(
                 'front', 'feed_auto_on', subject_type='panda_queue', subject_key=queue,

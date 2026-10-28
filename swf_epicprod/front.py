@@ -27,7 +27,9 @@ defaults on first read, so every knob is visible on the System page:
 - ``front.activation_window_s`` (600): a feed counts as committed depth
   for this long before the census is expected to show it.
 - ``front.queue.<queue>.feed`` (False), ``.h_low`` (8), ``.h_high``
-  (24), ``.j_max`` (0 = none), ``.t_max`` (0 = none), ``.breaker`` ('closed').
+  (24), ``.j_max`` (0 = none), ``.t_max`` (0 = none), ``.breaker`` ('closed'),
+  ``.feed_exempt`` (''): with the feed off, the reason the queue is fed
+  by its own feeder rather than the front (``scripts/front-feed.py``).
 - ``front.idle_move.mode`` ('active'), ``.max_per_cycle`` (4),
   ``.cooldown_h`` (12): the idle-queue move (``swf_epicprod.idle_move``).
 
@@ -56,7 +58,7 @@ from swf_epicprod.regulation import CAPACITY_POOLS, RETIRED_QUEUES, throttler_ve
 logger = logging.getLogger(__name__)
 
 QUEUE_DEFAULTS = {'feed': False, 'h_low': 8.0, 'h_high': 24.0,
-                  'j_max': 0, 't_max': 0, 'breaker': 'closed'}
+                  'j_max': 0, 't_max': 0, 'breaker': 'closed', 'feed_exempt': ''}
 MODES = ('shadow', 'active')
 FEED_SOURCE = 'pcs_front_feed'
 HEARTBEAT_S = 3600
@@ -546,6 +548,7 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         'committed_h': committed_h,
         'h_low': h_low, 'h_high': h_high, 'j_max': j_max, 't_max': t_max,
         'feed_switch': bool(qs['feed']), 'breaker': qs['breaker'],
+        'feed_exempt': bool(not qs['feed'] and qs.get('feed_exempt')),
         'canary': canary.get('status', ''), 'canary_age_h': canary.get('age_h'),
         'credential': credential.get('outcome', ''),
         'credential_age_h': credential.get('age_h'),
@@ -575,7 +578,8 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         # queued here is still fed, under every other gate.
         backlog = [e for e in backlog if e.get('hand')]
         if not backlog:
-            return [('held', 'queue_off', rec())]
+            # Exempt: its own feeder supplies it, which is not a fault.
+            return [('held', 'queue_exempt' if base['feed_exempt'] else 'queue_off', rec())]
         eligible = [e for e in backlog if not e['problems']]
         base['ready_total'], base['ready_eligible'] = len(backlog), len(eligible)
         base['hand_only'] = True
@@ -860,7 +864,8 @@ def recommend(state, need, queues=None, closed=None, dispatch=None):
             'fit': fit_problems(need, limits),
             'blockers': (gate_blockers(gates, {'breaker': d.get('breaker')})
                          + ([f'closed: {closed[queue]}'] if queue in closed else [])
-                         + ([] if d.get('feed_switch') else ['feed off'])),
+                         + ([] if d.get('feed_switch') else
+                            ['feed exempt' if d.get('feed_exempt') else 'feed off'])),
             'feed_off': not d.get('feed_switch'),
             'front_state': d.get('state', ''), 'front_reason': d.get('reason', ''),
         }

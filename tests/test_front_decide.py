@@ -42,6 +42,15 @@ class DecideTest(unittest.TestCase):
         off = dict(SETTINGS, feed=False)
         self.assertEqual(run(census(), [entry('t')], settings=off)[0][:2], ('held', 'queue_off'))
 
+    def test_an_exempt_feed_holds_as_exempt_not_off(self):
+        # 2026-10-28: Perlmutter's and Google's ES queues have their own
+        # feeders; their held feed is not a fault.
+        exempt = dict(SETTINGS, feed=False, feed_exempt='fed by its own feeder')
+        self.assertEqual(run(census(), [entry('t')], settings=exempt)[0][:2], ('held', 'queue_exempt'))
+        # A switched-on feed ignores a stale exemption.
+        stale = dict(SETTINGS, feed_exempt='fed by its own feeder')
+        self.assertNotEqual(run(census(), [entry('t')], settings=stale)[0][1], 'queue_exempt')
+
     def test_a_task_a_person_queued_is_fed_where_the_switch_is_off(self):
         # 2026-10-05: hand placements wait in line; the switch governs only
         # the front's own placements.

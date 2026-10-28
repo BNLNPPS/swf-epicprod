@@ -196,8 +196,22 @@ action-stream event with its editor:
   what is committed to a queue, in hours rather than tasks.
 - `feed`, the per-queue switch; `front.enabled`, the global switch.
 
-`scripts/front-feed.py QUEUE on|off --by NAME --reason TEXT --decision-ref REF`
+`scripts/front-feed.py QUEUE on|off|exempt --by NAME --reason TEXT --decision-ref REF`
 changes one feed switch atomically and records its previous and new values.
+A feed is never off without a recorded reason (Torre Wenaus, 2026-10-28,
+after GREX's feed was switched off with its reason in the audit record
+alone and its dashboard bullet stayed green). The command writes the
+reason, who and when where every display reads them:
+`front.queue.<queue>.feed_off_reason` for `off`, `.feed_exempt` for
+`exempt`, `.feed_set_by` and `.feed_set_at` for any change; `on` clears
+both reasons. Run again with a new reason, it replaces the recorded one.
+`exempt` is a queue whose work comes from its own feeder rather than the
+front, Perlmutter's and Google's Event Service queues
+(`swf_epicprod/perlmutter_production.py`, `google_production.py`): the
+front feeds it nothing, as when off, but it is not a fault, and its
+decision reads `queue_exempt`. The System page editor refuses a save
+that leaves a regulated queue's feed off with neither reason. The skill
+`site-controls` carries the commands.
 
 In hours at capacity the queues differ mainly in scale: eight hours is
 roughly 16,000 jobs at the OSG production queue at its burst capacity,
@@ -312,7 +326,7 @@ task cap; `max_per_cycle` and the activation window bound a cycle.
 | awaiting observation | a submission is younger than one activation window (two cycles) | hold; count the submission as committed depth | `awaiting_observation` |
 | degraded | a gate is red: canary failing or its window stale, burn-through or windowed failure rate over threshold, credential invalid | hold; breaker opens | `canary`, `burn_through`, `failure_window`, `credential` |
 | half open | the breaker's cause has cleared and policy allows automatic recovery | submit one task and wait for completions; on failure reopen with a doubled wait | `half_open` |
-| held | queue feed off or front off; a declared downtime in force or starting within `h_high` hours (checked right after the breaker, ahead of the measured gates: a declaration is not a fault, the breaker stays closed and the hold lifts itself when the window ends); a feed that would pass `h_high`; the task or job cap; a task that cannot be sized; no calibration for the queue | hold | `queue_off`, `front_off`, `declared`, `would_exceed_high`, `task_cap`, `job_cap`, `unsized_task`, `no_calibration` |
+| held | queue feed off or exempt, or front off; a declared downtime in force or starting within `h_high` hours (checked right after the breaker, ahead of the measured gates: a declaration is not a fault, the breaker stays closed and the hold lifts itself when the window ends); a feed that would pass `h_high`; the task or job cap; a task that cannot be sized; no calibration for the queue | hold | `queue_off`, `queue_exempt`, `front_off`, `declared`, `would_exceed_high`, `task_cap`, `job_cap`, `unsized_task`, `no_calibration` |
 | oversize | the next eligible task alone exceeds `h_high` (phase one) | hold for the operator's decision | `oversize_task` |
 | no work | nothing in `ready` is eligible for the queue | hold; the page states the starvation | `no_eligible_task` |
 
@@ -467,8 +481,9 @@ still choose it explicitly, and work a person places there is fed;
 `front.queue.<queue>.feed_off_reason`) comes back on at the start of the first
 front cycle in which the queue has had no exit-78 failure for 90 minutes
 and at least 100 finished jobs over the same window (`swf_epicprod/feed_guard.py`).
-The return clears the reason, and with it the site panel's Pressure front OFF,
-and is posted live (`feed_auto_on`). GREX's feed was switched off this way on
+The return clears the reason, and with it the site's feed-off report
+line, records `front` as who switched it and when, and is posted live
+(`feed_auto_on`). GREX's feed was switched off this way on
 2026-10-26 while its output copies to BNL failed.
 
 **Closed queues.** A queue whose status in the queue registry

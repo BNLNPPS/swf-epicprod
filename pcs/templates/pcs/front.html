@@ -52,6 +52,7 @@
                 <ul>
                     <li><strong>front_off</strong>: the front is off (the front switch on the System page).</li>
                     <li><strong>queue_off</strong>: this queue's feed is off (its feed switch).</li>
+                    <li><strong>queue_exempt</strong>: this queue's feed is off because its own feeder supplies it (Perlmutter's and Google's Event Service queues); not a fault.</li>
                     <li><strong>breaker_open</strong>: this queue's breaker is open.</li>
                     <li><strong>declared</strong>: CRIC declares a downtime for the queue, in force or starting within the high-water mark's hours; a hold that lifts itself when the window ends, never a breaker.</li>
                     <li><strong>credential</strong>: the nightly production credential check is not ok, or older than 36 h.</li>
