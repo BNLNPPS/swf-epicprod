@@ -33,12 +33,12 @@ auth = client.post(login.url, data={'csrfmiddlewaretoken': csrf.group(1),
     'password': os.environ['SWF_REMOTE_CLAUDE_PASSWORD']},
     headers={'Referer': login.url}, timeout=30)
 auth.raise_for_status()
-if '/accounts/login/' in auth.url or 'sessionid' not in client.cookies:
+if '/accounts/login/' in auth.url or 'sessionid_prod' not in client.cookies:
     raise RuntimeError('Authenticated login did not complete')
 
 def request(method, path, **kwargs):
     response = client.request(method, BASE + path, headers={
-        'Referer': BASE + '/', 'X-CSRFToken': client.cookies.get('csrftoken', '')},
+        'Referer': BASE + '/', 'X-CSRFToken': client.cookies.get('csrftoken_prod', '')},
         timeout=60, **kwargs)
     if not response.ok:
         raise RuntimeError(f'{method} {path}: HTTP {response.status_code}: {response.text[:1000]}')
