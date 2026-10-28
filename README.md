@@ -86,6 +86,8 @@ Campaigns:
   record and its views.
 - [STORAGE.md](docs/STORAGE.md) — the placement record: production
   data on every RSE, its lifecycle per RSE, and the Storage view.
+- [MANITOBA_REPLICATION_TEST.md](docs/MANITOBA_REPLICATION_TEST.md) —
+  the bounded Manitoba-to-JLab trial, rule result and source-selection evidence.
 - [CONTINUOUS_PRODUCTION.md](docs/CONTINUOUS_PRODUCTION.md) — the ready
   queue, the dispatcher, and the tripwire.
 - [EPIC_JOB_THROTTLER.md](docs/EPIC_JOB_THROTTLER.md) — the queue-side
