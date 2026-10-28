@@ -656,6 +656,19 @@ if [[ -n "${TRIAL_OUTPUT_ROOT:-}" ]]; then
   echo "trial payload run: outputs under epic:/${TRIAL_OUTPUT_ROOT}/<level>, lifetime ${TRIAL_LIFETIME_S:-unset} s"
 fi
 
+# An Event Service unit (es/es_slot.py; it hands its RECO to the node
+# harness, EPICPROD_RECO_HANDOFF) makes no call of its own to PanDA or the
+# catalog with EPICPROD_SWITCH_ES_UNIT_LOCAL=1: the harness's close registers
+# the merged file under the close's name, so a unit's own name is never in the
+# catalog, and the job's log carries the units' logs. Without it each of a
+# node's 128 slots asked PanDA for a token and the catalog for its output at
+# every unit's start, and uploaded a log of its own (task 41479, 2026-10-28).
+ES_UNIT_LOCAL=0
+if [ -n "${EPICPROD_RECO_HANDOFF:-}" ] && [ "${EPICPROD_SWITCH_ES_UNIT_LOCAL:-0}" = "1" ]; then
+  ES_UNIT_LOCAL=1
+  COPYLOG=false
+fi
+
 # Before any work, ask the catalog of record about this job's output. A
 # retry of a job whose earlier attempt already delivered the RECO file has
 # nothing to do and exits success here, in seconds, instead of repeating
@@ -726,14 +739,20 @@ stash_output() {
   stage stash fail "xrdcp to ${STASH_DOOR}/${target} failed"
   return 1
 }
-rucio_auth
-OUTPUT_STATE=$(python $SCRIPT_DIR/check_output.py epic ${RECO_DID} "${EVENTS_PER_TASK:-}" || echo UNKNOWN)
 FULL_STATE=SKIPPED
-if [ "${COPYFULL:-false}" == "true" ] && [ "${USERUCIO:-false}" == "true" ]; then
-  FULL_STATE=$(python $SCRIPT_DIR/check_output.py epic ${FULL_DID} "${EVENTS_PER_TASK:-}" || echo UNKNOWN)
-  echo "FULL output ${FULL_DID}: ${FULL_STATE}"
+if [ "${ES_UNIT_LOCAL}" -eq 1 ]; then
+  OUTPUT_STATE=ES_UNIT
+else
+  rucio_auth
+  OUTPUT_STATE=$(python $SCRIPT_DIR/check_output.py epic ${RECO_DID} "${EVENTS_PER_TASK:-}" || echo UNKNOWN)
+  if [ "${COPYFULL:-false}" == "true" ] && [ "${USERUCIO:-false}" == "true" ]; then
+    FULL_STATE=$(python $SCRIPT_DIR/check_output.py epic ${FULL_DID} "${EVENTS_PER_TASK:-}" || echo UNKNOWN)
+    echo "FULL output ${FULL_DID}: ${FULL_STATE}"
+  fi
 fi
 case "${OUTPUT_STATE}" in
+  ES_UNIT)
+    echo "Event Service unit: no token and no catalog check; the harness's close registers the merged output." ;;
   AVAILABLE)
     if [ "${FULL_STATE}" == "SKIPPED" ] || [ "${FULL_STATE}" == "AVAILABLE" ]; then
       echo "Output ${RECO_DID} is registered with an available replica: delivered by an earlier attempt of this job; nothing to do."

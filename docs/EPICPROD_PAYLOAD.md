@@ -925,6 +925,14 @@ removes both:
   connection now kills the resident and marks it failed; the next request sets
   its descriptor aside and starts a new resident, at most three times a slot.
   A slot whose restarts are spent ends, and the harness gives it no more units.
+- A slot's first unit runs `run.sh`, which as an ordinary job signs in to
+  PanDA for a Rucio token, asks the catalog whether its output already exists
+  and uploads a log of its own. None of these concerns a unit: the close
+  registers the merged file under its own name, and the job's log carries the
+  units' logs. With `EPICPROD_SWITCH_ES_UNIT_LOCAL=1` a unit that hands its
+  RECO to the harness makes none of these calls; without it a node's 128 slots
+  made 128 token requests and 128 catalog queries together at the job's start
+  (task 41479, 2026-10-28).
 
 On Google, with the batch channel and the fast merge, the median turnaround is
 0.7 s and fourteen slots keep 93% of the job's core-time in units, 82% in saved
