@@ -1,0 +1,161 @@
+"""JEDI's DDM interface for ePIC: inputs that reside in whichever Rucio
+catalog holds them (docs/NERSC_PERLMUTTER.md, EVGEN input in production).
+
+The upstream interface (``AtlasDDMClient``) builds one Rucio client from the
+server's configuration, PanDA's own catalog, in every method. ePIC's inputs
+reside wherever their catalog says: today the EVGEN samples are catalogued
+by JLab's Rucio, under scope ``epic`` with path names (``/EVGEN/...``); no
+copy needs to be registered in PanDA's catalog for a task to run on them.
+This interface routes each DID the input-facing methods are given to the
+catalog that holds it, per the catalog map, and leaves everything else (the
+outputs, PanDA's own datasets) on the server's catalog as before.
+
+A file such a catalog lists without a GUID, as JLab's EVGEN files are, is
+given a stable one derived from its ``scope:name``: JEDI keys input files by
+GUID, and the same file must have the same GUID in every task.
+
+Registration, in ``panda_jedi.cfg`` ``[ddm]``::
+
+    modConfig = wlcg:1:swf_epicprod.jedi.EpicDDMClient:EpicDDMClient,epic:1:swf_epicprod.jedi.EpicDDMClient:EpicDDMClient
+
+The catalog map, ``EPIC_CATALOGS`` (default
+``/opt/panda/etc/panda/epic_catalogs.json``, readable by the JEDI account
+only, since it carries the catalogs' read credentials)::
+
+    {"catalogs": [{"name": "jlab", "scopes": ["epic"], "name_prefixes": ["/"],
+                   "client": {"rucio_host": ..., "auth_host": ..., "account": ...,
+                              "auth_type": "userpass", "creds": {...}, "vo": "def",
+                              "ca_cert": false}}]}
+"""
+import json
+import os
+import threading
+import uuid
+from contextlib import contextmanager
+
+from pandajedi.jediddm import AtlasDDMClient as upstream
+
+CONFIG = os.environ.get('EPIC_CATALOGS', '/opt/panda/etc/panda/epic_catalogs.json')
+_local = threading.local()
+_server_client = upstream.RucioClient
+_cache = {'mtime': None, 'catalogs': []}
+_lock = threading.Lock()
+
+
+def catalogs():
+    """The catalog map, reread when its file changes; empty without one."""
+    try:
+        mtime = os.path.getmtime(CONFIG)
+    except OSError:
+        return []
+    with _lock:
+        if _cache['mtime'] != mtime:
+            with open(CONFIG) as stream:
+                _cache['catalogs'] = json.load(stream).get('catalogs') or []
+            _cache['mtime'] = mtime
+        return _cache['catalogs']
+
+
+def split_did(did):
+    """``(scope, name)`` of ``scope:name``; a name may itself hold ':'-free
+    path components (``epic:/EVGEN/...``)."""
+    did = str(did or '').rstrip('/')
+    if ':' in did:
+        scope, name = did.split(':', 1)
+        return scope, name
+    return '', did
+
+
+def catalog_for(did):
+    """The catalog entry that holds ``did``, or None for the server's own."""
+    scope, name = split_did(did)
+    for entry in catalogs():
+        if scope in (entry.get('scopes') or []) and any(
+                name.startswith(p) for p in entry.get('name_prefixes') or ['']):
+            return entry
+    return None
+
+
+def stable_guid(scope, name):
+    """A GUID for a file its catalog lists without one, the same in every
+    task: 32 hex digits from the file's ``scope:name``."""
+    return uuid.uuid5(uuid.NAMESPACE_URL, f'rucio:{scope}:{name}').hex
+
+
+class CatalogClient:
+    """A Rucio client of one catalog, as the upstream methods use it; files
+    listed without a GUID are given their stable one."""
+
+    def __init__(self, entry):
+        self._client = _server_client(**entry['client'])
+
+    def __getattr__(self, attr):
+        return getattr(self._client, attr)
+
+    def list_files(self, scope, name, *args, **kwargs):
+        for f in self._client.list_files(scope, name, *args, **kwargs):
+            if not f.get('guid'):
+                f = dict(f, guid=stable_guid(f.get('scope') or scope, f['name']))
+            yield f
+
+
+def _client(*args, **kwargs):
+    """The upstream module's one client constructor: the routed catalog's
+    client inside ``routed``, the server's own everywhere else."""
+    entry = getattr(_local, 'catalog', None)
+    if entry is None:
+        return _server_client(*args, **kwargs)
+    return CatalogClient(entry)
+
+
+upstream.RucioClient = _client
+
+
+@contextmanager
+def routed(did):
+    previous = getattr(_local, 'catalog', None)
+    _local.catalog = catalog_for(did)
+    try:
+        yield _local.catalog
+    finally:
+        _local.catalog = previous
+
+
+class EpicDDMClient(upstream.AtlasDDMClient):
+    """The upstream interface with input-facing methods routed per DID."""
+
+    def getFilesInDataset(self, datasetName, *args, **kwargs):
+        with routed(datasetName):
+            return super().getFilesInDataset(datasetName, *args, **kwargs)
+
+    def getDatasetMetaData(self, datasetName, *args, **kwargs):
+        with routed(datasetName):
+            return super().getDatasetMetaData(datasetName, *args, **kwargs)
+
+    def listDatasets(self, datasetName, *args, **kwargs):
+        with routed(datasetName):
+            return super().listDatasets(datasetName, *args, **kwargs)
+
+    def listDatasetsInContainer(self, containerName, *args, **kwargs):
+        with routed(containerName):
+            return super().listDatasetsInContainer(containerName, *args, **kwargs)
+
+    def expandContainer(self, containerName, *args, **kwargs):
+        with routed(containerName):
+            return super().expandContainer(containerName, *args, **kwargs)
+
+    def listDatasetReplicas(self, datasetName, *args, **kwargs):
+        with routed(datasetName):
+            return super().listDatasetReplicas(datasetName, *args, **kwargs)
+
+    def listReplicasPerDataset(self, datasetName, *args, **kwargs):
+        with routed(datasetName):
+            return super().listReplicasPerDataset(datasetName, *args, **kwargs)
+
+    def getAvailableFiles(self, datasetSpec, *args, **kwargs):
+        with routed(datasetSpec.datasetName):
+            return super().getAvailableFiles(datasetSpec, *args, **kwargs)
+
+    def jedi_list_replicas_with_dataset(self, datasetName, *args, **kwargs):
+        with routed(datasetName):
+            return super().jedi_list_replicas_with_dataset(datasetName, *args, **kwargs)
