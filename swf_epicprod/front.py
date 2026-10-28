@@ -1087,6 +1087,8 @@ def feed_task(candidate_pk, created_by='front', site='', placement=None, kind='s
                               prodtask_rerun_residual_request,
                               prodtask_submit_request)
     task = ProdTask.objects.get(pk=candidate_pk)
+    if kind in ('submit', 'rerun_entire'):
+        _prepare_whole_node(task, site, created_by, placement)
     if kind == 'rerun_residual':
         prodtask_rerun_residual_request(task=task, site=site, placement=placement,
                                         changed_by=created_by)
@@ -1098,26 +1100,33 @@ def feed_task(candidate_pk, created_by='front', site='', placement=None, kind='s
         prodtask_place_unplaced(task=task, site=site, changed_by=created_by,
                                 placement=placement)
     else:
-        from .queues import whole_node
-        if whole_node(site):
-            # The task's input read from its catalog, staged at the site, and
-            # its Event Service shape set before the request (evgen_es.py);
-            # the request itself refuses a whole-node queue any task without
-            # one. While the site's copy is made the task is placed on the
-            # queue, so no other queue takes it, and held (InputStaging).
-            from .evgen_es import InputStaging, prepare
-            from .gke_pilots import settings as gke_settings
-            try:
-                prepare(task, gke_settings()['proxy'], site=site)
-            except InputStaging:
-                from pcs.commands import pinned_site
-                from pcs.services import prodtask_place
-                if pinned_site(task) != site:
-                    prodtask_place(task, site, changed_by=created_by, placement=placement)
-                raise
         prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE,
                                 site=site, placement=placement)
     return task
+
+
+def _prepare_whole_node(task, site, created_by, placement):
+    """For a task going to a whole-node queue, the queue it is fed to or the
+    one it is already placed on (a placed task's feed names no site): its
+    input read from its catalog, staged at the site, and its Event Service
+    shape set afresh before the request (evgen_es.py), for a submission and a
+    new attempt alike; the request refuses a whole-node queue any task
+    without one. While the site's copy is made the task is placed on the
+    queue, so no other queue takes it, and held (InputStaging)."""
+    from pcs.commands import pinned_site
+    from .queues import whole_node
+    target = site or pinned_site(task)
+    if not whole_node(target):
+        return
+    from .evgen_es import InputStaging, prepare
+    from .gke_pilots import settings as gke_settings
+    try:
+        prepare(task, gke_settings()['proxy'], site=target)
+    except InputStaging:
+        if pinned_site(task) != target:
+            from pcs.services import prodtask_place
+            prodtask_place(task, target, changed_by=created_by, placement=placement)
+        raise
 
 
 def _apply_feeds(outcomes, *, created_by):
