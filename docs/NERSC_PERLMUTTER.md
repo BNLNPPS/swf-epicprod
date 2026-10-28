@@ -217,8 +217,8 @@ back to another pilot.
 
 ### The batch pilot
 
-The runtime is `native-runtime-perlmutter-es-batch-cf2c580`, pilot archive
-`cb2b9bcee7d04c4e764060ed6a5c2f53b41977b8a820b8ff72f5190b4818bf5a`, built
+The runtime is `native-runtime-perlmutter-es-batch-50969f0`, pilot archive
+`03b435bb18508227d4c9f4b18b6d8f9cd35dae5d98a52a4c4886e7d993d22733`, built
 from the approved native archive `9532f30b` by
 `scripts/build-native-es-batch.py`, staged by `scripts/stage-native-runtime.py`
 from committed helpers and frozen assets, and published by
@@ -309,6 +309,12 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   is logged and its ranges left to the server; it no longer stops the ES
   process. The close-out recovers a node whose feed starves for any other
   reason (NODE_EVENT_DISPATCHER.md, Preemption).
+- **Inputs staged at the site.** An input already at the site at its catalog
+  size, in a directory the launcher names (`EPICPROD_SITE_INPUT_DIRS`, the CFS
+  staging on Perlmutter), is linked into the job's directory and marked
+  delivered before the transfer (`es_batch.link_site_staged`): the pilot asks
+  no catalog for a replica of it, so a job's input may reside wherever its
+  catalog says. Any other input goes to the ordinary transfer.
 - **The job's log.** The ES executor leaves the pilot process in the job's work
   directory, and the pilot's `create_log` wrote the archive there, then renamed
   the directory away before tar ran, so no log was made and the stage-out
