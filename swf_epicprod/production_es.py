@@ -122,6 +122,13 @@ def definition(settings):
     if 'input_files' in cfg and (not evgen or not isinstance(cfg['input_files'], list)
                                  or len(cfg['input_files']) != cfg['files']):
         raise ValueError('production ES input_files must name each of its EVGEN files')
+    if 'file_events' in cfg:
+        fe, k = cfg['file_events'], cfg.get('range_events', 1)
+        if (not isinstance(fe, dict) or list(fe) != list(cfg.get('input_files') or [])
+                or any(type(n) is not int or n <= 0 or n % k for n in fe.values())
+                or sum(fe.values()) != cfg['events'] or max(fe.values()) != cfg['events_per_file']):
+            raise ValueError('production ES file_events must give each input file its events, '
+                             'whole ranges summing to the task\'s events, the largest its events_per_file')
     if 'notice' in cfg and type(cfg['notice']) is not bool:
         raise ValueError('production ES notice must be a boolean')
     if 'preempt_at_s' in cfg and (type(cfg['preempt_at_s']) is not int or cfg['preempt_at_s'] <= 0):
@@ -257,7 +264,20 @@ def apply(spec, settings):
                 + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])
                 + ' $PILOT_EVENTRANGECHANNEL'
                 + ('' if evgen and not cfg.get('nersc_input') else ' --accessmode=direct'))
-    if evgen:
+    if evgen and cfg.get('file_events'):
+        # Each file at its own events, the last read only as far as the
+        # manifest, and the task at their sum: JEDI reads each file's count
+        # from the listing (useRealNumEvents), which the DDM interface gives
+        # the task's own counts (epicFileEvents; swf_epicprod/jedi/
+        # EpicDDMClient.py). One count for every file (nEventsPerInputFile)
+        # made JEDI drop a last file the total takes only part way.
+        # nEventsPerJob at the task's total: JEDI cuts a file's events into
+        # records of nEventsPerJob carried across files, so anything less than
+        # the total cuts a file after the first into a short extra job; one
+        # file a job comes from nFilesPerJob.
+        shape = dict(useRealNumEvents=True, epicFileEvents=dict(cfg['file_events']),
+                     nEventsPerJob=cfg['events'], nJobs=cfg['files'], nEvents=cfg['events'])
+    elif evgen:
         shape = dict(nEventsPerInputFile=cfg['events_per_file'], nEventsPerJob=cfg['events_per_file'],
                      nJobs=cfg['files'], nEvents=cfg['events'])
     else:
