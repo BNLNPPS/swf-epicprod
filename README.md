@@ -175,6 +175,8 @@ Submission and execution:
   the OSG pool: hosts, harvester, submit description, container
   layering, levers; which pilot a queue runs, and our own canary pilot
   directory in CVMFS with the procedure for publishing to it.
+- [HARVESTER_WORKER_STATE.md](docs/HARVESTER_WORKER_STATE.md) — worker-state
+  uncertainty, terminal-parent dispatch and the prepared safety patches.
 - [SCHEDCONFIG_OVERRIDES.md](docs/SCHEDCONFIG_OVERRIDES.md) — the PanDA
   server's queue records: CRIC's, with our tracked overrides on top.
 - [NATIVE_PILOT_CANARY.md](docs/NATIVE_PILOT_CANARY.md) — isolated tests
