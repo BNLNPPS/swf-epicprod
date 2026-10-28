@@ -826,3 +826,50 @@ async def pcs_prodtask_set_status(task_name: str, status: str) -> dict:
     return await sync_to_async(_prodtask_set_status_sync)(
         task_name=task_name, new_status=status,
     )
+
+
+def _prodtask_unplace_sync(task_name, reason, by):
+    from pcs.models import ProdTask
+    from pcs import services
+    from monitor_app.mcp.common import CALLER
+    qs = ProdTask.objects.select_related('dataset', 'prod_config')
+    try:
+        task = services.resolve_prodtask(task_name, queryset=qs)
+    except ProdTask.DoesNotExist:
+        return {'error': f'Task not found: {task_name}'}
+    # A tunnel caller is a person and is who unplaced it; a token caller
+    # names the session or person in ``by``.
+    who = CALLER.get() or str(by or '').strip()
+    if not who:
+        return {'error': 'by is required: the person or session unplacing the task'}
+    try:
+        return services.prodtask_unplace(task=task, changed_by=who, reason=reason)
+    except services.ServiceError as e:
+        return {'error': e.detail}
+
+
+@mcp.tool()
+@requires_authority
+async def pcs_prodtask_unplace(task_name: str, reason: str, by: str = '') -> dict:
+    """
+    Unplace a production task: return it to the pressure front, which places
+    it again by present conditions (the next queue below its low mark takes
+    it). A person's decision, made with a reason that is recorded.
+
+    Allowed only when the task is placed and none of its work has started:
+    not yet in PanDA (its placement is removed and it waits in the ready
+    pool), or in PanDA with no job started or ended (it is marked unplaced;
+    the queue that takes it gets its unstarted work by PanDA's soft
+    reassign, or keeps it where it is). A trial is never unplaced. Refused
+    otherwise, with the reason. See skill prodtask-placement and swf-epicprod
+    docs/CONTINUOUS_PRODUCTION.md, Unplace.
+
+    `task_name` accepts the composed tag-based name (preferred), the legacy
+    stored name, or a bare pk. `reason` is required. `by` names the person
+    or session acting (a tunnel caller is taken from the connection).
+
+    Returns: {task, previous_site, by, reason, in_panda, what} or {error}.
+    """
+    return await sync_to_async(_prodtask_unplace_sync)(
+        task_name=task_name, reason=reason, by=by,
+    )

@@ -625,6 +625,13 @@
         if (d.site && !d.site_in_production_set) head += ', <span class="text-danger">not a production queue</span>';
         head += '.';
         if (att) head += ` PanDA task ${htmlEscape(att.jedi_task_id)} is at <strong>${htmlEscape(att.site || 'unknown')}</strong>, ${htmlEscape(att.status || 'status unknown')}.`;
+        const mark = d.unplace && d.unplace.mark;
+        if (mark) {
+            head += `<div class="alert alert-warning py-1 px-2 mt-1 mb-0"><strong>Unplaced</strong> by ${htmlEscape(mark.by || 'unknown')}`
+                + ` at ${htmlEscape(mark.at ? new Date(mark.at).toLocaleString('en-US', {timeZone: 'America/New_York', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false}) + ' ET' : '')}: ${htmlEscape(mark.reason || '')}.`
+                + ` It stays at ${htmlEscape(mark.from || 'its queue')} until the pressure front gives it to a queue below its low mark;`
+                + ` its unstarted work then moves there.</div>`;
+        }
         const stall = att && att.stall && att.stall.state;
         if (stall) {
             head += `<div class="alert ${stall === 'stalled' ? 'alert-danger' : 'alert-warning'} py-1 px-2 mt-1 mb-0">`
@@ -683,6 +690,11 @@
                 actions += `<button type="button" class="btn btn-success btn-sm" id="pcs-site-move" disabled>Move remaining work here</button>`;
             }
             actions += `<button type="button" class="btn btn-primary btn-sm" id="pcs-site-place" disabled>Place future tasks here</button>`;
+            // Unplace: only when the task is placed and none of its work has started.
+            if (d.unplace && !d.unplace.problem) {
+                actions += `<button type="button" class="btn btn-outline-warning btn-sm" id="pcs-site-unplace"`
+                    + ` title="Return the task to the pressure front, which places it again by present conditions">Unplace</button>`;
+            }
             actions += `<span class="item-meta" id="pcs-site-hint"></span></div>`;
         } else {
             actions = `<div class="item-meta">Sign in to place or move this task.</div>`;
@@ -739,6 +751,29 @@
         if (left) left.queued = null;
         setListQueue(t, null);
         if (selectedItemId === t.id) showTaskDetail(t.id);
+    });
+    browseContent.addEventListener('click', async e => {
+        const btn = e.target.closest('#pcs-site-unplace');
+        if (!btn) return;
+        const t = allTasks.find(x => x.id === selectedItemId);
+        if (!t) return;
+        const reason = prompt(`Unplace "${taskComposedName(t)}"? The pressure front places it again on the next queue below its low mark.\n\nReason (recorded with the task):`);
+        if (reason === null) return;
+        if (!reason.trim()) { alert('Unplace needs a reason.'); return; }
+        btn.disabled = true;
+        const resp = await fetch(taskApiUrl(t, 'unplace/'), {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+            body: JSON.stringify({reason: reason.trim()}),
+        });
+        let body = {};
+        try { body = await resp.json(); } catch (_) {}
+        if (!resp.ok) {
+            alert(`Unplace failed: ${body.detail || body.error || resp.status}`);
+            btn.disabled = false;
+            return;
+        }
+        loadSiteControl(t);
     });
     browseContent.addEventListener('click', async e => {
         const btn = e.target.closest('#pcs-site-place, #pcs-site-move');

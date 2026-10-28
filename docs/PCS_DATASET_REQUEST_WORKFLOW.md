@@ -292,6 +292,7 @@ Write (intake / lifecycle):
 - `pcs_prodtask_intake(public_catalog_issue=…, public_catalog_csv_path=…, public_catalog_row_key=…, name=…, dataset=…, prod_config=…, description=…, input_dataset_did=…, public_catalog_*=…)` — idempotent on the catalogue key.
 - `pcs_prodtask_link_input(task_name, did=None, dids=None)`
 - `pcs_prodtask_set_status(task_name, status)`
+- `pcs_prodtask_unplace(task_name, reason, by='')` — return a placed task whose work has not started to the pressure front, which places it again by present conditions (CONTINUOUS_PRODUCTION.md, Unplace).
 
 Submission itself (`pcs-task-cmd <name> --submit`, which calls
 `pandaclient.Client.insertTaskParams()`) is **not** exposed via MCP.

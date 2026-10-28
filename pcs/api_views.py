@@ -925,6 +925,20 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
             return Response({'detail': e.detail}, status=e.status)
         return Response(record)
 
+    @action(detail=True, methods=['post'], url_path='unplace')
+    def unplace(self, request, name=None):
+        """Return the task to the pressure front's ready pool ({reason}),
+        to be placed again by present conditions: a placed task whose work
+        has not started (docs/CONTINUOUS_PRODUCTION.md, Unplace)."""
+        task = self.get_object()
+        try:
+            result = services.prodtask_unplace(
+                task=task, reason=request.data.get('reason') or '',
+                changed_by=getattr(request.user, 'username', '') or 'operator')
+        except ServiceError as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response(result)
+
     @action(detail=True, methods=['post'], url_path='move')
     def move(self, request, name=None):
         """Move the remaining work of the task's PanDA task to a

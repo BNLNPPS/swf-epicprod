@@ -422,22 +422,41 @@ yet in PanDA, and its Move re-places the unstarted work of one in PanDA
 
 **Reading and releasing a placement.** `pcs.services.prodtask_site_source(task)`
 says where a task's queue comes from: `trial`, `task` (the
-`panda_site` override placement wrote), `configuration` or `unplaced`.
-What releasing does depends on where the task stands:
-- Waiting in the ready buffer (`overrides['queued']` set, not yet in
-  PanDA): removing `panda_site` from `ProdTask.overrides` leaves it
-  unplaced, and the front places it on the recommendation when it feeds
-  it. No PCS operation does this yet: the Site control re-places, never
-  unplaces. Until one exists, the release is that one key removed from
-  the overrides in the deployed tree's Django shell
-  (`/opt/swf-monitor/current`), recorded with `log_epicprod_action`
-  as `prodtask_unplace`.
-- Already in PanDA (`panda_task_id` set, its jobs queued or running):
-  its jobs run where they were sent. The pin then governs only the
-  task's later submissions (the reruns). Work in flight stays where it
-  is: no Move and no job kills to change its queue (Torre, 26 October
-  2026). A Move (`prodtask_move_request`) is a task operation and needs
-  Torre's word.
+`panda_site` override placement wrote; an empty one sets aside the
+configuration's queue, and reads `unplaced`), `configuration` or
+`unplaced`. The Site control shows it, and the PanDA task's queue when
+there is one.
+
+**Unplace.** A placed task none of whose work has started is returned
+to the front, which places it again by present conditions (Torre
+Wenaus, 2026-10-28: "it should really be unplace; then the front
+operates on it again based on present conditions"). It is a person's
+decision, made with a reason that is recorded (`prodtask_unplace`,
+posted live): the Site control's **Unplace** button, shown only when the
+task can be unplaced, or the MCP tool `pcs_prodtask_unplace(task_name,
+reason, by)` for a request made in dialog (skill `prodtask-placement`).
+`pcs.services.unplace_blocker` says why a task cannot be unplaced: a
+trial runs where it was fired, to qualify that path; an unplaced task
+has nothing to unplace; a PanDA task in a status no move can take, or
+with any job started or ended, keeps its started work where it is.
+- Not yet in PanDA: the placement is removed (an empty `panda_site`
+  override where the configuration names a queue) and the task waits in
+  the ready pool for the next queue below its low mark.
+- In PanDA with no job started: the task is marked
+  `overrides['unplaced']` (who, when, why, the queue it was at) and joins
+  the ready pool, sized at its declared jobs. The queue that takes it
+  gets its unstarted work by PanDA's soft reassign
+  (`prodtask_place_unplaced`, then `prodtask_move_request`, source
+  `front_unplace`); when that is the queue it is at, it stays. Either
+  way the mark clears, recorded `prodtask_unplace_placed`. Until a queue
+  takes it, its jobs may still start where they are; then the mark
+  lapses at the next cycle, recorded the same way, and started work
+  stays.
+
+Work in flight stays where it is: no Move and no job kills to change
+its queue (Torre, 26 October 2026). A Move (`prodtask_move_request`) of
+a task whose work has started is a task operation and needs Torre's
+word.
 
 Seen on 26 October: two p1089 tasks were pinned to GREX through the
 compose page's preselection and were in PanDA by the time anyone looked

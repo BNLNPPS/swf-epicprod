@@ -7045,11 +7045,167 @@ def prodtask_site_source(task, cfg=None):
     ds = task.dataset
     if ((ds.metadata if ds is not None else None) or {}).get('trial_site'):
         return 'trial'
-    if (task.overrides or {}).get('panda_site'):
-        return 'task'
+    overrides = task.overrides or {}
+    if 'panda_site' in overrides:
+        # An empty override is an Unplace of the configuration's queue.
+        return 'task' if overrides['panda_site'] else 'unplaced'
     if (cfg or task.get_effective_config()).get('panda_site'):
         return 'configuration'
     return 'unplaced'
+
+
+# Jobs that have a pilot or are past one: work has started.
+STARTED_JOB_STATUSES = ('sent', 'starting', 'running', 'holding', 'transferring', 'merging')
+
+
+def _started_jobs(jedi_task_id):
+    """The PanDA task's jobs that have started or ended (finished or
+    failed), active and archived. None when unreadable."""
+    from monitor_app.panda.constants import PANDA_SCHEMA
+    sql = (f'SELECT COUNT(*) FROM "{PANDA_SCHEMA}"."jobsactive4" '
+           'WHERE "jeditaskid" = %s AND "jobstatus" = ANY(%s) UNION ALL '
+           f'SELECT COUNT(*) FROM "{PANDA_SCHEMA}"."jobsarchived4" '
+           "WHERE \"jeditaskid\" = %s AND \"jobstatus\" IN ('finished', 'failed')")
+    try:
+        with connections['panda'].cursor() as cur:
+            cur.execute(sql, [jedi_task_id, list(STARTED_JOB_STATUSES), jedi_task_id])
+            return sum(int(n or 0) for (n,) in cur.fetchall())
+    except Exception:  # noqa: BLE001
+        _log.exception('started jobs of PanDA task %s unreadable', jedi_task_id)
+        return None
+
+
+def unplace_blocker(task, cfg=None, *, in_pool=False):
+    """Why the task cannot be unplaced now, as ``(code, text)``, or
+    ``('', '')`` (CONTINUOUS_PRODUCTION.md, Unplace). A task is unplaced
+    when it is placed and no work of it has started: not yet in PanDA, or
+    in PanDA with no job started or ended. A trial runs where it was
+    fired, to qualify that path. ``in_pool`` asks whether an unplaced task
+    in PanDA may still be placed again. Codes: trial, already, not_placed,
+    status, unread, started; LAPSING_BLOCKERS end an unplace."""
+    from monitor_app.panda.queries import _get_task_record
+    cfg = cfg or task.get_effective_config()
+    if prodtask_site_source(task, cfg) == 'trial':
+        return 'trial', 'a trial runs at the queue it was fired at, to qualify that path'
+    if not in_pool and (task.overrides or {}).get('unplaced'):
+        return 'already', ('already unplaced: the pressure front places it on the next '
+                           'queue below its low mark')
+    if not task.panda_task_id:
+        if prodtask_site_source(task, cfg) == 'unplaced':
+            return 'not_placed', ('not placed: the pressure front places it when a queue '
+                                  'below its low mark takes it')
+        return '', ''
+    live = _get_task_record(int(task.panda_task_id)) or {}
+    status = str(live.get('status') or '')
+    if not status:
+        return 'unread', f'PanDA task {task.panda_task_id} could not be read'
+    if status not in _movable_statuses():
+        return 'status', (f'PanDA task {task.panda_task_id} is {status}; only a task '
+                          'whose work a move can take is unplaced')
+    started = _started_jobs(int(task.panda_task_id))
+    if started is None:
+        return 'unread', f'the jobs of PanDA task {task.panda_task_id} could not be read'
+    if started:
+        return 'started', (f'{started} of its jobs have started or ended; '
+                           'started work stays where it is')
+    return '', ''
+
+
+# The blockers after which an unplace no longer applies (the mark clears).
+LAPSING_BLOCKERS = ('trial', 'status', 'started')
+
+
+def prodtask_unplace_problem(task, cfg=None, *, in_pool=False):
+    """``unplace_blocker``'s text: '' when the task can be unplaced."""
+    return unplace_blocker(task, cfg, in_pool=in_pool)[1]
+
+
+def prodtask_unplace(*, task, changed_by='', reason=''):
+    """Return a placed task whose work has not started to the pressure
+    front, which places it again by present conditions (Torre Wenaus,
+    2026-10-28): a person's decision, with a reason. A task not yet in
+    PanDA loses its placement and waits in the ready pool. A task in PanDA
+    is marked ``overrides['unplaced']`` and joins the pool; the queue that
+    takes it gets its unstarted work by PanDA's soft reassign, or keeps it
+    where it is (``prodtask_place_unplaced``). One ``prodtask_unplace``
+    event, posted live."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from monitor_app.panda.queries import _get_task_record
+    from .commands import pinned_site
+    reason = str(reason or '').strip()
+    if not reason:
+        raise ServiceError('Unplace needs a reason; it is recorded with the task.', status=400)
+    cfg = task.get_effective_config()
+    problem = prodtask_unplace_problem(task, cfg)
+    if problem:
+        raise ServiceError(f'Cannot unplace {task.name}: {problem}.', status=409)
+    before = pinned_site(task, cfg=cfg)
+    by = changed_by or 'operator'
+    overrides = dict(task.overrides or {})
+    if task.panda_task_id:
+        live = _get_task_record(int(task.panda_task_id)) or {}
+        before = str(live.get('site') or before)
+        overrides['unplaced'] = {'by': by, 'at': _timezone.now().isoformat(),
+                                 'reason': reason, 'from': before,
+                                 'jedi_task_id': int(task.panda_task_id)}
+        what = (f'PanDA task {task.panda_task_id} stays at {before} until a queue below its '
+                'low mark takes it; its unstarted work then moves there')
+    else:
+        overrides.pop('panda_site', None)
+        task.overrides = overrides
+        if task.get_effective_config().get('panda_site'):
+            overrides['panda_site'] = ''      # the configuration's queue, set aside
+        what = 'it waits in the ready pool for the next queue below its low mark'
+    task.overrides = overrides
+    task.save(update_fields=['overrides', 'updated_at'])
+    log_epicprod_action(
+        'pcs', 'prodtask_unplace', outcome='ok', username=by,
+        subject_type='campaign_task', subject_key=task.name,
+        sublevel='high', live_default=True,
+        message=f'{task.name} unplaced from {before or "no queue"} by {by}: {reason}; {what}',
+        previous_site=before, reason=reason, in_panda=bool(task.panda_task_id))
+    return {'task': task.name, 'previous_site': before, 'by': by, 'reason': reason,
+            'in_panda': bool(task.panda_task_id), 'what': what}
+
+
+def prodtask_place_unplaced(*, task, site, changed_by='front', placement=None):
+    """The pressure front's placement of an unplaced task already in
+    PanDA on the queue that took it: its unstarted work moves there by
+    PanDA's soft reassign (``prodtask_move_request``), or stays where it is
+    when that is the queue; the mark clears either way. Refuses when its
+    work has started meanwhile (the mark then clears: started work stays)."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from monitor_app.panda.queries import _get_task_record
+    mark = (task.overrides or {}).get('unplaced')
+    if not mark:
+        raise ServiceError(f'{task.name} is not unplaced.', status=409)
+    code, problem = unplace_blocker(task, in_pool=True)
+    if code and code not in LAPSING_BLOCKERS:
+        raise ServiceError(f'{task.name} was not placed again this cycle: {problem}.', status=503)
+    live = _get_task_record(int(task.panda_task_id)) or {}
+    at = str(live.get('site') or '')
+    moved = False
+    if not problem and at != site:
+        prodtask_move_request(task=task, site=site, changed_by=changed_by,
+                              placement=placement, source='front_unplace')
+        moved = True
+    task.refresh_from_db()
+    overrides = dict(task.overrides or {})
+    overrides.pop('unplaced', None)
+    task.overrides = overrides
+    task.save(update_fields=['overrides', 'updated_at'])
+    message = (f'{task.name}: unplaced {mark.get("at", "")[:16]} by {mark.get("by")}; '
+               + (f'not placed again: {problem}' if problem else
+                  f'its unstarted work moves from {at} to {site}' if moved else
+                  f'{site} took it and it stays there'))
+    log_epicprod_action(
+        'pcs', 'prodtask_unplace_placed', outcome='refused' if problem else 'ok',
+        username=changed_by, subject_type='campaign_task', subject_key=task.name,
+        sublevel='high', live_default=True, message=message,
+        site=site, previous_site=at, moved=moved, problem=problem, unplace=mark)
+    if problem:
+        raise ServiceError(f'{task.name} was not placed again: {problem}.', status=409)
+    return {'task': task.name, 'site': site, 'moved': moved}
 
 
 def _declared_rows(task, cfg):
@@ -7124,6 +7280,10 @@ def prodtask_site_options(task):
         'rows': result['rows'],
         'state_stored_at': built_at.isoformat() if built_at else None,
         'attempt': attempt,
+        # Unplace (CONTINUOUS_PRODUCTION.md): why it cannot be done now, or
+        # '' when the button shows; the standing mark of a task in PanDA.
+        'unplace': {'problem': prodtask_unplace_problem(task, cfg),
+                    'mark': (task.overrides or {}).get('unplaced')},
     }
 
 

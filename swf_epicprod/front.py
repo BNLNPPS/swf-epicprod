@@ -389,22 +389,41 @@ def ready_backlog():
     from django.db.models import Q
     by_queue = {}
     full = _safe('reading output storage', full_output_rses, {})
-    # The ready tasks, and every task a person queued for the front
-    # (``overrides['queued']``: a submit or a rerun), whatever its status.
-    tasks = (ProdTask.objects.filter(Q(status='ready') | Q(overrides__has_key='queued'))
+    # The ready tasks, every task a person queued for the front
+    # (``overrides['queued']``: a submit or a rerun), whatever its status,
+    # and every task a person unplaced in PanDA (``overrides['unplaced']``).
+    tasks = (ProdTask.objects.filter(Q(status='ready') | Q(overrides__has_key='queued')
+                                     | Q(overrides__has_key='unplaced'))
              .select_related('dataset', 'request', 'prod_config', 'campaign')
              .order_by('created_at'))
     for task in tasks:
         queued = (task.overrides or {}).get('queued') or None
+        unplaced = (task.overrides or {}).get('unplaced') or None
         entry = {'task': task.composed_name, 'pk': task.pk, 'level': None,
                  'level_source': 'none', 'rows': None, 'problems': [],
-                 'created_at': (queued or {}).get('at') or task.created_at.isoformat(),
-                 'kind': (queued or {}).get('kind') or 'submit',
+                 'created_at': ((unplaced or queued or {}).get('at')
+                                or task.created_at.isoformat()),
+                 'kind': ('unplaced_move' if unplaced else
+                          (queued or {}).get('kind') or 'submit'),
                  # Queued by a person: fed even where the feed switch is off.
-                 'hand': bool(queued and queued.get('by'))}
+                 'hand': bool(queued and queued.get('by')) and not unplaced}
         queue = 'unknown'
         try:
             cfg = task.get_effective_config()
+            if unplaced:
+                # In PanDA and unplaced: in the pool until a queue takes it
+                # (CONTINUOUS_PRODUCTION.md, Unplace).
+                from pcs.services import unplace_blocker
+                queue = UNPLACED
+                entry['level'], entry['level_source'] = prodtask_priority_level(task)
+                code, problem = unplace_blocker(task, cfg, in_pool=True)
+                entry['problems'] = [problem] if problem else []
+                entry['unplace_lapsed'] = code in UNPLACE_LAPSING
+                entry['unplaced'] = unplaced
+                entry['rows'] = task_rows(task, cfg)
+                entry['need'] = task_need(cfg, rows=entry['rows'])
+                by_queue.setdefault(queue, []).append(entry)
+                continue
             queue = pinned_site(task, cfg=cfg) or UNPLACED
             entry['level'], entry['level_source'] = prodtask_priority_level(task)
             entry['problems'] = list(prodtask_readiness_problems(task))
@@ -437,6 +456,30 @@ def ready_backlog():
 
 
 UNPLACED = 'unplaced'
+# pcs.services.LAPSING_BLOCKERS: an unplaced task whose work started
+# (or that no move can take) is no longer the front's to place.
+UNPLACE_LAPSING = ('trial', 'status', 'started')
+
+
+def lapse_unplaced(pool, *, created_by, dry_run):
+    """Clear the mark of each unplaced task in ``pool`` whose unplace no
+    longer applies (its work started where it is, or no move can take
+    it), recorded; returns the pool without them."""
+    from pcs.models import ProdTask
+    from pcs.services import ServiceError, prodtask_place_unplaced
+    kept = []
+    for entry in pool:
+        if not entry.get('unplace_lapsed'):
+            kept.append(entry)
+            continue
+        if dry_run:
+            continue
+        try:
+            prodtask_place_unplaced(task=ProdTask.objects.get(pk=entry['pk']), site='',
+                                    changed_by=created_by)
+        except ServiceError:
+            pass        # refused as expected: the mark is cleared and recorded
+    return kept
 
 
 def _stored_decisions():
@@ -1012,6 +1055,10 @@ def feed_task(candidate_pk, created_by='front', site='', placement=None, kind='s
     elif kind == 'rerun_entire':
         prodtask_rerun_entire_task_request(task=task, site=site, placement=placement,
                                            changed_by=created_by)
+    elif kind == 'unplaced_move':
+        from pcs.services import prodtask_place_unplaced
+        prodtask_place_unplaced(task=task, site=site, changed_by=created_by,
+                                placement=placement)
     else:
         prodtask_submit_request(task=task, changed_by=created_by, source=FEED_SOURCE,
                                 site=site, placement=placement)
@@ -1160,6 +1207,8 @@ def run_cycle(*, dry_run=False, created_by='front'):
                 and ((census or {}).get('queues', {}).get(q) or {})
                 .get('hours_at_capacity') is not None]
     pool = backlog.pop(UNPLACED, [])
+    pool = _safe('lapsed unplace marks', lambda: lapse_unplaced(
+        pool, created_by=created_by, dry_run=dry_run), lambda exc: pool)
     stored = _safe('stored decisions', _stored_decisions, lambda exc: {})
     draw_state = {'queues': {q: dict(stored.get(q) or {},
                                      feed_switch=bool(settings_by_queue[q].get('feed')))
