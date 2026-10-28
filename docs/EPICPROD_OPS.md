@@ -168,6 +168,31 @@ PanDA-task-name match against PCS task identities. If exactly one PCS task
 matches, it records the association dynamically. Ambiguous or missing matches are
 left unlinked; no fuzzy match changes task state.
 
+### Quiet end
+
+A commissioning test or a stopped task is ended without a trace in the
+production record (Torre, 2026-10-27): no job is touched, and the task leaves
+the production views. `tools/quiet_end.py <task id>... --reason TEXT --apply`,
+run in the deployed monitor's environment, refuses a task with no PCS task, one
+already ended, or one with an active or defined job; a running Event Service
+job ends quietly by the close-out instead (`tools/es_force_finish.py`), which
+credits what it saved and finishes it. For each accepted task it records the
+intent on the PCS task, `ProdTask.overrides['quiet_end'] = {by, at, reason}`.
+It then sends PanDA's soft finish, which kills nothing, only when JEDI will end
+the task `finished`: at least one input file finished and no fail-on-goal split
+rule (`FG`). JEDI's post-processing ends a task with no finished input file
+`failed` ("failed since no file was successfully processed"); so it ended the
+first six quietly ended tasks, 41203, 41215, 41218, 41226, 41229 and 41316, on
+2026-10-27, each an Event Service task whose one or two input files had not
+finished. Such a task now keeps its PanDA state, paused, and carries the marker
+alone. It is recorded as a `quiet_end` action, off the live screen.
+
+`swf_epicprod.quiet_end.quiet_task_ids()` is the one test the production
+readers apply: the dashboard's Paused and Completed tasks (swf-monitor
+`comp_snapshot`), the daily assessment's window figures and campaign health
+(`analytics/members.py`) and Prod tasks in flight leave such a task out. An
+abort is never used for this: it counts as a failed task in the assessment.
+
 ## TLS / CA — pip and Rucio from this host
 
 BNL internal services (`*.sdcc.bnl.gov`: PanDA, swf-monitor, Rucio) use a

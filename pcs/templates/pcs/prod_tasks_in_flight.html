@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block title %}Prod tasks in flight{% if site %}: {{ site }}{% endif %} - PCS{% endblock %}
+
+{% block content %}
+<style>
+/* Prod tasks in flight: the filters flow along the line, compact. */
+#pcs-tlf-bar[data-hide-empty] .pcs-tlf-bar-row:not(:first-child) {
+  display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: .35em; margin-right: 1.6em;
+}
+#pcs-tlf-bar[data-hide-empty] .pcs-tlf-bar-row[hidden],
+#pcs-tlf-bar[data-hide-empty] [data-toggle][hidden] { display: none !important; }
+</style>
+{# The production tasks sent to each allocation that have not ended, paused   #}
+{# ones included, as their newest PanDA attempt shows them, for physicists     #}
+{# (docs/EPICPROD_TASK_CATALOG.md).                                            #}
+<h2 class="mb-1" title="Production tasks sent to an allocation that have not ended, paused ones included">Prod tasks in flight{% if site %}: {{ site }}{% endif %}</h2>
+<div class="mb-2" style="font-size:1.1rem">
+  <a href="{% url 'pcs:prod_tasks_in_flight' %}"{% if not site %} class="fw-bold"{% endif %}>All {{ total }}</a>
+  {% for g in groups %}&middot; <a href="{% url 'pcs:prod_tasks_in_flight' %}?site={{ g.name|urlencode }}"{% if g.name == site %} class="fw-bold"{% endif %}>{{ g.name }} {{ g.count }}</a>{% if g.paused %} ({{ g.paused }} paused){% endif %}
+  {% endfor %}
+  {% if unassociated %}&middot; no PCS task yet: {% for jedi_id in unassociated %}<a href="{% url 'monitor_app:panda_task_detail' jedi_id %}">{{ jedi_id }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}
+</div>
+{{ task_list_html|safe }}
+{% endblock %}

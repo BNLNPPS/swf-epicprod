@@ -197,6 +197,16 @@ back to another pilot.
   machine's running and pending jobs and partition state (swf-monitor
   `docs/POOL_REPORTER.md`). The node-exclusion check runs before pilot
   startup.
+- **Staggered starts.** Nodes granted together would start their payloads
+  together and load the storage doors in step, whichever path submitted them
+  (the feeder, a trial, a test). Before the pilot starts, each node takes the
+  next start slot, at least 300 s (`START_GAP_S`) after the previous node's,
+  from a record on the community file system under a mkdir lock, and waits for
+  it; a node alone starts at once. The record is public at
+  `https://portal.nersc.gov/cfs/m3763/panda/start-slots/last`, and each launch
+  record states the slot it took. A record that cannot be used is stated and
+  the node starts at once: the stagger relieves pressure and never stops a
+  launch.
 - **Admission.** Image admission reads the same public launcher URL through
   the cached product `perlmutter_pilot_runtime` (five-minute refresh,
   fifteen-minute maximum evidence age) and derives the exact image and pinned
@@ -207,8 +217,8 @@ back to another pilot.
 
 ### The batch pilot
 
-The runtime is `native-runtime-perlmutter-es-batch-6c11d8e`, pilot archive
-`0c1e70596a5ed1317d109435bbc22ede9d0430cb9c228945d99f6f3d6f0d6a68`, built
+The runtime is `native-runtime-perlmutter-es-batch-cf2c580`, pilot archive
+`cb2b9bcee7d04c4e764060ed6a5c2f53b41977b8a820b8ff72f5190b4818bf5a`, built
 from the approved native archive `9532f30b` by
 `scripts/build-native-es-batch.py`, staged by `scripts/stage-native-runtime.py`
 from committed helpers and frozen assets, and published by
@@ -241,11 +251,28 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   (task 41299) alternated between about 400 events a second and 5- to
   15-minute windows of about 50, with acquisitions 4 s apart fed and 50 to 60 s
   apart starved, about 215 a second overall. The launcher sets
-  `EPICPROD_ES_PREFETCH_RANGES=200000`: the ES process fills a cache of ranges
-  at its start, and a thread of its own refills it straight from the server,
-  10,000 an acquisition, whenever fewer than half are held, about seven minutes
-  of a fed node; the payload is answered from the cache, and "No more events"
-  only when the server has none left. With `EPICPROD_ES_REPORT_AT_ONCE=1` the
+  `EPICPROD_ES_PREFETCH_EVENTS=200000`: the ES process fills a cache of ranges
+  holding 200,000 events at its start, and a thread of its own refills it
+  straight from the server, up to 10,000 ranges an acquisition, whenever they
+  hold fewer than half of that, about seven minutes of a fed node. The size is
+  in events, so ten-event ranges do not make it 2M events (es_batch 18e2802); the payload is answered from the cache, and "No more events"
+  only when the server has none left.
+- **PanDA restarts.** PanDA marks an acquisition's ranges sent to the job,
+  committed, before it answers, and it restarts every night with its log
+  rotation and at every upgrade, ending the requests in flight. A restart at
+  12:17:32 ET on 27 October cut the answer to job 6252252's acquisition of
+  events 90,002 to 100,001 (7,956 of about 2.2 MB sent); the ranges stayed sent
+  to the job and unknown to its pilot until the job ended, and job 6254762 ran
+  them. PanDA's record of the job's ranges is the state the pilot keeps to:
+  after a failed acquisition the prefetch waits a minute, reads the job's
+  ranges back (`get_event_range_statuses`), and takes every range sent to the
+  job that it never received, rebuilt from its first event and the range size;
+  production ES tasks therefore have events divisible by `range_events`. It
+  answers "No more events" only after that reconciliation. Range reports are
+  re-sent until the server takes them, so a restart costs an ES job a retry, as
+  it costs an ordinary job.
+- **Reports at once.** With
+  `EPICPROD_ES_REPORT_AT_ONCE=1` the
   executor's pass, every five seconds, sends the queued unit reports straight
   to the server, 2,000 ranges a call, so a close is credited as it stands and
   the periodic receipt archive goes unused. Ranges a job holds when it ends are
@@ -266,6 +293,31 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   on a stop the executor stops that manager first, so a stopping pilot's last
   reports were aborted and marked failed. The server takes a range update
   without a zip record, and fine-grained credit counts finished ranges.
+- **Failed units.** The harness reported a failed unit with one message a
+  range, and the pilot sent each to the server in a call of its own, a second
+  or more, inside the loop that answers the payload's range requests. In job
+  6254767 (task 41445, 27 October) one slot whose resident simulation had died
+  failed 961 units of 500 one-event ranges, one after another, in no time each
+  (EPICPROD_PAYLOAD.md, Resident Event Service units); the job's range requests
+  waited behind their 480,000 messages, sent on at about 40 a minute, with its
+  128 slots idle and the pilot's range cache full. The batch pilot now queues
+  failed ranges for the executor's pass, which sends them in bulk, 2,000 a
+  call, and tells the payload through `EPICPROD_SWITCH_ES_FAILED_UNIT` that it
+  takes a failed unit as one message (payload 0.25.32). A failed report is
+  bookkeeping only: the server releases a failed range to the next job with
+  the job's other unfinished ranges. A payload message the pilot cannot handle
+  is logged and its ranges left to the server; it no longer stops the ES
+  process. The close-out recovers a node whose feed starves for any other
+  reason (NODE_EVENT_DISPATCHER.md, Preemption).
+- **The job's log.** The ES executor leaves the pilot process in the job's work
+  directory, and the pilot's `create_log` wrote the archive there, then renamed
+  the directory away before tar ran, so no log was made and the stage-out
+  failed with error 1165 (job 6258483; the reason ES tasks had no log dataset
+  from September). The batch build puts the archive in the pilot's home, beside
+  the renamed directory, and lets tar's exit status decide.
+  Log test 41454 (job 6268857, runtime bd83375) staged a 5.3 MB log; the
+  Perlmutter feeder's tasks stage theirs from 27 October (`job_log` in the
+  production ES definition, which needs the batch channel).
 
 ## Event Service jobs on Perlmutter
 
@@ -375,10 +427,15 @@ that stood.
 
 `swf_epicprod.perlmutter_production` runs at the end of each five-minute ES
 close-out cycle. With `perlmutter_production.enabled=true` it adds a task only
-when the queue has no job and no other live task, so the queue never holds two
-nodes; a paused task does not hold it. Each task is 6,000,000 fresh 5 GeV
+when none of its own samples has a job or a live task on the queue, so
+production holds one node; a paused task does not hold it. Tests and any other
+tasks on the queue run beside production on nodes of their own and hold
+nothing: the five-node target is soft, not a limit. Each task is 3,000,000 fresh 5 GeV
 neutron-gun events at 3–50 degrees in one job, in the shape above with
-500-event units and 120-second closes, four at a time. On Perlmutter a
+500-event units and 120-second closes, four at a time, and from 27 October
+ranges of ten events (`range_events`, JEDI's `nEventsPerFineGrainedRange`;
+test task 41444 was credited 32,000 events in 3,200 such ranges), a tenth of
+the range rows, server reports and job-insertion time of single-event ranges. On Perlmutter a
 neutron simulates in 0.289 s with reconstruction running beside it (job
 6074509, 6,337 units) and reconstructs in about 0.1 s (job 6071469), so a fed
 node keeps about 45 reconstruction members busy: 48 shared members from 26
@@ -388,6 +445,18 @@ close's merge and registration carry (about 35 MB/s, task 41262), hence the
 concurrent closes (`ES_CLOSE_CONCURRENCY`). One fed node makes about 1.6
 million events and 250 GB of RECO an hour. A task that one job does not
 finish continues in the next job on its remaining ranges.
+
+The task size is bounded by job insertion. Inserting a job writes one
+`JEDI_Events` row for every unprocessed event, in one transaction, and a
+retry first cancels the rows of the job before; JEDI allows `storeJobs` 600
+seconds, fixed in code (`pandajedi/jedicore/Interaction.py`). A first job of
+6,000,000 events took 563 to 596 s (tasks 41287, 41299, 41316); retries took
+464 s for 2,984,763 remaining events and 233 s for 82,747. The retries of
+41287 (10,212 events credited) and 41316 (5,750,520 remaining) never fit: each attempt
+timed out, was rolled back and was repeated ten minutes later, without
+end, and the queue stood empty behind the live task. Tasks are therefore
+3,000,000 events: about 300 s for a first job and at most about 400 s for a
+retry, and a job that a fed node runs dry ends after about two hours.
 
 PCS sample identities `pOP000001` onward share the seed ledger of Google's
 feeder (GKE_PILOT_FLOW.md): every seed is disjoint from the source production

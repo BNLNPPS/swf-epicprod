@@ -10,9 +10,9 @@ PQ=${1:?panda queue}
 ACCESS_POINT=${2:?harvester access point}
 HARVESTER_DIR=/global/common/software/m3763/panda-harvester
 QUEUE_URL=https://raw.githubusercontent.com/BNLNPPS/swf-epicprod/main/perlmutter/$PQ
-RUNTIME_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/native-runtime-perlmutter-es-batch-6c11d8e.tar.gz
-RUNTIME_SHA256=7ddda69fe77591152475fdd19e2169bfcbd4d7f916b12add3fc1ad50af768683
-PILOT_SHA256=0c1e70596a5ed1317d109435bbc22ede9d0430cb9c228945d99f6f3d6f0d6a68
+RUNTIME_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/native-runtime-perlmutter-es-batch-cf2c580.tar.gz
+RUNTIME_SHA256=f43c0a2abea2559351d3a62e97dd3424f237bedca3d60aa87551e71da519343a
+PILOT_SHA256=cb2b9bcee7d04c4e764060ed6a5c2f53b41977b8a820b8ff72f5190b4818bf5a
 ES_CHANNEL_URL=https://epic-devcloud-stageout.s3.us-east-1.amazonaws.com/pilot/es-channel-py313-debian13.tar.gz
 ES_CHANNEL_SHA256=0993145fb66b52fc759fafe01bd5cef80ead0f3fb47d721feae6aa2a61a0d0ae
 IMAGE=/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable
@@ -221,10 +221,11 @@ export EPICPROD_ES_CHANNEL=$WORKDIR/es-channel
 export PILOT_ES_EXECUTOR_TYPE=generic
 export EPICPROD_SWITCH_ES_BATCH_CHANNEL=1
 export EPICPROD_ES_STAGEOUT_GAP=300
-# The job's ranges held on the node from its start, refilled straight from
-# the server below half (about seven minutes of a fed node at 200,000), and
-# each close credited as it stands, not at the stage-out gap (es_batch.py).
-export EPICPROD_ES_PREFETCH_RANGES=200000
+# The job's ranges held on the node from its start, 200,000 events of them,
+# refilled straight from the server below half (about seven minutes of a fed
+# node), and each close credited as it stands, not at the stage-out gap
+# (es_batch.py). The size is in events whatever the range size.
+export EPICPROD_ES_PREFETCH_EVENTS=200000
 export EPICPROD_ES_REPORT_AT_ONCE=1
 export STORAGEDATA_SERVER_URL=file://$WORKDIR/ddmendpoints.json
 export EPICPROD_POOL_SAMPLE=$POOL_SAMPLE
@@ -236,6 +237,53 @@ export MACHINEFEATURES=$WORKDIR/sitefeatures
 mkdir -p "$MACHINEFEATURES"
 printf '%s\n' "$DEADLINE_AT" > "$MACHINEFEATURES/shutdowntime"
 export EPICPROD_MIN_TIME_FOR_NEW_JOB=600
+
+# OURS: staggered starts (docs/NERSC_PERLMUTTER.md, The launcher and the
+# native pilot). Nodes granted together would start their payloads together
+# and load the storage doors in step. Each node takes the next start slot, at
+# least START_GAP_S after the previous node's, from a record on the community
+# file system that every worker of the account shares; a mkdir lock makes the
+# read and the write one step. A node alone starts at once. The record is
+# public beside the launch records:
+#   https://portal.nersc.gov/cfs/m3763/panda/start-slots/last
+# A record that cannot be used is said and the node starts at once: the
+# stagger relieves pressure and never stops a launch.
+START_SLOTS=/global/cfs/cdirs/m3763/www/panda/start-slots
+START_GAP_S=300
+claim_start_slot() {
+    local lock=$START_SLOTS/lock last now slot t0
+    umask 022
+    mkdir -p "$START_SLOTS" 2>/dev/null || return 1
+    t0=$(date +%s)
+    until mkdir "$lock" 2>/dev/null; do
+        # A holder keeps the lock for milliseconds; one a minute old belongs
+        # to a node that died holding it.
+        (( $(date +%s) - $(stat -c %Y "$lock" 2>/dev/null || date +%s) > 60 )) && rmdir "$lock" 2>/dev/null
+        (( $(date +%s) - t0 > 120 )) && return 1
+        sleep 1
+    done
+    last=$(cat "$START_SLOTS/last" 2>/dev/null)
+    [[ $last =~ ^[0-9]+$ ]] || last=0
+    now=$(date +%s)
+    slot=$(( last + START_GAP_S > now ? last + START_GAP_S : now ))
+    if ! { echo "$slot" > "$START_SLOTS/last.$$" && mv -f "$START_SLOTS/last.$$" "$START_SLOTS/last"; }; then
+        rm -f "$START_SLOTS/last.$$"; rmdir "$lock"; return 1
+    fi
+    rmdir "$lock"
+    echo "$slot"
+}
+if START_SLOT=$(claim_start_slot); then
+    START_WAIT=$(( START_SLOT - $(date +%s) ))
+    if (( START_WAIT > 0 )); then
+        log "start slot $(date -u -d "@$START_SLOT" +%H:%M:%SZ): waiting ${START_WAIT}s, ${START_GAP_S}s after the previous node's start"
+        sleep "$START_WAIT"
+    else
+        log "start slot now: no node started in the last ${START_GAP_S}s"
+    fi
+else
+    log "start slot record $START_SLOTS unusable; starting without a stagger"
+fi
+
 SECONDS_LEFT=$(( DEADLINE_AT - $(date +%s) ))
 (( SECONDS_LEFT > EPICPROD_MIN_TIME_FOR_NEW_JOB )) \
     || { log 'commissioning worker has insufficient time left; no pilot started'; exit 73; }
@@ -297,13 +345,15 @@ if (( rc != 0 )); then
         | tail -12 || true
 fi
 # The pilot's steps between the payload's end and its own exit, which decide
-# how long the node stays allocated after the work (docs/NERSC_PERLMUTTER.md,
-# The end of a job): selected timestamped step lines, nothing credential-like.
+# how long the node stays allocated after the work and whether its last
+# reports reach the server (docs/NERSC_PERLMUTTER.md, The end of a job): the
+# ES process's handling of the payload's messages, the executor's reports and
+# the end steps; selected timestamped lines, nothing credential-like.
 log "native pilot end of job:"
 sed -r 's/\x1B\[[0-9;]*[[:alpha:]]//g' native-pilot-console.log \
     | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:,]+ \|' \
-    | grep -E 'ESProcess finished|receipt archive|final report|tar/zip event ranges|stag(ing|ed) output file|failed to stage out|ES generic executor finished|final server update|this job has now completed|report files in Harvester mode|proceeding with|thread has finished|clean|work dir|pilot has finished|exit code' \
+    | grep -E 'ESProcess finished|receipt archive|final report|tar/zip event ranges|stag(ing|ed) output file|failed to stage out|ES generic executor finished|final server update|this job has now completed|report files in Harvester mode|proceeding with|thread has finished|clean|size of work dir|pilot has finished|exit code|handling out message|reported [0-9]+ messages|report of [0-9]+ messages|server took|range prefetch|range reconciliation|failed ranges|update_event_ranges|Failed to handle|exception caught|PilotException|Stop has been set|stop is set|Payload finished|main loop|Message thread|monitor is checking|No more events|esprocess|ESProcess' \
     | grep -viE 'token|secret|passw|authori|bearer|x509|proxy|cert|pre-merge' \
-    | sed -r 's/[A-Za-z0-9+\/=_-]{40,}/<long value>/g' | cut -c1-200 | tail -60 || true
+    | sed -r 's/[A-Za-z0-9+\/=_-]{40,}/<long value>/g' | cut -c1-240 | tail -150 || true
 log "native pilot finished with code $rc"
 exit "$rc"

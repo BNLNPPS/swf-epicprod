@@ -3,6 +3,18 @@ import re
 import hashlib
 import shlex
 
+# Events per range of a fine-grained task above one need JEDI to cut such
+# ranges: upstream's job generator gives a fine-grained task single-event
+# ranges, and our server's local patch adds the task parameter
+# nEventsPerFineGrainedRange (split rule FR; distcomp-services
+# patches/fine-grained-range-size), which the submitter sets from
+# range_events (swf-monitor scripts/evgen_panda_submit.py). The payload, the
+# close-out and the batch pilot take ranges of any size
+# (NODE_EVENT_DISPATCHER.md); the stock pilot counts a range as one event, so
+# ranges above one need the batch channel. On since 2026-10-27: Perlmutter
+# task 41444 (3,200 ranges of ten events) was credited in full, 32,000 events.
+JEDI_FINE_GRAINED_RANGES = True
+
 
 def definition(settings):
     """Validate the declared whole-task budget before building any submission."""
@@ -36,6 +48,28 @@ def definition(settings):
         raise ValueError('production ES batch_channel must be a boolean')
     if 'min_unit_events' in cfg and (type(cfg['min_unit_events']) is not int or not 1 <= cfg['min_unit_events'] <= cfg['unit_events']):
         raise ValueError('production ES min_unit_events must fit its unit budget')
+    if 'range_events' in cfg:
+        k = cfg['range_events']
+        if type(k) is not int or k <= 0 or cfg['unit_events'] % k:
+            raise ValueError('production ES range_events must be a positive divisor of unit_events')
+        if cfg['events'] % k:
+            # Every range full: the batch pilot rebuilds a range it never
+            # received from its first event and the range size (es_batch.py,
+            # Prefetch._reconcile).
+            raise ValueError('production ES range_events must divide the events')
+        if k > 1 and not JEDI_FINE_GRAINED_RANGES:
+            raise ValueError('production ES range_events above 1 needs JEDI ranges of several events '
+                             'for fine-grained tasks')
+        if k > 1 and not cfg.get('batch_channel'):
+            raise ValueError('production ES range_events above 1 needs the batch channel: '
+                             'the stock pilot counts a range as one event')
+    if 'job_log' in cfg and type(cfg['job_log']) is not bool:
+        raise ValueError('production ES job_log must be a boolean')
+    if cfg.get('job_log') and not cfg.get('batch_channel'):
+        # The batch pilot writes the ES log beside the renamed work directory
+        # and trims it; the stock pilot makes none and fails the stage-out
+        # (NERSC_PERLMUTTER.md, The batch pilot, The job's log).
+        raise ValueError('production ES job_log needs the batch channel')
     if 'parallel_start' in cfg and type(cfg['parallel_start']) is not bool:
         raise ValueError('production ES parallel_start must be a boolean')
     if 'fast_merge' in cfg and type(cfg['fast_merge']) is not bool:
@@ -111,6 +145,10 @@ def apply(spec, settings):
         prefix['EPICPROD_SWITCH_ES_FAST_MERGE'] = '1'
     if cfg.get('resident_unit'):
         prefix['EPICPROD_SWITCH_ES_RESIDENT_UNIT'] = '1'
+        # A slot's dead resident is restarted; a slot whose restarts are
+        # spent takes no more units (job 6254767: one dead resident failed
+        # 960 units, 480,000 ranges).
+        prefix['EPICPROD_SWITCH_ES_RESIDENT_RESTART'] = '1'
     if cfg.get('close_max_files'):
         prefix['ES_CLOSE_MAX_FILES'] = str(cfg['close_max_files'])
     if cfg.get('close_concurrency'):
@@ -145,7 +183,9 @@ def apply(spec, settings):
                 nJobs=cfg['events'] // cfg['events_per_job'], nCore=cfg.get('pilot_cores', 1),
                 walltimeHours=cfg['deadline_s'] / 3600,
                 memory=cfg['memory_mb_per_core'], maxAttempt=10, maxFailure=3,
-                noLog=True, workerProxy=True, event_service=dict(cfg))
+                noLog=not cfg.get('job_log'), workerProxy=True, event_service=dict(cfg))
+    if cfg.get('range_events', 1) > 1:
+        spec['fineGrainedRangeEvents'] = cfg['range_events']
     return spec
 
 

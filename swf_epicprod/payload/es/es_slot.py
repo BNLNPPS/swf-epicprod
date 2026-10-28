@@ -458,6 +458,13 @@ def main():
             complete(uid, record, out)
         os.remove(spec)
         done += 1
+        if record is not None and record.get('rc') and resident_unit.resident_sim.unavailable(
+                os.path.join(args.work, 'simulation')):
+            # The slot's resident is dead and its restarts are spent: the slot
+            # ends, and the harness gives it no more units (es_harness.py, a
+            # slot whose container has exited).
+            log(f"resident simulation unavailable after {done} units; the slot takes no more")
+            break
         idle_since = time.time()
         if background:
             background[:] = [thread for thread in background if thread.is_alive()]

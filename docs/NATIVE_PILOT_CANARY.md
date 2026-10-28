@@ -35,7 +35,7 @@ reason to keep the standard rollout on the older bootstrap.
 | Perlmutter | Off for allocation usage; the existing site launcher still uses the ALRB Python setup. Standard native migration is not deployed. |
 | Google | Off by operator instruction; no native production rollout verified. |
 | JLab | Commissioning, no running workers; the host-Python bootstrap is not the campaign-image native launcher. |
-| Compute Canada | Queue not built, awaiting CE identity mapping. |
+| Compute Canada | Queue not built, awaiting CE authorization ([COMPUTE_CANADA.md](COMPUTE_CANADA.md)). |
 
 GREX's live template is
 `/data/atlpan/harvester_common/submit_pilot3_pull_umgrex.sdf`, SHA256

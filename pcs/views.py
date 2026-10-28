@@ -6,6 +6,7 @@ Tag list views use server-side DataTables via monitor_app._datatable_base.html.
 Read operations are public; create/edit/lock require login.
 """
 import json
+import copy
 import logging
 import re
 import time
@@ -15,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 _ET = ZoneInfo('America/New_York')
 from urllib.request import urlopen
-from urllib.parse import quote as urlquote
+from urllib.parse import quote as urlquote, urlencode
 from django.utils.html import escape
 from django.shortcuts import render, get_object_or_404, redirect
 from django.template.loader import render_to_string
@@ -68,6 +69,7 @@ from .models import (
 )
 from .serializers import _redact_contact
 from . import services
+from .physics_match import NUM
 
 PROD_CONFIG_SCOUT_MODE_PREF = 'prod_config_scout_mode'
 
@@ -199,6 +201,8 @@ def _parse_catalog_filters(request):
         'pre_tdr_use': request.GET.get('pre_tdr_use') == '1',
         'early_science_use': request.GET.get('early_science_use') == '1',
         'other_use': request.GET.get('other_use') == '1',
+        'queue': (request.GET.get('queue') or '').strip(),
+        'site': (request.GET.get('site') or '').strip(),
     }
 
 
@@ -477,15 +481,17 @@ def _campaign_data(campaign):
     ) or {}
 
 
-def _current_catalog_tasks(campaign, catalog_view, progress_snapshot, timings=None):
+def _current_catalog_tasks(campaign, catalog_view, progress_snapshot, timings=None, task_ids=None):
+    """The catalog's annotated rows: a campaign's tasks, or with ``task_ids``
+    those tasks, whatever their campaign (the queue view)."""
     def load_tasks():
-        return list(
-            ProdTask.objects.select_related(
-                'campaign', 'dataset', 'prod_config', 'request',
-                'dataset__physics_tag', 'dataset__evgen_tag', 'dataset__simu_tag',
-                'dataset__reco_tag', 'dataset__background_tag',
-            ).filter(campaign=campaign).order_by('-updated_at')
+        rows = ProdTask.objects.select_related(
+            'campaign', 'dataset', 'prod_config', 'request',
+            'dataset__physics_tag', 'dataset__evgen_tag', 'dataset__simu_tag',
+            'dataset__reco_tag', 'dataset__background_tag',
         )
+        rows = rows.filter(pk__in=task_ids) if task_ids is not None else rows.filter(campaign=campaign)
+        return list(rows.order_by('-updated_at'))
     tasks = _timed(
         timings,
         'task query',
@@ -524,6 +530,102 @@ def _current_catalog_tasks(campaign, catalog_view, progress_snapshot, timings=No
             detail_fn=lambda rows: f'{len(rows)} rows',
         )
     return tasks
+
+
+def prod_tasks_in_flight(request):
+    """The production tasks in flight: those sent to a queue and not ended,
+    paused ones included (swf-monitor census.sent_production_tasks_by_queue,
+    the production front's own selection), grouped by allocation as the
+    dashboard names its sites, with the PCS tasks behind them in the catalog's
+    rows. ``?site=NAME`` shows one allocation; the dashboard's TASKS link under
+    each site's name opens it so (docs/EPICPROD_TASK_CATALOG.md)."""
+    from monitor_app.comp_snapshot import get_snapshot
+    from monitor_app.panda.census import sent_production_tasks_by_queue
+    from monitor_app.short_names import short_name
+    from .models import PandaTasks
+    from swf_epicprod import queues as registry
+    by_queue = sent_production_tasks_by_queue()
+    allocation, site_names = {}, {}
+    try:
+        for site in get_snapshot().get('sites') or []:
+            site_names[site.get('id')] = site.get('name')
+            for queue in site.get('queues') or []:
+                allocation[queue.get('id')] = site.get('name')
+    except Exception as exc:                                   # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            f'tasks in flight: no site names from the comp snapshot ({exc}); queues named instead')
+
+    def allocation_of(queue):
+        # A queue the dashboard does not show, a retired one, still belongs
+        # to its site in the queue registry (OSG's BNL_OSG_EPIC_PROD_1).
+        entry = registry.get(queue) or {}
+        return allocation.get(queue) or site_names.get(entry.get('site')) or short_name(queue)
+
+    # Each PCS task once, as its newest PanDA attempt in flight shows it: the
+    # allocation, the queue and PanDA's own state ("Past Output" and the
+    # other PCS record states say nothing about a task in flight).
+    newest, unassociated = {}, {}
+    jedi_all = [task_id for sent in by_queue.values() for task_id, _ in sent]
+    by_jedi = {}
+    for jedi_id, prod_id in (PandaTasks.objects.filter(jedi_task_id__in=jedi_all)
+                             .values_list('jedi_task_id', 'prod_task_id')):
+        by_jedi.setdefault(jedi_id, prod_id)
+    # A page for physicists: commissioning is left out. An Event Service task
+    # that no production feeder submitted (it carries no feeder's marker) is
+    # a commissioning test, the Perlmutter ES tests pES2 to pES6 among them.
+    from swf_epicprod import google_production, perlmutter_production
+    feeders = (perlmutter_production.MARKER, google_production.MARKER)
+    commissioning = {
+        pk for pk, overrides in ProdTask.objects.filter(pk__in=set(by_jedi.values()))
+        .values_list('pk', 'overrides')
+        if 'event_service' in (overrides or {}) and not any(m in overrides for m in feeders)}
+    from swf_epicprod.quiet_end import quiet_task_ids
+    quiet = quiet_task_ids()
+    for queue, sent in by_queue.items():
+        name = allocation_of(queue)
+        for task_id, status in sent:
+            prod_id = by_jedi.get(task_id)
+            if prod_id in commissioning or task_id in quiet:
+                continue
+            if prod_id is None:
+                unassociated.setdefault(name, []).append(task_id)
+            elif prod_id not in newest or task_id > newest[prod_id]['jedi']:
+                newest[prod_id] = {'jedi': task_id, 'status': status, 'queue': queue, 'site': name}
+    groups = {}
+    for info in newest.values():
+        group = groups.setdefault(info['site'], {'name': info['site'], 'count': 0, 'paused': 0})
+        group['count'] += 1
+        group['paused'] += info['status'] == 'paused'
+    for name in unassociated:
+        groups.setdefault(name, {'name': name, 'count': 0, 'paused': 0})
+    site = (request.GET.get('site') or '').strip()
+    prod_ids = [pid for pid, info in newest.items() if not site or info['site'] == site]
+    tasks = _current_catalog_tasks(None, 'catalog', None, task_ids=prod_ids)
+    for t in tasks:
+        info = newest[t.pk]
+        t.status = info['status']
+        t.queue_cell = {'kind': 'panda', 'label': info['site'], 'site': info['site'],
+                        'title': f"PanDA task {info['jedi']} on {info['queue']}"}
+        # A page for physicists: a person's address shows as its name.
+        if t.requestor and '@' in t.requestor:
+            t.requestor = t.requestor.split('@', 1)[0]
+        requests = []
+        for record in getattr(t, 'pc_requests', None) or []:
+            who = getattr(record, 'requestor', None)
+            if who and '@' in who:
+                record = copy.copy(record)      # the projection's own records stay whole
+                record.requestor = who.split('@', 1)[0]
+            requests.append(record)
+        if requests:
+            t.pc_requests = requests
+    task_list_html = render_to_string('pcs/_task_list_filter.html', {
+        'tasks': tasks, 'catalog_view': 'catalog', 'columns_mode': 'full', 'in_flight': True,
+        'status_choices': PRODTASK_STATUS_CHOICES, 'ai_executed_names': _executed_proposal_names()})
+    ordered = sorted(groups.values(), key=lambda g: (-g['count'], g['name']))
+    return render(request, 'pcs/prod_tasks_in_flight.html', {
+        'site': site, 'groups': ordered, 'total': len(newest), 'task_list_html': task_list_html,
+        'unassociated': [j for name, ids in unassociated.items() if not site or name == site for j in ids],
+    })
 
 
 def _cached_current_task_list_html(campaign, catalog_view, context,
@@ -5005,6 +5107,11 @@ def pcs_catalog(request):
     build_start = time.perf_counter() if CATALOG_BUILD_TIMING_ENABLED else None
     timings = [] if CATALOG_BUILD_TIMING_ENABLED else None
     filters = _timed(timings, 'parse filters', lambda: _parse_catalog_filters(request))
+    if filters['queue'] or filters['site']:
+        # What has been sent to an allocation is the page of production
+        # tasks in flight; links made for the catalog land there.
+        target = reverse('pcs:prod_tasks_in_flight')
+        return redirect(target + ('?' + urlencode({'site': filters['site']}) if filters['site'] else ''))
     inflow = _campaigns_with_inflow()
     active_lifecycle = (request.GET.get('lifecycle') or '').strip()
     producing_campaign_name = ''
@@ -6130,9 +6237,10 @@ BEAM_CONFIG_WORDS = {'hiacc': 'high acceptance', 'hidiv': 'high divergence'}
 
 def _range_words(value, symbol):
     """'Q2 10 to 100' from 'q2_10to100', 'Q2 > 1' from 'minQ2=1', 'x 0.001
-    to 1' from 'x_0.001to1'; the raw value when it is neither."""
+    to 1' from 'x_0.001to1', 'x 1e-4 to 1e-3' from 'x_1e-4to1e-3'; the raw
+    value when it is neither."""
     text = str(value or '')
-    m = re.fullmatch(r'(?:q2|x)_([\d.]+)to([\d.]+|INF)', text, re.IGNORECASE)
+    m = re.fullmatch(rf'(?:q2|x)_({NUM})to({NUM}|INF)', text, re.IGNORECASE)
     if m:
         return (f'{symbol} > {m.group(1)}' if m.group(2).upper() == 'INF'
                 else f'{symbol} {m.group(1)} to {m.group(2)}')

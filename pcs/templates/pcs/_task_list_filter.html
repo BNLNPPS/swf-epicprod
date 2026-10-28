@@ -118,7 +118,7 @@ Context expected:
 </div>
 {% endif %}
 
-<div id="pcs-tlf-bar" class="pcs-tlf-bar mb-2">
+<div id="pcs-tlf-bar" class="pcs-tlf-bar mb-2"{% if in_flight %} data-hide-empty="1"{% endif %}>
   <div class="pcs-tlf-bar-row d-flex align-items-center gap-2">
     <span class="pcs-tlf-label">Search:</span>
     <input type="search" id="pcs-tlf-q" value="{{ filters.q|default:'' }}"
@@ -221,11 +221,13 @@ Context expected:
     <a href="#" data-filter="pwg_priority" data-value="" class="filter-link filter-active">All</a>
     <span id="pcs-tlf-pwg_priority-opts"></span>
   </div>
+  {% if not in_flight %}
   <div class="pcs-tlf-bar-row">
     <span class="pcs-tlf-label ai-attr-text">AI:</span>
     <a href="#" data-toggle="ai_proposed" class="filter-link ai-attr-text">proposed (<span data-count="ai_proposed">0</span>)</a>
     <a href="#" data-toggle="ai_executed" class="filter-link ai-attr-text">executed (<span data-count="ai_executed">0</span>)</a>
   </div>
+  {% endif %}
   <div class="pcs-tlf-bar-row">
     <span class="pcs-tlf-label">Flags:</span>
     <a href="#" data-toggle="new_request" class="filter-link">New (<span data-count="new_request">0</span>)</a>
@@ -246,8 +248,10 @@ Context expected:
 </div>
 
 <!-- Task actions above the table (house law: controls never sit below
-     a table): tick rows, then one bulk action applies to all selected. -->
-<div class="card mb-2">
+     a table): tick rows, then one bulk action applies to all selected.
+     Prod tasks in flight is a page for physicists: hidden there, kept in
+     the page for the script that drives it. -->
+<div class="card mb-2"{% if in_flight %} hidden{% endif %}>
   <div class="card-body py-2">
     <div class="mb-1"><strong>Task actions</strong>
       <span class="text-muted">— tick rows in the table, then apply one action to all selected:</span></div>
@@ -680,6 +684,22 @@ Context expected:
       if (c) c.textContent = boolCounts[k];
       const a = document.querySelector(`#pcs-tlf-bar .filter-link[data-toggle="${k}"]`);
       if (a) a.classList.toggle('filter-active', state[k]);
+    }
+    // Prod tasks in flight: a filter with nothing to choose from is left
+    // out (Torre, 2026-10-27); one with an active choice stays.
+    const bar = document.getElementById('pcs-tlf-bar');
+    if (bar && bar.dataset.hideEmpty === '1') {
+      bar.querySelectorAll('.pcs-tlf-bar-row [data-toggle]').forEach(link => {
+        const c = link.querySelector('[data-count]');
+        if (c) link.hidden = !link.classList.contains('filter-active') && c.textContent.trim() === '0';
+      });
+      bar.querySelectorAll('.pcs-tlf-bar-row').forEach(row => {
+        const opts = row.querySelector('[id$="-opts"]');
+        const counts = [...row.querySelectorAll('[data-count]')];
+        if (opts) row.hidden = !opts.children.length;
+        else if (counts.length) row.hidden = !row.querySelector('.filter-active')
+          && counts.every(c => c.textContent.trim() === '0');
+      });
     }
   }
 

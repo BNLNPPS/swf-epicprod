@@ -204,6 +204,9 @@ Submission and execution:
   on Perlmutter, the public worker record, CVMFS on the nodes,
   pilot-side queue configuration by file, and production operations'
   wrapper on the Perlmutter test queue.
+- [COMPUTE_CANADA.md](docs/COMPUTE_CANADA.md) — the Fir ARC compute
+  elements in Canada: endpoints, token authentication, the probe, and
+  the state of the queue.
 - [WINDOWS_WORKER.md](docs/WINDOWS_WORKER.md) — the Windows worker.
 - [DEVCLOUD_STAGEOUT.md](docs/DEVCLOUD_STAGEOUT.md) — the devcloud
   stage-out endpoint.

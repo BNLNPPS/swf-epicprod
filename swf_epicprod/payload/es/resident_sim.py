@@ -15,6 +15,7 @@ import resource
 import runpy
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -35,6 +36,82 @@ def exchange(path, payload, timeout=1800):
     if reply.get('status') not in ('completed', 'stopped'):
         raise RuntimeError(reply.get('error') or 'Resident simulation failed')
     return reply
+
+
+# A dead resident is restarted (EPICPROD_SWITCH_ES_RESIDENT_RESTART). Before,
+# a resident that had stopped kept its descriptor, and every later request of
+# the slot failed at once: on Perlmutter job 6254767 (2026-10-27) slot 122's
+# resident hung, its request timed out at 1,800 s, the resident died, and the
+# slot then failed 960 units of 500 events in no time each, while the other
+# 127 slots ran. A slot restarts its resident at most RESTART_LIMIT times;
+# then it is unavailable, and the slot takes no more units (es_slot.py).
+RESTART_LIMIT = 3
+
+
+class ResidentUnavailable(RuntimeError):
+    """The slot's resident simulation is dead and its restarts are spent."""
+
+
+def restart_enabled():
+    return os.environ.get('EPICPROD_SWITCH_ES_RESIDENT_RESTART') == '1'
+
+
+def alive(pid):
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def unavailable(state_dir):
+    """True when the slot's resident is dead and its restarts are spent."""
+    state = Path(state_dir)
+    descriptor = state / 'resident.json'
+    if not restart_enabled() or len(list(state.glob('resident.json.*'))) < RESTART_LIMIT:
+        return False
+    try:
+        info = json.loads(descriptor.read_text())
+    except (OSError, ValueError):
+        return False
+    return not (info.get('status') == 'ready' and alive(info.get('pid')))
+
+
+def stop_resident(descriptor, reason):
+    """A resident whose request timed out is hung, and one whose connection
+    was reset or refused is gone: it is killed if it still runs and marked
+    failed, so the slot's next request starts a new one."""
+    try:
+        info = json.loads(descriptor.read_text())
+    except (OSError, ValueError):
+        return
+    if alive(info.get('pid')):
+        os.kill(int(info['pid']), signal.SIGKILL)
+    info.update(status='failed', error=reason)
+    write_json(descriptor, info)
+
+
+def set_aside(state, socket_path):
+    """Before a request: a resident that has stopped, failed, died or never
+    finished starting is set aside, so the request starts a new one. A slot's
+    requests are sequential, so a descriptor that is not ready with a live
+    process is a dead resident."""
+    descriptor = state / 'resident.json'
+    if not descriptor.exists():
+        return
+    info = json.loads(descriptor.read_text())
+    if info.get('status') == 'ready' and alive(info.get('pid')):
+        return
+    spent = len(list(state.glob('resident.json.*')))
+    if spent >= RESTART_LIMIT:
+        raise ResidentUnavailable(f"Resident npsim is {info.get('status')} after {spent} restarts; "
+                                  f"see {state / 'resident.log'}")
+    if alive(info.get('pid')):
+        os.kill(int(info['pid']), signal.SIGKILL)
+    descriptor.rename(state / f'resident.json.{spent + 1}')
+    Path(socket_path).unlink(missing_ok=True)
+    print(f"resident npsim {info.get('status')} (pid {info.get('pid')}): restart {spent + 1} of {RESTART_LIMIT}",
+          file=sys.stderr, flush=True)
 
 
 def write_json(path, value):
@@ -95,6 +172,8 @@ def request(args):
     state = Path(args.state_dir).resolve()
     state.mkdir(parents=True, exist_ok=True)
     descriptor = state / 'resident.json'
+    if restart_enabled():
+        set_aside(state, args.socket)
     started = time.time()
     child = None
     if not descriptor.exists():
@@ -139,7 +218,12 @@ def request(args):
     if info.get('status') != 'ready':
         raise RuntimeError(f'Resident npsim is {info.get("status")}; see {state / "resident.log"}')
     payload.pop('steering')
-    reply = exchange(args.socket, payload, args.request_timeout)
+    try:
+        reply = exchange(args.socket, payload, args.request_timeout)
+    except OSError as error:
+        if restart_enabled():
+            stop_resident(descriptor, f'request failed: {error}')
+        raise
     reply['request_started_at'] = started
     reply['startup_wait_s'] = round(reply['started_at'] - started, 6)
     reply['resident_log'] = str(state / 'resident.log')

@@ -130,8 +130,9 @@ os.execvp(args[i+3], args[i+3:])
             self.assertEqual((work / 'harvesterproxy').read_text(), 'PRIVATE_PROXY_MARKER')
             deadline = int((work / 'sitefeatures/shutdowntime').read_text())
             import time
-            self.assertGreater(deadline - time.time(), 2650)
-            self.assertLessEqual(deadline - time.time(), 2700)
+            # One four-hour allocation (the launcher's ceiling since 197b51f).
+            self.assertGreater(deadline - time.time(), 14350)
+            self.assertLessEqual(deadline - time.time(), 14400)
             self.assertIn('--getjobrequests=1', invocation['args'])
             self.assertIn('--getjobfailures=1', invocation['args'])
             self.assertNotIn('PRIVATE_CONSOLE_MARKER', result.stdout)

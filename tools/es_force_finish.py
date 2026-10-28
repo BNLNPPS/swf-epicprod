@@ -19,7 +19,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from swf_epicprod.es_closeout import closed_range_ids, finish_job  # noqa: E402
+from swf_epicprod.es_closeout import closed_events, closed_range_ids, finish_job  # noqa: E402
 
 
 def read_record(pandaid, path=None):
@@ -57,7 +57,7 @@ def main():
           f'{len(record.get("in_flight") or [])} in flight, '
           f'{len(record.get("awaiting_close") or [])} awaiting a close')
     result = finish_job(args.pandaid, ids, status=args.status, expect_attempt=args.attempt,
-                        apply=args.apply)
+                        apply=args.apply, n_events=closed_events(record))
     if result.get('refused'):
         print(f'job {args.pandaid}: {result["refused"]}; nothing sent')
         return 1

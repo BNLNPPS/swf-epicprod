@@ -73,8 +73,8 @@ class HoldTest(unittest.TestCase):
              patch.object(prod, 'reserve_sample', side_effect=AssertionError('reserved')):
             return prod.replenish()
 
-    def test_any_job_or_live_task_on_the_queue_holds(self):
-        for kwargs in ({'active': [41300]}, {'jobs': 1}, {'tasks': [41262]}):
+    def test_any_job_or_live_task_of_its_own_samples_holds(self):
+        for kwargs in ({'active': [41300]}, {'jobs': 1}, {'tasks': [41299]}):
             with self.subTest(**kwargs):
                 self.assertEqual(self.replenish(**kwargs)['outcome'], 'steady')
 

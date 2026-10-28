@@ -913,6 +913,18 @@ removes both:
   and each later unit was credited one unit early, before its output was
   saved. A range left uncredited is simulated again by a later job, so its
   events are registered twice (GKE_PILOT_FLOW.md, Resident-unit production).
+- A slot's dead resident simulation is restarted
+  (`EPICPROD_SWITCH_ES_RESIDENT_RESTART=1`, payload 0.25.33, on with
+  `resident_unit` in a production ES definition). Before, a resident that had
+  stopped kept its descriptor, and every later request of the slot failed at
+  once: in Perlmutter job 6254767 slot 122's resident hung, its request timed
+  out at 1,800 s, the resident died, and the slot failed 960 more units of 500
+  events in no time each while the other 127 slots ran. Their 480,000 failed
+  ranges, one pilot message each, starved the job's feed (NERSC_PERLMUTTER.md,
+  The batch pilot, Failed units). A request that times out or loses its
+  connection now kills the resident and marks it failed; the next request sets
+  its descriptor aside and starts a new resident, at most three times a slot.
+  A slot whose restarts are spent ends, and the harness gives it no more units.
 
 On Google, with the batch channel and the fast merge, the median turnaround is
 0.7 s and fourteen slots keep 93% of the job's core-time in units, 82% in saved

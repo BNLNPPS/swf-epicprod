@@ -271,6 +271,24 @@ dashboard links. Four feeds are relevant:
 
 Feed implementation remains in the source subsystems.
 
+**Prod tasks in flight** (`pcs/in-flight/`, in the PCS menu below Prod Tasks)
+answers what has been sent to each allocation: the PCS tasks behind the
+production tasks sent to a queue that have not ended, paused ones included,
+whatever their campaign, in the catalog's rows. Tasks are grouped by allocation
+as the dashboard names its sites; a queue the dashboard does not show, a
+retired one, counts under its site in the queue registry. It is a page for
+physicists: commissioning is left out (an Event Service task no production
+feeder submitted, so carrying no feeder's marker), and each PCS task appears once, as its newest PanDA attempt in flight
+shows it, with PanDA's own state (running, ready, paused) in Status and the
+allocation in Queue; a requestor's address shows as its name; filters with no
+values, the AI line and the operator task actions are left out. The line above
+the table counts each allocation's tasks and paused ones; a PanDA task no PCS
+task is associated with yet is listed by its id. `?site=<name>` shows one allocation,
+and the dashboard's TASKS link under each site's name opens it so. The
+selection is the production front's own (swf-monitor
+`census.sent_production_tasks_by_queue`); the front's count leaves out paused
+tasks. A catalog link with `?site=` lands on this page.
+
 ## 7. Filters and Selection
 
 Catalog filters cover the fields used to find task sets: campaign stage,

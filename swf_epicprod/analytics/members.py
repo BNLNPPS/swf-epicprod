@@ -235,6 +235,9 @@ def panda_health(campaign, window_start, window_end):
 
     try:
         task_ids, population = _campaign_panda_task_ids(campaign)
+        from swf_epicprod.quiet_end import quiet_task_ids
+        quiet = quiet_task_ids()        # ended quietly: no production figure (EPICPROD_OPS.md)
+        task_ids = [t for t in task_ids if int(t) not in quiet]
     except Exception as e:
         return _block('panda_health', window_start, window_end,
                       _unavailable(f'PanDA task lookup failed: {e}'))
@@ -650,7 +653,11 @@ def window_activity(campaign, window_start, window_end):
     initiated = []
     completed = []
     failed = []
+    from swf_epicprod.quiet_end import quiet_task_ids
+    quiet = quiet_task_ids()            # ended quietly: no production figure (EPICPROD_OPS.md)
     for tid, name, status, created, modified in tasks:
+        if int(tid) in quiet:
+            continue
         if (created and window_start.replace(tzinfo=None) <= created
                 < window_end.replace(tzinfo=None)):
             initiated.append({'jeditaskid': tid, 'name': name, 'status': status})

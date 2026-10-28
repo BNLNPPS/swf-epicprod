@@ -934,6 +934,19 @@ running worker. The same helper is available to the watcher under the
 standing operational authority in EPICPROD_WATCHER_BRIEF.md; routine
 protective exclusions do not require an operator Poke.
 
+On 27 October 2026 the watcher excluded IRISHEP-SSL-UCHICAGO and UChicago
+at 15:38 ET. Since 14:30 ET they had finished 20 jobs and failed 81, on
+many hosts. Every failure came from the background-mixed k16 tasks
+41446, 41447 and 41450:
+- exit 86, "SignalBackgroundMerger (BG_MERGER=hepmcmerger) is not on the
+  PATH";
+- ROOT I/O errors from /opt/local in eic_xl:26.07.1-stable;
+- lsetup timeouts.
+
+The same tasks finish at FNAL_GPGrid, UNL-PATH and OU-Sooner, which
+places the fault in the site environment, not the task. Template backups:
+`submit_pilot2_pull_bnl_osg.sdf.before-exclude-<site>-20261027T1938*Z`.
+
 Applied 2026-09-07 on the evidence of thirty days of job records: every
 node listed had zero finished jobs and at least fifty failures, and
 together they account for 14,480 failed jobs and 9,997 core-hours. The

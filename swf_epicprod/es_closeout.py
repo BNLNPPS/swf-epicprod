@@ -34,6 +34,16 @@ are no node loss), the record has not reached its write cap, and it has
 been quiet for ``quiet_s``. The server-side call refuses a job that is
 not running, is on another attempt or has moved to another queue.
 
+A node whose feed is starved is closed out the same way, its record still
+fresh: the harness's range request has gone unanswered for ``starve_s``
+(the record's ``channel.waiting_s``, payload 0.25.32). The pilot answers from
+the ranges it holds, and gives up on an empty cache the server does not
+refill within 300 s, so a request unanswered for ten minutes is a pilot that
+no longer feeds its node, and every slot is idle behind it. Job 6254767
+(2026-10-27) waited that way behind its pilot's failed-range reports, with
+its 128 slots idle and its task's ranges unprocessed; the close-out credits
+what stood and the server gives the rest to the task's next job.
+
 Two sides, one module:
 
 - the cycle (``run_cycle``) runs in the swf-monitor process as the
@@ -55,6 +65,8 @@ defaults on first read so they show on the System page:
 - ``es_closeout.queues`` (['BNL_NPPS_GPU']): the queues whose Event
   Service jobs are closed out when their node is lost.
 - ``es_closeout.quiet_s`` (180): how long a record must be quiet.
+- ``es_closeout.starve_s`` (600): how long the harness's range request may go
+  unanswered; 0 turns the rule off.
 - ``es_closeout.no_progress_limit`` (3): consecutive no-progress losses of
   one file's jobs, this one included, at which the job is sent ``failed``.
 """
@@ -69,7 +81,8 @@ PREEMPTED_CODE = 1256          # the pilot's "job killed: worker preempted / los
 CHUNK = 1000
 RECORD_WRITE_CAP = 1500        # payload/es/es_record.py MAX_WRITES
 RUNNING_STATES = ('running', 'starting', 'stagein', 'stageout')
-DEFAULTS = {'enabled': True, 'queues': ['BNL_NPPS_GPU'], 'quiet_s': 180, 'no_progress_limit': 3}
+DEFAULTS = {'enabled': True, 'queues': ['BNL_NPPS_GPU'], 'quiet_s': 180, 'starve_s': 600,
+            'no_progress_limit': 3}
 PCLIENT_SETUP = os.path.expanduser('~/pclient/run/setup.sh')
 AUTH_VO = 'EIC.production'
 PCLIENT_TIMEOUT_S = 180
@@ -80,8 +93,10 @@ ACTION_INSTANCE = 'ops-agent'
 
 def closed_range_ids(record):
     """The distinct range ids of the units in closes that stood. A unit's
-    first range id is <task>-<job>-<file>-<event>-<attempt>; its ranges are
-    one event each over [startEvent, lastEvent]."""
+    first range id is <task>-<job>-<file>-<event>-<attempt>; its ranges
+    start every ``range_events`` events over [startEvent, lastEvent] (the
+    record's range size, one event when the record carries none)."""
+    step = max(1, int(record.get('range_events') or 1))
     ids = []
     for u in record.get('done') or []:
         rng, uid = u.get('range') or {}, u.get('unit_id') or ''
@@ -89,11 +104,22 @@ def closed_range_ids(record):
         if len(parts) < 5 or rng.get('startEvent') is None:
             continue
         prefix, attempt = '-'.join(parts[:3]), parts[4]
-        ids += [f'{prefix}-{e}-{attempt}' for e in range(int(rng['startEvent']), int(rng['lastEvent']) + 1)]
+        ids += [f'{prefix}-{e}-{attempt}'
+                for e in range(int(rng['startEvent']), int(rng['lastEvent']) + 1, step)]
     return list(dict.fromkeys(ids))
 
 
-def judge(record, age_s, quiet_s):
+def closed_events(record):
+    """The events of the distinct units in closes that stood."""
+    spans = {}
+    for u in record.get('done') or []:
+        rng = u.get('range') or {}
+        if rng.get('startEvent') is not None and u.get('unit_id'):
+            spans[u['unit_id']] = int(rng['lastEvent']) - int(rng['startEvent']) + 1
+    return sum(spans.values())
+
+
+def judge(record, age_s, quiet_s, starve_s=0):
     """(act, reason) for one job's record, ``age_s`` since its last write."""
     if not isinstance(record, dict) or record.get('kind') != 'es_record':
         return False, 'not an Event Service record'
@@ -104,6 +130,10 @@ def judge(record, age_s, quiet_s):
     if int(record.get('sequence') or 0) >= RECORD_WRITE_CAP - 1:
         return False, 'the record reached its write cap'
     if age_s < quiet_s:
+        waiting = float((record.get('channel') or {}).get('waiting_s') or 0)
+        if starve_s and waiting >= starve_s:
+            return True, (f'feed starved: range request unanswered {waiting:.0f} s, '
+                          f"{len(record.get('in_flight') or [])} units in flight")
         return False, f'record written {age_s:.0f} s ago'
     return True, f'record quiet {age_s:.0f} s'
 
@@ -142,9 +172,10 @@ def _count_true(rets):
 
 
 def finish_job(pandaid, ids, status='finished', expect_queue=None, expect_attempt=None,
-               apply=True, say=print):
-    """Credit ``ids`` and send the final update. Returns a result dict;
-    ``ok`` is True only when the server took the final update."""
+               apply=True, say=print, n_events=None):
+    """Credit ``ids`` and send the final update with ``n_events`` (the
+    events of those ranges; one a range when not given). Returns a result
+    dict; ``ok`` is True only when the server took the final update."""
     out = {'pandaid': int(pandaid), 'ranges': len(ids), 'ok': False}
     job_status, attempt, queue = job_state(pandaid)
     out.update(job_status=job_status, attempt=attempt, queue=queue)
@@ -176,7 +207,7 @@ def finish_job(pandaid, ids, status='finished', expect_queue=None, expect_attemp
     # fine-grained archive does not recompute it (job 3618959: 2,750 shown,
     # 6,750 ranges finished)
     data = {'job_id': int(pandaid), 'job_status': status, 'attempt_nr': attempt,
-            'n_events': len(ids), 'pilot_error_code': PREEMPTED_CODE,
+            'n_events': len(ids) if n_events is None else int(n_events), 'pilot_error_code': PREEMPTED_CODE,
             'pilot_error_diag': 'Event Service node lost (preempted); force-finished from the record '
                                 'the harness shipped: every close that stood credited'}
     http, resp = _api('pilot/update_job', data)
@@ -196,7 +227,8 @@ def _inside_pclient(payload_path):
             results.append(finish_job(job['pandaid'], job['ids'], status=job.get('status', 'finished'),
                                       expect_queue=job.get('queue'),
                                       expect_attempt=job.get('attempt'),
-                                      say=lambda s: print(s, file=sys.stderr)))
+                                      say=lambda s: print(s, file=sys.stderr),
+                                      n_events=job.get('events')))
         except Exception as e:                                # noqa: BLE001
             results.append({'pandaid': job['pandaid'], 'ok': False, 'error': f'{type(e).__name__}: {e}'})
     print(json.dumps({'results': results}))
@@ -291,6 +323,7 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
     seed = not dry_run
     enabled, queues = setting('enabled', seed), setting('queues', seed)
     quiet_s = float(setting('quiet_s', seed))
+    starve_s = float(setting('starve_s', seed))
     no_progress_limit = max(1, int(setting('no_progress_limit', seed)))
     if not isinstance(queues, (list, tuple)) or not all(isinstance(q, str) for q in queues):
         raise ValueError(f'es_closeout.queues is not a list of queue names: {queues!r}')
@@ -314,10 +347,11 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
                 decisions.append(d)
                 continue
             age = time.time() - float(record.get('written_at') or 0)
-            act, reason = judge(record, age, quiet_s)
+            act, reason = judge(record, age, quiet_s, starve_s)
             d.update(act=act, reason=reason, record_age_s=round(age))
             if act:
                 d['ids'] = closed_range_ids(record)
+                d['events'] = closed_events(record)
                 d['status'] = 'finished'
                 if not d['ids']:
                     # A pass without progress. Failed only when the file's
@@ -333,7 +367,7 @@ def run_cycle(dry_run=False, created_by='es-closeout'):
         summary['quiet'] = len(to_close)
         if to_close and not dry_run:
             try:
-                results, _ = finish_in_pclient([{'pandaid': d['pandaid'], 'ids': d['ids'],
+                results, _ = finish_in_pclient([{'pandaid': d['pandaid'], 'ids': d['ids'], 'events': d['events'],
                                                  'status': d['status'],
                                                  'queue': d['queue'], 'attempt': d['attempt']}
                                                 for d in to_close])

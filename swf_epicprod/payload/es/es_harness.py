@@ -204,16 +204,18 @@ class ChannelFeed:
         # own asking (job 6074509: about 250 ranges a second for 440 wanted).
         self.requests, self.ranges, self.wait_s = 0, 0, 0.0
         self.answers = deque(maxlen=500)    # (seconds to answer, ranges) of the latest requests
+        self.asked_at = None                # the unanswered request's start: a starved feed (es_closeout)
 
     def exchange(self, request):
         with self.lock:
-            asked = time.monotonic()
+            asked = self.asked_at = time.monotonic()
             self.sock.send_raw(request)
             while True:
                 size, buf = self.sock.try_recv_raw()
                 if size != -1:
                     break
                 time.sleep(0.01)            # the pilot's own message cadence (esmessage.py)
+            self.asked_at = None
             self.wait_s += time.monotonic() - asked
             self.answers.append(time.monotonic() - asked)
         return buf.decode('utf8') if isinstance(buf, bytes) else str(buf)
@@ -223,7 +225,9 @@ class ChannelFeed:
         pilot's answer times over the latest 500 requests."""
         recent = sorted(self.answers)
         pick = (lambda q: round(recent[min(len(recent) - 1, int(q * len(recent)))], 3)) if recent else (lambda q: None)
+        asked = self.asked_at
         return {'requests': self.requests, 'ranges': self.ranges, 'wait_s': round(self.wait_s, 1),
+                'waiting_s': round(time.monotonic() - asked, 1) if asked is not None else 0.0,
                 'answer_s_median': pick(0.5), 'answer_s_p90': pick(0.9),
                 'answer_s_max': round(recent[-1], 3) if recent else None}
 
@@ -496,7 +500,8 @@ class Slot:
         # The slot takes its inbox in name order: the order given.
         self.given += 1
         os.rename(tmp, os.path.join(self.inbox, f'{self.given:06d}.{uid}.unit.json'))
-        entry = (uid, [r['eventRangeID'] for r in spec['ranges']], len(spec['ranges']), spec['range'])
+        entry = (uid, [r['eventRangeID'] for r in spec['ranges']], sum(span(r) for r in spec['ranges']),
+                 spec['range'])
         if self.unit is None:
             self.start(entry, time.time())
         else:
@@ -570,6 +575,27 @@ class Slot:
         self.log.close()
 
 
+def span(rng):
+    """The events of one range: one in a fine-grained task with JEDI's
+    single-event ranges, the task's range size when a range carries several.
+    Units, caps, look-ahead and record counts are in events, never in ranges."""
+    return int(rng['lastEvent']) - int(rng['startEvent']) + 1
+
+
+def within(members, max_events):
+    """The leading members of a run within max_events (0: no cap), at least
+    one: a range is never split."""
+    if max_events <= 0:
+        return members
+    out, n = [], 0
+    for rng in members:
+        if out and n + span(rng) > max_events:
+            break
+        out.append(rng)
+        n += span(rng)
+    return out
+
+
 class Pool:
     """The job's ranges as the pilot hands them, gathered in the
     background and kept in event order: the server hands them in no
@@ -580,18 +606,21 @@ class Pool:
     has arrived."""
 
     def __init__(self, feed, lookahead=0, demand_batch=1):
-        """lookahead: the most ranges held before the harness asks for them
+        """lookahead: the most events held before the harness asks for them
         (0 = no limit). The pilot kills the payload 30 minutes after it
         answers "No more events" (pilot esprocess.py waiting_time), so a pool
         that drains the pilot at the start is killed before its last close
         reports (job 3618786: 6,000 ranges pooled, SIGTERM 30 min later,
         nothing credited). With a lookahead the last ranges are asked for
-        only as slots free up, and "No more events" comes near the end."""
+        only as slots free up, and "No more events" comes near the end.
+        demand_batch: the ranges one request asks for."""
         self.feed = feed
         self.lookahead = lookahead
         self.demand_batch = demand_batch
         self.demand_to = 0
         self.ranges = []
+        self.events = 0                     # events of the pooled ranges
+        self.range_events = 1               # the task's range size, as the ranges show it
         self.holds_first = False            # a range of the task's first event came to this job
         self.cut_count = {}                 # (LFN, block) -> events of that block already cut
         self.lock = threading.Lock()
@@ -602,13 +631,13 @@ class Pool:
     def want(self):
         """Ask past the lookahead: a slot is free and no block is whole."""
         with self.lock:
-            target = len(self.ranges) + self.demand_batch
+            target = self.events + self.demand_batch * self.range_events
             self.demand_to = max(self.demand_to, min(target, 2 * self.lookahead) if self.lookahead else target)
         self.wanted.set()
 
     def _gather(self):
         while not self.feed.exhausted:
-            if self.lookahead and len(self) >= max(self.lookahead, self.demand_to):
+            if self.lookahead and self.events >= max(self.lookahead, self.demand_to):
                 self.wanted.clear()
                 self.wanted.wait(0.5)
                 continue
@@ -619,7 +648,9 @@ class Pool:
                 self.holds_first = self.holds_first or int(rng['startEvent']) == 1
                 bisect.insort(self.ranges, rng,
                               key=lambda r: (r.get('LFN', ''), int(r['startEvent'])))
-                if self.demand_to and len(self.ranges) >= self.demand_to:
+                self.events += span(rng)
+                self.range_events = max(self.range_events, span(rng))
+                if self.demand_to and self.events >= self.demand_to:
                     self.demand_to = 0
                     self.wanted.clear()
 
@@ -639,47 +670,55 @@ class Pool:
     def clear(self):
         with self.lock:
             self.ranges = []
+            self.events = 0
+
+    def _cut(self, i, members, key):
+        """Take members, starting at pool index i, as one unit."""
+        n = sum(span(r) for r in members)
+        del self.ranges[i:i + len(members)]
+        self.events -= n
+        self.cut_count[key] = self.cut_count.get(key, 0) + n
+        return members
 
     def take_unit(self, per_unit, min_events=0, max_events=0, longest=False):
-        """The ranges of the next unit: one range, or up to per_unit
-        consecutive ranges within one block of per_unit events (block b
+        """The ranges of the next unit: one range, or consecutive ranges of
+        up to per_unit events within one block of per_unit events (block b
         is events b*K+1 to (b+1)*K), so that a unit is a chunk of the row
         and its block index names its outputs. A block is cut when it is
         whole, or when no more ranges are coming; empty otherwise.
         max_events caps the unit (what fits before the deadline), and a
         run that reaches the cap is cut at once. longest: of the runs that
-        can be cut, the longest rather than the first."""
+        can be cut, the longest rather than the first. Every count is in
+        events: a range may carry several."""
         if longest:
             with self.lock:
                 best, i = None, 0
                 while i < len(self.ranges):
                     first = self.ranges[i]
                     block = (int(first['startEvent']) - 1) // per_unit if per_unit > 0 else i
-                    run = 1
+                    run, events = 1, span(first)
                     for rng in self.ranges[i + 1:]:
                         if (per_unit < 1 or rng.get('LFN') != first.get('LFN')
                                 or int(rng['startEvent']) != int(self.ranges[i + run - 1]['lastEvent']) + 1
-                                or (int(rng['startEvent']) - 1) // per_unit != block or run >= per_unit):
+                                or (int(rng['startEvent']) - 1) // per_unit != block or events >= per_unit):
                             break
                         run += 1
-                    if best is None or run > best[1]:
-                        best = (i, run, (first.get('LFN'), block))
+                        events += span(rng)
+                    if best is None or events > best[2]:
+                        best = (i, run, events, (first.get('LFN'), block))
                     i += run
                 if best is None:
                     return []
-                i, run, key = best
-                if 0 < max_events < run:
-                    run = max_events
-                members = self.ranges[i:i + run]
-                del self.ranges[i:i + run]
-                self.cut_count[key] = self.cut_count.get(key, 0) + run
-                return members
+                i, run, _, key = best
+                return self._cut(i, within(self.ranges[i:i + run], max_events), key)
         with self.lock:
             if not self.ranges:
                 return []
             if per_unit < 1:
-                return [self.ranges.pop(0)]
-            if self.lookahead and len(self.ranges) >= 2 * self.lookahead:
+                rng = self.ranges.pop(0)
+                self.events -= span(rng)
+                return [rng]
+            if self.lookahead and self.events >= 2 * self.lookahead:
                 min_events = 1  # Drain already-owned sparse residuals at the hard buffer bound.
             # The pool is read as runs: consecutive ranges of one block, in
             # event order. The first run that can be cut is cut; a run that
@@ -691,14 +730,15 @@ class Pool:
             while i < len(self.ranges):
                 first = self.ranges[i]
                 block = (int(first['startEvent']) - 1) // per_unit
-                members = [first]
+                members, run = [first], span(first)
                 for rng in self.ranges[i + 1:]:
                     start = int(rng['startEvent'])
                     if (rng.get('LFN') != first.get('LFN') or start != int(members[-1]['lastEvent']) + 1
-                            or (start - 1) // per_unit != block or len(members) >= per_unit):
+                            or (start - 1) // per_unit != block or run >= per_unit):
                         break
                     members.append(rng)
-                run = len(members)
+                    run += span(rng)
+                pooled = len(members)
                 key = (first.get('LFN'), block)
                 # A run is cut when its block is whole; when it is all that is
                 # left of its block (every other event of it already cut, so
@@ -712,13 +752,11 @@ class Pool:
                 rest = run + self.cut_count.get(key, 0) >= per_unit
                 capped = 0 < max_events <= run
                 if capped:
-                    members = members[:max_events]
+                    members = within(members, max_events)
                 if (run >= per_unit or rest or capped or self.exhausted
                         or (min_events > 0 and run >= min_events)):
-                    del self.ranges[i:i + len(members)]
-                    self.cut_count[key] = self.cut_count.get(key, 0) + len(members)
-                    return members
-                i += run
+                    return self._cut(i, members, key)
+                i += pooled
             return []
 
 
@@ -806,7 +844,7 @@ def take_unit(pool, per_unit):
         return members
     first = members[0]
     block = (int(first['startEvent']) - 1) // per_unit
-    while pool and len(members) < per_unit:
+    while pool and sum(span(r) for r in members) < per_unit:
         rng, prev = pool[0], members[-1]
         start = int(rng['startEvent'])
         if (rng.get('LFN') != first.get('LFN') or start != int(prev['lastEvent']) + 1
@@ -865,7 +903,7 @@ def main():
     ap.add_argument('--env', action='append')
     ap.add_argument('--summary', default='es_summary.json')
     ap.add_argument('--events-per-unit', type=int, default=int(os.environ.get('ES_EVENTS_PER_UNIT', '0')),
-                    help='consecutive events per unit for a fine-grained task (one event per range); 0 = one range per unit')
+                    help='consecutive events per unit for a fine-grained task, whole ranges of one or more events; 0 = one range per unit')
     ap.add_argument('--close-s', type=float, default=float(os.environ.get('ES_CLOSE_S', '0')),
                     help='seconds between closes: the units since the last close merged into one file and registered; 0 = each unit registers its own')
     ap.add_argument('--close-max-files', type=int, default=int(os.environ.get('ES_CLOSE_MAX_FILES', '0')),
@@ -957,11 +995,17 @@ def main():
     # when the server runs dry only the units in flight and the last close
     # remain, well inside the pilot's 30 minutes after "No more events".
     batch_channel = os.environ.get('EPICPROD_SWITCH_ES_BATCH_CHANNEL') == '1'
+    failed_unit = batch_channel and os.environ.get('EPICPROD_SWITCH_ES_FAILED_UNIT') == '1'
+    log(f"failed units: {'one message a unit' if failed_unit else 'one message a range'}")
     resident_units = os.environ.get('EPICPROD_SWITCH_ES_RESIDENT_UNIT') == '1'
     if resident_units:
         # The slots' containers start clean: the switch goes as a setting.
         args.env = (args.env or []) + ['EPICPROD_SWITCH_ES_RESIDENT_UNIT=1']
         args.prestage = True
+        if os.environ.get('EPICPROD_SWITCH_ES_RESIDENT_RESTART') == '1':
+            # A slot's dead resident simulation is restarted, a few times at
+            # most, and then the slot takes no more units (resident_sim.py).
+            args.env.append('EPICPROD_SWITCH_ES_RESIDENT_RESTART=1')
         if os.environ.get('EPICPROD_SWITCH_ES_RECO_ASYNC') == '1':
             # A unit's reconstruction finishes in the background while its
             # slot simulates the next (resident_unit.asynchronous).
@@ -1035,6 +1079,9 @@ def main():
             'channel_mode': 'batch' if batch_channel else 'legacy',
             'channel': feed.stats() if hasattr(feed, 'stats') else None,
             'ranges_pooled': len(pool),
+            # The range size the job's ranges showed: the close-out derives
+            # the range ids of a unit's span from it (es_closeout.py).
+            'range_events': pool.range_events,
             'input_pending': len(getattr(feed, 'pending', ())),
             'report_messages': reported[0],
             'idle_slots': sum(s.unit is None and s.proc.poll() is None for s in slots),
@@ -1071,13 +1118,26 @@ def main():
         # The pilot takes one report per 10 ms pass; what it has not taken
         # yet is the backlog the final grace must cover.
         now = time.time()
-        messages = 1 if ok and batch_channel else len(range_ids)
+        messages = 1 if (ok and batch_channel) or (not ok and failed_unit) else len(range_ids)
         backlog[0] = max(0.0, backlog[0] - (now - backlog[1]) * PILOT_REPORTS_PER_S) + messages
         backlog[1] = now
         if ok and batch_channel:
+            # events: the batch pilot counts the job's events from it, not
+            # one a range (ten-event ranges, task 41431).
             feed.report('EPICPROD_ES_RESULT_V1 ' + json.dumps({
                 'output': os.path.join(slot.outbox, uid, 'unit.json'),
-                'ids': range_ids, 'wall': wall}, separators=(',', ':')))
+                'ids': range_ids, 'wall': wall, 'events': int(record.get('events') or 0) or len(range_ids)},
+                separators=(',', ':')))
+            reported[0] += 1
+            return
+        if not ok and failed_unit:
+            # One message for the unit, which the batch pilot reports from its
+            # own pass (EPICPROD_SWITCH_ES_FAILED_UNIT, set by that pilot): a
+            # message a range held the pilot's range answers behind a server
+            # call each (job 6254767: 480,000 for one slot's 961 failed units).
+            feed.report('EPICPROD_ES_FAILED_V1 ' + json.dumps({
+                'ids': range_ids, 'message': str(extra or record.get('message', 'failed'))[:300]},
+                separators=(',', ':')))
             reported[0] += 1
             return
         for rid in range_ids:

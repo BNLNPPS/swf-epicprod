@@ -3,7 +3,16 @@
 from .google_production import register_plan, reserve, task_inventory
 
 QUEUE = 'NERSC_Perlmutter_epic_es'
-EVENTS = 6000000
+# The nodes production runs on: the feeder adds a sample only while fewer of
+# its own samples have a job or a live task (each sample is one job on one
+# node). One until stable production is validated, then five (Torre,
+# 2026-10-27); the production dashboard's title row shows it.
+NODES = 1
+# A job's insertion writes one JEDI_Events row per unprocessed event in one
+# transaction, inside JEDI's fixed 600 s limit on storeJobs: 6,000,000 took
+# 563-596 s for a first job and never fit for a retry of 5,750,520 (task
+# 41316), so the task is half that (NERSC_PERLMUTTER.md, Production).
+EVENTS = 3000000
 MARKER = 'perlmutter_production'
 AUTHORITY = '01a17817-55fd-7551-be68-d05dbb102492'
 # The four-hour shape of task 41262 (NERSC_PERLMUTTER.md, Event Service jobs
@@ -13,12 +22,14 @@ AUTHORITY = '01a17817-55fd-7551-be68-d05dbb102492'
 # 6071469). One job takes the whole task: nJobs is events // events_per_job.
 # Reconstruction at 0.10 s an event against 440 events a second simulated
 # (0.289 s on 128 slots, job 6074509) keeps about 45 members busy: 48 shared
-# members, about 2.85 GB private each.
-SHAPE = dict(events_per_job=EVENTS, unit_events=500, close_s=120, close_concurrency=4,
+# members, about 2.85 GB private each. Ranges of ten events (task 41444) carry
+# a tenth of the range rows, server reports and event-log lines of one-event
+# ranges, and the job's insertion a tenth of its time.
+SHAPE = dict(events_per_job=EVENTS, unit_events=500, range_events=10, close_s=120, close_concurrency=4,
              deadline_s=14100, margin_s=600, memory_mb_per_core=1350, slots='128',
              pilot_cores=256, resident_sim=True, resident_unit=True, fast_merge=True,
              batch_channel=True, parallel_start=True, reco_pool=48, reco_async=True,
-             report_barrier=True, notice=True)
+             report_barrier=True, notice=True, job_log=True)
 # JEDI states in which a task has, or is about to make, a job. A paused task
 # makes none.
 LIVE_TASK_STATES = ('registered', 'defined', 'assigning', 'ready', 'pending', 'scouting',
@@ -56,17 +67,36 @@ def shaped(task, extra):
     return task
 
 
+def feeder_task_ids():
+    """The PanDA task ids of every sample this feeder made."""
+    from pcs.models import ProdTask
+    ids = set()
+    for task in ProdTask.objects.filter(overrides__has_key=MARKER):
+        if task.panda_task_id:
+            ids.add(int(task.panda_task_id))
+        ids.update(int(a.jedi_task_id) for a in task.panda_tasks.all() if a.jedi_task_id)
+    return sorted(ids)
+
+
 def occupancy():
-    """The queue's jobs and its other live tasks: anything there holds a new
-    task, so the queue runs one node outside a trial."""
+    """The jobs and live tasks of the feeder's own samples on the queue: they
+    hold a new sample, so production runs one node outside a trial. A test or
+    any other task on the queue runs beside it on a node of its own and holds
+    nothing (Torre, 2026-10-27: tests run concurrently with production; five
+    nodes is a soft target, not a limit)."""
     from django.db import connections
+    ids = feeder_task_ids()
+    if not ids:
+        return 0, []
     with connections['panda'].cursor() as cursor:
-        cursor.execute('SELECT count(*) FROM doma_panda.jobsactive4 WHERE computingsite=%s', [QUEUE])
-        jobs = cursor.fetchone()[0]
-        cursor.execute('SELECT count(*) FROM doma_panda.jobsdefined4 WHERE computingsite=%s', [QUEUE])
-        jobs += cursor.fetchone()[0]
-        cursor.execute('SELECT jeditaskid FROM doma_panda.jedi_tasks WHERE site=%s AND status = ANY(%s)',
-                       [QUEUE, list(LIVE_TASK_STATES)])
+        jobs = 0
+        for table in ('jobsactive4', 'jobsdefined4'):
+            cursor.execute(f'SELECT count(*) FROM doma_panda.{table} WHERE computingsite=%s AND jeditaskid = ANY(%s)',
+                           [QUEUE, ids])
+            jobs += cursor.fetchone()[0]
+        cursor.execute('SELECT jeditaskid FROM doma_panda.jedi_tasks '
+                       'WHERE site=%s AND status = ANY(%s) AND jeditaskid = ANY(%s)',
+                       [QUEUE, list(LIVE_TASK_STATES), ids])
         tasks = [row[0] for row in cursor.fetchall()]
     return jobs, tasks
 
@@ -94,8 +124,9 @@ def replenish(created_by='es-closeout'):
         # whole production sample: once its first job is cut, the rest of the
         # sample runs as any other.
         extra = trial()
-        if (active or jobs or tasks) and not extra:
-            result.update(outcome='steady', reason='the node has its work')
+        if max(len(active), jobs, len(tasks)) >= NODES and not extra:
+            result.update(outcome='steady', reason='the node has its work' if NODES == 1
+                          else f'the {NODES} nodes have their work')
         else:
             from pcs import services
             from pcs.commands import build_evgen_task_params
