@@ -191,7 +191,12 @@ the production views. `tools/quiet_end.py <task id>... --reason TEXT --apply`,
 run in the deployed monitor's environment, refuses a task with no PCS task, one
 already ended, or one with an active or defined job; a running Event Service
 job ends quietly by the close-out instead (`tools/es_force_finish.py`), which
-credits what it saved and finishes it. For each accepted task it records the
+credits what it saved and finishes it in PanDA. On a live node that does not
+stop the work: the harness runs on from the ranges its pilot holds and
+registers closes that PanDA no longer credits, until the pilot's deadline
+(Perlmutter job 6307181, 2026-10-28: five more closes in the twelve minutes
+after its force-finish at 08:20 ET). A task with such a job stays paused;
+resumed, it is given those ranges again (`scripts/es-dedup.py`). For each accepted task it records the
 intent on the PCS task, `ProdTask.overrides['quiet_end'] = {by, at, reason}`.
 It then sends PanDA's soft finish, which kills nothing, only when JEDI will end
 the task `finished`: at least one input file finished and no fail-on-goal split
