@@ -8671,8 +8671,11 @@ def campaign_plan_entries_set(campaign_name, entries, comment, *,
 # (swf-monitor docs/AI_PROPOSALS.md, docs/PINGS.md § Pings with a remedy).
 
 STANDARD_CONFIG_TEMPLATE = '26.03.0 Standard Production'
-STANDARD_CONFIG_RSE = 'BNL-XRD'
-# The log store production writes to, paired with the output RSE above in the
+# New production output goes to JLab's store (Torre Wenaus, 2026-10-28: BNL-XRD
+# at the edge of its useful space); BNL-XRD stays the payload's stash for a
+# catalog outage.
+STANDARD_CONFIG_RSE = 'EIC-XRD'
+# The log store production writes to, paired with the output RSE in the
 # production line PCS ingested (OUT_RSE=BNL-XRD LOG_RSE=EIC-XRD-LOG). Named
 # here rather than left to the template row: unset, it reached the payload
 # empty, which spent every job's first log upload on a placeholder that is not
