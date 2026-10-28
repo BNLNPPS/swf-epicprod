@@ -487,12 +487,16 @@ A PCS task over a registered EVGEN sample runs there through the Event Service
 with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
 41262 (`swf_epicprod/evgen_es.py`):
 
-- **Input.** The files the task's manifest covers are copied from the
-  payload's own JLab read path to BNL_PROD_DISK_1, checked against JLab's
-  adler32, and registered with each file's event count in the task's input
-  dataset, `group.EIC.esinput.<composed name>` (`scripts/evgen-es-stage.py`).
-  Task p4497 (26.07.3, eAu 9x100 SIDIS) covers three files of about 2.25
-  million events, about 15 GB, staged in four minutes.
+- **Input.** The task's input is its registered sample's dataset in the
+  catalog that holds it, JLab's Rucio today (`epic:/EVGEN/...`), limited to
+  the files its manifest covers (`evgen_es.catalog_input`; JEDI's template
+  `files`). Nothing is copied to or registered at BNL: JEDI reads the
+  dataset, each file's size, adler32 and event count from that catalog
+  through the ePIC DDM interface (`swf_epicprod.jedi.EpicDDMClient`,
+  distcomp-services panda-server CHANGES.md, 28 October), which knows a
+  path-named catalog's files by their names' last component, since JEDI's
+  Event Service spec joins its fields with '/', and gives a file listed
+  without a GUID a stable one from its `scope:name`.
 - **Shape.** One job per file, the pilot staging the job's own file so the
   payload simulates from it (`run.sh`, `EPICPROD_INPUT_LOCAL`), never from
   the door path of the manifest's first row; every unit records its source
@@ -506,8 +510,9 @@ with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
   notice.
 - **Outputs.** The task's own RECO dataset at JLab, in merged closes of
   thousands of events rather than one file a job; closes are named from the
-  manifest's first row with the job's PanDA id and close number, while each
-  unit's record carries its true source file.
+  job's own EVGEN file with the job's PanDA id and close number
+  (`EPICPROD_SWITCH_ES_INPUT_NAMES`), and each unit's record carries its source
+  file.
 
 The pressure front feeds the queue (its feed switch on): a whole-node queue
 draws from the ready pool only tasks over a registered EVGEN sample
@@ -524,36 +529,30 @@ the queue takes the next task while its own work fills fewer nodes than that:
 its production jobs not started or running, its files JEDI has not made jobs
 of, and at least one node for each live task (`front.decide`,
 `node_occupied`). Jobs beyond the ceiling wait activated for a node; a test
-beside production takes one of the ceiling's nodes. The task's EVGEN files may
-be staged ahead (`scripts/evgen-es-stage.py`), so the feed only checks them.
-`scripts/evgen-es-submit.py <task> --by NAME --reason TEXT` submits one by
-hand the same way; `--dry-run` prints the PanDA spec.
+beside production takes one of the ceiling's nodes.
 
-A task's EVGEN files are also staged ahead at NERSC, so that no job pulls its
-3.5 to 5 GB file over the WAN when it starts: `scripts/evgen-es-nersc-stage.py
-stage <task>` (`swf_epicprod/nersc_stage.py`) copies the files not yet there
-from BNL_PROD_DISK_1 to `/global/cfs/cdirs/m3763/epicprod/esinput/<lfn>`,
-each checked against its adler32 and renamed into place. The copy is a Slurm
-job in the transfer QOS (cron architecture) submitted through the IRI API
+A task brokered to the queue has its whole input staged at NERSC before it
+starts (Torre Wenaus, 2026-10-28), so that no job pulls its file over the WAN:
+the feed places the task on the queue, so no other queue takes it, starts one
+copy of the files not yet there (`nersc_stage.ensure_staged`) and holds it,
+`input_staging`; a later cycle submits it once every file is there at its
+catalog size. The copy reads each file from the replica its catalog lists
+(`nersc_stage.catalog_urls`, an available disk replica by the catalog's
+priority, never a fixed door) into
+`/global/cfs/cdirs/m3763/epicprod/esinput/<name's last component>`, checked
+against its adler32 and renamed into place. It is a Slurm job in the transfer
+QOS (cron architecture) submitted through the IRI API
 (`swf_epicprod/nersc_iri.py`) under its account, `wguan`; it takes xrdcp from
 ATLAS's tools on CVMFS (a transfer node has none of its own and no grid CA
-directory) and reads BNL with our production Rucio proxy, kept at NERSC in
+directory) and reads with our production Rucio proxy, kept at NERSC in
 `/global/homes/w/wguan/epicprod`, mode 700, the proxy mode 600, replaced
-whenever ours is newer (Torre Wenaus, 2026-10-28). p4498 and p4499, eleven
-files and 44 GB, were staged in about four minutes. The production EVGEN
-shape reads it there (`nersc_input`): the job leaves its input to direct
-access, which the queue allows over the WAN, so the pilot copies nothing, and
-the harness takes the file from `ES_INPUT_DIRS` (`es_harness.find_input`, switch `EPICPROD_SWITCH_ES_NERSC_INPUT`). The
-feed refuses a task whose files are not all at NERSC (`evgen_es.prepare`);
-`evgen-es-nersc-stage.py stage-ready`, every fifteen minutes by cron on
-swf-testbed (log `/opt/swf-monitor/shared/logs/nersc-stage-cron.log`), stages
-the one task the front allocates to the queue next (its decision record's
-`next_task`), at BNL and then at NERSC, outside the front's cycle; nothing
-else in the ready pool is copied, and a queue whose feed is off allocates
-nothing (`/data/swf-tmp/nersc-stage-state.json` names the copy jobs in
-flight). A copy is short beside the work it feeds: a six-hour job on three
-nodes takes about 1.8 million DIS events, about one 3.6 GB EVGEN file, which
-copies in about 15 s (275 MB/s, 28 October).
+whenever ours is newer. A whole task copies in minutes: p4499's eight files,
+28.6 GB and about 48 hours of three nodes, in about 2½ minutes (275 MB/s, 28
+October). The job leaves its input to direct access (`nersc_input`), the
+batch pilot links the site copy into the job and asks no catalog for a replica
+(The batch pilot, Inputs staged at the site), and the harness reads it
+(`EPICPROD_SWITCH_ES_NERSC_INPUT`). `scripts/evgen-es-nersc-stage.py stage
+<task>` and `stage-dataset <did>` copy by hand the same way.
 
 The production shape carries three payload switches, which canary 41481 runs
 together: `EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE` (a unit's RECO is written in
