@@ -92,6 +92,44 @@ def bnl_urls(proxy, lfns):
     return {did.split(':', 1)[1]: url for did, url in urls.items()}
 
 
+# Metadata timing on the two shared filesystems a job writes: N small files
+# created, renamed in place, flocked and removed in /pscratch and in CFS, each
+# operation timed (Python on the node; flock as reco_pool.acquire takes it).
+METADATA_PROBE = r'''python3 - <<'PY'
+import fcntl, os, statistics, time
+for base in (os.path.expandvars('$PSCRATCH/epicprod-mdprobe'), '/global/cfs/cdirs/m3763/epicprod/mdprobe'):
+    os.makedirs(base, exist_ok=True)
+    t = {'create': [], 'rename': [], 'flock': [], 'unlink': []}
+    for i in range(40):
+        p = os.path.join(base, f'f{i}.tmp')
+        a = time.time(); open(p, 'w').write('x'); t['create'].append(time.time() - a)
+        a = time.time(); os.replace(p, p[:-4]); t['rename'].append(time.time() - a)
+        a = time.time(); s = open(p[:-4], 'a'); fcntl.flock(s, fcntl.LOCK_EX | fcntl.LOCK_NB); fcntl.flock(s, fcntl.LOCK_UN); s.close(); t['flock'].append(time.time() - a)
+        a = time.time(); os.unlink(p[:-4]); t['unlink'].append(time.time() - a)
+    print(base, {k: (round(statistics.median(v) * 1000, 1), round(max(v) * 1000, 1)) for k, v in t.items()}, 'ms median, max')
+    os.rmdir(base)
+PY'''
+
+
+# Bulk write and removal on the two shared filesystems: 2 GB written,
+# synced, then removed, each timed.
+IO_PROBE = r'''for base in "$PSCRATCH/epicprod-ioprobe" /global/cfs/cdirs/m3763/epicprod/ioprobe; do
+  mkdir -p "$base"; f="$base/blob"
+  a=$(date +%s.%N); dd if=/dev/zero of="$f" bs=4M count=512 status=none; b=$(date +%s.%N)
+  sync "$f"; c=$(date +%s.%N); rm -f "$f"; d=$(date +%s.%N)
+  echo "$base write $(echo "$b - $a" | bc) s, sync $(echo "$c - $b" | bc) s, rm $(echo "$d - $c" | bc) s"
+  dd if=/dev/zero of="$f" bs=4M count=512 status=none; e=$(date +%s.%N); rm -f "$f"; g=$(date +%s.%N)
+  echo "$base rm unsynced 2 GB: $(echo "$g - $e" | bc) s"
+  rmdir "$base"
+done'''
+
+
+# Scratch quota of the harvester's account (xin, whose work directories the
+# jobs fill) beside this account's.
+QUOTA_PROBE = ('for u in xin wguan; do echo "== $u"; lfs quota -h -u $u /pscratch 2>&1 | tail -3; done; '
+               'echo "== group m3763"; lfs quota -h -g m3763 /pscratch 2>&1 | tail -3')
+
+
 def missing(client, files):
     """The staged files (``evgen_es.stage``) not at NERSC at their catalog size."""
     out = []

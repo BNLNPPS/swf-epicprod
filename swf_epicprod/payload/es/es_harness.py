@@ -481,7 +481,10 @@ class Slot:
                  + (f" --input {input_path}" if input_path else "")
                  + (" --handoff" if args.close_s > 0 else "")
                  + "".join(f" --env {kv}" for kv in (args.env or [])))
-        cmd = container_command(args, inner, extra_binds=[os.path.dirname(input_path)] if input_path else [])
+        binds = [os.path.dirname(input_path)] if input_path else []
+        if getattr(args, 'local_scratch', None):
+            binds.append(args.local_scratch)
+        cmd = container_command(args, inner, extra_binds=binds)
         self.log = open(os.path.join(self.work, 'slot.log'), 'w')
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT,
                                      start_new_session=args.own_sessions)
@@ -1034,6 +1037,29 @@ def main():
             args.env.append('EPICPROD_SWITCH_ES_RECO_ASYNC=1')
             args.reco_async = True
             log('asynchronous reconstruction: slots simulate while their units reconstruct')
+    args.local_scratch = None
+    if os.environ.get('EPICPROD_SWITCH_ES_LOCAL_SCRATCH') == '1':
+        # The units' scratch (a resident unit's simulation output, read once
+        # by its reconstruction and then removed) in the node's own /tmp, not
+        # on the shared file system: on Perlmutter the step after a resident
+        # unit's reconstruction, whose one heavy operation is that removal on
+        # /pscratch, was served one unit at a time across the node, about a
+        # minute each (canary 41481, 2026-10-28).
+        args.local_scratch = os.path.join('/tmp', f'epicprod-es-{os.getpid()}')
+        os.makedirs(args.local_scratch, exist_ok=True)
+        args.env = (args.env or []) + [f'EPICPROD_TMPDIR={args.local_scratch}']
+        st = os.statvfs(args.local_scratch)
+        fs = '?'
+        try:
+            with open('/proc/mounts') as stream:
+                mounts = [line.split() for line in stream]
+            best = max((m for m in mounts if args.local_scratch.startswith(m[1].rstrip('/') + '/')),
+                       key=lambda m: len(m[1]), default=None)
+            fs = f'{best[2]} at {best[1]}' if best else '?'
+        except OSError:
+            pass
+        log(f'unit scratch on the node: {args.local_scratch} ({fs}), '
+            f'{st.f_bavail * st.f_frsize / 1e9:.1f} GB free')
     if reco_pool.enabled():
         # The job's shared resident EICrecon (reco_pool.py) in place of one
         # per slot; the members start with the units that first need them.
@@ -1453,6 +1479,8 @@ def main():
     if reco_pool.enabled():
         ended_members = reco_pool.stop_all(reco_pool.job_pool(args.work))
         log(f'reco pool: {ended_members} members ended')
+    if getattr(args, 'local_scratch', None):
+        shutil.rmtree(args.local_scratch, ignore_errors=True)
     summary['wall_s'] = round(time.time() - started, 1)
     ended['at'] = time.time()
     shipped.stop()

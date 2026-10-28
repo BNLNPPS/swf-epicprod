@@ -27,7 +27,7 @@ from swf_epicprod.nersc_iri import Client
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('action', choices=('proxy', 'probe', 'stage', 'job'))
+    parser.add_argument('action', choices=('proxy', 'probe', 'mdprobe', 'ioprobe', 'quota', 'stage', 'job'))
     parser.add_argument('target', nargs='?')
     parser.add_argument('--wait', action='store_true')
     args = parser.parse_args()
@@ -36,9 +36,11 @@ def main():
     if args.action == 'proxy':
         print(json.dumps({k: v for k, v in nersc_stage.ensure_proxy(client, proxy).items()
                           if k in ('size', 'mode', 'uid', 'mtime')}))
-    elif args.action == 'probe':
-        name = 'probe-' + time.strftime('%Y%m%dT%H%M%S')
-        job_id = client.submit(nersc_stage.job_spec(name, nersc_stage.PROBE, duration_s=600))
+    elif args.action in ('probe', 'mdprobe', 'ioprobe', 'quota'):
+        name = args.action + '-' + time.strftime('%Y%m%dT%H%M%S')
+        script = {'probe': nersc_stage.PROBE, 'mdprobe': nersc_stage.METADATA_PROBE,
+                  'ioprobe': nersc_stage.IO_PROBE, 'quota': nersc_stage.QUOTA_PROBE}[args.action]
+        job_id = client.submit(nersc_stage.job_spec(name, script, duration_s=600))
         print('submitted', job_id, name)
         state = nersc_stage.wait_job(client, job_id, timeout_s=1200)
         print(json.dumps(state)[:800])

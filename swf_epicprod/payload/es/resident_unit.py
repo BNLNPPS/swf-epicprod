@@ -226,11 +226,13 @@ def reconstruct(template, unit, out, env):
             reply = zmq_request.request(env['EPICPROD_RECO_SOCKET'], asked)
             reply.update(request_started_at=started, request_ended_at=time.time())
             resident_sim.write_json(out / 'reconstruction.json', reply)
+        replied = time.time()
         if reply.get('status') != 'completed':
             raise RuntimeError(f"reconstruction {reply.get('status')}: {reply.get('error') or reply}")
         events = reply.get('events_processed')
         if events != count or not reco.is_file() or reco.stat().st_size == 0:
             raise RuntimeError(f'reconstruction processed {events} events of {count}')
+        checked = time.time()
         handoff = Path(env['EPICPROD_RECO_HANDOFF'])
         handoff.mkdir(parents=True, exist_ok=True)
         moved = handoff / reco.name
@@ -238,7 +240,16 @@ def reconstruct(template, unit, out, env):
             shutil.move(str(reco), str(moved))
         terms = dict(template['handoff'], file=str(moved), events=events)
         resident_sim.write_json(handoff / f'{taskname}.handoff.json', terms)
-        return dict(terms, handoff_file=str(handoff / f'{taskname}.handoff.json'))
+        handed = time.time()
+        shutil.rmtree(unit['scratch'], ignore_errors=True)
+        # Each step after the reconstruction's reply, timed: the pool's own
+        # bookkeeping after the reply, the output's checks, the handoff and
+        # the removal of the unit's scratch (canary 41481: about a minute a
+        # unit across the node, one unit at a time).
+        ended = float(reply.get('request_ended_at') or replied)
+        post = {'pool_s': round(replied - ended, 3), 'checks_s': round(checked - replied, 3),
+                'handoff_s': round(handed - checked, 3), 'scratch_removal_s': round(time.time() - handed, 3)}
+        return dict(terms, handoff_file=str(handoff / f'{taskname}.handoff.json'), post_reco=post)
     except BaseException:
         # A failed unit's RECO written in place is not left for the close.
         if handoff_in_place(env):

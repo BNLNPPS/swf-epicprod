@@ -29,6 +29,24 @@ SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 WORKDIR=$ACCESS_POINT/${SLURM_JOBID:-nojob}/${SLURM_PROCID:-0}
 mkdir -p "$WORKDIR" && cd "$WORKDIR" || { log "cannot enter $WORKDIR"; exit 1; }
 
+# OURS: the job's work tree readable to production operations' IRI account,
+# so its logs are read while it runs (Torre Wenaus, 2026-10-28: "we NEED to
+# be able to see the logs"). Traverse only on this account's directories
+# above it, read below it, and a default ACL so what the job writes later is
+# readable too. A file made private (the proxy copy, mode 600) stays private:
+# its ACL mask follows its mode. A failure is said and never stops a launch.
+READER=wguan
+share_workdir() {
+    local d
+    command -v setfacl >/dev/null || { echo "no setfacl"; return 1; }
+    setfacl -m "u:$READER:rX" "$WORKDIR" && setfacl -d -m "u:$READER:rX" "$WORKDIR" || return 1
+    d=$(dirname "$WORKDIR")
+    while [ -O "$d" ]; do
+        setfacl -m "u:$READER:x" "$d" || return 1
+        d=$(dirname "$d")
+    done
+}
+
 # OURS: the launch's own account of itself, published. The site copies a
 # task's output to the public worker record only when a job ran, so a
 # launch that dies before its pilot takes a job leaves nothing readable
@@ -58,6 +76,11 @@ trap publish_launch_log EXIT
 
 log "queue $PQ worker ${HARVESTER_WORKER_ID:-?} harvester ${HARVESTER_ID:-?} task ${SLURM_PROCID:-0} host $(hostname -s) workdir $PWD"
 log "launcher $(sha256sum "$SELF" 2>/dev/null | cut -c1-12) from $SELF"
+if share_out=$(share_workdir 2>&1); then
+    log "work tree readable to $READER (ACL)"
+else
+    log "work tree not shared with $READER: ${share_out:-setfacl failed}"
+fi
 unset TMPDIR
 command -v python3 >/dev/null || log "no python3 on the host: the pool sample and the node guard read are skipped"
 
