@@ -111,7 +111,8 @@ def definition(settings):
         raise ValueError('production ES reco_async needs resident_unit')
     if 'report_barrier' in cfg and type(cfg['report_barrier']) is not bool:
         raise ValueError('production ES report_barrier must be a boolean')
-    for key in ('handoff_in_place', 'unit_local', 'input_names', 'local_scratch', 'nersc_input'):
+    for key in ('handoff_in_place', 'unit_local', 'input_names', 'local_scratch', 'nersc_input',
+                'local_work', 'record_per_close'):
         if key in cfg and type(cfg[key]) is not bool:
             raise ValueError(f'production ES {key} must be a boolean')
     if cfg.get('input_names') and not evgen:
@@ -188,6 +189,15 @@ def apply(spec, settings):
         # (swf_epicprod/nersc_stage.py), never pulling it over the WAN at its
         # start (Torre Wenaus, 2026-10-28); with direct access below.
         env['EPICPROD_SWITCH_ES_NERSC_INPUT'] = '1'
+    if cfg.get('local_work'):
+        # The job's own transient files in the node's memory, only the logs on
+        # the shared file system (canary 41486: 31 events/s, the step after
+        # reconstruction no longer served one unit at a time).
+        env['EPICPROD_SWITCH_ES_LOCAL_WORK'] = '1'
+    if cfg.get('record_per_close'):
+        # The units' records leave with their close; the job record and the
+        # end-of-job report carry only units no close shipped.
+        env['EPICPROD_SWITCH_ES_RECORD_PER_CLOSE'] = '1'
     if cfg.get('local_scratch'):
         # The units' scratch in the node's /tmp, off the shared file system:
         # on Perlmutter the step after a resident unit's reconstruction, which

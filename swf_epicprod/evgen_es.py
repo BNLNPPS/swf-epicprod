@@ -43,7 +43,7 @@ SHAPE = dict(unit_events=100, range_events=10, close_s=300, close_concurrency=4,
              batch_channel=True, parallel_start=True, reco_pool=32, reco_async=True,
              report_barrier=True, notice=True, job_log=True,
              handoff_in_place=True, unit_local=True, input_names=True, local_scratch=True,
-             nersc_input=True)
+             nersc_input=True, local_work=True, record_per_close=True)
 
 
 def capable(task, cfg=None):
