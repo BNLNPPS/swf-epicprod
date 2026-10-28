@@ -329,6 +329,7 @@ def finish_resident(record, out, args, handed, message):
                   events_reconstructed=handed['events'] if handed else None,
                   dids=[], registration='deferred' if handed else None,
                   handoff=handed, unit_path='resident',
+                  post_reco=(handed or {}).get('post_reco'),
                   status='ok' if handed else 'error', message=message)
     record.update(unit_timing(out, args.work, record['started_at'], {}))
     # The stage intervals the run.sh path's report carries, from the requests.

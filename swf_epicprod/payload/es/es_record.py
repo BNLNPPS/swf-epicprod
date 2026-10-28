@@ -35,7 +35,7 @@ SPACING_S = 60
 MAX_WRITES = 1500
 UNIT_FIELDS = ('unit_id', 'slot', 'status', 'started_at', 'ended_at', 'wall_s',
                'simulation', 'reconstruction', 'phases', 'timing_error',
-               'events', 'events_reconstructed', 'close', 'message', 'unit_path')
+               'events', 'events_reconstructed', 'close', 'message', 'unit_path', 'post_reco')
 
 
 def trim_unit(record):
