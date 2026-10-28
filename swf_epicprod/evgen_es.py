@@ -32,6 +32,29 @@ STAGE_DIR = '/data/swf-tmp'
 COPY_TIMEOUT_S = 3600
 
 
+# The four-hour shape of the validated DIS run (task 41262: 5x130 DIS EVGEN,
+# 128 slots, 100-event units, closes every 300 s, 32 shared reconstruction
+# members, 1,500 MB a core; docs/NERSC_PERLMUTTER.md, Event Service jobs on
+# Perlmutter) with the production settings the gun runs carry: ten-event
+# ranges on the batch channel, concurrent closes, the job's log, the notice.
+SHAPE = dict(unit_events=100, range_events=10, close_s=300, close_concurrency=4,
+             deadline_s=14100, margin_s=600, memory_mb_per_core=1500, slots='128',
+             pilot_cores=256, resident_sim=True, resident_unit=True, fast_merge=True,
+             batch_channel=True, parallel_start=True, reco_pool=32, reco_async=True,
+             report_barrier=True, notice=True, job_log=True)
+
+
+def event_service(task, staged):
+    """The task's ``event_service`` override for its staged input: one job
+    per file over the files' common event count and the task capped at its
+    manifest's total, both in whole ranges (the batch pilot rebuilds a range
+    from its first event and the range size)."""
+    k = SHAPE['range_events']
+    per_file = min(f['events'] for f in staged['files']) // k * k
+    return dict(SHAPE, input='evgen', input_dataset=staged['dataset'], files=len(staged['files']),
+                events_per_file=per_file, events=staged['events'] // k * k)
+
+
 def coverage(task):
     """The files the task's manifest covers, in manifest order:
     ``(OrderedDict {EVGEN-relative path: {ext, events}}, total events)``,

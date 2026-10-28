@@ -278,6 +278,19 @@ def status(queue):
     return e['status'] if e else None
 
 
+# Sites whose worker is a whole node for one job: an ordinary single-core job
+# there holds 128 cores and uses one (Torre Wenaus, 2026-10-28: "NO MORE
+# SINGLE CORE 1/128 EFF WORK IN PERL EVER"). Only Event Service work goes to
+# their queues (docs/NERSC_PERLMUTTER.md, The queues).
+WHOLE_NODE_SITES = ('nersc',)
+
+
+def whole_node(queue):
+    """True for a queue whose worker is a whole node for one job."""
+    entry = get(queue)
+    return bool(entry) and entry.get('site') in WHOLE_NODE_SITES
+
+
 def regulated():
     """The queues the pressure front regulates, in order."""
     return [e['queue'] for e in entries() if e['front'] and e['status'] != 'retired']

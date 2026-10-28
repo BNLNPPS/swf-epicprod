@@ -1164,6 +1164,8 @@ def prodtask_manifest_rows(task, cfg=None):
     if es:
         from swf_epicprod.production_es import definition
         bounded = definition(es)
+        if bounded.get('input') == 'evgen':
+            return bounded['files']  # one job per staged file
         return bounded['events'] // bounded['events_per_job']
     if cfg is None:
         cfg = task.get_effective_config()
@@ -1288,7 +1290,10 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
             raise ValueError('production ES uses native event retries; row-based residual rerun is not supported')
         from swf_epicprod.production_es import definition
         event_service = definition(event_service)
-        rows = [event_service['row']]
+        if event_service.get('input') != 'evgen':
+            # A gun sample's one steering row; an EVGEN sample keeps its
+            # manifest, whose files the staged input dataset holds.
+            rows = [event_service['row']]
 
     if residual_exclusion is None and panda_tasks is not None:
         residual_exclusion = (getattr(panda_tasks, 'metadata', None) or {}).get('residual_exclusion')

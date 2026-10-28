@@ -468,6 +468,45 @@ submission. The cached product `perlmutter_production` and the action records
 of that name show each decision. Setting the switch false stops additions;
 the running job drains.
 
+### EVGEN input in production
+
+Perlmutter takes no ordinary single-core work: a worker there is a whole node
+for one job, so a 26.07 job, single-threaded, would hold 128 cores and use one
+(Torre Wenaus, 2026-10-28: "NO MORE SINGLE CORE 1/128 EFF WORK IN PERL EVER").
+`prodtask_submit_request` refuses a task without an Event Service shape for a
+queue of a whole-node site (`swf_epicprod.queues.whole_node`, the NERSC
+site), before any placement.
+
+A PCS task over a registered EVGEN sample runs there through the Event Service
+with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
+41262 (`swf_epicprod/evgen_es.py`):
+
+- **Input.** The files the task's manifest covers are copied from the
+  payload's own JLab read path to BNL_PROD_DISK_1, checked against JLab's
+  adler32, and registered with each file's event count in the task's input
+  dataset, `group.EIC.esinput.<composed name>` (`scripts/evgen-es-stage.py`).
+  Task p4497 (26.07.3, eAu 9x100 SIDIS) covers three files of about 2.25
+  million events, about 15 GB, staged in four minutes.
+- **Shape.** One job per file, the pilot staging the job's own file so the
+  payload simulates from it (`run.sh`, `EPICPROD_INPUT_LOCAL`), never from
+  the door path of the manifest's first row; every unit records its source
+  file. JEDI takes the files at their common event count
+  (`nEventsPerInputFile`) and stops at the manifest's total (`nEvents`),
+  both in whole ten-event ranges; the last file is taken only part way. A
+  job works to its four-hour deadline and the next continues the file's
+  remaining ranges. The rest is 41262's shape: 128 slots, 100-event units,
+  closes every 300 s, 32 shared reconstruction members, 1,500 MB a core,
+  with the production gun's ten-event ranges, concurrent closes, job log and
+  notice.
+- **Outputs.** The task's own RECO dataset at JLab, in merged closes of
+  thousands of events rather than one file a job; closes are named from the
+  manifest's first row with the job's PanDA id and close number, while each
+  unit's record carries its true source file.
+
+`scripts/evgen-es-submit.py <task> --by NAME --reason TEXT` stages, sets the
+task's `event_service` override and queues the submission on
+`NERSC_Perlmutter_epic_es`; `--dry-run` prints the PanDA spec.
+
 The next step is five nodes on the preempt QOS, which charges half after a
 job's first two hours, with six-hour jobs and then eight (Torre's mail to
 epic-prod-ops, 26 October); the QOS, the Slurm time limit and the worker count

@@ -17,27 +17,44 @@ JEDI_FINE_GRAINED_RANGES = True
 
 
 def definition(settings):
-    """Validate the declared whole-task budget before building any submission."""
+    """Validate the declared whole-task budget before building any submission.
+
+    Two inputs: an internal particle gun (the default: one steering row, its
+    generation plan the input), or a registered EVGEN sample (``input``
+    ``evgen``, swf_epicprod/evgen_es.py): the files its manifest covers,
+    staged at BNL, one job per file over ``events_per_file`` events each, the
+    task capped at ``events``."""
     cfg = dict(settings)
-    for key in ('events', 'input_events', 'events_per_job', 'unit_events', 'close_s', 'deadline_s',
-                'margin_s', 'memory_mb_per_core'):
+    evgen = cfg.get('input') == 'evgen'
+    keys = ('events', 'unit_events', 'close_s', 'deadline_s', 'margin_s', 'memory_mb_per_core')
+    keys += ('events_per_file', 'files') if evgen else ('input_events', 'events_per_job')
+    for key in keys:
         value = cfg.get(key)
         if type(value) is not int or value <= 0:
             raise ValueError('production ES ' + key + ' must be a positive integer')
-    if cfg['events'] % cfg['events_per_job']:
-        raise ValueError('production ES events must be divisible by events_per_job')
-    if cfg['events'] != cfg['input_events']:
-        raise ValueError('production ES generation plan and whole-task budget disagree')
     if cfg['margin_s'] >= cfg['deadline_s']:
         raise ValueError('production ES drain margin must precede its deadline')
     if not re.fullmatch(r'[^\s,]+:[^\s,]+', str(cfg.get('input_dataset') or '')):
         raise ValueError('production ES needs its registered PanDA input dataset')
-    row = str(cfg.get('row') or '').split(',')
-    if (len(row) != 4 or row[1] != 'steer' or row[3] != '0000'
-            or not row[0] or any(c.isspace() for c in row[0])):
-        raise ValueError('production ES needs one complete, zero-offset particle-gun steering row')
-    if int(row[2]) != cfg['events']:
-        raise ValueError('production ES row and whole-task event budgets disagree')
+    if evgen:
+        # A job takes one file; JEDI stops at the task's events, so the
+        # last file is taken only as far as the manifest's total.
+        cfg['events_per_job'] = cfg['events_per_file']
+        if cfg['events'] > cfg['files'] * cfg['events_per_file']:
+            raise ValueError('production ES events exceed the staged files')
+        if not cfg.get('resident_sim'):
+            raise ValueError('production ES over EVGEN input needs the resident simulation')
+    else:
+        if cfg['events'] % cfg['events_per_job']:
+            raise ValueError('production ES events must be divisible by events_per_job')
+        if cfg['events'] != cfg['input_events']:
+            raise ValueError('production ES generation plan and whole-task budget disagree')
+        row = str(cfg.get('row') or '').split(',')
+        if (len(row) != 4 or row[1] != 'steer' or row[3] != '0000'
+                or not row[0] or any(c.isspace() for c in row[0])):
+            raise ValueError('production ES needs one complete, zero-offset particle-gun steering row')
+        if int(row[2]) != cfg['events']:
+            raise ValueError('production ES row and whole-task event budgets disagree')
     slots = str(cfg.get('slots', 'auto'))
     if slots != 'auto' and (not slots.isdigit() or int(slots) <= 0):
         raise ValueError('production ES slots must be auto or a positive integer')
@@ -57,6 +74,8 @@ def definition(settings):
             # received from its first event and the range size (es_batch.py,
             # Prefetch._reconcile).
             raise ValueError('production ES range_events must divide the events')
+        if evgen and cfg['events_per_file'] % k:
+            raise ValueError('production ES range_events must divide each file\'s events')
         if k > 1 and not JEDI_FINE_GRAINED_RANGES:
             raise ValueError('production ES range_events above 1 needs JEDI ranges of several events '
                              'for fine-grained tasks')
@@ -121,11 +140,21 @@ def apply(spec, settings):
     if not dataset.startswith('/RECO/'):
         raise ValueError('production ES output must use the production RECO namespace')
     env = spec['env']
-    if env.get('EVGEN_GENERATOR') != 'particle_gun' or env.get('EVGEN_INTERNAL') != 'true':
+    evgen = cfg.get('input') == 'evgen'
+    if evgen:
+        if env.get('EVGEN_INTERNAL') == 'true':
+            raise ValueError('production ES over EVGEN input needs an external EVGEN sample')
+    elif env.get('EVGEN_GENERATOR') != 'particle_gun' or env.get('EVGEN_INTERNAL') != 'true':
         raise ValueError('additional production statistics require an internal particle gun')
     if str(env.get('COPYFULL', '')).lower() == 'true':
         raise ValueError('production ES FULL retention is not supported')
-    env['EPICPROD_SWITCH_ES_GUN_EVENTS'] = '1'
+    if evgen:
+        # Each slot's resident simulation reads the job's staged file
+        # (NODE_EVENT_DISPATCHER.md, Resident simulation with external EVGEN
+        # input; tasks 41241, 41262).
+        env['EPICPROD_SWITCH_RESIDENT_EVGEN'] = '1'
+    else:
+        env['EPICPROD_SWITCH_ES_GUN_EVENTS'] = '1'
     if cfg.get('resident_sim'):
         env['EPICPROD_SWITCH_RESIDENT_SIM'] = '1'
     prefix = {
@@ -173,17 +202,25 @@ def apply(spec, settings):
         if cfg.get('preempt_first_job'):
             prefix['ES_PREEMPT_FIRST_JOB'] = '1'
     command =' '.join(k + '=' + shlex.quote(v) for k, v in prefix.items())
+    # The gun's input is its small generation plan, read in place. An EVGEN
+    # file is staged by the pilot, so the payload simulates from the job's
+    # own file (run.sh, EPICPROD_INPUT_LOCAL), never from the door path of
+    # the manifest's first row.
     command += (' python3 evgen_job_dispatcher.py es-production '
                 + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])
-                + ' $PILOT_EVENTRANGECHANNEL --accessmode=direct')
-    spec.update(exec=command, fineGrainedProc=True, directInput=True,
+                + ' $PILOT_EVENTRANGECHANNEL' + ('' if evgen else ' --accessmode=direct'))
+    if evgen:
+        shape = dict(nEventsPerInputFile=cfg['events_per_file'], nEventsPerJob=cfg['events_per_file'],
+                     nJobs=cfg['files'], nEvents=cfg['events'])
+    else:
+        shape = dict(nEventsPerInputFile=cfg['input_events'], nEventsPerJob=cfg['events_per_job'],
+                     nJobs=cfg['events'] // cfg['events_per_job'])
+    spec.update(exec=command, fineGrainedProc=True, directInput=not evgen,
                 inputDataset=cfg['input_dataset'], nFilesPerJob=1,
-                nEventsPerWorker=cfg['unit_events'],
-                nEventsPerInputFile=cfg['input_events'], nEventsPerJob=cfg['events_per_job'],
-                nJobs=cfg['events'] // cfg['events_per_job'], nCore=cfg.get('pilot_cores', 1),
+                nEventsPerWorker=cfg['unit_events'], nCore=cfg.get('pilot_cores', 1),
                 walltimeHours=cfg['deadline_s'] / 3600,
                 memory=cfg['memory_mb_per_core'], maxAttempt=10, maxFailure=3,
-                noLog=not cfg.get('job_log'), workerProxy=True, event_service=dict(cfg))
+                noLog=not cfg.get('job_log'), workerProxy=True, event_service=dict(cfg), **shape)
     if cfg.get('range_events', 1) > 1:
         spec['fineGrainedRangeEvents'] = cfg['range_events']
     return spec

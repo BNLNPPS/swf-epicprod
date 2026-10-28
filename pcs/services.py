@@ -6536,6 +6536,15 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
     if not site and not pinned_site(task):
         # Nobody placed it: it goes to the recommended production queue.
         site, placement = prodtask_recommended_placement(task)
+    # A whole-node queue takes Event Service work only, refused before any
+    # placement so a refused task is never left placed there.
+    from swf_epicprod.queues import whole_node
+    target = site or pinned_site(task)
+    if whole_node(target) and not (task.overrides or {}).get('event_service'):
+        raise ServiceError(
+            f'{target} runs one job per whole node: it takes Event Service work only, '
+            f'never ordinary single-core jobs (docs/NERSC_PERLMUTTER.md, The queues).',
+            status=409)
     if site:
         prodtask_place(task, site, changed_by=changed_by, placement=placement)
         task.refresh_from_db()
