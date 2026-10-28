@@ -941,8 +941,12 @@ attempts, including retried failures, to catch a retry storm. A verified
 operator resume starts a new sample at its completion timestamp, so old
 failures cannot immediately pause a repaired task again. Recovery remains
 an operator action; this guard never resumes or kills work. Pending pauses
-are deduplicated by the existing durable operation record. Read failures
-appear as front-cycle errors, not as a healthy zero count.
+are deduplicated by the existing durable operation record. While another
+operation on the task is in flight (a Move a person started), PanDA takes no
+second one: the pause is deferred to the next cycle, recorded as `deferred`,
+not as a front-cycle error (2026-10-27 20:43 ET, 41455 a minute into a Move;
+paused at 20:54 once it finished). Read failures appear as front-cycle
+errors, not as a healthy zero count.
 
 The pause request records task identity, counts, sample boundary and threshold
 in `PandaTaskOperation.evidence` and emits `task_failure_guard` on the live

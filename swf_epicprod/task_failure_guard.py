@@ -196,6 +196,17 @@ def _pause(sample, evidence, *, source, created_by, message):
     current = get_task_operation_targets([sample['jeditaskid']])
     if not current or current[0]['status'] not in ACTIVE_STATUSES:
         return {'outcome': 'state_changed'}
+    # Another operation on the task still in flight (a person's Move) takes
+    # no second one: the pause waits for the next cycle, it has not failed
+    # (2026-10-27 20:43 ET, 41455 a minute into a Move: the refusal was
+    # recorded as the front cycle's error).
+    from monitor_app.models import PandaTaskOperation
+    busy = (PandaTaskOperation.objects
+            .filter(jedi_task_id=sample['jeditaskid'],
+                    status__in=PandaTaskOperation.PENDING_STATUSES)
+            .exclude(operation='pause').first())
+    if busy:
+        return {'outcome': 'deferred', 'reason': f'{busy.operation} in progress'}
     # Its trip is the pause's recorded reason (no pause without one).
     record, created = queue_task_operation(
         task=current[0], operation='pause', requested_by=created_by,
