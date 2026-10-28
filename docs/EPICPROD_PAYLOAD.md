@@ -523,7 +523,8 @@ In order, each a committed step on the clone:
     no file anywhere. Of the 31,000 such jobs of 2026-09-17 the
     registrar's first sample found five in six with no output at the
     storage. Now, when the output RSE is the one behind the stash door
-    (`OUT_RSE` = `STASH_RSE`, BNL-XRD, every production configuration),
+    (`OUT_RSE` = `STASH_RSE`, BNL-XRD, every production configuration
+    until 2026-10-28, when production output moved to EIC-XRD),
     the first act with a finished output is `xrdcp` to its home at the
     RSE, the path the RSE's naming gives its logical name, with the
     job's own credential and no word to the catalog; the copy is
