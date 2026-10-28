@@ -507,7 +507,11 @@ The pressure front feeds the queue (its feed switch on): a whole-node queue
 draws from the ready pool only tasks over a registered EVGEN sample
 (`front.open_to`, the entry's `evgen_es` mark), and its feed stages the
 task's input and sets its `event_service` shape before the submission
-request (`front.feed_task`, `evgen_es.prepare`). The task's EVGEN files may
+request (`front.feed_task`, `evgen_es.prepare`). The queue holds one task at
+a time, as the gun feeder did: it takes the next task when nothing of its
+own is committed or active there, whatever the task's hours (`front.decide`,
+`node_occupied`), since such a task is days of one node, past any hours mark
+(p4497, 5.4 million events: about 54 h). The task's EVGEN files may
 be staged ahead (`scripts/evgen-es-stage.py`), so the feed only checks them.
 `scripts/evgen-es-submit.py <task> --by NAME --reason TEXT` submits one by
 hand the same way; `--dry-run` prints the PanDA spec.
