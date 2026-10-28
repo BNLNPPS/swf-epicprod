@@ -496,7 +496,10 @@ with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
   distcomp-services panda-server CHANGES.md, 28 October), which knows a
   path-named catalog's files by their names' last component, since JEDI's
   Event Service spec joins its fields with '/', and gives a file listed
-  without a GUID a stable one from its `scope:name`.
+  without a GUID a stable one from its `scope:name`. Perlmutter, which
+  stages a task's whole input before the task is submitted, is reported
+  holding the dataset's files on its local disk (the map's `site_staged`),
+  so JEDI marks them ready and activates the job.
 - **Shape.** One job per file, the pilot staging the job's own file so the
   payload simulates from it (`run.sh`, `EPICPROD_INPUT_LOCAL`), never from
   the door path of the manifest's first row; every unit records its source
