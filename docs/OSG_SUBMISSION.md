@@ -335,6 +335,18 @@ and the submit templates, pilot wrapper, and proxy under
 `/data/atlpan/harvester_common/` (pandaharvester01). No glideinWMS
 component runs on either host.
 
+On osgsub01 the pilots' stdout, stderr and condor user logs collect in
+`/var/data/atlpan/condor_logs`, one directory per submission hour, served at
+the queue's `logBaseURL`. No cron, logrotate, tmpfiles or Harvester setting
+rotates or removes them (Harvester's sweeper removes condor jobs and
+preparator directories only); on 28 October 2026 they held 437 GB of the
+520 GB /var, back to 21 October. `scripts/osg-compress-pilot-logs.py` gzips
+the files in hour directories unchanged for six hours and belonging to no
+job in the queue, detached at the lowest priority; it was run on Torre's
+word that day. A compressed log is served as `NAME.gz`. The host's
+`disk_space_monitor.sh` (cron, alerts the PanDA service maintainer at 85%)
+fails on every run while `df` errors on a dead CVMFS mount.
+
 Production operations (`wenauseic`) has passwordless root on both
 since 2026-09-01, alongside pandaserver01. The PanDA service
 maintainer is told in advance of any production-impacting change;
