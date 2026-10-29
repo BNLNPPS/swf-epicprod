@@ -7155,6 +7155,11 @@ def unplace_blocker(task, cfg=None, *, in_pool=False):
     status = str(live.get('status') or '')
     if not status:
         return 'unread', f'PanDA task {task.panda_task_id} could not be read'
+    if _awaits_submission(task, status):
+        if prodtask_site_source(task, cfg) == 'unplaced':
+            return 'not_placed', ('not placed: the pressure front places it when a queue '
+                                  'below its low mark takes it')
+        return '', ''
     if status not in _movable_statuses():
         return 'status', (f'PanDA task {task.panda_task_id} is {status}; only a task '
                           'whose work a move can take is unplaced')
@@ -7165,6 +7170,18 @@ def unplace_blocker(task, cfg=None, *, in_pool=False):
         return 'started', (f'{started} of its jobs have started or ended; '
                            'started work stays where it is')
     return '', ''
+
+
+# A PanDA task in one of these has ended: a queued submission of the task is
+# a new attempt waiting in the ready buffer, which holds no queue.
+ENDED_TASK_STATUSES = ('done', 'finished', 'failed', 'broken', 'aborted')
+
+
+def _awaits_submission(task, status):
+    """True when the task's queued submission is a new attempt waiting in
+    the ready buffer: its last PanDA attempt has ended (p4495 and p4497 on
+    2026-10-29, queued again after 41479 and 41480 were killed)."""
+    return bool((task.overrides or {}).get('queued')) and status in ENDED_TASK_STATUSES
 
 
 # The blockers after which an unplace no longer applies (the mark clears).
@@ -7198,8 +7215,9 @@ def prodtask_unplace(*, task, changed_by='', reason=''):
     before = pinned_site(task, cfg=cfg)
     by = changed_by or 'operator'
     overrides = dict(task.overrides or {})
-    if task.panda_task_id:
-        live = _get_task_record(int(task.panda_task_id)) or {}
+    live = (_get_task_record(int(task.panda_task_id)) or {}) if task.panda_task_id else {}
+    in_panda = bool(task.panda_task_id) and not _awaits_submission(task, str(live.get('status') or ''))
+    if in_panda:
         before = str(live.get('site') or before)
         overrides['unplaced'] = {'by': by, 'at': _timezone.now().isoformat(),
                                  'reason': reason, 'from': before,
@@ -7219,9 +7237,9 @@ def prodtask_unplace(*, task, changed_by='', reason=''):
         subject_type='campaign_task', subject_key=task.name,
         sublevel='high', live_default=True,
         message=f'{task.name} unplaced from {before or "no queue"} by {by}: {reason}; {what}',
-        previous_site=before, reason=reason, in_panda=bool(task.panda_task_id))
+        previous_site=before, reason=reason, in_panda=in_panda)
     return {'task': task.name, 'previous_site': before, 'by': by, 'reason': reason,
-            'in_panda': bool(task.panda_task_id), 'what': what}
+            'in_panda': in_panda, 'what': what}
 
 
 def prodtask_place_unplaced(*, task, site, changed_by='front', placement=None):
