@@ -7237,6 +7237,13 @@ def prodtask_unplace(*, task, changed_by='', reason=''):
     else:
         overrides.pop('panda_site', None)
         overrides.pop('placed_by', None)
+        # The Event Service shape belongs to the queue it was made for: a
+        # whole-node queue that takes the task sets it afresh at its feed
+        # (front._prepare_whole_node), and any other queue submits ordinary
+        # jobs (Torre Wenaus, 2026-10-29, after p4495 and p4497, unplaced
+        # from Perlmutter, went to OSG as Event Service tasks and every job
+        # failed in the pilot).
+        overrides.pop('event_service', None)
         if isinstance(overrides.get('queued'), dict):
             overrides['queued'] = dict(overrides['queued'], site='')
         task.overrides = overrides

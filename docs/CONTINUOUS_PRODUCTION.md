@@ -465,7 +465,12 @@ has nothing to unplace; a PanDA task in a status no move can take, or
 with any job started or ended, keeps its started work where it is.
 - Not yet in PanDA: the placement is removed (an empty `panda_site`
   override where the configuration names a queue) and the task waits in
-  the ready pool for the next queue below its low mark.
+  the ready pool for the next queue below its low mark. Its Event
+  Service shape (`overrides['event_service']`) goes with the placement:
+  a whole-node queue that takes the task sets it afresh at its feed,
+  and any other queue submits ordinary jobs (Torre Wenaus, 2026-10-29,
+  after p4495 and p4497, unplaced from Perlmutter, went to OSG as Event
+  Service tasks and every job failed in the pilot).
 - In PanDA with no job started: the task is marked
   `overrides['unplaced']` (who, when, why, the queue it was at) and joins
   the ready pool, sized at its declared jobs. The queue that takes it
