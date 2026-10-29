@@ -121,6 +121,16 @@ class Client:
     def view(self, path):
         return self.call('GET', self._fs_path('view'), params={'path': path})['output']['content']
 
+    def read(self, path):
+        """The whole text of ``path``; raises IriError when the API answers
+        with only part of it."""
+        out = self.call('GET', self._fs_path('view'), params={'path': path})['output']
+        content = out.get('content') or ''
+        start, end = out.get('start_position'), out.get('end_position')
+        if start is not None and end is not None and end - start != len(content.encode()):
+            raise IriError(f'{path} read incompletely ({len(content.encode())} of {end - start} bytes)')
+        return content
+
     # Compute: a Slurm job described in the API's job specification.
     def submit(self, spec):
         """Submit a job; returns its Slurm job id."""

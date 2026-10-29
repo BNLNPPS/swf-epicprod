@@ -40,7 +40,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_QUEUES = ['UM_GREX_PanDA_1']
 QUEUE_DEFAULTS = {'enabled': False, 'target_running': 0}
 MODES = ('shadow',)
-HARVESTER_HOSTS = ('pandaharvester01', 'pandaharvester02', 'osgsub01-harvester')
 QUEUED_HORIZON_H = 1.0
 QUEUED_FLOOR = 50
 REFILL_CYCLES = 10
@@ -72,8 +71,8 @@ def harvester_reading(queue, reports):
     (swf-monitor docs/HARVESTER_REPORTER.md), from ``reports``
     {host: latest report}. None when no reporting harvester serves the
     queue."""
-    for host in HARVESTER_HOSTS:
-        report = reports.get(host) or {}
+    for host, report in reports.items():
+        report = report or {}
         record = report.get('record') or {}
         db = record.get('harvester_db') or {}
         limits = next((q for q in (db.get('launch_limits') or [])
@@ -248,7 +247,7 @@ def run(census, placement, previous, *, now, errors):
     and reason. ``placement`` is the front cycle's per-queue gates;
     ``previous`` the stored state's ``pilots``; failures are appended to
     ``errors`` and decided as held."""
-    from monitor_app.host_reports import latest
+    from monitor_app.host_reports import HARVESTER_HOSTS, latest
     from swf_epicprod.front import gate_blockers
 
     mode = str(setting('pilot.mode', 'shadow'))

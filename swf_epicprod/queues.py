@@ -56,8 +56,8 @@ def dispatch_capabilities(reports=None):
         if now - _dispatch_cache['at'] < CACHE_S:
             return _dispatch_cache['value']
         from monitor_app.host_reports import latest
-        reports = {host: latest(host) for host in
-                   ('osgsub01-harvester', 'pandaharvester01', 'pandaharvester02')}
+        from monitor_app.host_reports import HARVESTER_HOSTS
+        reports = {host: latest(host) for host in HARVESTER_HOSTS}
         cache = True
     else:
         cache = False
@@ -468,7 +468,13 @@ def _log_adoption(by):
 
 # The copies outside the monitor (docs/QUEUE_REGISTRY.md, The drift check)
 
-DRIFT_REPORTS = ('osgsub01-harvester', 'pandaharvester01', 'pandaharvester02', 'pandaserver01')
+
+
+def drift_reports():
+    """The host records the drift check reads: every harvester record
+    (swf-monitor host_reports.HARVESTER_HOSTS) and the PanDA server's."""
+    from monitor_app.host_reports import HARVESTER_HOSTS
+    return (*HARVESTER_HOSTS, 'pandaserver01')
 OFF_IN_PANDA = ('brokeroff', 'offline', 'test')
 
 
