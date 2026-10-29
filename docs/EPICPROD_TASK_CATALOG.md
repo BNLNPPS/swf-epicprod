@@ -277,9 +277,9 @@ production tasks sent to a queue that have not ended, paused ones included,
 whatever their campaign, in the catalog's rows. Tasks are grouped by allocation
 as the dashboard names its sites; a queue the dashboard does not show, a
 retired one, counts under its site in the queue registry. It is a page for
-physicists: commissioning is left out (an Event Service task no production
-feeder submitted and no registered sample requested, so carrying neither a
-feeder's marker nor `registered_sample`), and each PCS task appears once, as its newest PanDA attempt in flight
+physicists: trials are left out (a PanDA task on the trial list,
+swf-monitor `compute_efficiency.commissioning_tasks`, which every production
+metric also leaves out, or a PCS trial, named `.trialN`), and each PCS task appears once, as its newest PanDA attempt in flight
 shows it, with PanDA's own state (running, ready, paused) in Status and the
 allocation in Queue; a requestor's address shows as its name; filters with no
 values, the AI line and the operator task actions are left out. The line above

@@ -570,23 +570,18 @@ def prod_tasks_in_flight(request):
     for jedi_id, prod_id in (PandaTasks.objects.filter(jedi_task_id__in=jedi_all)
                              .values_list('jedi_task_id', 'prod_task_id')):
         by_jedi.setdefault(jedi_id, prod_id)
-    # A page for physicists: commissioning is left out. An Event Service task
-    # that no production feeder submitted (it carries no feeder's marker) and
-    # that no registered sample requested is a commissioning test, the
-    # Perlmutter ES tests pES2 to pES6 among them.
-    from swf_epicprod import google_production, perlmutter_production
-    feeders = (perlmutter_production.MARKER, google_production.MARKER, 'registered_sample')
-    commissioning = {
-        pk for pk, overrides in ProdTask.objects.filter(pk__in=set(by_jedi.values()))
-        .values_list('pk', 'overrides')
-        if 'event_service' in (overrides or {}) and not any(m in overrides for m in feeders)}
+    # A page for physicists: trials are left out by the rule every production
+    # metric applies (compute_efficiency.trial_tasks): a task on the trial
+    # list, relabelled a trial or never production, or a PCS trial by name.
+    from monitor_app.compute_efficiency import trial_tasks
+    trials = trial_tasks(jedi_all)
     from swf_epicprod.quiet_end import quiet_task_ids
     quiet = quiet_task_ids()
     for queue, sent in by_queue.items():
         name = allocation_of(queue)
         for task_id, status in sent:
             prod_id = by_jedi.get(task_id)
-            if prod_id in commissioning or task_id in quiet:
+            if task_id in trials or task_id in quiet:
                 continue
             if prod_id is None:
                 unassociated.setdefault(name, []).append(task_id)
