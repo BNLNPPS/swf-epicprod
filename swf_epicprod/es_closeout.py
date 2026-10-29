@@ -77,8 +77,6 @@ import sys
 import tempfile
 import time
 
-from . import es_records
-
 PREEMPTED_CODE = 1256          # the pilot's "job killed: worker preempted / lost" family
 CHUNK = 1000
 RECORD_WRITE_CAP = 1500        # payload/es/es_record.py MAX_WRITES
@@ -318,8 +316,13 @@ def no_progress_history(pandaid, limit=50):
 
 def run_cycle(dry_run=False, created_by='es-closeout'):
     """One cycle. Returns (decisions, summary)."""
+    # Imported here, not at module level: finish_in_pclient runs this file
+    # as a bare script inside the PanDA client, where a package-relative
+    # import fails.
     from monitor_app.epicprod_logging import log_epicprod_action
     from monitor_app.payload_reports import sweeper_client
+
+    from . import es_records
 
     t0 = time.monotonic()
     seed = not dry_run
