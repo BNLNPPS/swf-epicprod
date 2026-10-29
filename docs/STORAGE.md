@@ -367,19 +367,24 @@ catalog and removes only what still passes).
   name under a warning that the removal is immediate and irreversible;
   the agent then removes what the preview found eligible (phase
   execute). A preview older than an hour is not confirmed, and one
-  removal per RSE runs at a time. The agent records each dataset's
-  outcome on the request as the removal proceeds, so a removal cut short
-  by a timeout or a crash keeps the record of what it removed. A request
-  left queued or running past the agent's timeout, by a lost message or
-  an agent restart, is released as failed when the next removal from
-  that RSE is confirmed; any outcomes it recorded stay with it. The page is gated as the PanDA task
-  operations are: a signed-in operator on the internal monitor; the web
-  tier records and queues (`RseDeletion`, `/api/panda/rse-deletions/`)
-  and holds no catalog credential. The agent works as `eicprod` with a
-  token from the PanDA server (`jlab_auth.rucio_client`), pushes
-  `rse_deletion_done` on `/topic/epictopic`, and logs each removal
-  request to the action stream at high sublevel with its pattern and
-  counts; the per-dataset outcomes are on the request.
+  removal per RSE runs at a time, held by the agent: a confirmation that
+  arrives while another removal runs on that RSE is refused, removing
+  nothing. Acting is for the operations role (swf-monitor
+  `docs/AUTHORITY.md`) on the internal monitor; the web tier validates
+  and queues (`/api/panda/rse-deletions/`) and holds no catalog
+  credential. No table holds the requests: the agent keeps each one's
+  working state in a file, `$SWF_TMP_DIR/rse-deletions/<id>.json`, as it
+  keeps fetched payload logs, and the page reads it. The agent writes
+  each dataset's outcome there as the removal proceeds, so a removal cut
+  short by a timeout or a crash keeps the record of what it removed; a
+  request the agent has stopped writing for two hours reads as failed.
+  The agent works as `eicprod` with a token from the PanDA server
+  (`jlab_auth.rucio_client`) and pushes `rse_deletion_done` on
+  `/topic/epictopic`. The record that stands is the action stream: each
+  preview is logged as `rse_deletion_preview` (low sublevel) and each
+  removal as `rse_deletion` (high sublevel, on epicprod-live by default)
+  with its pattern, its counts and the removed datasets named. The page
+  lists the RSE's previews and removals from there.
 - The operator CLI, `scripts/rse-delete.py --rse <RSE> --pattern <P>`,
   previews by default and removes with `--execute` after the RSE name
   is typed back. It authenticates as the agent does, or with the
