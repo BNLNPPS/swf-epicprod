@@ -14,9 +14,11 @@ that shows that lifecycle per RSE, and the retrieval surface that
 serves the listings behind every count. It follows the delivered-data
 record ([CAMPAIGN_DELIVERY.md](CAMPAIGN_DELIVERY.md)), which records
 what a campaign delivered; this record covers where production output
-landed, how it got there, and what is wrong with it. Deletions, lost
-copies and tape migration are handled by data management and are
-outside the record.
+landed, how it got there, and what is wrong with it. The record does
+not follow deletions, lost copies or tape migration. Removing a dataset
+from a disk RSE is an operator's act, described in
+[Removing datasets from an RSE](#removing-datasets-from-an-rse); its
+requests are recorded there, not in the storage record.
 
 The Snapper concepts, the SWF deployment, and the display laws are in
 the snapper-ai documentation
@@ -319,6 +321,77 @@ reaches and whether a pass is writing the store. It reads the store
 only. The ghost population it serves is a cached product, stamped
 with its build time and rebuilt by the sweep after every pass; the
 page's Update button rebuilds it on demand.
+
+## Removing datasets from an RSE
+
+Production data leaves a disk RSE by an operator's request, never by
+the pass. A request names a disk RSE and a dataset name pattern, and
+removes each matching dataset whose complete copy is on tape; it is
+immediate and cannot be undone.
+
+**Eligibility.** A dataset is removed only when Rucio's locks show
+JLAB-TAPE-SE holding all of it: a rule whose expression is the tape
+RSE, in state OK, with no lock replicating or stuck and as many locks
+OK as the dataset has files (counted from its content, since an open
+dataset stores no length). This is the catalog's lock state at the tape
+RSE, not a read of the tape. A suspended or stuck tape rule means the
+tape copy was never made, and the dataset is kept. Production datasets
+stay open, so a dataset whose producing task is still active (any of
+its PanDA tasks not in a final state, read through PCS as the pass
+reads task state) is kept: files attached after the removal would have
+no disk lock while their tape transfer is pending. A dataset whose task
+state could not be read is kept; one with no recorded production task
+is judged on its tape copy alone. A dataset with no rule whose expression is the RSE
+has nothing to remove: its replicas there are held under some other
+expression and are reported, not touched. The RSE must be a production
+disk RSE (BNL-XRD, EIC-XRD; `EPICPROD_RSE_DELETION_RSES`), never the
+tape RSE, and the pattern must name at least two literal path segments
+before its first wildcard (`/RECO/26.03.0/*`, not `/RECO/*`).
+
+**The act.** A removal expires the dataset's rule on the RSE (lifetime
+0); Rucio drops the rule and its deletion daemon removes the replicas no
+other rule on that RSE holds. The tape rule and every other rule are
+untouched.
+
+**Two faces, one logic.** `swf_epicprod/rse_deletion.py` holds the
+eligibility, the preview (`plan`, which changes nothing) and the
+removal (`execute`, which checks each name again against the live
+catalog and removes only what still passes).
+
+- The removal page, `/panda/storage-doors/<RSE>/remove/`, linked from
+  each production disk RSE on the Storage doors page. It takes a
+  pattern; the production operations agent previews it against the
+  live catalog (`rse_deletion` message, phase preview) and the page
+  lists every match with its files, bytes, tape copy and whether it
+  would be removed or why not. The operator confirms by typing the RSE
+  name under a warning that the removal is immediate and irreversible;
+  the agent then removes what the preview found eligible (phase
+  execute). A preview older than an hour is not confirmed, and one
+  removal per RSE runs at a time, held by the agent: a confirmation that
+  arrives while another removal runs on that RSE is refused, removing
+  nothing. Acting is for the operations role (swf-monitor
+  `docs/AUTHORITY.md`) on the internal monitor; the web tier validates
+  and queues (`/api/panda/rse-deletions/`) and holds no catalog
+  credential. No table holds the requests: the agent keeps each one's
+  working state in a file, `$SWF_TMP_DIR/rse-deletions/<id>.json`, as it
+  keeps fetched payload logs, and the page reads it. The agent writes
+  each dataset's outcome there as the removal proceeds, so a removal cut
+  short by a timeout or a crash keeps the record of what it removed; a
+  request the agent has stopped writing for two hours reads as failed.
+  The agent works as `eicprod` with a token from the PanDA server
+  (`jlab_auth.rucio_client`) and pushes `rse_deletion_done` on
+  `/topic/epictopic`. The record that stands is the action stream: each
+  preview is logged as `rse_deletion_preview` (low sublevel) and each
+  removal as `rse_deletion` (high sublevel, on epicprod-live by default)
+  with its pattern, its counts and the removed datasets named. The page
+  lists the RSE's previews and removals from there.
+- The operator CLI, `scripts/rse-delete.py --rse <RSE> --pattern <P>`,
+  previews by default and removes with `--execute` after the RSE name
+  is typed back. It authenticates as the agent does, or with the
+  caller's own rucio.cfg account (`--rucio-cfg`). It reads task state
+  through the monitor's Django; where that cannot be set up, every
+  dataset is kept for want of it, so removals are made on the
+  production host.
 
 ## Detection and notice
 

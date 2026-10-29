@@ -232,6 +232,7 @@ invokable on their own, so a single step can be rerun without the chain.
 | `evgen_rucio_update` | `import_evgen_rucio.py` | Assimilate the JLab Rucio EVGEN inventory into PCS. | 900 |
 | `evgen_register` | `register-evgen-rucio.py` | Register one EVGEN input directory in JLab Rucio: door listing, per-file checksums, and the Rucio writes. | 3600 |
 | `storage_sweep` | `storage-sweep.py` | The storage pass (STORAGE.md): production output on the JLab RSEs from registration until it settles, read as production activity selects. Four-hourly by cron enqueue. | 10800 |
+| `rse_deletion` | `rse-deletion.py` | Preview, or remove, the datasets matching a pattern on a production disk RSE where tape holds a complete copy (STORAGE.md, Removing datasets from an RSE); the removal page's preview and confirmation. | 3600 |
 | `stash_drain` | `stash-drain.py` | Drain the failover stash, registering stashed outputs where they lie. | 1800 |
 
 ### Production record
