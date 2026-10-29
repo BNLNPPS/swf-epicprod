@@ -571,10 +571,11 @@ def prod_tasks_in_flight(request):
                              .values_list('jedi_task_id', 'prod_task_id')):
         by_jedi.setdefault(jedi_id, prod_id)
     # A page for physicists: commissioning is left out. An Event Service task
-    # that no production feeder submitted (it carries no feeder's marker) is
-    # a commissioning test, the Perlmutter ES tests pES2 to pES6 among them.
+    # that no production feeder submitted (it carries no feeder's marker) and
+    # that no registered sample requested is a commissioning test, the
+    # Perlmutter ES tests pES2 to pES6 among them.
     from swf_epicprod import google_production, perlmutter_production
-    feeders = (perlmutter_production.MARKER, google_production.MARKER)
+    feeders = (perlmutter_production.MARKER, google_production.MARKER, 'registered_sample')
     commissioning = {
         pk for pk, overrides in ProdTask.objects.filter(pk__in=set(by_jedi.values()))
         .values_list('pk', 'overrides')
