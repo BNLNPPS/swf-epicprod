@@ -414,6 +414,17 @@ ready, no queue the front feeds, or in the pool until a queue open to it
 falls below its low mark (`left_in_pool`). The ready hours size an
 unplaced task at the median walltime of the queue first in line.
 
+The ready buffer holds discretionary tasks for opportunistic assignment;
+the one exception is a person's direction, a queue a person placed the
+task on (Torre Wenaus, 2026-10-29). The front labels a task with a queue
+only as it assigns it to that queue, and the label ends with that
+assignment: when the task comes back to the ready buffer, a rerun or a
+new submission with no queue named by a person, the front's queue is not
+kept (`pcs.services.machine_placed`; every placement records who made it
+in `placed_by`). On 2026-10-28 the front's assignment of p4495 and p4497
+to Perlmutter came back into the buffer with their reruns as if pinned,
+and held them for Perlmutter while OSG sat idle.
+
 A queue under an operator core limit (`pilot.queue.<queue>.worker_limit`,
 below) is sized at the limit: its ceiling is the smaller of its observed
 peak and the limit, and its hours at capacity scale to match

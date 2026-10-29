@@ -6757,9 +6757,18 @@ def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by
         rows = int(((spec.get('residual') or {}).get('rows_residual')) or 0)
         if rows <= 0:
             raise ServiceError('Residual rerun refused: every job has its output.', status=409)
+    dropped = ''
     if site:
         prodtask_place(task, site, changed_by=changed_by, placement=placement)
         task.refresh_from_db()
+    elif machine_placed(task):
+        # Back in the ready buffer: the front's earlier assignment is not a
+        # queue for the new submission (machine_placed).
+        overrides = dict(task.overrides or {})
+        dropped = str(overrides.pop('panda_site', '') or '')
+        overrides.pop('placed_by', None)
+        task.overrides = overrides
+        task.save(update_fields=['overrides', 'updated_at'])
     refuse_closed_queue(pinned_site(task), task=task)
     # The queue mark and its exclusion snapshot are one atomic write. Read
     # fresh overrides while locked so an unrelated concurrent edit survives.
@@ -6781,8 +6790,9 @@ def prodtask_queue_submission(*, task, kind, site='', placement=None, changed_by
         subject_type='campaign_task', subject_key=task.name,
         message=(f'{task.name}: {kind} in the ready buffer'
                  + (f' for {mark["site"]}' if mark['site'] else ', no queue yet')
-                 + (f', {rows} jobs' if rows is not None else '')),
-        kind=kind, site=mark['site'], rows=rows)
+                 + (f', {rows} jobs' if rows is not None else '')
+                 + (f"; the front's earlier assignment to {dropped} is not kept" if dropped else '')),
+        kind=kind, site=mark['site'], rows=rows, dropped_site=dropped)
     return mark
 
 
@@ -7226,6 +7236,9 @@ def prodtask_unplace(*, task, changed_by='', reason=''):
                 'low mark takes it; its unstarted work then moves there')
     else:
         overrides.pop('panda_site', None)
+        overrides.pop('placed_by', None)
+        if isinstance(overrides.get('queued'), dict):
+            overrides['queued'] = dict(overrides['queued'], site='')
         task.overrides = overrides
         if task.get_effective_config().get('panda_site'):
             overrides['panda_site'] = ''      # the configuration's queue, set aside
@@ -7473,6 +7486,30 @@ def refuse_closed_queue(site, *, task=None):
             raise ServiceError(f'Not placed: {exc}.', status=409) from exc
 
 
+def machine_placed(task):
+    """True when the task's queue was the front's (or another automated
+    feeder's) assignment rather than a person's direction. A ready task holds
+    no queue: the front labels one only as it assigns it (Torre Wenaus,
+    2026-10-29: "THE FRONT HAS NO BUSINESS PLACING A QUEUE LABEL ON A READY
+    TASK UNLESS IT IS ASSIGNING THAT TASK TO THAT QUEUE AT THAT VERY MOMENT"),
+    so the label ends with the assignment. Read from ``placed_by``; a
+    placement older than that field is read from its ``prodtask_place``
+    record."""
+    overrides = task.overrides or {}
+    if not overrides.get('panda_site'):
+        return False
+    by = overrides.get('placed_by')
+    if by is None and getattr(task, 'name', ''):
+        from monitor_app.epicprod_logging import EPICPROD_APP_NAME
+        from monitor_app.models import AppLog
+        by = (AppLog.objects.filter(app_name=EPICPROD_APP_NAME,
+                                    extra_data__action='prodtask_place',
+                                    extra_data__subject_key=task.name)
+              .order_by('-timestamp').values_list('extra_data__username', flat=True).first())
+    by = str(by or '')
+    return by in ('front', 'front_cron') or by.endswith('_cron')
+
+
 def prodtask_place(task, site, *, changed_by='', placement=None):
     """Place the task on a production queue: every later submission of it
     (Submit, the reruns) goes there. A trial's site is its dataset's
@@ -7503,7 +7540,8 @@ def prodtask_place(task, site, *, changed_by='', placement=None):
         ds.metadata = dict(ds.metadata, trial_site=site)
         ds.save(update_fields=['metadata'])
     else:
-        task.overrides = dict(task.overrides or {}, panda_site=site)
+        task.overrides = dict(task.overrides or {}, panda_site=site,
+                              placed_by=str(changed_by or ''))
         task.save(update_fields=['overrides', 'updated_at'])
     record = _placement_record(site, placement, changed_by)
     log_epicprod_action(
