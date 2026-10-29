@@ -320,6 +320,56 @@ only. The ghost population it serves is a cached product, stamped
 with its build time and rebuilt by the sweep after every pass; the
 page's Update button rebuilds it on demand.
 
+## Removing datasets from an RSE
+
+Production data leaves a disk RSE by an operator's request, never by
+the pass. A request names a disk RSE and a dataset name pattern, and
+removes each matching dataset whose complete copy is on tape; it is
+immediate and cannot be undone.
+
+**Eligibility.** A dataset is removed only when JLAB-TAPE-SE holds all
+of it: a rule whose expression is the tape RSE, in state OK, with no
+lock replicating or stuck and as many locks OK as the dataset has files
+(counted from its content, since an open dataset stores no length). A
+suspended or stuck tape rule means the tape copy was never made, and
+the dataset is kept. A dataset with no rule whose expression is the RSE
+has nothing to remove: its replicas there are held under some other
+expression and are reported, not touched. The RSE must be a production
+disk RSE (BNL-XRD, EIC-XRD; `EPICPROD_RSE_DELETION_RSES`), never the
+tape RSE, and the pattern must name at least two literal path segments
+before its first wildcard (`/RECO/26.03.0/*`, not `/RECO/*`).
+
+**The act.** A removal expires the dataset's rule on the RSE (lifetime
+0); Rucio drops the rule and its deletion daemon removes the replicas no
+other rule on that RSE holds. The tape rule and every other rule are
+untouched.
+
+**Two faces, one logic.** `swf_epicprod/rse_deletion.py` holds the
+eligibility, the preview (`plan`, which changes nothing) and the
+removal (`execute`, which checks each name again against the live
+catalog and removes only what still passes).
+
+- The removal page, `/panda/storage-doors/<RSE>/remove/`, linked from
+  each production disk RSE on the Storage doors page. It takes a
+  pattern; the production operations agent previews it against the
+  live catalog (`rse_deletion` message, phase preview) and the page
+  lists every match with its files, bytes, tape copy and whether it
+  would be removed or why not. The operator confirms by typing the RSE
+  name under a warning that the removal is immediate and irreversible;
+  the agent then removes what the preview found eligible (phase
+  execute). A preview older than an hour is not confirmed, and one
+  removal per RSE runs at a time. The page is gated as the PanDA task
+  operations are: a signed-in operator on the internal monitor; the web
+  tier records and queues (`RseDeletion`, `/api/panda/rse-deletions/`)
+  and holds no catalog credential. The agent works as `eicprod` with a
+  token from the PanDA server (`jlab_auth.rucio_client`), pushes
+  `rse_deletion_done` on `/topic/epictopic`, and logs each removal to
+  the action stream at high sublevel.
+- The operator CLI, `scripts/rse-delete.py --rse <RSE> --pattern <P>`,
+  previews by default and removes with `--execute` after the RSE name
+  is typed back. It authenticates as the agent does, or with the
+  caller's own rucio.cfg account (`--rucio-cfg`).
+
 ## Detection and notice
 
 Planned, after the record and the view: the alarm engine reads the
