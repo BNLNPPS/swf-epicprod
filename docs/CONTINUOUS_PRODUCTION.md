@@ -426,6 +426,13 @@ Re-placing a task is a person's decision (Torre Wenaus, 2026-10-28:
 yet in PanDA, and its Move re-places the unstarted work of one in PanDA
 (below). The idle-queue move is the only automatic re-placement.
 
+The Site control's recommendation applies the feed's whole-node rule
+(`front.event_service_refusal`, read by `recommend` and `open_to` alike): a
+whole-node queue is recommended only for Event Service work
+(`front.whole_node_ready`). Until 29 October the rule sat in the feed alone, so
+the Site control recommended Perlmutter for one-core particle-gun requests,
+and p1108 130to177deg was pinned to a queue that would never take it.
+
 **Reading and releasing a placement.** `pcs.services.prodtask_site_source(task)`
 says where a task's queue comes from: `trial`, `task` (the
 `panda_site` override placement wrote; an empty one sets aside the

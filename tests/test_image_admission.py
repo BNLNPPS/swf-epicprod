@@ -33,13 +33,13 @@ class ImageAdmissionTests(unittest.TestCase):
         self.assertEqual(queues.image_problem(IMAGE3, fresh['OSG']), '')
 
     def test_submission_and_placement_use_identical_image_spelling(self):
-        self.assertEqual(task_need({'jug_xl_tag': '26.07.3-stable'})['container_image'], IMAGE3)
+        self.assertEqual(task_need({'jug_xl_tag': '26.07.3-stable'}, event_service=False)['container_image'], IMAGE3)
 
     @patch('swf_epicprod.front.closed_queues', return_value={})
     def test_incompatible_queue_never_wins_and_feed_off_still_applies(self, _closed):
         state = {'queues': {'OSG': {'feed_switch': True}, 'GREX': {'feed_switch': False}},
                  'placement': {'OSG': {'gates': {}}, 'GREX': {'gates': {}}}}
-        need = dict(task_need({'container_image': IMAGE3}), rows=500)
+        need = dict(task_need({'container_image': IMAGE3}, event_service=False), rows=500)
         dispatch = {'OSG': {'mode': 'bound', 'images': [IMAGE1]}, 'GREX': {'mode': 'any'}}
         result = recommend(state, need, dispatch=dispatch)
         self.assertEqual(result['recommended'], '')

@@ -7284,11 +7284,11 @@ def prodtask_site_options(task):
     recommender with the census, fit and gates each was judged on
     (swf_epicprod.front.recommend). Reads the front's stored state and
     the database; nothing live."""
-    from swf_epicprod.front import recommend, regulated_queues, task_need
+    from swf_epicprod.front import recommend, regulated_queues, task_need, whole_node_ready
     from .commands import pinned_site
     state, built_at = _front_state()
     cfg = task.get_effective_config()
-    need = task_need(cfg, rows=_declared_rows(task, cfg))
+    need = task_need(cfg, rows=_declared_rows(task, cfg), event_service=whole_node_ready(task, cfg))
     queues = regulated_queues()
     result = recommend(state, need, queues)
     site = pinned_site(task, cfg=cfg)
@@ -7414,10 +7414,11 @@ def prodtask_recommended_placement(task, queues=None):
     """The recommended production queue for the task and the placement
     record of the recommendation, ``(site, {recommended, reason})``;
     refuses with the reason when no queue is open to it."""
-    from swf_epicprod.front import recommend, regulated_queues, task_need
+    from swf_epicprod.front import recommend, regulated_queues, task_need, whole_node_ready
     state, _built_at = _front_state()
     cfg = task.get_effective_config()
-    result = recommend(state, task_need(cfg, rows=_declared_rows(task, cfg)),
+    result = recommend(state, task_need(cfg, rows=_declared_rows(task, cfg),
+                                        event_service=whole_node_ready(task, cfg)),
                        queues or regulated_queues())
     if not result['recommended']:
         raise ServiceError(f'Not placed: {result["reason"]}.', status=409)

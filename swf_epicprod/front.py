@@ -424,7 +424,7 @@ def ready_backlog():
                 entry['unplace_lapsed'] = code in UNPLACE_LAPSING
                 entry['unplaced'] = unplaced
                 entry['rows'] = task_rows(task, cfg)
-                entry['need'] = task_need(cfg, rows=entry['rows'])
+                entry['need'] = task_need(cfg, rows=entry['rows'], event_service=False)
                 by_queue.setdefault(queue, []).append(entry)
                 continue
             queue = pinned_site(task, cfg=cfg) or UNPLACED
@@ -442,11 +442,11 @@ def ready_backlog():
             # A queued residual carries the jobs measured when it was queued.
             entry['rows'] = (int(queued['rows']) if entry['kind'] == 'rerun_residual'
                              and (queued or {}).get('rows') else task_rows(task, cfg))
-            entry['need'] = task_need(cfg, rows=entry['rows'])
             # A whole-node queue (Perlmutter, Google) takes only what the Event
             # Service can run over EVGEN input (open_to, feed_task).
             from .evgen_es import capable
             entry['evgen_es'] = entry['kind'] == 'submit' and capable(task, cfg)
+            entry['need'] = task_need(cfg, rows=entry['rows'], event_service=entry['evgen_es'])
             if queue != UNPLACED:
                 from .queues import dispatch_capabilities, image_problem
                 problem = image_problem(entry['need']['container_image'],
@@ -531,18 +531,14 @@ def open_to(pool, queue, state):
     entry the queue may not take keeps the reason as ``unplaced_reason``
     and the queues it is open to as ``open_to``. Mutates only those two
     fields of ``pool``'s entries."""
-    from .queues import whole_node
-    node = whole_node(queue)
     out = []
     for entry in pool:
         if entry.get('problems'):
             entry['unplaced_reason'] = 'not ready'
             continue
-        if node and not entry.get('evgen_es'):
-            # One job per whole node: Event Service work only (Torre Wenaus,
-            # 2026-10-28: "NO MORE SINGLE CORE 1/128 EFF WORK IN PERL EVER").
-            entry['unplaced_reason'] = (f'{queue} takes Event Service work only; '
-                                        f'not a registered EVGEN sample')
+        refusal = event_service_refusal(queue, entry.get('need'))
+        if refusal:
+            entry['unplaced_reason'] = refusal
             continue
         result = recommend(state, entry.get('need'), [queue])
         if result['recommended'] != queue:
@@ -857,9 +853,12 @@ def queue_limits(queue):
             'status': str(cfg.get('status') or '')}
 
 
-def task_need(cfg, rows=None):
+def task_need(cfg, rows=None, *, event_service):
     """What one job of a task asks of a queue, from its effective
-    configuration, as the submission declares it (pcs/commands.py)."""
+    configuration, as the submission declares it (pcs/commands.py).
+    ``event_service``: whether a whole-node queue can take the task
+    (``evgen_es.capable``); every reader of a recommendation passes it,
+    so the Site control and the feed judge whole-node queues alike."""
     from pcs.commands import task_container_image
     data = cfg.get('data') or {}
     hours = cfg.get('target_hours_per_job')
@@ -868,7 +867,28 @@ def task_need(cfg, rows=None):
     ram = int(data.get('ram_count') or 4096)
     return {'walltime_h': round(walltime_h, 2), 'cores': cores,
             'ram_mb_per_core': ram, 'memory_mb': ram * cores, 'rows': rows,
-            'container_image': task_container_image(cfg)}
+            'container_image': task_container_image(cfg),
+            'event_service': bool(event_service)}
+
+
+def whole_node_ready(task, cfg=None):
+    """Whether a whole-node queue can take the task: Event Service work
+    already (a feeder sample, an adopted request, a staged EVGEN task), or
+    a registered EVGEN sample the feed stages for it (``evgen_es.capable``)."""
+    from .evgen_es import capable
+    return bool((task.overrides or {}).get('event_service')) or capable(task, cfg)
+
+
+def event_service_refusal(queue, need):
+    """Why a whole-node queue cannot take the task, or ''. One job per
+    whole node: Event Service work only (Torre Wenaus, 2026-10-28: "NO
+    MORE SINGLE CORE 1/128 EFF WORK IN PERL EVER"). Read by ``recommend``
+    and the feed alike, so the Site control never recommends a queue the
+    front would not feed the task to."""
+    from .queues import whole_node
+    if need is None or not whole_node(queue) or need.get('event_service'):
+        return ''
+    return f'{queue} takes Event Service work only; not a registered EVGEN sample'
 
 
 def fit_problems(need, limits):
@@ -1011,6 +1031,9 @@ def recommend(state, need, queues=None, closed=None, dispatch=None):
         row['image_problem'] = image_issue
         if image_issue:
             row['fit'].append(image_issue)
+        refusal = event_service_refusal(queue, need)
+        if refusal:
+            row['fit'].append(refusal)
         if limits is None:
             row['fit_unknown'] = True
         if committed_h is not None:

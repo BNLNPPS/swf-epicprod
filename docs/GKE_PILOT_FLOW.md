@@ -55,6 +55,17 @@ storage headroom and image admission still apply. `google_production` cached
 state and action records show each decision. Setting the feeder switch false
 stops additions while existing work drains.
 
+The samples add statistics; a person's particle-gun request is production
+proper and runs first (Torre Wenaus, 2026-10-29). `google_production.adopt_request`
+takes a request out of the front's ready pool, places it on Google and gives it
+Google's Event Service form, its expected events in five jobs (one per pod),
+keeping its own name and output. The feeder submits a waiting request at its
+next cycle whatever the two-task count, and adds no sample while a request is
+unfinished. Samples of both feeders submit at taskPriority 800, below every
+priority level, so a pod freed takes a request's job first. The generation
+plan (`group.EIC.gunplan.<version>.<physics tag>.<sample>.json`) records the
+task's own gun, read from its tags as the job's steering is.
+
 Bounded real-production ES samples use the normal PCS submission path and their
 own sample identity. Each whole task has a fixed event budget, is placed wholly
 on Google, and retains normal RECO output without a trial expiry. The controller
