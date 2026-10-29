@@ -206,7 +206,7 @@ class ReadyPoolTest(unittest.TestCase):
         open_to(pool, 'A', self._state())
         left_in_pool(pool, ['A'])
         self.assertEqual(pool[0]['unplaced_reason'], 'not ready')
-        self.assertIn('below its low mark: A', pool[1]['unplaced_reason'])
+        self.assertNotIn('unplaced_reason', pool[1])
         self.assertNotIn('open_to', pool[1])
         self.assertEqual(left_in_pool([_entry('t4')], [])[0]['unplaced_reason'],
                          'no queue the front feeds')

@@ -409,9 +409,9 @@ own reading (no red gate, a fit to its limits and image; `open_to`),
 together with the tasks placed on it, in priority order; a task it
 feeds leaves the pool, placed on that queue with the recommendation
 recorded. A task too large for one queue's high mark stays in the pool
-for the next. What no queue took stays unplaced, with the reason: not
-ready, no queue the front feeds, or in the pool until a queue open to it
-falls below its low mark (`left_in_pool`). The ready hours size an
+for the next. What no queue took stays unplaced and reads
+`ready`, naming no queue, or says why it cannot go: not ready, or no
+queue the front feeds (`left_in_pool`; Torre Wenaus, 2026-10-29). The ready hours size an
 unplaced task at the median walltime of the queue first in line.
 
 The ready buffer holds discretionary tasks for opportunistic assignment;

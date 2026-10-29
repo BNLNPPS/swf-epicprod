@@ -208,7 +208,7 @@
         {% for queue, entries in backlog.items %}
             {% for e in entries %}
             <tr>
-                <td>{% if queue == 'unplaced' %}no queue yet{% else %}{{ queue }}{% endif %}{% if e.placement %} <span class="text-muted">(recommended: {{ e.placement.reason }})</span>{% endif %}{% if e.unplaced_reason %} <span class="text-muted">({{ e.unplaced_reason }})</span>{% endif %}</td>
+                <td>{% if queue == 'unplaced' %}{{ e.unplaced_reason|default:'ready' }}{% else %}{{ queue }}{% endif %}{% if e.placement %} <span class="text-muted">(recommended: {{ e.placement.reason }})</span>{% endif %}</td>
                 <td>{{ forloop.counter }}</td>
                 <td><a href="{% url 'pcs:prod_task_detail' name=e.task %}">{{ e.task }}</a></td>
                 <td>{% if e.level %}{{ e.level }} ({{ e.level_source }}){% else %}<span class="text-muted">unset</span>{% endif %}</td>

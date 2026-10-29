@@ -558,8 +558,10 @@ def left_in_pool(pool, feedable):
         elif not feedable:
             entry['unplaced_reason'] = 'no queue the front feeds'
         elif entry.get('open_to'):
-            entry['unplaced_reason'] = ('in the ready pool until a queue open to it falls '
-                                        'below its low mark: ' + ', '.join(entry['open_to']))
+            # A task some queue may take is simply ready: a ready task names
+            # no queue (Torre Wenaus, 2026-10-29), so no other queue's
+            # refusal stands beside it either.
+            entry.pop('unplaced_reason', None)
         entry.pop('open_to', None)
     return pool
 
