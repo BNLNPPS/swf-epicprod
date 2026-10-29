@@ -193,6 +193,8 @@ Submission and execution:
   the PanDA ancillary systems.
 - [NODE_EVENT_DISPATCHER.md](docs/NODE_EVENT_DISPATCHER.md) —
   event-range processing in fixed-lifetime allocations.
+- [ES_EVENT_CLEANUP.md](docs/ES_EVENT_CLEANUP.md) — the standing
+  three-day removal of Event Service range rows from the PanDA database.
 - [GKE_PILOT_FLOW.md](docs/GKE_PILOT_FLOW.md) — the production
   operations agent runs the pilot pods of the Google Cloud Event
   Service queue, in step with its backlog.
