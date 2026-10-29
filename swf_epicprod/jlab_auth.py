@@ -8,10 +8,14 @@ with the robot credential it already holds for BNL Rucio
 (``X509_USER_PROXY``, longproxy-for-rucio, the ``iddssv1`` identity with
 ``p`` in its GRIDPREF). The eicprod proxy (``EVGEN_X509_PROXY``) is a
 certificate that cannot be renewed past 2026-10-28; until then it is the
-fallback when no token comes.
+fallback when no token comes. The PanDA sign-in is never that proxy: a
+caller that puts it in ``X509_USER_PROXY`` first names the robot proxy in
+``EPICPROD_PANDA_LOGIN_PROXY``.
 
 - ``rucio_client``: a JLab Rucio client as the production account, by
-  token, else by the proxy when one is given and present.
+  token, else by the proxy when one is given, present and unexpired, each
+  verified with whoami; a failure names the token's reason and the
+  proxy's, so an expired proxy never hides why the token failed.
 - ``door_access``: the URL and environment for an xrootd command at a
   storage door: a path-scoped storage token over TLS for a door that
   takes PanDA's storage tokens (``EPICPROD_TOKEN_DOORS``, host:port:
@@ -142,11 +146,24 @@ def _token_client(host, account, timeout):
     return client
 
 
+def proxy_end(path):
+    """The end of the proxy certificate at ``path`` as an aware datetime,
+    or None when it cannot be read."""
+    try:
+        from cryptography import x509
+        with open(path, 'rb') as f:
+            data = f.read()
+        start = data.index(b'-----BEGIN CERTIFICATE-----')
+        return x509.load_pem_x509_certificate(data[start:]).not_valid_after_utc
+    except (ImportError, OSError, ValueError):
+        return None
+
+
 def rucio_client(account=None, host=None, proxy=None, timeout=None):
     """A JLab Rucio client as ``account`` (the production account by
-    default): by token, verified with whoami, else by ``proxy`` when one is
-    given and present. Raises RuntimeError naming both reasons when neither
-    works."""
+    default): by token, else by ``proxy`` when one is given, present and
+    unexpired, either verified with whoami. Raises RuntimeError naming both
+    reasons when neither works."""
     from rucio.client import Client
     account = account or JLAB_RUCIO_ACCOUNT
     host = host or JLAB_RUCIO_URL
@@ -160,10 +177,16 @@ def rucio_client(account=None, host=None, proxy=None, timeout=None):
         why = f'token: {e}'
     if not proxy or not os.path.exists(proxy):
         raise RuntimeError(f'{why}; no proxy to fall back to')
+    end = proxy_end(proxy)
+    if end is not None and end.timestamp() <= time.time():
+        from zoneinfo import ZoneInfo
+        raise RuntimeError(f"{why}; proxy {proxy} expired "
+                           f"{end.astimezone(ZoneInfo('America/New_York')):%Y-%m-%d %H:%M} ET")
     kwargs = {'timeout': timeout} if timeout else {}
     try:
         client = Client(rucio_host=host, auth_host=host, account=account,
                         auth_type='x509_proxy', creds={'client_proxy': proxy}, **kwargs)
+        client.whoami()
     except Exception as e:                                    # noqa: BLE001
         raise RuntimeError(f'{why}; proxy: {e}')
     client.jlab_auth = 'x509'
