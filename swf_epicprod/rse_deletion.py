@@ -10,9 +10,18 @@ A dataset is eligible only when the tape RSE holds all of it: a rule
 whose expression is the tape RSE, in state OK, no lock replicating or
 stuck, and as many locks OK as the dataset has files. A suspended or
 stuck tape rule means the tape copy was never made, and removing the
-disk copy would lose the data. A dataset with no rule on the RSE has
-nothing to remove; its replicas there are held by some other expression
-and are reported, not touched.
+disk copy would lose the data. The tape check is Rucio's lock state at
+the tape RSE, not a read of the tape itself. A dataset with no rule on
+the RSE has nothing to remove; its replicas there are held by some other
+expression and are reported, not touched.
+
+Production datasets stay open, so a dataset whose producing task is
+still active is kept: its tape rule may be OK for the files attached so
+far while new files arrive, and those would lose their disk lock before
+reaching tape. Task state comes from the caller (``task_states``, the
+storage pass's reading of PCS and PanDA); a dataset whose task state was
+not read is kept, and one with no recorded production task is eligible
+on its tape copy alone.
 
 ``plan`` reads and changes nothing; ``execute`` takes the names a plan
 found eligible, checks each again against the live catalog, and expires
@@ -81,7 +90,16 @@ def tape_copy(rules, length):
                    f'{r.get("locks_stuck_cnt") or 0} stuck')
 
 
-def assess(client, rse, name):
+def _read_task_states(task_states, names):
+    """{name: 'active'|'final'|None|'unread'}; 'unread' for every name
+    when there is no reader. A reader that raises fails the request."""
+    if task_states is None:
+        return {n: 'unread' for n in names}
+    states = task_states(names)
+    return {n: states.get(n) for n in names}
+
+
+def assess(client, rse, name, task_state='unread'):
     """One dataset's removal record from the live catalog."""
     # Counted from the content: an open dataset carries no stored length.
     did = client.get_did(SCOPE, name, dynamic_depth='FILE')
@@ -98,11 +116,17 @@ def assess(client, rse, name):
                                if r.get('rse_expression') not in (rse, TAPE_RSE)}),
         'tape': tape,
         'tape_complete': complete,
+        'open': bool(did.get('open')),
+        'task_state': task_state,
     }
     if not on_rse:
         item.update(eligible=False, reason=f'no rule on {rse}; nothing to remove')
     elif not complete:
         item.update(eligible=False, reason=f'tape copy incomplete ({tape})')
+    elif task_state == 'active':
+        item.update(eligible=False, reason='its production task is still active')
+    elif task_state == 'unread':
+        item.update(eligible=False, reason='production task state not read')
     else:
         item.update(eligible=True, reason='')
     return item
@@ -119,7 +143,7 @@ def _totals(items):
     }
 
 
-def plan(client, rse, pattern):
+def plan(client, rse, pattern, task_states=None):
     """What a removal of ``pattern`` from ``rse`` would do. Changes nothing."""
     rse, pattern = validate(rse, pattern)
     names = sorted(client.list_dids(SCOPE, {'name': pattern}, did_type='dataset'))
@@ -127,39 +151,64 @@ def plan(client, rse, pattern):
         raise RseDeletionError(
             f'{len(names)} datasets match; at most {MAX_DATASETS} per request. '
             'Narrow the pattern.')
+    states = _read_task_states(task_states, names)
     items = []
     for name in names:
         try:
-            items.append(assess(client, rse, name))
+            items.append(assess(client, rse, name, states[name]))
         except Exception as e:                                # noqa: BLE001
             items.append({'name': name, 'files': 0, 'bytes': 0, 'rules': [],
                           'other_rules': [], 'tape': '', 'tape_complete': False,
+                          'open': None, 'task_state': states[name],
                           'eligible': False, 'reason': f'catalog read failed: {e}'})
     return {'rse': rse, 'pattern': pattern, 'scope': SCOPE, 'tape_rse': TAPE_RSE,
             'datasets': items, 'totals': _totals(items)}
 
 
-def execute(client, rse, pattern, names):
+def totals(outcomes, requested):
+    """The counts of a removal's outcomes so far."""
+    removed = [o for o in outcomes if o['outcome'] == 'removed']
+    return {
+        'requested': requested,
+        'removed': len(removed),
+        'skipped': sum(o['outcome'] == 'skipped' for o in outcomes),
+        'failed': sum(o['outcome'] == 'failed' for o in outcomes),
+        'removed_files': sum(o.get('files', 0) for o in removed),
+        'removed_bytes': sum(o.get('bytes', 0) for o in removed),
+    }
+
+
+def execute(client, rse, pattern, names, task_states=None, on_outcome=None):
     """Expire ``rse``'s rule on each of ``names`` that still passes. Each
-    name is checked again live and must match ``pattern``; one that no
-    longer passes is skipped with its reason. Returns per-dataset outcomes
-    and totals; never raises for one dataset's failure."""
+    name is checked again live, task state included, and must match
+    ``pattern``; one that no longer passes is skipped with its reason.
+    ``on_outcome`` is called with each dataset's outcome as it is decided,
+    so a removal cut short leaves the record of what it removed. Returns
+    per-dataset outcomes and totals; never raises for one dataset's
+    failure."""
     rse, pattern = validate(rse, pattern)
+    states = _read_task_states(task_states, list(names))
     outcomes = []
+
+    def emit(outcome):
+        outcomes.append(outcome)
+        if on_outcome:
+            on_outcome(outcome)
+
     for name in names:
         if not fnmatch.fnmatchcase(name, pattern):
-            outcomes.append({'name': name, 'outcome': 'skipped',
-                             'reason': 'does not match the pattern'})
+            emit({'name': name, 'outcome': 'skipped',
+                  'reason': 'does not match the pattern'})
             continue
         try:
-            item = assess(client, rse, name)
+            item = assess(client, rse, name, states[name])
         except Exception as e:                                # noqa: BLE001
-            outcomes.append({'name': name, 'outcome': 'failed',
-                             'reason': f'catalog read failed: {e}'})
+            emit({'name': name, 'outcome': 'failed',
+                  'reason': f'catalog read failed: {e}'})
             continue
         if not item['eligible']:
-            outcomes.append({'name': name, 'outcome': 'skipped',
-                             'reason': item['reason'], 'tape': item['tape']})
+            emit({'name': name, 'outcome': 'skipped',
+                  'reason': item['reason'], 'tape': item['tape']})
             continue
         expired, errors = [], []
         for rule_id in item['rules']:
@@ -169,18 +218,13 @@ def execute(client, rse, pattern, names):
                 expired.append(rule_id)
             except Exception as e:                            # noqa: BLE001
                 errors.append(f'{rule_id}: {e}')
-        outcomes.append({
+        # A partial expiry (some of several rules) counts as failed and
+        # names the rules it did expire.
+        emit({
             'name': name, 'files': item['files'], 'bytes': item['bytes'],
             'rules': expired, 'tape': item['tape'],
             'outcome': 'failed' if errors else 'removed',
             'reason': '; '.join(errors),
         })
-    removed = [o for o in outcomes if o['outcome'] == 'removed']
-    return {'rse': rse, 'pattern': pattern, 'datasets': outcomes, 'totals': {
-        'requested': len(names),
-        'removed': len(removed),
-        'skipped': sum(o['outcome'] == 'skipped' for o in outcomes),
-        'failed': sum(o['outcome'] == 'failed' for o in outcomes),
-        'removed_files': sum(o.get('files', 0) for o in removed),
-        'removed_bytes': sum(o.get('bytes', 0) for o in removed),
-    }}
+    return {'rse': rse, 'pattern': pattern, 'datasets': outcomes,
+            'totals': totals(outcomes, len(names))}

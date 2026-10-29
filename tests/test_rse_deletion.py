@@ -23,7 +23,8 @@ class FakeClient:
 
     def get_did(self, scope, name, dynamic_depth=None):
         assert dynamic_depth == 'FILE'
-        return {'length': self.datasets[name][0], 'bytes': self.datasets[name][0] * 100}
+        return {'length': self.datasets[name][0], 'bytes': self.datasets[name][0] * 100,
+                'open': True}
 
     def list_did_rules(self, scope, name):
         return list(self.datasets[name][1])
@@ -60,6 +61,10 @@ class TapeCopyTest(unittest.TestCase):
         self.assertFalse(rd.tape_copy([_rule('JLAB-TAPE-SE', ok=0)], 0)[0])
 
 
+def final(names):
+    return {n: 'final' for n in names}
+
+
 class PlanExecuteTest(unittest.TestCase):
     def setUp(self):
         self.client = FakeClient({
@@ -71,7 +76,7 @@ class PlanExecuteTest(unittest.TestCase):
         })
 
     def test_plan_marks_only_tape_complete_datasets_with_a_rule(self):
-        p = rd.plan(self.client, 'BNL-XRD', '/RECO/26.03.0/*')
+        p = rd.plan(self.client, 'BNL-XRD', '/RECO/26.03.0/*', task_states=final)
         by = {i['name']: i for i in p['datasets']}
         self.assertEqual(set(by), {'/RECO/26.03.0/a', '/RECO/26.03.0/b', '/RECO/26.03.0/c'})
         self.assertTrue(by['/RECO/26.03.0/a']['eligible'])
@@ -86,14 +91,33 @@ class PlanExecuteTest(unittest.TestCase):
             10, [_rule('BNL-XRD', rid='e-bnl'), _rule('JLAB-TAPE-SE')])
         self.client.datasets['/RECO/26.03.0/a'] = (
             10, [_rule('BNL-XRD', rid='a-bnl'), _rule('JLAB-TAPE-SE', ok=8)])
+        seen = []
         r = rd.execute(self.client, 'BNL-XRD', '/RECO/26.03.0/*',
-                       ['/RECO/26.03.0/a', '/RECO/26.03.0/e', '/RECO/26.04.1/d'])
+                       ['/RECO/26.03.0/a', '/RECO/26.03.0/e', '/RECO/26.04.1/d'],
+                       task_states=final, on_outcome=seen.append)
+        self.assertEqual([o['name'] for o in seen],
+                         ['/RECO/26.03.0/a', '/RECO/26.03.0/e', '/RECO/26.04.1/d'])
         outcomes = {o['name']: o['outcome'] for o in r['datasets']}
         self.assertEqual(outcomes, {'/RECO/26.03.0/a': 'skipped',
                                     '/RECO/26.03.0/e': 'removed',
                                     '/RECO/26.04.1/d': 'skipped'})
         self.assertEqual(self.client.updated, [('e-bnl', {'lifetime': 0})])
         self.assertEqual(r['totals']['removed'], 1)
+
+
+    def test_active_or_unread_task_keeps_a_tape_complete_dataset(self):
+        p = rd.plan(self.client, 'BNL-XRD', '/RECO/26.03.0/a',
+                    task_states=lambda names: {n: 'active' for n in names})
+        self.assertIn('still active', p['datasets'][0]['reason'])
+        p = rd.plan(self.client, 'BNL-XRD', '/RECO/26.03.0/a')
+        self.assertIn('not read', p['datasets'][0]['reason'])
+        p = rd.plan(self.client, 'BNL-XRD', '/RECO/26.03.0/a',
+                    task_states=lambda names: {})
+        self.assertTrue(p['datasets'][0]['eligible'], 'no recorded task')
+        r = rd.execute(self.client, 'BNL-XRD', '/RECO/26.03.0/*', ['/RECO/26.03.0/a'],
+                       task_states=lambda names: {n: 'active' for n in names})
+        self.assertEqual(r['totals']['skipped'], 1)
+        self.assertEqual(self.client.updated, [])
 
 
 if __name__ == '__main__':

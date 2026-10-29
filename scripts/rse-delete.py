@@ -11,7 +11,11 @@ immediate and cannot be undone.
 
 The catalog is JLab Rucio as ``eicprod`` by a PanDA-server token, else
 the proxy in EVGEN_X509_PROXY; ``--rucio-cfg`` uses the caller's own
-rucio.cfg account instead. The same removal is offered on the monitor's
+rucio.cfg account instead. A dataset whose production task is active is
+kept; task state is read through the monitor's Django (PCS and PanDA),
+found at SWF_MONITOR_SRC or the sibling swf-monitor checkout. Where that
+cannot be set up, as off the production host, every dataset is kept for
+want of it and the preview says so. The same removal is offered on the monitor's
 storage page, run by the production operations agent.
 
 Usage::
@@ -35,6 +39,24 @@ def _client(args):
         return Client()
     from swf_epicprod.jlab_auth import rucio_client
     return rucio_client(proxy=os.environ.get('EVGEN_X509_PROXY'), timeout=60)
+
+
+def _task_reader():
+    """The storage pass's task-state reader through the monitor's Django,
+    or None when it cannot be set up here."""
+    src = os.environ.get('SWF_MONITOR_SRC') or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', '..', 'swf-monitor', 'src')
+    try:
+        sys.path.insert(0, src)
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'swf_monitor_project.settings')
+        import django
+        django.setup()
+        from swf_epicprod.analytics.storage import _task_states
+        return _task_states
+    except Exception as e:                                    # noqa: BLE001
+        print(f'task state not readable here ({type(e).__name__}: {e}); '
+              'every dataset is kept for want of it', file=sys.stderr)
+        return None
 
 
 def _tb(n):
@@ -72,8 +94,9 @@ def main():
     except rse_deletion.RseDeletionError as e:
         sys.exit(f'refused: {e}')
     client = _client(args)
+    task_states = _task_reader()
     try:
-        p = rse_deletion.plan(client, args.rse, args.pattern)
+        p = rse_deletion.plan(client, args.rse, args.pattern, task_states)
     except rse_deletion.RseDeletionError as e:
         sys.exit(f'refused: {e}')
     if not args.execute:
@@ -95,7 +118,7 @@ def main():
         if input(f'Type {args.rse} to proceed: ').strip() != args.rse:
             print('Not confirmed; nothing removed.')
             return 1
-    result = rse_deletion.execute(client, args.rse, args.pattern, names)
+    result = rse_deletion.execute(client, args.rse, args.pattern, names, task_states)
     if args.json:
         print(json.dumps(result, indent=1))
     else:
