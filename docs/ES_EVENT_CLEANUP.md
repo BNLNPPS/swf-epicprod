@@ -34,5 +34,5 @@ account's cron, under a lock that makes a second run exit:
 40 5 * * * bash -lc 'source ~/.env && cd /opt/swf-monitor/current/src && /opt/swf-monitor/current/.venv/bin/python /data/wenauseic/github/swf-epicprod/scripts/es-event-cleanup.py' >> /opt/swf-monitor/shared/logs/es-event-cleanup.log 2>&1
 ```
 
-The first run, on 29 October 2026, removed the rows of the 66 tasks done
-or aborted before 26 October: 1,953,920 rows.
+The first run, at 03:06 ET on 29 October 2026, removed 1,953,920 rows of
+66 tasks done or aborted more than three days before, in 62 seconds.
