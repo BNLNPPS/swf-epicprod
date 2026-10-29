@@ -1,7 +1,8 @@
 """Pause a production task whose completed jobs overwhelmingly fail.
 
 The front reads and queues; the existing operations agent pauses and verifies.
-An operator's verified resume starts a fresh sample. No automatic resume or kill.
+An operator's verified resume or Move starts a fresh sample. No automatic
+resume or kill.
 
 Two rules (docs/CONTINUOUS_PRODUCTION.md, Task failure guard). The first,
 50 completed attempts at 95% failed, acts as the front's mode says. The
@@ -133,10 +134,16 @@ def observations(queues):
                  for row in cursor.fetchall()]
     if not tasks:
         return []
+    # A verified Move starts a fresh sample as a resume does: the failures
+    # where the task was do not count where it went, and a paused task is
+    # resumed inside the Move, with no resume of its own on the record
+    # (41525, moved from OSG to Perlmutter on 2026-10-29, was paused again
+    # six minutes later on its ten OSG failures).
     resumes = {row['jedi_task_id']: row['since'] for row in
                PandaTaskOperation.objects.filter(
                    jedi_task_id__in=[t['jeditaskid'] for t in tasks],
-                   operation='resume', status='verified', completed_at__isnull=False)
+                   operation__in=('resume', 'reassign'), status='verified',
+                   completed_at__isnull=False)
                .values('jedi_task_id').annotate(since=Max('completed_at'))}
     with connections['panda'].cursor() as cursor:
         for task in tasks:

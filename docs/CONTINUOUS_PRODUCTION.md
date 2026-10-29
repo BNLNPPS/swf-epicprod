@@ -971,7 +971,11 @@ The sample contains distinct `finished` and `failed` PandaIDs from the live
 and archived job tables, excluding cancelled and closed records. It counts
 attempts, including retried failures, to catch a retry storm. A verified
 operator resume starts a new sample at its completion timestamp, so old
-failures cannot immediately pause a repaired task again. Recovery remains
+failures cannot immediately pause a repaired task again. A verified Move
+does too: the failures where the task was do not count where it went,
+and a paused task is resumed inside the Move with no resume of its own
+on the record (41525, moved from OSG to Perlmutter on 2026-10-29, was
+paused again six minutes later on its ten OSG failures). Recovery remains
 an operator action; this guard never resumes or kills work. Pending pauses
 are deduplicated by the existing durable operation record. While another
 operation on the task is in flight (a Move a person started), PanDA takes no
