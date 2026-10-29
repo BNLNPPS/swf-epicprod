@@ -673,8 +673,11 @@ task from its queue S to a queue T when all of these hold:
   spell is diluted in the six hours (GREX: 178 copy failures in the 20 minutes
   after its feed came back). The cycle record names each idle queue so
   refused, with both readings (`refused`);
-- the task has nothing started: no job sent, starting, running, holding,
-  transferring or merging, so no pilot loses a job;
+- the task has never run: no job sent, starting, running, holding,
+  transferring or merging, and none finished or failed, so started work
+  stays where it runs and no pilot loses a job (Torre Wenaus,
+  2026-10-29, after 41474, in production at GREX for days, was moved to
+  OSG at a moment none of its jobs was running);
 - the task is not paused (a resume is the operators'), not Event Service,
   not a trial, and its PCS task's current attempt;
 - T is open to the task by the recommender's own reading: no red gate,

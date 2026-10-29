@@ -6,8 +6,8 @@ production queue goes there instead (Torre Wenaus, 2026-10-26: "in such a
 situation, i want such a move to be automatic"). The move is the Site
 control's Move (``pcs.services.prodtask_move_request``): PanDA's soft
 reassign through the operations agent, which repays the attempt each
-closed job cost. Only tasks with nothing started are moved, so no pilot
-loses a job, and moves stop once the two queues are level, so work does
+closed job cost. Only tasks that have never run are moved, so started
+work stays where it runs and no pilot loses a job, and moves stop once the two queues are level, so work does
 not travel back and forth (docs/CONTINUOUS_PRODUCTION.md, Idle-queue move).
 """
 
@@ -23,6 +23,10 @@ TASK_STATUSES = ('defined', 'ready', 'running', 'scouting', 'scouted', 'pending'
 # A job in any of these has a pilot or is past one; a task with one stays.
 STARTED_JOB_STATUSES = ('sent', 'starting', 'running', 'holding', 'transferring',
                         'merging')
+# A task with an ended job has run: started work stays where it runs (Torre
+# Wenaus, 2026-10-29, after 41474, in production at GREX for days, was moved
+# to OSG at a moment none of its jobs was running).
+RAN_JOB_STATUSES = ('finished', 'failed')
 
 
 def settings(setting):
@@ -129,12 +133,13 @@ def choose(decisions, tasks, *, max_moves, recent=None):
 
     ``decisions``: this cycle's decision per queue. ``tasks``: candidates,
     each with ``jeditaskid``, ``site``, ``priority``, ``queued`` (jobs not
-    started), ``ungenerated``, ``started`` (jobs with a pilot), ``eligible``
+    started), ``ungenerated``, ``started`` (jobs with a pilot), ``ran`` (jobs
+    that ended finished or failed), ``eligible``
     (the queues the recommender finds open to it: no blocker, no fit
     problem) and ``recent_move`` (moved within the cooldown).
 
-    A task moves from its queue S to an idle queue T when nothing of it
-    has started, T is open to it, T is still below its low mark, and the
+    A task moves from its queue S to an idle queue T when it has never
+    run (no job started or ended), T is open to it, T is still below its low mark, and the
     move leaves T no deeper than S: ``T + task at T <= S - task at S``,
     in hours at each queue's capacity. Tasks with no jobs generated go
     first (the move closes nothing), then lower priority, then newer:
@@ -157,7 +162,7 @@ def choose(decisions, tasks, *, max_moves, recent=None):
         why = ''
         # The source may be idle too (GREX on 2026-10-26: nothing ready for
         # either queue); the depth condition alone gives the direction.
-        if int(task.get('started') or 0) > 0:
+        if int(task.get('started') or 0) > 0 or int(task.get('ran') or 0) > 0:
             continue
         if rows <= 0:
             continue
@@ -223,7 +228,7 @@ def candidates(queues, cooldown_h):
             'AND COALESCE(eventservice, 0) = 0',
             [list(queues), list(TASK_STATUSES)])
         tasks = {row[0]: dict(zip(('jeditaskid', 'taskname', 'status', 'site', 'priority'), row),
-                              queued=0, started=0)
+                              queued=0, started=0, ran=0)
                  for row in cursor.fetchall()}
         if not tasks:
             return []
@@ -234,7 +239,14 @@ def candidates(queues, cooldown_h):
             f'SELECT jeditaskid, jobstatus FROM "{PANDA_SCHEMA}".jobsdefined4 WHERE jeditaskid = ANY(%s)'
             ') j GROUP BY 1, 2', [list(tasks), list(tasks)])
         for tid, status, n in cursor.fetchall():
-            tasks[tid]['started' if status in STARTED_JOB_STATUSES else 'queued'] += int(n)
+            tasks[tid]['started' if status in STARTED_JOB_STATUSES
+                       else 'ran' if status in RAN_JOB_STATUSES else 'queued'] += int(n)
+        cursor.execute(
+            f'SELECT jeditaskid, count(*) FROM "{PANDA_SCHEMA}".jobsarchived4 '
+            'WHERE jeditaskid = ANY(%s) AND jobstatus = ANY(%s) GROUP BY 1',
+            [list(tasks), list(RAN_JOB_STATUSES)])
+        for tid, n in cursor.fetchall():
+            tasks[tid]['ran'] += int(n)
     ungenerated = ungenerated_by_task()
     since = timezone.now() - timedelta(hours=cooldown_h)
     recent = set(PandaTaskOperation.objects.filter(
@@ -292,7 +304,7 @@ def run(queues, decisions, placement, *, enabled, front_mode, cfg, dry_run, crea
     closed, dispatch = closed_queues(), dispatch_capabilities()
     tasks = []
     for t in candidates(queues, cfg['cooldown_h']):
-        if t['started'] or not (t['queued'] or t['ungenerated']):
+        if t['started'] or t['ran'] or not (t['queued'] or t['ungenerated']):
             continue
         prod = _prod_task(t['jeditaskid'])
         if prod is None:
