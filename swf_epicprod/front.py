@@ -443,7 +443,7 @@ def ready_backlog():
             entry['rows'] = (int(queued['rows']) if entry['kind'] == 'rerun_residual'
                              and (queued or {}).get('rows') else task_rows(task, cfg))
             entry['need'] = task_need(cfg, rows=entry['rows'])
-            # A whole-node queue (Perlmutter) takes only what the Event
+            # A whole-node queue (Perlmutter, Google) takes only what the Event
             # Service can run over EVGEN input (open_to, feed_task).
             from .evgen_es import capable
             entry['evgen_es'] = entry['kind'] == 'submit' and capable(task, cfg)
@@ -719,8 +719,9 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         # node for its allocation, and an Event Service task over EVGEN input
         # is days of nodes (p4499: 14.5 million events, about 150 node-hours),
         # past any hours mark. The queue takes the next task while its own
-        # work fills fewer nodes than its target, set with the harvester's
-        # worker ceiling: its production jobs not started or running, the
+        # work fills fewer nodes than its target, set with the queue's worker
+        # ceiling (the harvester's; Google's pod cap, gke_pilots.max_pods):
+        # its production jobs not started or running, the
         # files JEDI has not yet made jobs of, and at least one node for each
         # live task, which holds one between a job's end and the next.
         nodes = max(int(qs.get('nodes') or 1), 1)

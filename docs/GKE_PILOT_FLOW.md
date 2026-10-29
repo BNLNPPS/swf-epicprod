@@ -250,6 +250,13 @@ named by `gke_pilots.site_input_gcs`.
 - **PanDA.** The catalog map's `site_staged` names `BNL_ePIC_GOOGLE_es`, so JEDI holds a task's files at the
   queue and activates its jobs (distcomp-services panda-server CHANGES.md).
 
+- **The front.** Google is a whole-node site (`swf_epicprod.queues.WHOLE_NODE_SITES`): its pod is one node
+  for one job. The pressure front gives its queue only Event Service work over a registered EVGEN sample, and
+  sizes it in nodes, not hours (CONTINUOUS_PRODUCTION.md, Set points and caps: `nodes`), with
+  `front.queue.BNL_ePIC_GOOGLE_es.nodes` at most the pod cap, `gke_pilots.max_pods`. The node measure counts
+  every production job on the queue, the gun feeder's included. PCS refuses Google any task without an Event
+  Service shape, and any EVGEN shape whose input is not staged at the site (`prodtask_submit_request`).
+
 Google takes no EVGEN task from the ready pool until this path has passed its canary: its front feed is off
 and its gun feeder takes no EVGEN task (`google_production.reserve`).
 

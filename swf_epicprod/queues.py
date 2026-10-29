@@ -281,8 +281,9 @@ def status(queue):
 # Sites whose worker is a whole node for one job: an ordinary single-core job
 # there holds 128 cores and uses one (Torre Wenaus, 2026-10-28: "NO MORE
 # SINGLE CORE 1/128 EFF WORK IN PERL EVER"). Only Event Service work goes to
-# their queues (docs/NERSC_PERLMUTTER.md, The queues).
-WHOLE_NODE_SITES = ('nersc',)
+# their queues (docs/NERSC_PERLMUTTER.md, The queues). Google's pilot pod is
+# one node for one job as well (docs/GKE_PILOT_FLOW.md, EVGEN input).
+WHOLE_NODE_SITES = ('nersc', 'google')
 
 
 def whole_node(queue):

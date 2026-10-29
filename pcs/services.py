@@ -6546,13 +6546,14 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
             f'never ordinary single-core jobs (docs/NERSC_PERLMUTTER.md, The queues).',
             status=409)
     es = (task.overrides or {}).get('event_service') or {}
-    if whole_node(target) and es.get('input') == 'evgen' and not es.get('nersc_input'):
+    if whole_node(target) and es.get('input') == 'evgen' and not (
+            es.get('nersc_input') or es.get('site_input')):
         # An EVGEN shape from before the input was read from its catalog and
         # staged at the site (an earlier attempt's): never sent again; the
         # front, or scripts/evgen-es-submit.py, builds it afresh.
         raise ServiceError(
             f'{task.name}: its Event Service setup predates the catalog input staged at '
-            f'NERSC; build it afresh with scripts/evgen-es-submit.py (docs/NERSC_PERLMUTTER.md, '
+            f'the site; build it afresh with scripts/evgen-es-submit.py (docs/NERSC_PERLMUTTER.md, '
             f'EVGEN input in production).', status=409)
     if site:
         prodtask_place(task, site, changed_by=changed_by, placement=placement)
