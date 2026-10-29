@@ -1199,6 +1199,58 @@ def _apply_feeds(outcomes, *, created_by):
 
 # The cycle
 
+REGULATOR_ALARM_KEY = 'front_regulator_alarm'
+
+
+def regulator_alarm(regulator, now, created_by):
+    """One alarm per episode of unverified regulation, and one recovery.
+
+    While the job throttler's decisions cannot be verified the gate holds
+    every queue the front feeds (``regulator_unverified``). On 2026-10-28
+    it did so from 16:13 to 19:08 ET, after the throttler's decision lines
+    changed under the reporter that reads them, and nothing alarmed;
+    Torre found it. Held past ``front.regulator_alarm_after_s`` (600), the
+    episode is one ``front_regulator_unverified`` action at severity
+    alarm, again if its reason changes: epicprod-live publishes it, and
+    the notify-llm subscription brings it to the AI sessions on the host
+    (swf-monitor NOTICE_ROUTING.md). Its end is one recovery record."""
+    from monitor_app.epicprod_logging import log_epicprod_action
+    from monitor_app.models import PersistentState
+    after_s = float(setting('front.regulator_alarm_after_s', 600))
+    state = dict((PersistentState.get_state() or {}).get(REGULATOR_ALARM_KEY) or {})
+    reason = str(regulator.get('reason') or '')
+    if regulator.get('red'):
+        since = state.get('since') or now.isoformat()
+        held_s = (now - datetime.fromisoformat(since)).total_seconds()
+        if held_s >= after_s and (not state.get('alarmed') or state.get('reason') != reason):
+            log_epicprod_action(
+                'front', 'front_regulator_unverified', username=created_by,
+                subject_type='front', subject_key='regulator', outcome='error',
+                sublevel='high', live_default=True, level=logging.ERROR,
+                message=f'regulator unverified for {int(held_s // 60)} min: {reason}',
+                severity='alarm', reason=reason, held_s=int(held_s),
+                narration=(f'The front has held new releases to every queue it feeds for '
+                           f'{int(held_s // 60)} min because the job throttler\'s decisions '
+                           f'cannot be verified: {reason}. Read the PanDA server reporter\'s '
+                           'jedi_regulation record against the throttler log on pandaserver01.'))
+            state['alarmed'] = True
+        state.update(since=since, reason=reason)
+    elif state.get('alarmed'):
+        held_s = (now - datetime.fromisoformat(state['since'])).total_seconds()
+        log_epicprod_action(
+            'front', 'front_regulator_unverified', username=created_by,
+            subject_type='front', subject_key='regulator', outcome='ok',
+            sublevel='high', live_default=True,
+            message=f'regulator verified again after {int(held_s // 60)} min',
+            severity='info', held_s=int(held_s),
+            narration=(f'Regulation is verified again; the gate held the fed queues for '
+                       f'{int(held_s // 60)} min.'))
+        state = {}
+    else:
+        state = {}
+    PersistentState.update_state({REGULATOR_ALARM_KEY: state})
+
+
 def run_cycle(*, dry_run=False, created_by='front'):
     """One cycle over the regulated queues. Returns the per-queue
     decisions and the cycle summary; writes the records and the stored
@@ -1236,6 +1288,9 @@ def run_cycle(*, dry_run=False, created_by='front'):
             return throttler_verdict(latest('pandaserver01'), modes, now=t0)
         regulator = _safe('job regulator', check_regulator, lambda exc: {
             'red': True, 'reason': f'job regulator unreadable: {exc}'})
+    if not dry_run:
+        _safe('regulator alarm', lambda: regulator_alarm(regulator, t0, created_by),
+              failed('regulator alarm'))
     queues = regulated_queues()
     from swf_epicprod import task_failure_guard
     task_guard = _safe('task failure guard', lambda: task_failure_guard.run(

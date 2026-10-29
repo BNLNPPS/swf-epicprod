@@ -30,6 +30,7 @@ def throttler_verdict(report, modes, *, now=None):
     evidence = ((report or {}).get('record') or {}).get('jedi_regulation') or {}
     if evidence.get('error'):
         reasons.append(evidence['error'])
+    unread = evidence.get('unread') or {}
     mode = modes.get('epic') if modes.get('epic') is not None else modes.get('wlcg')
     if mode != 'throttle':
         reasons.append('effective epic MODE is not throttle')
@@ -41,4 +42,10 @@ def throttler_verdict(report, modes, *, now=None):
                 raise ValueError('stale')
         except (KeyError, ValueError, TypeError):
             reasons.append(f'{vo} has no fresh verified throttler decision')
+    if reasons and unread.get('count'):
+        # Decision lines the reporter could not read explain a red verdict
+        # (a changed line format, named as such) but never make one: an old
+        # unread line in the log tail must not hold queues once decisions verify.
+        reasons.append(f"the PanDA server reporter could not read {unread['count']} "
+                       f"throttler decision lines (latest: {str(unread.get('latest', ''))[-160:]})")
     return {'red': bool(reasons), 'reason': '; '.join(reasons), 'evidence': evidence}

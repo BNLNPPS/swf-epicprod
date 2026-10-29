@@ -1274,3 +1274,20 @@ worker limits. Production notices independently evaluate supply health and
 a sustained 25 percent running-count fall against the trailing hour while
 work waits. Zero-running starvation has a five-minute grace. Google pilot
 launching respects the front's explicit closure policy.
+
+## Regulation evidence: alarm and reading, 29 October 2026
+
+From 16:13 to 19:08 ET on 28 October the gate held every fed queue as
+`regulator_unverified`: the throttler's decision lines gained fields
+(`accounting=`, `scope=`) and the PanDA server reporter's fixed pattern
+stopped matching. Nothing alarmed; Torre found it. Two changes follow.
+The reporter (version 1.3) reads a `REGULATION_OK` line as key=value
+fields in any order and counts, with a sample, a decision line it cannot
+read (`jedi_regulation.unread`); the verdict names those lines when
+regulation is unverified, so a changed format reads as one, though an
+old unread line never holds a queue by itself. And the front records an
+unverified episode held past `front.regulator_alarm_after_s` (600 s) as
+one `front_regulator_unverified` action at severity alarm, again if its
+reason changes, and its end as one recovery record: epicprod-live
+publishes both, and the notify-llm subscription brings the alarm to the
+AI sessions on swf-testbed (swf-monitor NOTICE_ROUTING.md).
