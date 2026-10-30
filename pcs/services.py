@@ -6545,6 +6545,11 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
             f'{target} runs one job per whole node: it takes Event Service work only, '
             f'never ordinary single-core jobs (docs/NERSC_PERLMUTTER.md, The queues).',
             status=409)
+    from swf_epicprod.front import event_service_misplaced
+    misplaced = event_service_misplaced(target, task)
+    if misplaced:
+        raise ServiceError(f'{misplaced}: only a whole-node queue runs Event Service jobs '
+                           f'(docs/CONTINUOUS_PRODUCTION.md, Unplace).', status=409)
     es = (task.overrides or {}).get('event_service') or {}
     if whole_node(target) and es.get('input') == 'evgen' and not (
             es.get('nersc_input') or es.get('site_input')):
@@ -7322,11 +7327,13 @@ def prodtask_site_options(task):
     recommender with the census, fit and gates each was judged on
     (swf_epicprod.front.recommend). Reads the front's stored state and
     the database; nothing live."""
-    from swf_epicprod.front import recommend, regulated_queues, task_need, whole_node_ready
+    from swf_epicprod.front import (event_service_bound, recommend, regulated_queues,
+                                    task_need, whole_node_ready)
     from .commands import pinned_site
     state, built_at = _front_state()
     cfg = task.get_effective_config()
-    need = task_need(cfg, rows=_declared_rows(task, cfg), event_service=whole_node_ready(task, cfg))
+    need = task_need(cfg, rows=_declared_rows(task, cfg), event_service=whole_node_ready(task, cfg),
+                     es_bound=event_service_bound(task))
     queues = regulated_queues()
     result = recommend(state, need, queues)
     site = pinned_site(task, cfg=cfg)
@@ -7452,11 +7459,13 @@ def prodtask_recommended_placement(task, queues=None):
     """The recommended production queue for the task and the placement
     record of the recommendation, ``(site, {recommended, reason})``;
     refuses with the reason when no queue is open to it."""
-    from swf_epicprod.front import recommend, regulated_queues, task_need, whole_node_ready
+    from swf_epicprod.front import (event_service_bound, recommend, regulated_queues,
+                                    task_need, whole_node_ready)
     state, _built_at = _front_state()
     cfg = task.get_effective_config()
     result = recommend(state, task_need(cfg, rows=_declared_rows(task, cfg),
-                                        event_service=whole_node_ready(task, cfg)),
+                                        event_service=whole_node_ready(task, cfg),
+                                        es_bound=event_service_bound(task)),
                        queues or regulated_queues())
     if not result['recommended']:
         raise ServiceError(f'Not placed: {result["reason"]}.', status=409)
@@ -7576,6 +7585,11 @@ def prodtask_move_request(*, task, site, changed_by='', placement=None, source='
         raise ServiceError('Task has no PanDA task to move; place it and submit.',
                            status=409)
     refuse_closed_queue(site, task=task)
+    from swf_epicprod.front import event_service_misplaced
+    misplaced = event_service_misplaced(site, task)
+    if misplaced:
+        raise ServiceError(f'{misplaced}: its Event Service jobs would die there before '
+                           f'they start (docs/CONTINUOUS_PRODUCTION.md, Unplace).', status=409)
     live = _get_task_record(int(task.panda_task_id))
     if not live:
         raise ServiceError(f'PanDA task {task.panda_task_id} not found.', status=404)

@@ -275,10 +275,11 @@ def _prod_task(jeditaskid):
 def _eligible(task, state, queues, closed, dispatch):
     """The queues the recommender finds open to the PCS task."""
     from pcs.services import _declared_rows
-    from swf_epicprod.front import recommend, task_need, whole_node_ready
+    from swf_epicprod.front import event_service_bound, recommend, task_need, whole_node_ready
     cfg = task.get_effective_config()
     result = recommend(state, task_need(cfg, rows=_declared_rows(task, cfg),
-                                        event_service=whole_node_ready(task, cfg)), queues,
+                                        event_service=whole_node_ready(task, cfg),
+                                        es_bound=event_service_bound(task)), queues,
                        closed=closed, dispatch=dispatch)
     return [r['queue'] for r in result['rows'] if not r['blockers'] and not r['fit']]
 

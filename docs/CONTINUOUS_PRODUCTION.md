@@ -444,6 +444,15 @@ whole-node queue is recommended only for Event Service work
 the Site control recommended Perlmutter for one-core particle-gun requests,
 and p1108 130to177deg was pinned to a queue that would never take it.
 
+The rule holds the other way too: Event Service work goes only to a
+whole-node queue. A task that carries an Event Service setup
+(`front.event_service_bound`) is refused by every other queue in the
+recommendation, the feed and the idle-queue move, and the submit request
+and the Move refuse it (`front.event_service_misplaced`). On a one-core
+queue an Event Service job dies in the pilot before its payload starts:
+on 29 October all 12 jobs of 41525 and 41526 (p4495, p4497) failed that
+way at BNL_OSG_PanDA_1, with pilot error 1310.
+
 **Reading and releasing a placement.** `pcs.services.prodtask_site_source(task)`
 says where a task's queue comes from: `trial`, `task` (the
 `panda_site` override placement wrote; an empty one sets aside the

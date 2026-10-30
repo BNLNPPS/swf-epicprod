@@ -424,7 +424,10 @@ def ready_backlog():
                 entry['unplace_lapsed'] = code in UNPLACE_LAPSING
                 entry['unplaced'] = unplaced
                 entry['rows'] = task_rows(task, cfg)
-                entry['need'] = task_need(cfg, rows=entry['rows'], event_service=False)
+                # Its work in PanDA keeps its shape, so Event Service work
+                # is refused by every queue other than a whole-node one.
+                entry['need'] = task_need(cfg, rows=entry['rows'], event_service=False,
+                                          es_bound=event_service_bound(task))
                 by_queue.setdefault(queue, []).append(entry)
                 continue
             queue = pinned_site(task, cfg=cfg) or UNPLACED
@@ -446,7 +449,8 @@ def ready_backlog():
             # Service can run over EVGEN input (open_to, feed_task).
             from .evgen_es import capable
             entry['evgen_es'] = entry['kind'] == 'submit' and capable(task, cfg)
-            entry['need'] = task_need(cfg, rows=entry['rows'], event_service=entry['evgen_es'])
+            entry['need'] = task_need(cfg, rows=entry['rows'], event_service=entry['evgen_es'],
+                                      es_bound=event_service_bound(task))
             if queue != UNPLACED:
                 from .queues import dispatch_capabilities, image_problem
                 problem = image_problem(entry['need']['container_image'],
@@ -855,12 +859,14 @@ def queue_limits(queue):
             'status': str(cfg.get('status') or '')}
 
 
-def task_need(cfg, rows=None, *, event_service):
+def task_need(cfg, rows=None, *, event_service, es_bound=False):
     """What one job of a task asks of a queue, from its effective
     configuration, as the submission declares it (pcs/commands.py).
     ``event_service``: whether a whole-node queue can take the task
     (``evgen_es.capable``); every reader of a recommendation passes it,
-    so the Site control and the feed judge whole-node queues alike."""
+    so the Site control and the feed judge whole-node queues alike.
+    ``es_bound``: the task is Event Service work already
+    (``event_service_bound``), which only a whole-node queue runs."""
     from pcs.commands import task_container_image
     data = cfg.get('data') or {}
     hours = cfg.get('target_hours_per_job')
@@ -870,7 +876,7 @@ def task_need(cfg, rows=None, *, event_service):
     return {'walltime_h': round(walltime_h, 2), 'cores': cores,
             'ram_mb_per_core': ram, 'memory_mb': ram * cores, 'rows': rows,
             'container_image': task_container_image(cfg),
-            'event_service': bool(event_service)}
+            'event_service': bool(event_service), 'es_bound': bool(es_bound)}
 
 
 def whole_node_ready(task, cfg=None):
@@ -878,17 +884,42 @@ def whole_node_ready(task, cfg=None):
     already (a feeder sample, an adopted request, a staged EVGEN task), or
     a registered EVGEN sample the feed stages for it (``evgen_es.capable``)."""
     from .evgen_es import capable
-    return bool((task.overrides or {}).get('event_service')) or capable(task, cfg)
+    return event_service_bound(task) or capable(task, cfg)
+
+
+def event_service_bound(task):
+    """Whether the task is Event Service work: it carries an Event Service
+    setup (the ``event_service`` override), whose jobs need a whole node."""
+    return bool((task.overrides or {}).get('event_service'))
+
+
+def event_service_misplaced(queue, task):
+    """Why ``queue`` cannot take the task's Event Service work, or ''. Only
+    a whole-node queue runs it: an Event Service job sent to a single-core
+    queue dies before its payload starts (41525 and 41526 at BNL_OSG_PanDA_1,
+    2026-10-29, pilot error 1310 on every job). Read by the submit request
+    and the Move (pcs/services.py)."""
+    from .queues import whole_node
+    if not queue or whole_node(queue) or not event_service_bound(task):
+        return ''
+    return f'{queue} runs no Event Service work; {task.name} carries an Event Service setup'
 
 
 def event_service_refusal(queue, need):
-    """Why a whole-node queue cannot take the task, or ''. One job per
-    whole node: Event Service work only (Torre Wenaus, 2026-10-28: "NO
-    MORE SINGLE CORE 1/128 EFF WORK IN PERL EVER"). Read by ``recommend``
-    and the feed alike, so the Site control never recommends a queue the
-    front would not feed the task to."""
+    """Why the queue cannot take the task, or ''. A whole-node queue: one
+    job per whole node, Event Service work only (Torre Wenaus, 2026-10-28:
+    "NO MORE SINGLE CORE 1/128 EFF WORK IN PERL EVER"). Any other queue:
+    no Event Service work (``event_service_misplaced``). Read by
+    ``recommend`` and the feed alike, so the Site control never recommends
+    a queue the front would not feed the task to."""
     from .queues import whole_node
-    if need is None or not whole_node(queue) or need.get('event_service'):
+    if need is None:
+        return ''
+    if not whole_node(queue):
+        if need.get('es_bound'):
+            return f'{queue} runs no Event Service work; the task carries an Event Service setup'
+        return ''
+    if need.get('event_service'):
         return ''
     return f'{queue} takes Event Service work only; not a registered EVGEN sample'
 

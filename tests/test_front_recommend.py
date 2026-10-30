@@ -228,5 +228,42 @@ class CoreLimitTest(unittest.TestCase):
                'pilot.queue.G.enabled': False}
         self.assertEqual(core_limits(cfg), {'G': 296})
 
+
+class EventServiceRoutingTest(unittest.TestCase):
+    """Event Service work goes only to a whole-node queue (41525 and 41526
+    died at BNL_OSG_PanDA_1, 2026-10-29), and a whole-node queue takes only
+    Event Service work."""
+
+    def setUp(self):
+        whole = patch('swf_epicprod.queues.whole_node', side_effect=lambda q: q == 'PM')
+        whole.start()
+        self.addCleanup(whole.stop)
+
+    def test_each_kind_of_queue_refuses_the_other_kind_of_work(self):
+        from swf_epicprod.front import event_service_refusal
+        es = dict(NEED, event_service=True, es_bound=True)
+        plain = dict(NEED, event_service=False, es_bound=False)
+        self.assertIn('runs no Event Service work', event_service_refusal('OSG', es))
+        self.assertEqual(event_service_refusal('PM', es), '')
+        self.assertIn('Event Service work only', event_service_refusal('PM', plain))
+        self.assertEqual(event_service_refusal('OSG', plain), '')
+
+    def test_event_service_work_is_never_recommended_to_a_single_core_queue(self):
+        state = _state(OSG=(_decision(committed_h=0.0), GREEN, LIMITS),
+                       PM=(_decision(committed_h=5.0), GREEN, LIMITS))
+        r = recommend(state, dict(NEED, event_service=True, es_bound=True), ['OSG', 'PM'])
+        self.assertEqual(r['recommended'], 'PM')
+        r = recommend(state, dict(NEED, event_service=False, es_bound=True), ['OSG'])
+        self.assertFalse(r['recommended'])
+
+    def test_submit_and_move_name_the_misplacement(self):
+        from types import SimpleNamespace
+        from swf_epicprod.front import event_service_misplaced
+        es = SimpleNamespace(name='t', overrides={'event_service': {'input': 'evgen'}})
+        plain = SimpleNamespace(name='t', overrides={})
+        self.assertIn('runs no Event Service work', event_service_misplaced('OSG', es))
+        self.assertEqual(event_service_misplaced('PM', es), '')
+        self.assertEqual(event_service_misplaced('OSG', plain), '')
+
 if __name__ == '__main__':
     unittest.main()
