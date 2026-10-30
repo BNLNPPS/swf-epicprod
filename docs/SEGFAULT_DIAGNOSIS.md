@@ -1007,8 +1007,10 @@ under the per-event seed. Task 41497's request (events 631680 to
 631689, seed 6317) crashed in npsim and in the resident path and ran
 clean under seed 6318 and under the per-event seed.
 
-The study, the findings and the notice treat a traced Event Service
-signature as any other.
+The nightly notice lists an untraced Event Service signature among
+those for which reproduction is the only extraction left, naming the
+npps0 route; the study, the findings and the notice treat a traced one
+as any other.
 
 ## Findings
 
