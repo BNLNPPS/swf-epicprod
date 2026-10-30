@@ -1007,6 +1007,32 @@ under the per-event seed. Task 41497's request (events 631680 to
 631689, seed 6317) crashed in npsim and in the resident path and ran
 clean under seed 6318 and under the per-event seed.
 
+As built (2026-10-29): the doer is swf-monitor
+`scripts/segfault-es-reproduce.py`, run on the monitor host; the driver
+it ships is `scripts/segfault-es-replay.sh`, run in the image on npps0.
+The doer takes the request's run.sh arguments from the task's manifest
+(the file whose name is the request's LFN), the chunk from the request
+seed (run.sh seeds chunk *c* with *c* + 1) and the label from the
+task's unit size, and the environment from `repro_environment` with the
+two resident switches of `production_es.apply`. It ships the payload of
+the job's version (the commit that set that version in
+`payload/VERSION`), starts the driver detached under
+`~wenaus/work/segfault-es/` and polls for its `out/result.json`. The
+driver checks that the npsim arguments run.sh wrote carry the recorded
+seed before the gdb run. The attempt is an entry on the signature with
+`mode` `host`, queue and host `npps0`, role `reference`, recorded as
+running when the doer starts and given its outcome, signal and times
+when the result arrives; the runs page and the signature page show it
+as an attempt with no PanDA job. The production side of the pair is
+the record's own passes, which all crashed on the request, so a crash
+on npps0 settles the signature as reproduced and a clean run as site
+dependent. The trace is read from gdb's backtrace (`trace_extract`,
+form `gdb`: "Program received signal" and the frames of `bt`) and
+recorded and merged by frame; the signal goes on the signature as 128
+plus the signal. The driver's logs, the request's npsim arguments and
+the result are kept under
+`$SWF_TMP_DIR/segfault-packages/<key>/es-replay-<request id>/`.
+
 The nightly notice lists an untraced Event Service signature among
 those for which reproduction is the only extraction left, naming the
 npps0 route; the study, the findings and the notice treat a traced one
