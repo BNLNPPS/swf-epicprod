@@ -923,6 +923,93 @@ gains Bad input (`?kind=badinput`) beside Segfault and Himem.
 reference queue reproduces the signature when it stops on the same
 FATAL line, as an input fault is deterministic.
 
+## Event Service units
+
+An Event Service job (NODE_EVENT_DISPATCHER.md) runs its events as
+many units under one PanDA job, and a unit whose simulation crashes
+fails alone: its ranges return to the file and the job ends finished.
+The crash-class selection, failed jobs exiting 134 to 139, never sees
+it. Event Service crashes enter the catalog from the units' own
+records (Torre Wenaus, 2026-10-29: "there is a bug, it should be
+found").
+
+**The record.** The harness ships each job's record off the node
+(JOB_REPORTING.md, The Event Service record), and the sweep files it
+on the job's `EpicProdJob` row under `data['es_record']` for every
+Event Service job that ended, whatever its status. A failed unit there
+carries its unit id, slot, range (one-based `startEvent` and
+`lastEvent`), wall time, path (`run.sh` for a slot's first unit,
+`resident` for its later ones) and message, and, under `simulation`,
+the request the slot sent its resident npsim: the input's LFN and
+path, the zero-based first event, the event count and the request
+seed. The resident seeds each request's whole random stream with that
+seed and uses no per-event seed (NODE_EVENT_DISPATCHER.md, Resident
+simulation with external EVGEN input), so the input, the interval and
+the seed determine the unit's simulation.
+
+**Selection.** A failed unit is a crash when:
+
+- its message says the resident simulation exited without a reply:
+  the resident npsim died during the unit's request;
+- its payload exited in the crash class (`payload exit 134` to `139`),
+  the run.sh path's cold stages;
+- its slot exited on a crash signal (`slot exited -11`, `-6`, `-7`,
+  `-8`);
+- it is a run.sh unit whose payload stopped in the resident request on
+  a request (input, first event, count, seed) already recorded as a
+  crash of the task: the same request crashing again on a later pass.
+
+The units failed by a death's consequences (the next request refused
+at the dead resident's socket, a range file missing after a restart,
+the later units of a stopped resident) and request timeouts are not
+crashes. In the records filed to 2026-10-29 the rule finds 12 resident
+deaths in 11 jobs of tasks 41494 (7), 41508 (3) and 41497 (2), and
+41497's two later passes on the same request.
+
+**Signature.** One per task and stage, key `esunit:task41497:simu`,
+class `es_unit`, kind Segfault. Exit code and signal are 139 and 11
+once a record or a reproduction names SIGSEGV (each signal as for a
+job), and 0 while none does. The signature holds its crash requests
+(`data['units']`): each distinct request with the jobs, slots and
+passes it crashed in and the seconds from the request's start to the
+death. `crashes` counts unit crashes; `rate` is the crashed units over
+the units the task's filed records ran; the minutes are the request
+times; the signature's jobs are the Event Service jobs carrying the
+crashes. A crashed unit's events go back to the file, so the loss is
+the events no pass delivered, read from the task's delivery once its
+passes are spent, and is not computed here.
+
+**The nightly pass.** The inventory's Event Service pass
+(`scripts/segfault-inventory.py`, after the input pass) reads from
+swfdb the filed records of the Event Service jobs updated in its
+window and rebuilds, over all of their filed records, the signatures
+of the tasks with a crash. It reads nothing remote. The automatic dig
+passes these signatures by, since the node's logs did not leave it.
+
+**Reproduction.** A crash request is replayed on npps0, through the
+npps0 route (NPPS0_WORKER.md), never on the monitor host:
+`scripts/segfault-es-reproduce.py --key <key>` (the most repeated
+request unless `--unit` names one) runs, in the campaign image of the
+job, the payload of the job's version over the unit, as the slot ran
+its first unit: run.sh with the unit's skip, chunk and label and the
+resident simulation switched on, so the request is the job's own, and
+`EPICPROD_UNIT_TEMPLATE` set, so run.sh writes the request's npsim
+arguments beside it. When the resident dies, the same arguments run
+once more under gdb as a cold npsim over the request's events cut from
+the source (`es/evgen_ranges.py`), with the request seed and no
+per-event seed, and the backtrace's first frames are the signature's
+trace, recorded and merged by frame as a dig's are. The outcome
+(crashed, with the signal; clean; inconclusive, with the reason) is a
+reproduction entry on the signature with role `reference` and queue
+`npps0`, shown on the signature and runs pages. A payload canary of
+the manifest row does not replay an Event Service unit: a row runs
+under the per-event seed. Task 41497's request (events 631680 to
+631689, seed 6317) crashed in npsim and in the resident path and ran
+clean under seed 6318 and under the per-event seed.
+
+The study, the findings and the notice treat a traced Event Service
+signature as any other.
+
 ## Findings
 
 The catalog is the record; what a study concludes is a reading of it,
