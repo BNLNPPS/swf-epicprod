@@ -451,7 +451,10 @@ recommendation, the feed and the idle-queue move, and the submit request
 and the Move refuse it (`front.event_service_misplaced`). On a one-core
 queue an Event Service job dies in the pilot before its payload starts:
 on 29 October all 12 jobs of 41525 and 41526 (p4495, p4497) failed that
-way at BNL_OSG_PanDA_1, with pilot error 1310.
+way at BNL_OSG_PanDA_1, with pilot error 1310. And a setup runs only at the
+whole-node site it was built for (`front.event_service_site`): Perlmutter's
+job shape and NERSC-staged input are not Google's, so neither the front nor a
+Move sends one site's Event Service task to the other.
 
 **Reading and releasing a placement.** `pcs.services.prodtask_site_source(task)`
 says where a task's queue comes from: `trial`, `task` (the

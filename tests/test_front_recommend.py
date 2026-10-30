@@ -256,7 +256,8 @@ class EventServiceRoutingTest(unittest.TestCase):
         r = recommend(state, dict(NEED, event_service=False, es_bound=True), ['OSG'])
         self.assertFalse(r['recommended'])
 
-    def test_submit_and_move_name_the_misplacement(self):
+    @patch('pcs.commands.pinned_site', return_value='PM')
+    def test_submit_and_move_name_the_misplacement(self, _pinned):
         from types import SimpleNamespace
         from swf_epicprod.front import event_service_misplaced
         es = SimpleNamespace(name='t', overrides={'event_service': {'input': 'evgen'}})
@@ -264,6 +265,35 @@ class EventServiceRoutingTest(unittest.TestCase):
         self.assertIn('runs no Event Service work', event_service_misplaced('OSG', es))
         self.assertEqual(event_service_misplaced('PM', es), '')
         self.assertEqual(event_service_misplaced('OSG', plain), '')
+
+
+class EventServiceSiteTest(unittest.TestCase):
+    """An Event Service setup runs only at the whole-node site it was built
+    for: Perlmutter's job shape and NERSC-staged input are not Google's."""
+    PM, G = 'NERSC_Perlmutter_epic_es', 'BNL_ePIC_GOOGLE_es'
+
+    def setUp(self):
+        whole = patch('swf_epicprod.queues.whole_node', side_effect=lambda q: q in (self.PM, self.G))
+        whole.start()
+        self.addCleanup(whole.stop)
+
+    def test_a_setup_names_its_site(self):
+        from types import SimpleNamespace
+        from swf_epicprod.front import event_service_misplaced, event_service_site
+        perl = SimpleNamespace(name='t', overrides={'event_service': {'nersc_input': True}})
+        google = SimpleNamespace(name='t', overrides={'event_service': {'pilot_cores': 14}})
+        self.assertEqual(event_service_site(perl), self.PM)
+        self.assertEqual(event_service_site(google), self.G)
+        self.assertIn('built for NERSC_Perlmutter_epic_es', event_service_misplaced(self.G, perl))
+        self.assertIn('built for BNL_ePIC_GOOGLE_es', event_service_misplaced(self.PM, google))
+        self.assertEqual(event_service_misplaced(self.PM, perl), '')
+        self.assertEqual(event_service_misplaced(self.G, google), '')
+
+    def test_the_other_whole_node_queue_refuses_it(self):
+        from swf_epicprod.front import event_service_refusal
+        need = dict(NEED, event_service=True, es_bound=True, es_site=self.PM)
+        self.assertIn('built for NERSC_Perlmutter_epic_es', event_service_refusal(self.G, need))
+        self.assertEqual(event_service_refusal(self.PM, need), '')
 
 if __name__ == '__main__':
     unittest.main()

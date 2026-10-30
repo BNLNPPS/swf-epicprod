@@ -427,7 +427,8 @@ def ready_backlog():
                 # Its work in PanDA keeps its shape, so Event Service work
                 # is refused by every queue other than a whole-node one.
                 entry['need'] = task_need(cfg, rows=entry['rows'], event_service=False,
-                                          es_bound=event_service_bound(task))
+                                          es_bound=event_service_bound(task),
+                                          es_site=event_service_site(task))
                 by_queue.setdefault(queue, []).append(entry)
                 continue
             queue = pinned_site(task, cfg=cfg) or UNPLACED
@@ -450,7 +451,8 @@ def ready_backlog():
             from .evgen_es import capable
             entry['evgen_es'] = entry['kind'] == 'submit' and capable(task, cfg)
             entry['need'] = task_need(cfg, rows=entry['rows'], event_service=entry['evgen_es'],
-                                      es_bound=event_service_bound(task))
+                                      es_bound=event_service_bound(task),
+                                      es_site=event_service_site(task))
             if queue != UNPLACED:
                 from .queues import dispatch_capabilities, image_problem
                 problem = image_problem(entry['need']['container_image'],
@@ -859,14 +861,16 @@ def queue_limits(queue):
             'status': str(cfg.get('status') or '')}
 
 
-def task_need(cfg, rows=None, *, event_service, es_bound=False):
+def task_need(cfg, rows=None, *, event_service, es_bound=False, es_site=''):
     """What one job of a task asks of a queue, from its effective
     configuration, as the submission declares it (pcs/commands.py).
     ``event_service``: whether a whole-node queue can take the task
     (``evgen_es.capable``); every reader of a recommendation passes it,
     so the Site control and the feed judge whole-node queues alike.
     ``es_bound``: the task is Event Service work already
-    (``event_service_bound``), which only a whole-node queue runs."""
+    (``event_service_bound``), which only a whole-node queue runs;
+    ``es_site``: the one whole-node queue its setup was built for
+    (``event_service_site``)."""
     from pcs.commands import task_container_image
     data = cfg.get('data') or {}
     hours = cfg.get('target_hours_per_job')
@@ -876,7 +880,8 @@ def task_need(cfg, rows=None, *, event_service, es_bound=False):
     return {'walltime_h': round(walltime_h, 2), 'cores': cores,
             'ram_mb_per_core': ram, 'memory_mb': ram * cores, 'rows': rows,
             'container_image': task_container_image(cfg),
-            'event_service': bool(event_service), 'es_bound': bool(es_bound)}
+            'event_service': bool(event_service), 'es_bound': bool(es_bound),
+            'es_site': es_site or ''}
 
 
 def whole_node_ready(task, cfg=None):
@@ -893,16 +898,48 @@ def event_service_bound(task):
     return bool((task.overrides or {}).get('event_service'))
 
 
+def event_service_site(task):
+    """The whole-node queue the task's Event Service setup was built for, or
+    ''. A setup belongs to one site's nodes and input staging (evgen_es.SITES):
+    its staging marker names the site (Perlmutter's input staged at NERSC,
+    ``nersc_input``; Google's in the cluster's bucket, ``site_input``), else
+    its job size does (``pilot_cores``, a Perlmutter node or a Google pod),
+    else the queue the task is placed on, when that is a whole-node queue."""
+    es = (task.overrides or {}).get('event_service') or {}
+    if not es:
+        return ''
+    from .evgen_es import SITES
+    marker = {'nersc': 'nersc_input', 'gcs': 'site_input'}
+    for queue, (_shape, stager) in SITES.items():
+        if es.get(marker.get(stager, '')):
+            return queue
+    for queue, (shape, _stager) in SITES.items():
+        if es.get('pilot_cores') and es.get('pilot_cores') == shape.get('pilot_cores'):
+            return queue
+    from pcs.commands import pinned_site
+    from .queues import whole_node
+    placed = pinned_site(task)
+    return placed if whole_node(placed) else ''
+
+
 def event_service_misplaced(queue, task):
     """Why ``queue`` cannot take the task's Event Service work, or ''. Only
     a whole-node queue runs it: an Event Service job sent to a single-core
     queue dies before its payload starts (41525 and 41526 at BNL_OSG_PanDA_1,
-    2026-10-29, pilot error 1310 on every job). Read by the submit request
-    and the Move (pcs/services.py)."""
+    2026-10-29, pilot error 1310 on every job). And only the whole-node queue
+    its setup was built for (``event_service_site``): the job shape and the
+    staged input of Perlmutter's setup are not Google's, nor Google's
+    Perlmutter's. Read by the submit request and the Move (pcs/services.py)."""
     from .queues import whole_node
-    if not queue or whole_node(queue) or not event_service_bound(task):
+    if not queue or not event_service_bound(task):
         return ''
-    return f'{queue} runs no Event Service work; {task.name} carries an Event Service setup'
+    if not whole_node(queue):
+        return f'{queue} runs no Event Service work; {task.name} carries an Event Service setup'
+    built = event_service_site(task)
+    if built and built != queue:
+        return (f'{task.name} carries an Event Service setup built for {built}; '
+                f'its job shape and staged input belong there, not at {queue}')
+    return ''
 
 
 def event_service_refusal(queue, need):
@@ -919,6 +956,8 @@ def event_service_refusal(queue, need):
         if need.get('es_bound'):
             return f'{queue} runs no Event Service work; the task carries an Event Service setup'
         return ''
+    if need.get('es_site') and need['es_site'] != queue:
+        return f"{queue} cannot run the task's Event Service setup, built for {need['es_site']}"
     if need.get('event_service'):
         return ''
     return f'{queue} takes Event Service work only; not a registered EVGEN sample'
