@@ -929,12 +929,24 @@ def event_service_misplaced(queue, task):
     2026-10-29, pilot error 1310 on every job). And only the whole-node queue
     its setup was built for (``event_service_site``): the job shape and the
     staged input of Perlmutter's setup are not Google's, nor Google's
-    Perlmutter's. Read by the submit request and the Move (pcs/services.py)."""
+    Perlmutter's. An EVGEN setup older than the site-staged catalog input is
+    refused at every whole-node queue. Read by the submit request and the
+    Move (pcs/services.py)."""
     from .queues import whole_node
     if not queue or not event_service_bound(task):
         return ''
     if not whole_node(queue):
         return f'{queue} runs no Event Service work; {task.name} carries an Event Service setup'
+    es = (task.overrides or {}).get('event_service') or {}
+    if es.get('input') == 'evgen' and not (es.get('nersc_input') or es.get('site_input')):
+        # An EVGEN setup from before the input was read from its catalog and
+        # staged at the site, and closes named from the job's own file (an
+        # earlier attempt's): never sent or moved to the queue again. 41525
+        # and 41526 (p4495 and p4497 .try2), moved to Perlmutter with one on
+        # 2026-10-29, named every close run001.
+        return (f'{task.name}: its Event Service setup predates the catalog input staged at '
+                f'the site; build it afresh with scripts/evgen-es-submit.py '
+                f'(docs/NERSC_PERLMUTTER.md, EVGEN input in production)')
     built = event_service_site(task)
     if built and built != queue:
         return (f'{task.name} carries an Event Service setup built for {built}; '

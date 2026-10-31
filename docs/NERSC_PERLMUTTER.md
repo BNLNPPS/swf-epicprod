@@ -510,7 +510,10 @@ with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
   file the manifest covers only part way runs as a task of its own, a later
   attempt of the same PCS task over the events the manifest takes from it
   (`evgen_es.tails`, the attempt's own setup in its `event_service`
-  metadata). The front queues a task's tails with it;
+  metadata). The front queues a task's tails with it, and the ops agent
+  takes each tail as an attempt of its own (p4499's tail, queued with its
+  task on 28 October, was skipped as a repeat of the task's submission and
+  never ran);
   `scripts/evgen-es-tail.py <task>` queues those of a task already
   submitted. A job works to its four-hour deadline and the next continues the file's
   remaining ranges. The rest is 41262's shape: 128 slots, 100-event units,
@@ -569,9 +572,13 @@ hand the same way (copy, then the setup built afresh, then the submission;
 `--rerun` makes a new attempt of a task already submitted: a new PanDA task,
 `.tryN`, writing in its own namespace, all of its ranges run again and nothing
 of the earlier attempt reused (Torre Wenaus, 2026-10-28, for p4495 and p4497,
-killed in the attempts of that morning). PCS refuses a submission or rerun to
-a whole-node queue that carries an EVGEN setup from before this chain
-(`prodtask_submit_request`).
+killed in the attempts of that morning). PCS refuses a submission, rerun or
+Move to a whole-node queue of a task that carries an EVGEN setup from before
+this chain (`front.event_service_misplaced`). Tasks 41525 and 41526 (p4495 and
+p4497 `.try2`), submitted with such a setup to `BNL_OSG_PanDA_1` and moved here
+on 29 October, ran without `EPICPROD_SWITCH_ES_INPUT_NAMES`: every close is
+named run001, whatever file its job read. Each job reads one file, so a close's
+source is its job's input file.
 
 The production shape carries three payload switches, which canary 41481 runs
 together: `EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE` (a unit's RECO is written in

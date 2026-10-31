@@ -6549,16 +6549,6 @@ def prodtask_submit_request(*, task, residual=False, residual_of=None,
     misplaced = event_service_misplaced(target, task)
     if misplaced:
         raise ServiceError(f'{misplaced} (docs/CONTINUOUS_PRODUCTION.md, Placement).', status=409)
-    es = (task.overrides or {}).get('event_service') or {}
-    if whole_node(target) and es.get('input') == 'evgen' and not (
-            es.get('nersc_input') or es.get('site_input')):
-        # An EVGEN shape from before the input was read from its catalog and
-        # staged at the site (an earlier attempt's): never sent again; the
-        # front, or scripts/evgen-es-submit.py, builds it afresh.
-        raise ServiceError(
-            f'{task.name}: its Event Service setup predates the catalog input staged at '
-            f'the site; build it afresh with scripts/evgen-es-submit.py (docs/NERSC_PERLMUTTER.md, '
-            f'EVGEN input in production).', status=409)
     if site:
         prodtask_place(task, site, changed_by=changed_by, placement=placement)
         task.refresh_from_db()
@@ -6641,9 +6631,12 @@ def prodtask_submit_tail(*, task, event_service, changed_by='', source='evgen_es
     panda_tasks.metadata = meta
     panda_tasks.site = site
     panda_tasks.save(update_fields=['metadata', 'site', 'updated_at'])
+    # ``tail`` keys the agent's in-flight check on the attempt: a tail queued
+    # with its task is not a repeat of the task's own submission (p4499's
+    # tail, 2026-10-28, was skipped as one and never reached PanDA).
     msg = {'msg_type': 'submit_evgen_task', 'namespace': 'prodops', 'task_name': task.name,
            'panda_tasks_id': panda_tasks.pk, 'panda_task_name': panda_tasks.task_name,
-           'owner': task.created_by, 'residual': False}
+           'owner': task.created_by, 'residual': False, 'tail': True}
     from monitor_app.activemq_connection import ActiveMQConnectionManager
     try:
         triggered = ActiveMQConnectionManager().send_message('/queue/epicprod.ops', _json.dumps(msg))
