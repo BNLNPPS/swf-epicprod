@@ -186,6 +186,17 @@ work-queue-wide `<TAG>`, then the built-in default), and applies the
 rule above. It logs every site's reading and its answer to
 `panda-EpicProdJobThrottler.log`.
 
+Each configuration value it reads, a missing one included, is kept in
+the process for 60 seconds (`CONFIG_TTL_S`), so a changed setting takes
+effect within a minute. A pass reads up to four keys per limit per site,
+and passes come about once a second. Read through every time, they were
+millions of task-buffer calls a day. JEDI recycles a task-buffer process
+after a thousand calls and leaks two pipes in the calling process at each
+recycle (`pandajedi/jedicore/Interaction.py`, `launchChild`). On
+2026-10-30 a generator process ran out of descriptors at 20:42 ET, and
+JEDI made no jobs until it was restarted at 02:01 ET (distcomp-services
+`panda-server/CHANGES.md`).
+
 `MODE` must explicitly be `observe` or `throttle`; missing or invalid values
 return a temporary error and hold generation. Throttle mode also requires
 the actual JEDI generation-lock configuration and site-exclusion support.
