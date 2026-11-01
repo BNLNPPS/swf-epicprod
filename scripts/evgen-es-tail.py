@@ -9,8 +9,11 @@ setup the task was submitted with decides which files were left out.
 Run in the monitor Django environment with the testbed venv and ~/.env:
 
     evgen-es-tail.py <composed task name> --by swf-1 --reason TEXT [--dry-run]
+    evgen-es-tail.py <composed task name> --resend ATTEMPT --by swf-1 --reason TEXT
 
 --dry-run prints each tail's setup and PanDA spec; submits nothing.
+--resend queues again a tail attempt (its PCS PandaTasks id) whose submission
+never reached PanDA.
 """
 import argparse
 import json
@@ -38,8 +41,14 @@ def main():
     parser.add_argument('--by', required=True)
     parser.add_argument('--reason', required=True)
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--resend', type=int, metavar='ATTEMPT')
     args = parser.parse_args()
     task = ProdTask.objects.get(name=args.task)
+    if args.resend:
+        attempt = services.prodtask_resend_tail(
+            task=task, panda_tasks=task.panda_tasks.get(pk=args.resend))
+        print(f'{args.task}: tail {attempt.task_name} queued again; reason: {args.reason}')
+        return
     if task.panda_task_id is None:
         raise SystemExit(f'{args.task} is not submitted; its feed submits its tails with it')
     shapes = evgen_es.tails(task)

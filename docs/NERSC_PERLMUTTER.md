@@ -515,7 +515,8 @@ with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
   task on 28 October, was skipped as a repeat of the task's submission and
   never ran);
   `scripts/evgen-es-tail.py <task>` queues those of a task already
-  submitted. A job works to its four-hour deadline and the next continues the file's
+  submitted, and `--resend <attempt>` queues again a tail attempt that
+  never reached PanDA. A job works to its four-hour deadline and the next continues the file's
   remaining ranges. The rest is 41262's shape: 128 slots, 100-event units,
   closes every 300 s, 32 shared reconstruction members, 1,500 MB a core,
   with the production gun's ten-event ranges, concurrent closes, job log and

@@ -6615,7 +6615,6 @@ def prodtask_submit_tail(*, task, event_service, changed_by='', source='evgen_es
     the spec is built from (``metadata['event_service']``; swf_epicprod/
     evgen_es.py, tails), on the queue the task is placed on. The task's
     other attempts are untouched. Returns the attempt."""
-    import json as _json
     from swf_epicprod.production_es import definition
     from .commands import pinned_site
     definition(event_service)
@@ -6631,6 +6630,30 @@ def prodtask_submit_tail(*, task, event_service, changed_by='', source='evgen_es
     panda_tasks.metadata = meta
     panda_tasks.site = site
     panda_tasks.save(update_fields=['metadata', 'site', 'updated_at'])
+    try:
+        _queue_tail_submission(task, panda_tasks)
+    except ServiceError:
+        panda_tasks.delete()
+        raise
+    return panda_tasks
+
+
+def prodtask_resend_tail(*, task, panda_tasks):
+    """Queue again a tail attempt whose submission never reached PanDA (no
+    JEDI task), with the setup it was allocated with. Returns the attempt."""
+    if panda_tasks.prod_task_id != task.pk or not (panda_tasks.metadata or {}).get('tail_files'):
+        raise ServiceError(f'{panda_tasks.task_name} is not a tail of {task.name}.', status=409)
+    if panda_tasks.jedi_task_id:
+        raise ServiceError(f'{panda_tasks.task_name} is in PanDA as task {panda_tasks.jedi_task_id}.',
+                           status=409)
+    refuse_closed_queue(panda_tasks.site, task=task)
+    _queue_tail_submission(task, panda_tasks)
+    return panda_tasks
+
+
+def _queue_tail_submission(task, panda_tasks):
+    """Put one tail attempt's submission on the prod-ops agent's queue."""
+    import json as _json
     # ``tail`` keys the agent's in-flight check on the attempt: a tail queued
     # with its task is not a repeat of the task's own submission (p4499's
     # tail, 2026-10-28, was skipped as one and never reached PanDA).
@@ -6641,12 +6664,9 @@ def prodtask_submit_tail(*, task, event_service, changed_by='', source='evgen_es
     try:
         triggered = ActiveMQConnectionManager().send_message('/queue/epicprod.ops', _json.dumps(msg))
     except Exception as e:
-        panda_tasks.delete()
         raise ServiceError(f'Could not reach the prod-ops agent queue: {e}', status=503)
     if not triggered:
-        panda_tasks.delete()
         raise ServiceError('Tail submission could not be queued (ops-agent queue unreachable).', status=503)
-    return panda_tasks
 
 
 def _prodtask_associated_jedi_ids(task):
