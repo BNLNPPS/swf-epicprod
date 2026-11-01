@@ -516,7 +516,10 @@ with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
   never ran);
   `scripts/evgen-es-tail.py <task>` queues those of a task already
   submitted, and `--resend <attempt>` queues again a tail attempt that
-  never reached PanDA. A job works to its four-hour deadline and the next continues the file's
+  never reached PanDA. A task whose setup predates the catalog input names
+  no files, so it shows no tail; `--fresh` reads its tails against the setup
+  built afresh, which must take the files its own setup took (p4495 and
+  p4497, whose `.try2` attempts 41525 and 41526 left out run010 and run003). A job works to its four-hour deadline and the next continues the file's
   remaining ranges. The rest is 41262's shape: 128 slots, 100-event units,
   closes every 300 s, 32 shared reconstruction members, 1,500 MB a core,
   with the production gun's ten-event ranges, concurrent closes, job log and
