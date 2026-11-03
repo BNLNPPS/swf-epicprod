@@ -582,7 +582,11 @@ this chain (`front.event_service_misplaced`). Tasks 41525 and 41526 (p4495 and
 p4497 `.try2`), submitted with such a setup to `BNL_OSG_PanDA_1` and moved here
 on 29 October, ran without `EPICPROD_SWITCH_ES_INPUT_NAMES`: every close is
 named run001, whatever file its job read. Each job reads one file, so a close's
-source is its job's input file.
+source is its job's input file; `scripts/es-output-sources.py --task N
+--dataset DID --output CSV` lists each registered output with that file, from
+the job id in its name and the job's credited ranges (41525: 1,695 outputs
+from 9 files, 41526: 617 from 2, every job's registered events equal to its
+credited events, 3 November).
 
 The production shape carries three payload switches, which canary 41481 runs
 together: `EPICPROD_SWITCH_ES_HANDOFF_IN_PLACE` (a unit's RECO is written in
