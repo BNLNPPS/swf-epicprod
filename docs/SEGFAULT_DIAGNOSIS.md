@@ -572,7 +572,11 @@ outcome; the pair's settlement; the diagnosis trigger, once) by the
 canary agent after every probe collection
 (`scripts/segfault-reproductions-reconcile.py`, the
 `segfault_reproduction_reconcile` action when something changed),
-under a row lock so a request recorded meanwhile is kept. Collection
+under a row lock so a request recorded meanwhile is kept. A request posts
+nothing to epicprod-live; a reproduction that settles posts one record,
+`segfault_reproduction_settled`, with its outcome and the finding that
+reads it or the study queued (`reproductions.log_settled`; Torre Wenaus,
+2026-11-03). Collection
 runs hourly with the probe tick and every five minutes as a
 collect-only tick while runs are open (site-canary
 SWF_INTEGRATION.md), so an attempt's state on the pages is at most
