@@ -75,6 +75,11 @@ answer. A failed plugin query leaves the batch's worker states unchanged and
 reports the failure. A failed command-line query raises instead of manufacturing
 missing workers. After a successful query, an HTCondor worker with unknown native
 state is retained past checkTimeout, with a WORKER_STATE_UNVERIFIED error.
+Since 4 November 2026 a worker whose kill Harvester has already ordered is
+ended as cancelled instead: a pilot killed for queuing too long leaves the
+schedd and, once older than the history age limit, the history query, and
+was otherwise kept indefinitely. That change is a separate patch over this
+one, recorded in distcomp-services `osg-harvester/CHANGES.md`.
 An explicit terminal Condor record still receives its existing treatment.
 Other monitor plugins retain their timeout behavior.
 
