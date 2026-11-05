@@ -379,13 +379,16 @@ by-priority table carrying the rest.
    without its species, beam and x segments, its grid species and beam
    (`ep_noradcor 9x130`) against x range. A single-particle
    family is the particle, its grid energy against angle. A cell is one
-   EVGEN sample and reads delivered / target events, coloured complete,
+   EVGEN sample and reads delivered / target events on its latest edition
+   with events delivered, which it names (a sample delivered on 26.07.1
+   and 26.07.3 reads 26.07.3's events, not their sum, and its state and
+   the page's totals follow; the campaign plan keeps the sum), coloured complete,
    below target or without one, registered and not produced, or missing
    (a configuration of the campaign with nothing delivered and its EVGEN
    sample not registered); a combination no sample or configuration
    names is grey. Registration is a second fact on the cell: a sample
    delivered from an input never registered says so. The cell opens
-   the configuration's data page. A sample reaches its configuration
+   the data page of that edition. A sample reaches its configuration
    through the EVGEN-stage record that matched it in Rucio, through the
    produced output (`/RECO/<v>/<config>/<tail>` is made from
    `/EVGEN/<tail>`: the EVGEN convention map, retry segments folded),
@@ -394,7 +397,7 @@ by-priority table carrying the rest.
    and its registration is the signal sample's. Configurations reached by
    none of these are listed on the summary. Delivery and targets are the
    campaign plan's own (the completion product). The grids are a
-   cached product (`status_grids:v2:<campaign>`,
+   cached product (`status_grids:v3:<campaign>`,
    `swf_epicprod.analytics.status_grids`) rebuilt behind the page
    hourly; its inputs refresh nightly. The summary prints as a report.
 
