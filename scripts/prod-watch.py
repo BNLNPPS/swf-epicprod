@@ -31,6 +31,7 @@ import sys
 import urllib.error
 import urllib.request
 import uuid
+from zoneinfo import ZoneInfo
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location('prod_notify', os.path.join(HERE, 'prod-notify.py'))
@@ -48,6 +49,7 @@ PUSH_REPEAT_HOURS = 24
 PAUSED_HOURS = 48
 LIVE_LEVELS = ('WARNING', 'ERROR', 'CRITICAL')
 FACE = 'https://epic-devcloud.org/prod'
+ET = ZoneInfo('America/New_York')
 
 
 def _now():
@@ -59,10 +61,14 @@ def _iso(t):
 
 
 def _parse(s):
+    """An ISO time. One written without an offset is read as ET, the
+    operators' time: a naive value compared with an aware one crashed every
+    tick from 2026-11-03 12:34 to 2026-11-05 10:34 ET."""
     try:
-        return dt.datetime.fromisoformat(str(s).replace('Z', '+00:00'))
+        t = dt.datetime.fromisoformat(str(s).replace('Z', '+00:00'))
     except (TypeError, ValueError):
         return None
+    return t.replace(tzinfo=ET) if t.tzinfo is None else t
 
 
 def _digest(*parts):

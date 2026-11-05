@@ -9,6 +9,7 @@
 
 KEY is the item key the tick's digest names. A push reaches the
 operator's Capcom feed; record it after putting the question to him.
+An --until carries its offset (Z or -05:00); one without is refused.
 
 Environment: SWF_MONITOR_HTTP_URL and SWF_API_TOKEN (source ~/.env).
 """
@@ -37,6 +38,13 @@ def main(argv):
     p.add_argument('--note', required=True)
     p.add_argument('--by', default=os.environ.get('TJAI_SESSION_NAME', 'swf-watch'))
     a = ap.parse_args(argv)
+    if a.until:
+        try:
+            until = pw.dt.datetime.fromisoformat(a.until.replace('Z', '+00:00'))
+        except ValueError:
+            ap.error(f'--until {a.until!r} is not an ISO time')
+        if until.tzinfo is None:
+            ap.error(f'--until {a.until!r} has no timezone offset; write Z or -05:00')
     if a.what == 'outcome':
         if a.kind == 'wait' and not a.until:
             ap.error('a wait needs --until')
