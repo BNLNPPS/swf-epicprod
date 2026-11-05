@@ -34,6 +34,8 @@ changes or the grants age out.
 from __future__ import annotations
 
 import inspect
+import threading
+import time
 from typing import Any
 
 from pandacommon.pandalogger.PandaLogger import PandaLogger
@@ -53,6 +55,16 @@ COMPONENT = "epic_job_throttler"
 APP = "jedi"
 MODE_OBSERVE = "observe"
 MODE_THROTTLE = "throttle"
+# Each configuration value read, a missing one included, is kept this long
+# in the process. A pass reads up to four keys per limit per site (two VOs,
+# site and wide keys) and passes come every second or so; read through
+# without keeping them, they were millions of task-buffer calls a day, and
+# JEDI recycles a task-buffer process after every thousand calls, leaking
+# two pipes in the caller each time (pandajedi Interaction). On 2026-10-30
+# a generator process reached its 1,024 descriptors at 20:42 ET and JEDI
+# stopped until a restart at 02:01 ET (distcomp-services
+# panda-server/CHANGES.md). A changed setting takes effect within this time.
+CONFIG_TTL_S = 60
 
 # The installed generator passes the saturated sites to task selection
 # only when its task buffer takes them.
@@ -66,6 +78,8 @@ class EpicProdJobThrottler(JobThrottlerBase):
         self.comp_name = COMPONENT
         self.app = APP
         self.excluded_sites: list[str] = []
+        self._config_kept: dict[tuple[str, str], tuple[Any, float]] = {}
+        self._config_lock = threading.Lock()
         self.ledger = GrantLedger(ledger_path())
         MsgWrapper(logger).info(f"engine up: exclusion_honored={EXCLUSION_HONORED} ledger={self.ledger.path} ttl={LEDGER_TTL_S}s")
 
@@ -77,7 +91,17 @@ class EpicProdJobThrottler(JobThrottlerBase):
         return policy_value(self._raw_config_value, vo, key)
 
     def _raw_config_value(self, vo: str, key: str) -> Any:
-        return self.taskBufferIF.getConfigValue(self.comp_name, key, self.app, vo)
+        """One configuration value, read through the task buffer at most
+        once per ``CONFIG_TTL_S`` in this process."""
+        now = time.monotonic()
+        with self._config_lock:
+            kept = self._config_kept.get((vo, key))
+            if kept is not None and now - kept[1] < CONFIG_TTL_S:
+                return kept[0]
+        value = self.taskBufferIF.getConfigValue(self.comp_name, key, self.app, vo)
+        with self._config_lock:
+            self._config_kept[(vo, key)] = (value, now)
+        return value
 
     def _mode(self, vo: str) -> str:
         mode = self._config_value(vo, "MODE")

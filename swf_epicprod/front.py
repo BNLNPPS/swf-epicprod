@@ -929,12 +929,24 @@ def event_service_misplaced(queue, task):
     2026-10-29, pilot error 1310 on every job). And only the whole-node queue
     its setup was built for (``event_service_site``): the job shape and the
     staged input of Perlmutter's setup are not Google's, nor Google's
-    Perlmutter's. Read by the submit request and the Move (pcs/services.py)."""
+    Perlmutter's. An EVGEN setup older than the site-staged catalog input is
+    refused at every whole-node queue. Read by the submit request and the
+    Move (pcs/services.py)."""
     from .queues import whole_node
     if not queue or not event_service_bound(task):
         return ''
     if not whole_node(queue):
         return f'{queue} runs no Event Service work; {task.name} carries an Event Service setup'
+    es = (task.overrides or {}).get('event_service') or {}
+    if es.get('input') == 'evgen' and not (es.get('nersc_input') or es.get('site_input')):
+        # An EVGEN setup from before the input was read from its catalog and
+        # staged at the site, and closes named from the job's own file (an
+        # earlier attempt's): never sent or moved to the queue again. 41525
+        # and 41526 (p4495 and p4497 .try2), moved to Perlmutter with one on
+        # 2026-10-29, named every close run001.
+        return (f'{task.name}: its Event Service setup predates the catalog input staged at '
+                f'the site; build it afresh with scripts/evgen-es-submit.py '
+                f'(docs/NERSC_PERLMUTTER.md, EVGEN input in production)')
     built = event_service_site(task)
     if built and built != queue:
         return (f'{task.name} carries an Event Service setup built for {built}; '
@@ -1295,16 +1307,23 @@ def regulator_alarm(regulator, now, created_by):
         since = state.get('since') or now.isoformat()
         held_s = (now - datetime.fromisoformat(since)).total_seconds()
         if held_s >= after_s and (not state.get('alarmed') or state.get('reason') != reason):
+            # Plain words (Torre Wenaus, 2026-10-30: the record was "ONE
+            # HUNDRED PERCENT INCOMPREHENSIBLE"): what is held, for how
+            # long, and why, in the reader's terms.
             log_epicprod_action(
                 'front', 'front_regulator_unverified', username=created_by,
                 subject_type='front', subject_key='regulator', outcome='error',
                 sublevel='high', live_default=True, level=logging.ERROR,
-                message=f'regulator unverified for {int(held_s // 60)} min: {reason}',
+                title='Pressure front holding new work at every site',
+                subject_label='Pressure front',
+                message=(f'Pressure front holding new work at every site for '
+                         f'{int(held_s // 60)} min: {reason}'),
                 severity='alarm', reason=reason, held_s=int(held_s),
-                narration=(f'The front has held new releases to every queue it feeds for '
-                           f'{int(held_s // 60)} min because the job throttler\'s decisions '
-                           f'cannot be verified: {reason}. Read the PanDA server reporter\'s '
-                           'jedi_regulation record against the throttler log on pandaserver01.'))
+                narration=(f'No new work has gone to any site for {int(held_s // 60)} min. '
+                           f'The front releases work only while it sees JEDI\'s job '
+                           f'throttler deciding; {reason}.'
+                           + (' JEDI on pandaserver01 has most likely stopped.'
+                              if 'no JEDI throttler decision' in reason else '')))
             state['alarmed'] = True
         state.update(since=since, reason=reason)
     elif state.get('alarmed'):
@@ -1313,10 +1332,12 @@ def regulator_alarm(regulator, now, created_by):
             'front', 'front_regulator_unverified', username=created_by,
             subject_type='front', subject_key='regulator', outcome='ok',
             sublevel='high', live_default=True,
-            message=f'regulator verified again after {int(held_s // 60)} min',
+            title='Pressure front releasing new work again',
+            subject_label='Pressure front',
+            message=f'Pressure front releasing new work again after {int(held_s // 60)} min',
             severity='info', held_s=int(held_s),
-            narration=(f'Regulation is verified again; the gate held the fed queues for '
-                       f'{int(held_s // 60)} min.'))
+            narration=(f'JEDI\'s job throttler is seen deciding again; new work was held '
+                       f'at every site for {int(held_s // 60)} min.'))
         state = {}
     else:
         state = {}

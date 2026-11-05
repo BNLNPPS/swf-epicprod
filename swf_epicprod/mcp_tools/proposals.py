@@ -17,7 +17,8 @@ ACTION_LABELS = {'propagation': 'campaign propagation',
                  'campaign_plan': 'campaign plan',
                  'ping': 'ping', 'ping_fulfil': 'ping fulfilled',
                  'standard_config': 'standard configuration',
-                 'registered_sample': 'registered sample'}
+                 'registered_sample': 'registered sample',
+                 'whats_new': "What's new item"}
 
 # SysConfig key: usernames allowed to decide proposals through this MCP
 # surface (the bot relay). Default empty — MCP decides are refused until
@@ -66,6 +67,10 @@ def _proposal_line(row, physics=None):
                   f"(approve on the EVGEN inputs page, where the requestor, target "
                   f"and priority are entered)")
         subject = row.subject_key
+    elif row.action == 'whats_new':
+        change = (f"add to What's new: {payload.get('importance', '?')}, shipped "
+                  f"{payload.get('shipped', '?')}, tags {' '.join(payload.get('tags') or [])}")
+        subject = payload.get('title') or row.subject_key
     else:
         change = f"{pre.get('prev_state', '?')} -> {payload.get('state', '?')}"
         if payload.get('replaced_by'):

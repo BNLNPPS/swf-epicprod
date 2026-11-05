@@ -27,7 +27,8 @@ after `source ~/.env`:
   instruction. Record it as a **wait** on the operators, and answer fully
   when their side asks.
 - **wait**: the item depends on something under way. Say what, and give
-  `--until` when you will look again.
+  `--until` when you will look again, with its offset (`-05:00` or `Z`);
+  the writer refuses a time without one.
 - A study is never a push. Reading logs, studying jobs and finding a
   cause need nobody's yes: never ask Torre to approve one, and never
   put one in a Poke. Torre, 26 October 2026, on a Poke asking him to
