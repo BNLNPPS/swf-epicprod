@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""The approved 28 October Manitoba-to-JLab trial replication, as eicprod.
+"""The approved Manitoba-to-JLab trial replication test, as eicprod.
 
+First run 28 October 2026 on .trial; --root names another trial's output
+root and --authorization records whose word the run is on.
 Default: read the exact two DIDs, rules, locks and transfer diagnostics.
 --apply --level RECO or FULL creates at most one 24-hour rule. FULL requires
 RECO to be OK. No rule, quota, RSE, source replica or task is ever modified.
@@ -66,11 +68,17 @@ def diagnostics(client, files, rule):
 
 
 def main():
+    global ROOT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--level', choices=LEVELS)
     parser.add_argument('--state', type=Path, required=True)
+    parser.add_argument('--root', default=ROOT,
+                        help='the trial output root holding RECO and FULL (default: the 28 October trial)')
+    parser.add_argument('--authorization', default='Torre approved in swf-teamcomms on 2026-10-28',
+                        help='whose word the run is on, recorded in the state')
     args = parser.parse_args()
+    ROOT = args.root if args.root.endswith('/') else args.root + '/'
     if args.apply and not args.level:
         parser.error('--apply requires --level')
     args.state.parent.mkdir(parents=True, exist_ok=True)
@@ -105,7 +113,7 @@ def main():
             raise RuntimeError('Trial contents changed since the initial review')
         state.update(files=baseline, actor=actor, account=ACCOUNT, source=SOURCE,
                      target=TARGET, lifetime_seconds=86400,
-                     authorization='Torre approved in swf-teamcomms on 2026-10-28',
+                     root=ROOT, authorization=args.authorization,
                      observed_at=datetime.now(timezone.utc).isoformat())
         for replica in client.list_replicas([{'scope': 'epic', 'name': row['name']}
                                             for rows in files.values() for row in rows]):
