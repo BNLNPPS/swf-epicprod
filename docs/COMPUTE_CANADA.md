@@ -56,8 +56,10 @@ cd /data/atlpan/tokens/panda-tokens-for-ce
 
 The token's subject is the compute client's identity,
 `fe4a61df-87b1-418b-8fd1-fd8a50eb4394`; it carries no group claim. A CE
-authorizes a submission by mapping that issuer and subject to a local account,
-which site administration configures on each CE.
+authorizes a submission by matching that issuer and subject to an
+authorization group, mapping the group to a local account, and admitting the
+group to the jobs interface; site administration configures all three on each
+CE (State).
 
 ## The probe
 
@@ -88,29 +90,46 @@ in `fir-probe.<cluster>.out`.
 
 ## State
 
-As of 27 October 2026, 13:05 ET, both CEs are reachable from pandaharvester01
-over TLS with the grid certification authorities, and both refuse us at user
-mapping. A-REX's answer carries its reason in the HTTP status line: `GET /arex`
-gets `403 User can't be assigned configuration` and the REST job and delegation
-calls get `500 User can't be assigned configuration`, which is A-REX's answer
-when it cannot assign the request a local account. It is the same with our
-token, with a grid proxy as TLS client certificate, and with no credential, so
-nothing we present maps to the ePIC account. Read the status line, not only the
-code (`curl -D -`): the 403 and 500 bodies are empty.
+Both CEs are reachable from pandaharvester01 over TLS with the grid
+certification authorities, and both refuse the submission. The probes of
+6 November 2026, 13:56 ET (clusters 29079 and 29080), were refused by both.
+A-REX's answer carries its reason in the HTTP status line: `GET /arex` gets
+`403 User can't be assigned configuration` and the REST job and delegation
+calls get `500 User can't be assigned configuration`. Read the status line, not
+only the code (`curl -D -`): the 403 and 500 bodies are empty.
 
-Our requests leave over IPv6, from `2620:12f:f001:1::17`, to
-`2607:f8f0:690:3::127:72` (ce2) and `2607:f8f0:690:3::127:71` (ce1); a site
-searching its logs for our IPv4 address finds nothing. Site administration was
-given the `authtokens` line our token must match:
+The token passes authentication and mapping. Site administration configured
 
 ```
-[authgroup: epic]
+[authgroup: iam_epic_group]
 authtokens = fe4a61df-87b1-418b-8fd1-fd8a50eb4394 https://panda-iam-doma.cern.ch/ * * *
+
+[mapping]
+map_to_user = iam_epic_group epicprod:rrg-wdconinc
 ```
 
-with a mapping of that group to the ePIC account and, where `[arex/ws/jobs]`
-has `allowaccess` lines, one for it. Probe jobs 27669 (ce2) and 27686 (ce1)
-wait.
+and the CE log of 27 October shows the request assigned to `iam_epic_group`
+and mapped to the local account `epicprod`, then "Can't obtain configuration.
+Only public information is provided." and the 403, with no error logged. In
+ARC 7, A-REX gives a request its configuration only when one of the request's
+authorization groups matches an `allowaccess` entry of `[arex/ws/jobs]`
+([`ARexService::preProcessSecurity`](https://source.coderefinery.org/nordugrid/arc/-/blob/v7.2.0/src/services/a-rex/arex.cpp#L366));
+a request that matches none gets exactly this answer. The change remaining on
+each CE is
+
+```
+[arex/ws/jobs]
+allowaccess = iam_epic_group
+```
+
+with the same line in the batch queue's block, `[queue:cpubase_bycore_b4]`,
+where that block has `allowaccess` lines. The CEs do not publish their ARC
+version; under ARC 6, a refusal after mapping logs "Failed to acquire A-REX's
+configuration", which the log does not show.
+
+Requests from pandaharvester01 leave over IPv6, from `2620:12f:f001:1::17`, to
+`2607:f8f0:690:3::127:72` (ce2) and `2607:f8f0:690:3::127:71` (ce1); a search
+of the site's logs by the host's IPv4 address finds nothing.
 
 ## Building the queue
 
