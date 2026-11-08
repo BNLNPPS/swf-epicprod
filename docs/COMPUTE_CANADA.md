@@ -93,6 +93,10 @@ in `fir-probe.<cluster>.out`.
 Both CEs are reachable from pandaharvester01 over TLS with the grid
 certification authorities, and both refuse the submission. The probes of
 6 November 2026, 13:56 ET (clusters 29079 and 29080), were refused by both.
+On 8 November, 10:48 ET, with fresh tokens, ce2 still answered the REST job
+and delegation calls with `500 User can't be assigned configuration`, and ce1
+answered them with `403 Operation is not allowed`, body "No supported identity
+found": ce1 no longer accepts the token as an identity.
 A-REX's answer carries its reason in the HTTP status line: `GET /arex` gets
 `403 User can't be assigned configuration` and the REST job and delegation
 calls get `500 User can't be assigned configuration`. Read the status line, not
