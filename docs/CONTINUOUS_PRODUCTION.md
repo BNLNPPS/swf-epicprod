@@ -1172,12 +1172,27 @@ appeared, expired or cleared, so the history is on the record without a
 table of its own. The record holds the EIC queues, the endpoints those
 queues name, and the resource centres behind them, nothing else.
 
+**Windows entered by a person.** A downtime CRIC does not carry, such
+as a site's announced maintenance, is entered on the queue's page (the
+Declared state card's form, for an account that may act) or through the
+MCP tool `epicprod_declare_downtime`: the queue, a start and an end
+(Eastern time unless an offset is given) and a reason. Both go through
+one writer (swf-monitor `monitor_app/declared.py`, `declare_window`),
+which records the window as a declared record of the queue with
+`source: operator`, the account that entered it and when, in its own
+context (`declared-operator`) that the CRIC sync does not touch, and
+announces it like a CRIC change. Every reader below treats it as a CRIC
+window. The person who entered it, or another, withdraws it before or
+during the window (the card's Withdraw button,
+`epicprod_withdraw_downtime`); the record stays, cleared, with who
+withdrew it and why.
+
 **Where it shows.** The EIC queues list carries a Declared column beside
-Status: the rule in force ("offline until 09/15 00:21 UTC: scheduled
-downtime, Xin") or the next future window ("downtime 09/20 08:00 to
-16:00 UTC"), blank when nothing is declared; the queue detail page has a
-Declared state card with what is in force, what is coming, and the
-recent history. The Rucio endpoints list carries the same column. No
+Status: the rule in force ("offline until 09/14 20:21 ET: scheduled
+downtime, Xin") or the next future window ("outage 09/20 04:00 ET to
+09/20 12:00 ET"), blank when nothing is declared; the queue detail page
+has a Declared state card with what is in force, what is coming, the
+recent history and the form for entering a window. The Rucio endpoints list carries the same column. No
 calendar view: the lines and the cards are the surface, and the record
 answers "was it declared at that time" for the readers below.
 
@@ -1215,8 +1230,8 @@ subscription delivers (docs/NOTICE_ROUTING.md); **the home**: the
 epicprod home carries one "Declared downtime" line when a queue or
 endpoint has a rule in force or a window coming, nothing otherwise.
 
-Later sources into the same record: the OSG Topology feed, the NERSC
-status API and operator-entered windows. Endpoint rules are on the
+Later sources into the same record: the OSG Topology feed and the NERSC
+status API. Endpoint rules are on the
 record, the endpoint pages, the home line and the API; no reader
 attributes a stage-out failure to one yet.
 

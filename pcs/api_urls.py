@@ -14,6 +14,7 @@ from .api_views import (
     evgen_mark, evgen_register, pc_ingest_analyze, pc_ingest_accept,
     pc_ingest_request, pc_ingest_sweep_definitions, storage_listing,
     delivered_outputs_receive, stageout_log_grant,
+    declared_window_enter, declared_window_withdraw,
 )
 
 router = DefaultRouter()
@@ -70,5 +71,8 @@ urlpatterns = [
     # (RUCIO_RESILIENCE.md, Measure 3): the authority record, and the
     # registrar's worklist in its pending rows.
     path('outputs/', delivered_outputs_receive, name='delivered_outputs'),
+    path('declared/windows/', declared_window_enter, name='declared_window_enter'),
+    path('declared/windows/withdraw/', declared_window_withdraw,
+         name='declared_window_withdraw'),
     path('', include(router.urls)),
 ]

@@ -1980,6 +1980,49 @@ def evgen_mark(request):
 @authentication_classes([TunnelAuthentication, SessionAuthentication,
                          TokenAuthentication])
 @permission_classes([IsAuthenticated])
+def declared_window_enter(request):
+    """Register a downtime window for an ePIC queue, from its page's
+    Declared state card. Body: {"queue", "start", "end", "reason"}, times
+    ISO 8601, Eastern when they carry no offset. The record names who
+    entered it (swf-monitor monitor_app.declared.declare_window; swf-epicprod
+    CONTINUOUS_PRODUCTION.md, Declared downtime). JSON in, JSON out, no
+    redirect (EXTERNAL_ACCESS.md write contract)."""
+    from monitor_app.declared import DeclareError, declare_window
+
+    data = request.data if isinstance(request.data, dict) else {}
+    try:
+        record = declare_window(
+            data.get('queue'), data.get('start'), data.get('end'), data.get('reason'),
+            getattr(request.user, 'username', '') or '', via='web')
+    except DeclareError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({'ok': True, 'name': record['name'], 'line': record['line'],
+                     'standing': record['standing']})
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def declared_window_withdraw(request):
+    """Withdraw a downtime window a person entered. Body: {"name",
+    "reason"}. The record stays, cleared, with who withdrew it."""
+    from monitor_app.declared import DeclareError, withdraw_window
+
+    data = request.data if isinstance(request.data, dict) else {}
+    try:
+        record = withdraw_window(
+            str(data.get('name') or ''), getattr(request.user, 'username', '') or '',
+            data.get('reason') or '', via='web')
+    except DeclareError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({'ok': True, 'name': record['name'], 'line': record['line']})
+
+
+@api_view(['POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def delivered_outputs_receive(request):
     """Record what a task's jobs delivered, from the payload's own
     reports (RUCIO_RESILIENCE.md, Measure 3).
