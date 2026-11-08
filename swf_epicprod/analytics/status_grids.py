@@ -12,9 +12,11 @@ keeps, so the build makes no Rucio or PanDA call:
   configurations, reached from an EVGEN path through the EVGEN-stage records
   bound to them and through the produced outputs (the EVGEN convention map);
 - delivery: the campaign-completion cached product, the campaign plan's own
-  delivered events and targets per configuration.
+  delivered events and targets per configuration, read from the configuration's
+  latest edition with events delivered (``latest_delivery``).
 
-States: ``complete`` (the plan's complete status), ``partial`` (events
+States: ``complete`` (the plan's complete fraction of the target, on the
+latest edition), ``partial`` (events
 delivered, below target or without one), ``registered`` (registered, nothing
 delivered in the campaign), ``missing`` (a configuration in the campaign with
 nothing delivered and its EVGEN sample not registered). Registration is a
@@ -27,7 +29,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-PRODUCT_KEY = 'status_grids:v2:{campaign}'
+PRODUCT_KEY = 'status_grids:v3:{campaign}'
 PRODUCT_TTL_SECONDS = 3600
 
 # A beam token: electron x hadron energy, e.g. 10x100, 18x137.5.
@@ -200,6 +202,23 @@ def pair_label(delivered, target):
     return f'{shown} / {events_label(target, unit)}' if target else f'{shown}, no target'
 
 
+def _edition_order(edition):
+    """An edition's numeric order: 26.07.10 is after 26.07.3."""
+    return tuple(int(t) for t in re.findall(r'\d+', edition or ''))
+
+
+def latest_delivery(row):
+    """(edition, events) of a completion row's latest edition with events
+    delivered, a withdrawn edition left out. A row from a record without the
+    per-edition split reads (None, its total)."""
+    editions = row.get('delivered_editions') or []
+    delivered = [e for e in editions if e['events'] and not e.get('withdrawn')]
+    if not delivered:
+        return None, (0 if editions else row.get('delivered_events') or 0)
+    latest = max(delivered, key=lambda e: _edition_order(e['edition']))
+    return latest['edition'], latest['events']
+
+
 def build_status_grids(campaign_name):
     """The grids of one campaign. Raises when the EVGEN inventory or the
     completion record cannot be read, so a missing input never stores as
@@ -207,7 +226,8 @@ def build_status_grids(campaign_name):
     from monitor_app.cached_product import get_product
     from pcs.models import Campaign, Dataset, ProdTask
     from pcs.services import evgen_convention_paths_cached, evgen_registered_paths
-    from swf_epicprod.analytics.completion import completion_product_value
+    from swf_epicprod.analytics.completion import (COMPLETE_FRACTION,
+                                                   completion_product_value)
 
     campaign = Campaign.objects.filter(name=campaign_name).first()
     if campaign is None:
@@ -225,13 +245,16 @@ def build_status_grids(campaign_name):
     # An ES validation sample's configuration is left out, so its output
     # places no cell and it is not counted as unplaced.
     edition_by_pc = {}
-    for label, name, sample in (Dataset.objects
-                                .filter(campaign=campaign, physics_config__isnull=False)
-                                .order_by('pk')
-                                .values_list('physics_config__label', 'composed_name',
-                                             'sample_name')):
+    name_by_version = {}
+    for label, name, sample, version in (Dataset.objects
+                                         .filter(campaign=campaign,
+                                                 physics_config__isnull=False)
+                                         .order_by('pk')
+                                         .values_list('physics_config__label', 'composed_name',
+                                                      'sample_name', 'detector_version')):
         if not ES_VALIDATION_RE.search(sample or ''):
             edition_by_pc.setdefault(label, name)
+            name_by_version.setdefault((label, version), name)
 
     # The configurations behind each EVGEN path, three ways: an EVGEN-stage
     # record that matched the registered dataset; the produced output (the
@@ -272,17 +295,19 @@ def build_status_grids(campaign_name):
         if parts is None:
             continue
         # The campaign's configuration for the sample: the one with the
-        # most delivered, when several name it.
+        # most delivered on its latest edition, when several name it.
         in_campaign = [pc for pc in (pcs_by_path.get(path) or ()) if pc in edition_by_pc]
-        pc = max(in_campaign, key=lambda p: ((completion.get(p) or {}).get('delivered_events') or 0,
-                                             p), default=None)
+        pc = max(in_campaign, key=lambda p: (latest_delivery(completion.get(p) or {})[1], p),
+                 default=None)
         is_registered = parts[4] in registered
         if pc is None and path not in registered:
             continue  # neither registered nor asked for by this campaign
         row = completion.get(pc) or {}
-        if row.get('status') == 'complete':
+        delivered_edition, delivered = latest_delivery(row)
+        target = row.get('target')
+        if target and delivered / target >= COMPLETE_FRACTION:
             state = 'complete'
-        elif row.get('delivered_events'):
+        elif delivered:
             state = 'partial'
         elif is_registered:
             state = 'registered'
@@ -292,10 +317,12 @@ def build_status_grids(campaign_name):
             'path': path, 'area': parts[0], 'family': parts[1],
             'beam': parts[2], 'q2': parts[3], 'state': state, 'pc': pc,
             'registered': is_registered,
-            'edition': edition_by_pc.get(pc) if pc else None,
-            'delivered': row.get('delivered_events'),
-            'target': row.get('target'),
-            'label': (pair_label(row.get('delivered_events'), row.get('target'))
+            'edition': (name_by_version.get((pc, delivered_edition))
+                        or edition_by_pc.get(pc)) if pc else None,
+            'delivered_edition': delivered_edition,
+            'delivered': delivered,
+            'target': target,
+            'label': (pair_label(delivered, target)
                       if state in ('complete', 'partial') else
                       'reg.' if state == 'registered' else 'missing'),
             'in_flight': bool(row.get('in_flight')),

@@ -4,7 +4,7 @@ one grid of species and beam against x."""
 import unittest
 
 from swf_epicprod.analytics.status_grids import (
-    ES_VALIDATION_RE, _column_order, _row_order, column_label, split_path)
+    ES_VALIDATION_RE, _column_order, _row_order, column_label, latest_delivery, split_path)
 
 
 class XBinnedFamilyTest(unittest.TestCase):
@@ -44,6 +44,36 @@ class EsSampleTest(unittest.TestCase):
         for sample in ('', '3to50deg', '130to177deg', 'eta0.5', '3to50deg.trial',
                        'EIC_ESR_Xsuite.dataprod_rel_1.0.1.18x275.10000Ahr.MachineRuntime50s'):
             self.assertFalse(ES_VALIDATION_RE.search(sample), sample)
+
+
+class LatestDeliveryTest(unittest.TestCase):
+    @staticmethod
+    def edition(edition, events, withdrawn=False):
+        return {'edition': edition, 'events': events, 'files': 1, 'withdrawn': withdrawn}
+
+    def test_latest_edition_not_the_sum(self):
+        row = {'delivered_events': 3000, 'delivered_editions': [
+            self.edition('26.07.1', 2000), self.edition('26.07.3', 1000)]}
+        self.assertEqual(latest_delivery(row), ('26.07.3', 1000))
+
+    def test_editions_order_by_number(self):
+        row = {'delivered_editions': [self.edition('26.07.10', 1), self.edition('26.07.3', 2)]}
+        self.assertEqual(latest_delivery(row), ('26.07.10', 1))
+
+    def test_edition_without_events_or_withdrawn_is_passed_over(self):
+        row = {'delivered_editions': [self.edition('26.07.1', 2000),
+                                      self.edition('26.07.2', 500, withdrawn=True),
+                                      self.edition('26.07.3', 0)]}
+        self.assertEqual(latest_delivery(row), ('26.07.1', 2000))
+
+    def test_only_withdrawn_delivery_reads_nothing(self):
+        row = {'delivered_events': 0,
+               'delivered_editions': [self.edition('26.07.2', 500, withdrawn=True)]}
+        self.assertEqual(latest_delivery(row), (None, 0))
+
+    def test_record_without_the_split_reads_the_total(self):
+        self.assertEqual(latest_delivery({'delivered_events': 700}), (None, 700))
+        self.assertEqual(latest_delivery({}), (None, 0))
 
 
 if __name__ == '__main__':
