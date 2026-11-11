@@ -435,7 +435,11 @@ chosen row instead of row 1:
   submit under.
 
 Each reproduction is two runs: the production queue where the crash
-happened and a second queue. Since 2026-09-13 the second queue is by
+happened and a second queue. When the queue record has the crash's queue
+closed to new work, the production run goes to the open queue that shares
+its slots and runs with the production role (`production_stand_in`; since
+2026-11-11, a crash at `BNL_OSG_EPIC_PROD_1` reproduces on
+`BNL_OSG_PanDA_1`, where before its submission was refused). Since 2026-09-13 the second queue is by
 default a second production-class queue (`UM_GREX_PanDA_1`, or
 `BNL_OSG_PanDA_1` for a crash at GREX, since 2026-10-22 when
 `BNL_OSG_EPIC_PROD_1` left production; `elsewhere_queue` in
