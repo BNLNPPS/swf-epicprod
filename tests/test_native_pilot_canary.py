@@ -129,18 +129,28 @@ class JobScratch(unittest.TestCase):
                                     env=dict(os.environ, **env))
         return job, result
 
-    def test_payload_scratch_is_its_own_removed_at_exit_and_peaks_recorded(self):
-        job, result = self.run_job(7, 'echo "$_CONDOR_SCRATCH_DIR" > seen; '
-                                      'mkdir -p "$_CONDOR_SCRATCH_DIR/FULL"; '
-                                      'head -c 300000 /dev/zero > "$_CONDOR_SCRATCH_DIR/FULL/a.root"; exit 3')
+    def test_payload_scratch_is_its_own_removed_at_exit_and_peaks_from_payload_log(self):
+        # The payload's stage marker writes its readings where it runs
+        # (runGen's workDir); the wrapper itself starts no sampler.
+        job, result = self.run_job(7, 'echo "$_CONDOR_SCRATCH_DIR" > seen; mkdir -p workDir; '
+                                      'echo "2026-11-11T20:00:00Z simulation start 120 4" >> workDir/payload-scratch.log; '
+                                      'echo "2026-11-11T20:09:00Z reconstruction ok 2300 41" >> workDir/payload-scratch.log; '
+                                      'echo "2026-11-11T20:10:00Z registration ok 1900 -" >> workDir/payload-scratch.log; '
+                                      'exit 3')
         self.assertEqual(result.returncode, 3, result.stderr)
         scratch = self.batch / 'epicprod-scratch-7'
         self.assertEqual(Path(job.workdir, 'seen').read_text().strip(), str(scratch))
         self.assertFalse(scratch.exists())
-        kb, files = native.scratch_peak(job.workdir)
-        self.assertGreaterEqual(kb, 290)
-        self.assertGreaterEqual(files, 3)
+        self.assertEqual(native.scratch_peak(job.workdir), (2300, 41))
+        self.assertNotIn('sleep', job.command)
+        self.assertNotIn('du ', job.command)
         self.assertTrue(Path(job.workdir).is_dir())
+
+    def test_scratch_peak_without_payload_readings_is_none(self):
+        job, _ = self.run_job(10, 'true')
+        self.assertIsNone(native.scratch_peak(job.workdir))
+        Path(job.workdir, 'payload-scratch.log').write_text('2026-11-11T20:00:00Z landing start 0 1\n')
+        self.assertIsNone(native.scratch_peak(job.workdir))
 
     def test_killed_jobs_scratch_is_swept_by_the_next_job_of_this_pilot_only(self):
         stale = self.batch / 'epicprod-scratch-5'; stale.mkdir()

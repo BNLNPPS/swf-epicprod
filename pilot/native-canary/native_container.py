@@ -19,10 +19,11 @@ it made itself, so each job's files stayed for the rest of the batch job
 (EPICPROD_PAYLOAD.md, Cleaning up after each job). A payload the pilot kills
 leaves its scratch behind: the next job of the same pilot sweeps it, from this
 pilot's own ledger, never another pilot's. EPICPROD_KEEP_TMPDIR=1 keeps every
-scratch for diagnosis. While the payload runs, its scratch's size and file count
-are sampled every minute; the peaks go to ``epicprod-scratch-peak.txt`` in the
-job directory, which the job metrics report (``scratchPeakMB``,
-``scratchPeakFiles``). The PanDA job directory itself is never touched.
+scratch for diagnosis. The job metrics report the scratch's peak size and file
+count (``scratchPeakMB``, ``scratchPeakFiles``) from the payload's own readings,
+taken at every stage start and end into ``payload-scratch.log`` in its working
+directory (EPICPROD_PAYLOAD.md, Scratch disk); the pilot starts no process of
+its own to measure the scratch. The PanDA job directory itself is never touched.
 """
 import logging
 import os
@@ -40,8 +41,10 @@ SESSION_DIR = '/var/lib/apptainer/mnt/session'
 
 SCRATCH_PREFIX = 'epicprod-scratch-'
 SCRATCH_LEDGER = '.epicprod-scratch-ledger'
-PEAK_FILE = 'epicprod-scratch-peak.txt'
-SAMPLE_S = 60
+# The payload's scratch readings, written where the payload runs: runGen's
+# workDir inside the job directory, or the job directory itself.
+SCRATCH_LOG = 'payload-scratch.log'
+SCRATCH_LOG_DIRS = ('workDir', '')
 
 
 def scratch_base(workdir):
@@ -119,34 +122,34 @@ def sweep(ledger, current):
 
 
 def scratch_peak(workdir):
-    """(KB, files) peaks the wrapper sampled for the job in ``workdir``, or None."""
-    try:
-        with open(os.path.join(workdir, PEAK_FILE)) as handle:
-            parts = handle.read().split()
-        kb, files = int(parts[0]), int(parts[1])
-    except (OSError, ValueError, IndexError):
-        return None
-    return (kb, files) if kb > 0 else None
+    """(KB, files) peaks of the job in ``workdir`` from the payload's own
+    scratch log, one line per stage start and end (time, stage, mark, KB,
+    inodes or ``-``), or None when there is none. The payload's files only
+    grow until its closeout, so the largest of these readings are its peaks."""
+    for sub in SCRATCH_LOG_DIRS:
+        try:
+            with open(os.path.join(workdir, sub, SCRATCH_LOG)) as handle:
+                lines = handle.readlines()
+        except OSError:
+            continue
+        kb = files = 0
+        for line in lines:
+            parts = line.split()
+            if len(parts) in (4, 5) and parts[3].isdigit():
+                kb = max(kb, int(parts[3]))
+                if len(parts) == 5 and parts[4].isdigit():
+                    files = max(files, int(parts[4]))
+        return (kb, files) if kb > 0 else None
+    return None
 
 
-def scratch_command(executable, scratch, peak):
-    """The payload run with its own scratch: sampled while it runs, removed
-    after it has exited (unless EPICPROD_KEEP_TMPDIR=1), its exit code kept."""
-    q = shlex.quote
-    s, p = q(scratch), q(peak)
-    sample = ('epicprod_peak() { k=$(du -skx ' + s + ' 2>/dev/null | cut -f1 || true); '
-              'n=$(du -sx --inodes ' + s + ' 2>/dev/null | cut -f1 || true); '
-              'pk=0; pn=0; [ -r ' + p + ' ] && read -r pk pn < ' + p + ' || true; '
-              '[ "${k:-0}" -gt "${pk:-0}" ] 2>/dev/null && pk=$k; '
-              '[ "${n:-0}" -gt "${pn:-0}" ] 2>/dev/null && pn=$n; '
-              'echo "${pk:-0} ${pn:-0}" > ' + p + '.tmp && mv -f ' + p + '.tmp ' + p + ' || true; }; ')
-    sampler = ('( trap \'kill $epicprod_sp 2>/dev/null; exit 0\' TERM; '
-               'while :; do sleep ' + str(SAMPLE_S) + ' & epicprod_sp=$!; wait $epicprod_sp; epicprod_peak; done ) '
-               '& epicprod_sampler=$!; ')
+def scratch_command(executable, scratch):
+    """The payload run with its own scratch, removed after it has exited
+    (unless EPICPROD_KEEP_TMPDIR=1), its exit code kept."""
+    s = shlex.quote(scratch)
     remove = '' if keep_scratch() else 'rm -rf ' + s + '; '
-    return ('export _CONDOR_SCRATCH_DIR=' + s + '; mkdir -p ' + s + ' || exit 66; ' + sample + sampler
-            + '( ' + executable + '\n); epicprod_rc=$?; kill $epicprod_sampler 2>/dev/null; '
-            'wait $epicprod_sampler 2>/dev/null; epicprod_peak; ' + remove + 'exit $epicprod_rc')
+    return ('export _CONDOR_SCRATCH_DIR=' + s + '; mkdir -p ' + s + ' || exit 66; '
+            + '( ' + executable + '\n); epicprod_rc=$?; ' + remove + 'exit $epicprod_rc')
 
 
 def nested(args):
@@ -203,7 +206,7 @@ def wrapper(executable, **kwargs):
     sweep(os.path.join(os.path.dirname(workdir), SCRATCH_LEDGER), scratch)
     command = ('cd ' + q(workdir) + ' || exit 66; export TMPDIR=' + q(workdir)
                + ' GFORTRAN_TMPDIR=' + q(workdir) + ' PandaID=' + q(str(job.jobid))
-               + '; ' + scratch_command(executable, scratch, os.path.join(workdir, PEAK_FILE)))
+               + '; ' + scratch_command(executable, scratch))
     job.command = command
     if actual and same_image(actual, wanted):
         logger.info('ePIC native: reuse matching image %s; no container launch', wanted)

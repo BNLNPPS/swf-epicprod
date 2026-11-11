@@ -169,8 +169,11 @@ stage's largest, the peak file count and its stage, the sample count),
 which reaches the job's metadata for finished jobs. The job metrics do
 not carry them: the pilot takes at most ten payload metrics in 200
 characters, which the stage trail nearly fills. The native pilot
-samples each job's scratch itself and reports the peaks in the job
-metrics for every job. A `du` that fails or
+reads the same scratch log and reports its peaks in the job metrics
+(`scratchPeakMB`, `scratchPeakFiles`) for every job; it starts no process
+of its own to measure the scratch. Until 2026-11-11 it ran a shell loop in
+every job that walked the scratch twice a minute, about 480 processes an
+hour per job. A `du` that fails or
 runs over a minute leaves its line out and never marks a stage. On
 OSG, HTCondor's own peak (`DiskUsage` in the job's terminate event) is
 the cross-check. The peak is what a task's disk request is to be set

@@ -173,8 +173,8 @@ except ValueError:
         _file['force_scheme'] = log_scheme
 '''))
 
-    # The job metrics (EPICPROD_PAYLOAD.md, Scratch disk): the scratch peaks the
-    # container wrapper samples for every job, and the payload's declared
+    # The job metrics (EPICPROD_PAYLOAD.md, Scratch disk): the scratch peaks of
+    # the payload's own stage readings, and the payload's declared
     # metrics without the count and length limits the epic5 plugin set itself
     # (Torre Wenaus, 2026-10-24: "i do not like arbitrary limits"). PanDA's own
     # bound, the 500-character jobmetrics column, is the pilot's whole-string
@@ -221,7 +221,7 @@ def patch_job_metrics(content):
             break
 """, ""),
         ("""    # is there a detected rucio trace service error?
-""", """    # ePIC: the job's scratch peaks, sampled by the native container wrapper
+""", """    # ePIC: the job's scratch peaks, from the payload's own stage readings
     from pilot.user.epic.native_container import scratch_peak, disk_headroom
     for name, value in disk_headroom(job.workdir).items():
         job_metrics += get_job_metrics_entry(name, value)

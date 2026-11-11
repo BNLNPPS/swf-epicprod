@@ -368,8 +368,8 @@ def job_metrics(report):
         metrics["payloadExit"] = report["exit_code"]
     # The scratch peaks stay in the report, not here: the pilot takes at most
     # 10 payload metrics in 200 characters, which a full trail nearly fills,
-    # so these would be dropped; the native pilot reports its own sampled
-    # scratch peaks (EPICPROD_PAYLOAD.md, Scratch disk).
+    # so these would be dropped; the native pilot reports the peaks from this
+    # same scratch log (EPICPROD_PAYLOAD.md, Scratch disk).
     fatal = report.get("fatal") or {}
     if fatal.get("signal") in (6, 7, 8, 11):
         metrics["payloadFatalSignal"] = fatal["signal"]
