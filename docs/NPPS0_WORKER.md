@@ -47,6 +47,20 @@ script selects the pilot it runs, is
 Scripts install at `~wenaus/bin/`, configuration at
 `~wenaus/npps0-config/` on npps0.
 
+## Image admission
+
+PCS admits a task to a queue only on a fresh report of the images its pilots
+serve (`swf_epicprod.queues.dispatch_capabilities`). npps0 has no Harvester
+host reporter, so `swf_epicprod.npps0_pilots` reads the committed pass script
+and `config/queuedata.json` from git `main` every five minutes, as
+Perlmutter's launcher is read: a pass that runs the standard wrapper for
+`BNL_NPPS_GPU` with `container_type` `apptainer:pilot` starts each job in the
+image the job declares, and reads as serving any image. Any other shape, an
+unreadable source or a reading older than 15 minutes refuses admission. The
+reading describes the committed pass, so a deploy keeps the host's copies
+equal to git. From 2026-10-24 to 2026-11-11 the queue had no report and every
+reference run there was refused.
+
 ## Host prerequisites (in place 2026-08-14)
 
 - CVMFS with the BNL squid (`cvmfs-cache.sdcc.bnl.gov:3128`), cache

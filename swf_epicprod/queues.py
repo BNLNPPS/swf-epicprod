@@ -102,6 +102,11 @@ def dispatch_capabilities(reports=None):
         # mechanism; missing or stale evidence still refuses admission.
         from .perlmutter_pilots import QUEUE as perlmutter_queue, capability
         result[perlmutter_queue] = capability(DISPATCH_MAX_AGE_S)
+        # npps0 has no Harvester either: its pilot pass and queue data are
+        # read from git the same way (npps0_pilots); it starts each job in
+        # the job's own image, so the reading is 'any' or a refusal.
+        from . import npps0_pilots
+        result[npps0_pilots.QUEUE] = npps0_pilots.capability(DISPATCH_MAX_AGE_S)
         _dispatch_cache.update(at=now, value=result)
     return result
 
