@@ -589,6 +589,40 @@ cancels or requeues workers and preserves their submit/eligible times.
 Running sandboxes and unknown runtime hashes are excluded. In-place
 queued repair is distinct from proof that a repaired worker has started.
 
+### Scratch peaks without a sampler, 11 November
+
+Until 11 November the native container wrapper ran a shell loop in every job
+that walked the job's scratch twice a minute (`sleep 60`, two `du` through
+pipes and subshells, an `mv`): about 480 processes an hour per job, some
+80,000 an hour on a GREX node of 168 of our jobs. The payload already
+measures its scratch at every stage start and end, and its files only grow
+until the closeout, so those readings hold the peak. The wrapper now starts no
+process to measure it: `scratch_peak` reads the payload's report in
+`jobReport.json` once the payload has ended (runGen removes `workDir`, and the
+scratch log with it, before the pilot's final metrics) and the live
+`payload-scratch.log` while it runs. The job metrics keep the names
+`scratchPeakMB` and `scratchPeakFiles`. OSG's live archive (`092ac705`)
+predates the sampler and is unchanged.
+
+GREX's template moved to `native-grex-nosampler-a70e9dd` at 21:01 UTC
+(`scripts/retarget-native-grex.py`; archive
+`f4efcad873e9c5a904db8c8e34f48fd0fa9b858190bf2ee152d32af29e0e96bf`, which
+differs from the previous `7f3c6805` archive only in `native_container.py`
+and a comment in `jobmetrics.py`; every launcher and helper is byte-identical).
+Template SHA-256
+`7bb61e69a9e08fc9ae3e765530846324b9f100e36bd8d1aedb4a95755c7c0302`; the
+previous ones are kept beside it as
+`submit_pilot3_pull_umgrex.sdf.before-nosampler-20261111T202740Z` (the
+headroom runtime) and `...before-nosampler-a70e9dd-20261111T210102Z`. An
+interim runtime, `native-grex-nosampler-4ee6366`, read only the scratch log:
+its payload canary, task 41841 / job 6608217, finished 2,000 events with its
+output registered but no final peak, which is how runGen's removal of
+`workDir` was found. The validating payload canary is job 6608218 (cluster
+29575, runtime `a70e9dd`): 2,000 events, output registered, pilot error zero,
+heartbeats carrying the peak as it grew (3, 111 MB) and the final record
+`scratchPeakMB=351 scratchPeakFiles=221`, the payload report's own 358,584 KB
+and 221 files.
+
 ### Shared spool exhaustion, 25–26 October
 
 The GREX CE spool is one 196 GiB NFS filesystem, `/var/lib/condor-ce`,
