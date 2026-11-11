@@ -22,9 +22,10 @@ pilot's own ledger, never another pilot's. EPICPROD_KEEP_TMPDIR=1 keeps every
 scratch for diagnosis. The job metrics report the scratch's peak size and file
 count (``scratchPeakMB``, ``scratchPeakFiles``) from the payload's own readings,
 taken at every stage start and end into ``payload-scratch.log`` in its working
-directory (EPICPROD_PAYLOAD.md, Scratch disk); the pilot starts no process of
-its own to measure the scratch. The PanDA job directory itself is never touched.
+directory and carried by its report in ``jobReport.json`` (EPICPROD_PAYLOAD.md,
+Scratch disk); the pilot starts no process of its own to measure the scratch. The PanDA job directory itself is never touched.
 """
+import json
 import logging
 import os
 import shlex
@@ -42,9 +43,12 @@ SESSION_DIR = '/var/lib/apptainer/mnt/session'
 SCRATCH_PREFIX = 'epicprod-scratch-'
 SCRATCH_LEDGER = '.epicprod-scratch-ledger'
 # The payload's scratch readings, written where the payload runs: runGen's
-# workDir inside the job directory, or the job directory itself.
+# workDir inside the job directory, or the job directory itself. When the
+# payload ends runGen moves jobReport.json, which carries the payload's whole
+# report, up to the job directory and removes workDir with the log in it.
 SCRATCH_LOG = 'payload-scratch.log'
 SCRATCH_LOG_DIRS = ('workDir', '')
+JOB_REPORT = 'jobReport.json'
 
 
 def scratch_base(workdir):
@@ -123,9 +127,19 @@ def sweep(ledger, current):
 
 def scratch_peak(workdir):
     """(KB, files) peaks of the job in ``workdir`` from the payload's own
+    readings, or None when there are none: once the payload has ended, the
+    ``scratch`` block of its report in jobReport.json; while it runs, its
     scratch log, one line per stage start and end (time, stage, mark, KB,
-    inodes or ``-``), or None when there is none. The payload's files only
-    grow until its closeout, so the largest of these readings are its peaks."""
+    inodes or ``-``). The payload's files only grow until its closeout, so
+    the largest of these readings are its peaks."""
+    try:
+        with open(os.path.join(workdir, JOB_REPORT)) as handle:
+            scratch = (json.load(handle).get('payload') or {}).get('scratch') or {}
+        kb = int(scratch.get('peak_kb') or 0)
+        if kb > 0:
+            return kb, int(scratch.get('peak_files') or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass  # no report yet, or one without readings: the live log follows
     for sub in SCRATCH_LOG_DIRS:
         try:
             with open(os.path.join(workdir, sub, SCRATCH_LOG)) as handle:

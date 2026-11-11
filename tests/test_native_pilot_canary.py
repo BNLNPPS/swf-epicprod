@@ -146,6 +146,18 @@ class JobScratch(unittest.TestCase):
         self.assertNotIn('du ', job.command)
         self.assertTrue(Path(job.workdir).is_dir())
 
+    def test_scratch_peak_after_the_payload_comes_from_its_report(self):
+        # runGen removes workDir, the scratch log with it, and moves
+        # jobReport.json up to the job directory when the payload ends.
+        job, _ = self.run_job(11, 'true')
+        Path(job.workdir, 'jobReport.json').write_text(
+            '{"exitCode": 0, "payload": {"scratch": {"peak_kb": 358584, "peak_files": 221}}}')
+        self.assertEqual(native.scratch_peak(job.workdir), (358584, 221))
+        Path(job.workdir, 'jobReport.json').write_text('{"exitCode": 0, "payload": {}}')
+        self.assertIsNone(native.scratch_peak(job.workdir))
+        Path(job.workdir, 'jobReport.json').write_text('not json')
+        self.assertIsNone(native.scratch_peak(job.workdir))
+
     def test_scratch_peak_without_payload_readings_is_none(self):
         job, _ = self.run_job(10, 'true')
         self.assertIsNone(native.scratch_peak(job.workdir))
