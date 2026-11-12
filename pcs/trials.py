@@ -47,10 +47,14 @@ TRIAL_LIFETIME_DAYS = 14
 # namespace and the site feeders' markers, since a trial is one ordinary job
 # under its own name; a site's input-staging record, which names the source's
 # staging job; and where the source was placed, since the trial runs where it
-# is composed for (trial_site). Copied, a trial of an Event Service source
-# could not submit, and the source's pin overrode the trial's site.
+# is composed for (trial_site); and the source's recorded output datasets
+# (outputs, output_refs), since a trial writes only under its own root.
+# Copied, a trial of an Event Service source could not submit, the source's pin
+# overrode the trial's site, and the trial was listed as a producer of the
+# source's production datasets.
 TRIAL_DROPPED_OVERRIDES = ('event_service', 'production_sample_prefix', 'google_production',
-                           'perlmutter_production', 'site_input', 'panda_site', 'placed_by')
+                           'perlmutter_production', 'site_input', 'panda_site', 'placed_by',
+                           'outputs', 'output_refs')
 
 
 def trials_of(dataset):
