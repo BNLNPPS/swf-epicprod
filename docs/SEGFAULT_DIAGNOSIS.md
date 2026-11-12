@@ -797,7 +797,8 @@ memory a configuration's rows need, and whether the need grows through
 the row or is reached early and held.
 
 **Selection.** A failed job of a production task is a memory kill when
-its pilot error is 1212 with "out of memory" in the diagnostic; or 1201
+its pilot error is 1212 with "out of memory" in the diagnostic and its
+payload exit is 137; or 1201
 with "SIGTERM" in the diagnostic and a peak resident memory at or above
 `segfault_memory_rss_fraction` (SysConfig, 0.9) of its request; or its
 payload exit is 137 under another pilot label with the same peak
@@ -805,6 +806,14 @@ condition. A SIGTERM or SIGKILL below that fraction is another kind of
 removal (wall time, preemption) and is not counted. Over the 65 days to
 2026-10-19 the rule selects about 181,500 jobs in eleven tasks, nearly
 all of them in the three eAu BeAGLE tasks of 26.07.3.
+
+The exit condition on 1212 dates from 2026-11-12. The pilot's kernel-log
+scan matched an out-of-memory line to the job by process id alone, so a
+job whose payload failed for another reason could be reported as killed
+for a kill logged hours earlier for another job, once the node had reused
+the id (finding f-28; the pilot fix is PanDAWMS/pilot3#232). Every 1212 of
+a real kill on record carries exit 137, about 76,700 jobs; the 76 others
+carry 1, 78, 79 or 139 and are not counted.
 
 **Signature.** One signature per task and stage: key
 `memory:task40855:simu`, class `memory`, split by stage under the rule
@@ -830,8 +839,11 @@ read them as they read a crashed job.
 **The nightly pass.** The inventory's memory pass
 (`scripts/segfault-inventory.py`, after the crash pass) finds the tasks
 with a memory kill in its window, recomputes those tasks' signatures
-over their life, and picks representatives for a signature that has
-none. Its `segfault_inventory` action carries the tasks and signatures
+and those of every task already holding a memory signature over their
+life, and picks representatives for a signature that has none. A
+signature the selection no longer yields is retired unless a
+reproduction is recorded on it, so a change to the rule reaches the
+record at the next pass. Its `segfault_inventory` action carries the tasks and signatures
 touched. The automatic dig and the automatic study pass memory
 signatures by: there is no trace to read, and the diagnosis contract
 reads a crashing frame.
