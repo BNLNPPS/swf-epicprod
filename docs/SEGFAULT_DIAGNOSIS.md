@@ -871,7 +871,12 @@ production run is killed and the reference peak stays below the
 request; as not reproduced when neither happens; and as inconclusive
 when a run failed for another stated reason. The measurement is
 recorded on the signature (`data['memory_measured']`: run, queue,
-stage, peaks, growth, fit, events) and shown on its page. Steady growth
+stage, peaks, growth, fit, events) and shown on its page. The
+settlement's epicprod-live record is titled "Memory kill <key>
+<outcome>" and states the outcome in these terms with the measured peak
+against the request, never as a crash (2026-11-12; task 37972's
+reproduced settlement first read "Both runs crashed" while both runs
+completed). Steady growth
 with a close linear fit over the whole stage is the shape of memory
 accumulated event by event; a plateau reached early is the working size
 of the configuration. The page states the numbers; the reading belongs
