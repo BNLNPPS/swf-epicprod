@@ -464,6 +464,19 @@ collection cycle; the reproduction reads the same report plus the exit
 code and, for a crash, fetches the trace through the dig, so a
 reproduced crash yields its trace even where the campaign's did not.
 
+The image is the crashed job's, with one exception. The older tasks
+name their image by the ePIC repository's cvmfs path
+(`/cvmfs/eic.opensciencegrid.org/singularity/eicweb/...`), which the OSG
+pilots do not serve; they serve OSG's copy of the same tag
+(`/cvmfs/singularity.opensciencegrid.org/eicweb/...`). A run at a queue
+whose pilots refuse the job's path and serve the copy runs the copy,
+and its request records the path it replaces (`container_swapped_from`;
+`run_image` in swf-monitor `monitor_app/segfaults.py`). This holds for
+reproductions only, where the run asks whether the row fails again at
+that queue, and the reference queue runs the job's own path (Torre
+Wenaus, 2026-11-13). Before it, each such production run was refused at
+submission.
+
 As built (2026-09-13): the reconciliation reads the trace of a
 reproduced crash from the crashed run's payload report when the
 signature has none, the reference run first (`report_note` and
