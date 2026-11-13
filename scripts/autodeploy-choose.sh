@@ -8,7 +8,8 @@
 #   mcp    lightweight --ui --mcp: swf_epicprod/mcp_tools
 #   full   full deploy: everything else the package ships, including the
 #          payload and every module the ops agent imports
-#   stop   a pcs migration or model change: no deploy without explicit approval of the migration
+#   stop   a pcs or analysis migration or model change: no deploy without
+#          explicit approval of the migration
 #
 # A path matching no rule counts as full. Prints `static` as a second word
 # when a static asset changed under a lightweight deploy. Pure: no git, no
@@ -25,7 +26,7 @@ raise() { (( $1 > level )) && level=$1 || true; }
 while IFS= read -r p; do
     [[ -z "$p" ]] && continue
     case "$p" in
-        pcs/migrations/*|pcs/models.py)
+        pcs/migrations/*|pcs/models.py|analysis/migrations/*|analysis/models.py)
             stop+="$p " ;;
         pcs/management/*)
             raise 3 ;;
