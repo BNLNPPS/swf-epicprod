@@ -585,8 +585,13 @@ elif [[ "$EXTENSION" == "hepmc3.tree.root" ]]; then
   # Define location on xrootd from where to stream input file from
   INPUT_FILE=${XRDRURL}/${XRDRBASE}/${INPUT_FILE}
 else
-  # Copy input file from xrootd
+  # Copy input file from xrootd (a hand-written single-particle steering
+  # file). The copy lands in INPUT_DIR, under TMPDIR since 2026-10-25, not
+  # at the row's relative path, so npsim is given the copy: the relative
+  # path left npsim with no steering file (memory:task38436 reproduction,
+  # 2026-11-13, FileNotFoundError in readSteeringFile).
   monitor input xrdcp -f ${XRDRURL}/${XRDRBASE}/${INPUT_FILE} ${INPUT_DIR}
+  INPUT_FILE=${INPUT_DIR}/$(basename ${INPUT_FILE})
 fi
 stage input ok
 
