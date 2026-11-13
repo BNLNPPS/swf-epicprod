@@ -1096,7 +1096,10 @@ the geometry those refer to), which versions every substantive change with the
 editor's name (`entry_version`). The production operator writes them
 after checking each claim against its source, through the MCP tool
 `panda_segfault_finding_set` or `POST /api/segfaults/findings/`; each
-write is a `segfault_finding_set` action. An LLM study's reading that
+write is a `segfault_finding_set` action. A reading added to an existing
+finding (a paragraph, a notes line, signatures and sources, one sentence
+corrected where it stands) goes through swf-monitor
+`scripts/segfault-finding-append.py`, which sends only the change. An LLM study's reading that
 has not been checked is written with `model_reading` set and shown as
 such. The Segfault findings page (`/panda/segfaults/findings/`) renders
 them as one table joined live to the catalog for the crashes, tasks and
