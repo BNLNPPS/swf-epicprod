@@ -453,7 +453,12 @@ conditions, where the node, its memory, the image and the container
 runtime are known and the host can be examined directly (core dumps, a
 debugger on the crashed process, a stall watched live), and is asked for
 when the reading needs that: the page offers it beside the pair, with
-the production queue's memory limit. Each request records its run's
+the production queue's memory limit. A run there asks for the node's
+eight cores, with the job's memory request and the payload's threads
+unchanged, because the pilot allows a single-core job on a multi-core
+queue only its share of the work directory, about 4.7 GB on npps0
+(`WHOLE_NODE_CANARY_QUEUES` in swf-monitor
+`scripts/submit-evgen-task.py`; since 2026-11-13). Each request records its run's
 role (`production`, `elsewhere`, `reference`); the production run
 against the other run settles the outcome, whichever the other is.
 Outcomes recorded on the signature: `reproduced`
