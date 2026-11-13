@@ -53,6 +53,13 @@ TOKEN_DOORS = {h.strip() for h in os.environ.get(
 OIDC_BASE_PATHS = {'dtn-rucio.jlab.org': ('/volatile', '/work/eic3/EPIC')}
 # A cached token is used while it has this long left.
 TOKEN_MARGIN_S = 600
+# The JLab Rucio server saves a token at its first use, and requests that
+# first present the same token together race to save it: the losers are
+# refused although the token is good (rucio 40.2.0 core/oidc.py
+# validate_jwt; three of eight canary submissions at 2026-11-13 02:33 ET,
+# seven minutes after the token was issued). A refused token is tried once
+# more after this pause, when the winner's save has made it known.
+TOKEN_RETRY_S = 3
 
 _lock = threading.Lock()
 _cache = {}
@@ -161,20 +168,28 @@ def proxy_end(path):
 
 def rucio_client(account=None, host=None, proxy=None, timeout=None):
     """A JLab Rucio client as ``account`` (the production account by
-    default): by token, else by ``proxy`` when one is given, present and
+    default): by token, tried twice when the server refuses it
+    (TOKEN_RETRY_S), else by ``proxy`` when one is given, present and
     unexpired, either verified with whoami. Raises RuntimeError naming both
     reasons when neither works."""
     from rucio.client import Client
     account = account or JLAB_RUCIO_ACCOUNT
     host = host or JLAB_RUCIO_URL
-    try:
-        client = _token_client(host, account, timeout)
-        who = client.whoami()
-        if who.get('account') != account:
-            raise NoToken(f"the token maps to account {who.get('account')!r}, not {account!r}")
-        return client
-    except Exception as e:                                    # noqa: BLE001
-        why = f'token: {e}'
+    why = ''
+    for attempt in (1, 2):
+        try:
+            client = _token_client(host, account, timeout)
+            who = client.whoami()
+            if who.get('account') != account:
+                raise NoToken(f"the token maps to account {who.get('account')!r}, not {account!r}")
+            return client
+        except NoToken as e:
+            why = f'token: {e}'
+            break
+        except Exception as e:                                # noqa: BLE001
+            why = f'token: {e}' + (' (tried twice)' if attempt == 2 else '')
+            if attempt == 1:
+                time.sleep(TOKEN_RETRY_S)
     if not proxy or not os.path.exists(proxy):
         raise RuntimeError(f'{why}; no proxy to fall back to')
     end = proxy_end(proxy)
