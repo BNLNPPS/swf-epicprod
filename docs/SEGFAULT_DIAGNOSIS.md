@@ -1103,7 +1103,9 @@ corrected where it stands) goes through swf-monitor
 has not been checked is written with `model_reading` set and shown as
 such. The Segfault findings page (`/panda/segfaults/findings/`) renders
 them as one table joined live to the catalog for the crashes, tasks and
-loss; the catalog and each signature page link to the frame's row;
+loss, summed over the signatures a finding names with each crash counted
+once (a named frame entry carries its members' sums, so a member named
+beside it adds nothing); the catalog and each signature page link to the frame's row;
 `panda_segfault_findings` and `GET /api/segfaults/findings/` serve the
 same. The diagnosis machinery never writes a finding on its own; a
 sweep of registered diagnoses into model-reading rows is possible
