@@ -597,6 +597,14 @@ def payload_beams(task):
     ebeam = str(physics.get('beam_energy_electron') or '').strip()
     energy = str(physics.get('beam_energy_hadron') or '').strip()
     species = str(physics.get('beam_species') or 'ep').strip()
+    # A tag that writes no beam energy (N/A: the 26.07.1 single-particle
+    # tasks that read hand-written steering files, whose EvGen tag is not
+    # the gun's) has no physics beams either. The campaign's run.sh then
+    # simulates with the configuration's own compact file, composed from
+    # empty beams, and the payload does the same; passing N/A on made a
+    # reproduction look for <config>_N/AxN/A.xml and exit 83.
+    if not re.fullmatch(r'\d+(\.\d+)?', ebeam) or not re.fullmatch(r'\d+(\.\d+)?', energy):
+        return '', '', ''
     if species in ('', 'ep') or not species.startswith('e') or not energy:
         return ebeam, energy, ''
     element = species[1:]
