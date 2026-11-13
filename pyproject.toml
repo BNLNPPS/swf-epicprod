@@ -11,7 +11,7 @@ license = {file = "LICENSE"}
 requires-python = ">=3.9"
 
 [tool.setuptools.packages.find]
-include = ["swf_epicprod*", "pcs*"]
+include = ["swf_epicprod*", "pcs*", "analysis*"]
 
 [tool.setuptools.package-data]
 "*" = ["templates/**/*.html", "static/**/*"]
