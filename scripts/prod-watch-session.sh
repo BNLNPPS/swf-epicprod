@@ -2,7 +2,8 @@
 # Keeps the watcher session running (docs/EPICPROD_WATCHER.md, The wake):
 # a Claude Code session named swf-watch in tmux, started with its brief,
 # restarted when it exits and once a day so its context starts fresh. Run
-# by the user unit prod-watch-session.service.
+# by the user unit prod-watch-session.service. TJAI_TEAMCOMMS=off keeps the
+# unattended watcher off TeamComms; its wakes arrive through TJAI messaging.
 set -u
 NAME=swf-watch
 REPO=/data/wenauseic/github/swf-epicprod
@@ -13,7 +14,7 @@ CLAUDE=$HOME/.local/bin/claude
 
 start() {
     tmux new-session -d -s "$NAME" -c /data/wenauseic/github \
-        "bash -lc 'source ~/.env; export TJAI_SESSION_NAME=$NAME; exec $CLAUDE -n $NAME --permission-mode auto --effort high \"\$(cat $BRIEF)\"'"
+        "bash -lc 'source ~/.env; export TJAI_SESSION_NAME=$NAME TJAI_TEAMCOMMS=off; exec $CLAUDE -n $NAME --permission-mode auto --effort high \"\$(cat $BRIEF)\"'"
     date +%s > "$STAMP"
     echo "$(date -u +%FT%TZ) started $NAME"
 }

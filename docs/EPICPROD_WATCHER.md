@@ -43,7 +43,7 @@ and never forces a rebuild.
 | The notifier's triggers: `task.failing`, `queue.starved`, `platform.error`, `credential.expiry`, `arrivals.missing`, `nodeguard.trip` | the shared readers | the notifier's own key | the notifier's clearing condition |
 | Promises: a check a session has committed to, recorded as a `watch_promise` action with what and by when | `epicprod_list_actions` | `promise:` and the record id | a `watch_outcome` names it |
 | Queue drift: a copy of a queue's status that disagrees with the queue registry (QUEUE_REGISTRY.md) | the registry's drift check | `drift:` with the queue and the copy | the copy matches |
-| The watcher session itself | TeamComms `list_sessions`, and the age of the session's last outcome | `watcher:session` | the session is online and answering |
+| The watcher session itself | TJAI `list_sessions`, and the age of the session's last outcome | `watcher:session` | the session is online and answering |
 
 A promise opens as an item at its due time if no outcome names it. The
 operator's activities in TJAI carry verification steps as text; the tick
@@ -127,9 +127,9 @@ reopened, unlisted). The wake is one
 TJAI message to the watcher session, found by its name `swf-watch` among
 the host's sessions; the session's inbox receiver delivers it as a turn.
 The content lists every open item without an outcome, with its key,
-source, evidence, link and age. TeamComms Notify LLM becomes the route
-once a program connector is configured for the watcher (none is on this
-host today).
+source, evidence, link and age. The watcher stays off TeamComms, as
+unattended and helper sessions do (Torre, 14 November 2026), so TJAI
+messaging remains its route.
 
 The watcher session is a Claude Code session under the operating
 account, on the subscription login, never metered access, in auto
@@ -137,6 +137,8 @@ permission mode. `scripts/prod-watch-session.sh`, run by the user unit
 `scripts/systemd/prod-watch-session.service`, keeps it running in tmux
 (session `swf-watch`), restarts it when it exits, and restarts it daily
 so its context starts from its brief, EPICPROD_WATCHER_BRIEF.md. It
+starts the session with `TJAI_TEAMCOMMS=off`, which keeps it out of
+TeamComms and leaves its TJAI messaging in place. It
 answers each wake with one outcome record per item through
 `scripts/watch-record.py`.
 
