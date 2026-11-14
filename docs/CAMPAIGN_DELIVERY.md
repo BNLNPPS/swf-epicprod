@@ -125,7 +125,10 @@ target campaign, unattached DIDs and duplicate row copies are counted
 in the build summary, never dropped silently.
 
 The preceding `file_events_measure` step keeps the measurement store
-current (The events source, below). Both steps record their outcome
+current (The events source, below). Its JLab Rucio reads try a dropped
+connection again after one minute and again after five
+(`DROP_RETRY_WAITS`): drops near 03:15 ET failed the step on 2026-11-13
+and 2026-11-14, and it reran clean by hand minutes later. Both steps record their outcome
 in the epicprod action stream, and the `delivery_record_freshness`
 alarm fires when the newest daily snap is older than 30 hours — one
 missed night. At step completion the agent buffers one Capcom notice

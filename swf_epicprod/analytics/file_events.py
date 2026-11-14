@@ -40,11 +40,14 @@ Runs nightly as a ``catalog_sync`` chain step (the prod-ops agent's
 
 import concurrent.futures
 import datetime as dt
+import http.client
 import json
 import os
 import sqlite3
 import ssl
 import threading
+import time
+import urllib.error
 import urllib.request
 
 ROOTS = ('/RECO', '/SIMU')
@@ -100,6 +103,14 @@ def _rucio_post(token, path, body):
 
 # The Rucio token outlives no long run: every call goes through a
 # holder that re-authenticates once on 401 and retries.
+# A connection that drops mid-call (a TLS EOF at the handshake, a chunked
+# answer cut short) is tried again after each of these waits; every call
+# here reads, so a retry is safe. The nightly catalog_sync met such drops
+# near 03:15 ET on 2026-11-13 and 2026-11-14, in the inventory's bulk
+# metadata read, and the step reran clean by hand minutes later.
+DROP_RETRY_WAITS = (60, 300)
+_DROPPED = (urllib.error.URLError, http.client.HTTPException,
+            ConnectionError, TimeoutError, ssl.SSLError)
 _token_lock = threading.Lock()
 _token_cache = {'value': None}
 
@@ -119,32 +130,38 @@ def _drop_token(stale):
             _token_cache['value'] = None
 
 
-def rucio_post(path, body):
-    for attempt in (0, 1):
+def _with_retries(call):
+    """``call(token)`` with the current token: a 401 re-authenticates once,
+    a dropped connection waits and tries again (DROP_RETRY_WAITS)."""
+    reauthed = False
+    waits = list(DROP_RETRY_WAITS)
+    while True:
         token = _current_token()
         try:
-            return _rucio_post(token, path, body)
+            return call(token)
         except urllib.error.HTTPError as exc:
-            if exc.code == 401 and attempt == 0:
+            if exc.code == 401 and not reauthed:
+                reauthed = True
                 _drop_token(token)
                 continue
             raise
-    return []
+        except _DROPPED as exc:
+            if not waits:
+                raise
+            wait = waits.pop(0)
+            log(f'JLab Rucio connection dropped ({exc!r}); '
+                f'trying again in {wait}s')
+            time.sleep(wait)
+
+
+def rucio_post(path, body):
+    return _with_retries(lambda token: _rucio_post(token, path, body))
 
 
 def rucio_get(path, **params):
     from pcs.services import _jlab_rucio_get
 
-    for attempt in (0, 1):
-        token = _current_token()
-        try:
-            return _jlab_rucio_get(path, token, **params)
-        except urllib.error.HTTPError as exc:
-            if exc.code == 401 and attempt == 0:
-                _drop_token(token)
-                continue
-            raise
-    return ''
+    return _with_retries(lambda token: _jlab_rucio_get(path, token, **params))
 
 
 def attached_names(get, locations, log=print):
