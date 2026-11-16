@@ -793,6 +793,10 @@ if __name__ == "__main__":
         logger.error("preserve-first could not home every output; handing the output to the stash")
         sys.exit(NOT_HOME_EXIT)
 
+    dropped = tokens.upload_without_x509()
+    if dropped:
+        logger.info("upload auth: token only, X.509 client credential dropped (%s; "
+                    "EPICPROD_SWITCH_UPLOAD_NO_X509)", ', '.join(dropped))
     upload_client = UploadClient(_client=client, logger=logger)
 
     try:

@@ -158,6 +158,30 @@ def rucio_client():
         os.environ.update({k: v for k, v in saved.items() if v is not None})
 
 
+# The X.509 client credential variables gfal2 reads when it makes a context.
+X509_CLIENT_VARS = ('X509_USER_PROXY', 'X509_USER_CERT', 'X509_USER_KEY')
+
+
+def upload_without_x509(environ=None):
+    """Drop the X.509 client credential from the upload step when it writes
+    with a token (EPICPROD_SWITCH_UPLOAD_NO_X509=1, off by default).
+
+    The patched upload client hands gfal2 a scoped bearer token, but gfal2
+    still loads X509_USER_PROXY into the same context and offers it as the
+    TLS client certificate. A door that checks client certificates ends the
+    handshake on the expired eicprod proxy ("ssl/tls alert certificate
+    expired", trial6, job 6608410 at MANITOBA-XRD) before the token is sent.
+    Applied only when RUCIO_CONFIG asks for token auth; an X.509 step keeps
+    its proxy. Returns the variables dropped."""
+    env = os.environ if environ is None else environ
+    if env.get('EPICPROD_SWITCH_UPLOAD_NO_X509', '0') != '1':
+        return []
+    cfg = env.get('RUCIO_CONFIG')
+    if not cfg or not rucio_token_file(cfg):
+        return []
+    return [k for k in X509_CLIENT_VARS if env.pop(k, None) is not None]
+
+
 def write_rucio_config(token_file, cfg_file, base_cfg=None):
     cfg = configparser.ConfigParser(interpolation=None)
     if base_cfg and os.path.exists(base_cfg):
