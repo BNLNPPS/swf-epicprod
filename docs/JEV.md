@@ -94,3 +94,13 @@ publishes `jev_like_ready`; the page, which opened a short-lived stream
 on the click with a bounded poll behind it, reads the stored answer
 (`/pcs/find/jev/<key>/`). The web tier makes no call to Jev and holds no
 key. A session may ask 60 times in ten minutes.
+
+## Status
+
+Suspended since 2026-11-15 (Torre Wenaus: "suspend it, no one using it.
+it was experiment."). The TypeSafe account ran out of credits on
+2026-11-13, and every call since has been refused with HTTP 402. The
+nightly `jev_config_neighbors` cron entry is commented out in the
+operating account's crontab. The configuration cards show the neighbours
+computed on 2026-11-12. The find page's plain-language search fails until
+the account has credits again.
