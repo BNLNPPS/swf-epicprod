@@ -263,6 +263,42 @@ end, under a hard per-job cap, from every site class ePIC runs on.
 Two consumers remain to be connected: the task page, and the scout
 gate. The job page reads the report today.
 
+### The job digest
+
+PanDA keeps 500 characters of a job's metrics and drops the rest, and
+the pilot's own keys share them with the digest. With long names a
+GREX job's metrics ran past the limit after the registration field, so
+its payload version, threads and exit code were lost; 3.7% of the jobs
+of 2026-10-27 were at 480 characters or more. One table,
+`swf_epicprod/payload/metric_keys.py`, names every field the payload
+and the native pilot write, its short name and the long name written
+before, and every reader goes through it, taking the short name first
+and the long one where a job carries that.
+
+Under `EPICPROD_SWITCH_SHORT_METRICS=1` (payload 0.25.35) the digest
+writes the short names (`pStage`, `pStat`, `pTrail`, `pReg`, `pVer`,
+`pThr`, `pExit`, `pSig`, `pSigStage`, `pStalled`) and no longer repeats
+the event count, which is the pilot's own `nEvents`. The native pilot
+writes its disk readings under short names (`dT`, `ceFree`, `scFree`,
+`scPeakMB` and the rest) and leaves out the pilot directory's readings
+where that directory is on the scratch's filesystem, since they were
+the scratch's twice (GREX runtime `native-grex-shortnames-fabf634`,
+NATIVE_PILOT_CANARY.md). A GREX canary job's metrics went from 489
+characters, cut after `pReg`, to 381 with every field kept (canaries
+42000 and 42002, 2026-11-16).
+
+Under the same switch (payload 0.25.36) the report carries `logs`, the
+size of each stage's full log (`<task>.<program>.log`; the prmon series
+are left out) and their total, and the digest carries the total in MB,
+rounded up, as `pLogMB`. It is the measure behind the Hilog kind of the
+crash catalog (SEGFAULT_DIAGNOSIS.md, Hilog); the pilot's log tarball
+cannot give it, as the pilot keeps the last 1000 lines of each stage.
+Canary task 42003 (2026-11-16) carried `pLogMB=1` in 391 characters,
+its report 238 KB of stage logs for 100 events.
+
+Since payload 0.25.37 the switch is on by default; `=0` turns it off.
+Its one reading is `metric_keys.short_names_on()`.
+
 ## Exit codes
 
 The payload says how it failed through its exit code, which PanDA
@@ -786,7 +822,7 @@ In order, each a committed step on the clone:
     job). On by default from payload 0.25.3, after the same canaries;
     `0` turns it off.
 27. **The upload step writes with its token alone** (2026-11-16, payload
-    0.25.35 behind `EPICPROD_SWITCH_UPLOAD_NO_X509=1`, off by default).
+    0.25.38 behind `EPICPROD_SWITCH_UPLOAD_NO_X509=1`, off by default).
     When `RUCIO_CONFIG` uses a token (item 22), `register_to_rucio.py`
     removes `X509_USER_PROXY`, `X509_USER_CERT` and `X509_USER_KEY` from
     its own environment before it makes the upload client

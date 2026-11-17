@@ -623,6 +623,35 @@ heartbeats carrying the peak as it grew (3, 111 MB) and the final record
 `scratchPeakMB=351 scratchPeakFiles=221`, the payload report's own 358,584 KB
 and 221 files.
 
+### Short metric names, 16 November
+
+The archive now writes its disk readings and scratch peaks under the short
+names of `swf_epicprod/payload/metric_keys.py`, which `build.py` ships into
+the pilot as `pilot/user/epic/metric_keys.py`, and leaves out the pilot
+directory's readings when that directory is on the scratch's filesystem
+(EPICPROD_PAYLOAD.md, The job digest). The readings had taken about 330 of
+PanDA's 500 characters of job metrics, so the payload digest behind them was
+cut after its registration field.
+
+GREX's template moved to `native-grex-shortnames-fabf634` at 01:58 UTC on 17
+November (20:58 ET on 16 November; `scripts/retarget-native-grex.py`, label
+`shortnames`). Its archive
+`aad45ad9318fa29caeb6e476fe5edbd80f24057913c3fd3a8045e904b2d55f71` differs
+from the previous `f4efcad8` only in `jobmetrics.py`, `native_container.py`
+and the added `metric_keys.py`; every launcher and helper is byte-identical.
+Template SHA-256
+`167caf23e1b698ed2f316961c729003395b54e3fbb510bd0e26ac0f83b4f91d9`; the
+previous one is kept beside it as
+`submit_pilot3_pull_umgrex.sdf.before-shortnames-20261117T015813Z`.
+
+The validating payload canary, task 42002 / job 6608500 with
+`EPICPROD_SWITCH_SHORT_METRICS=1`, was sent once the last allocation of the
+previous runtime had ended, and ran on n388: healthy, 100 of 100 events, output
+registered, and final metrics of 381 characters with the short disk names, no
+pilot-directory readings and the digest whole through `pExit`. The same task's
+canary on the previous runtime, task 42000 / job 6608498, had 489 characters,
+cut after `pReg`.
+
 ### Shared spool exhaustion, 25–26 October
 
 The GREX CE spool is one 196 GiB NFS filesystem, `/var/lib/condor-ce`,

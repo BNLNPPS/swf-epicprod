@@ -56,6 +56,10 @@ def build(baseline, expected_sha256, output, production=False, heartbeat_seconds
 
     write('pilot/user/epic/native_container.py',
           Path(__file__).with_name('native_container.py').read_text())
+    # The job metric names, one table for every writer and reader.
+    write('pilot/user/epic/metric_keys.py',
+          (Path(__file__).resolve().parents[2] / 'swf_epicprod' / 'payload'
+           / 'metric_keys.py').read_text())
     relative = 'pilot/user/epic/container.py'
     content = (tree / relative).read_text()
     start = content.index('def wrapper(')
@@ -223,12 +227,13 @@ def patch_job_metrics(content):
         ("""    # is there a detected rucio trace service error?
 """, """    # ePIC: the job's scratch peaks, from the payload's own stage readings
     from pilot.user.epic.native_container import scratch_peak, disk_headroom
+    from pilot.user.epic import metric_keys
     for name, value in disk_headroom(job.workdir).items():
         job_metrics += get_job_metrics_entry(name, value)
     peak = scratch_peak(job.workdir)
     if peak:
-        job_metrics += get_job_metrics_entry("scratchPeakMB", (peak[0] + 1023) // 1024)
-        job_metrics += get_job_metrics_entry("scratchPeakFiles", peak[1])
+        job_metrics += get_job_metrics_entry(metric_keys.name("scratch_peak_mb"), (peak[0] + 1023) // 1024)
+        job_metrics += get_job_metrics_entry(metric_keys.name("scratch_peak_files"), peak[1])
 
     # is there a detected rucio trace service error?
 """),

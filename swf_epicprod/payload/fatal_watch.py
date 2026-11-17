@@ -15,6 +15,11 @@ import sys
 import time
 from datetime import datetime, timezone
 
+try:  # the monitor and PCS import the payload package
+    from swf_epicprod.payload import metric_keys
+except ImportError:  # on the worker the payload's files sit side by side
+    import metric_keys
+
 SIGNALS = {6: 'SIGABRT', 7: 'SIGBUS', 8: 'SIGFPE', 11: 'SIGSEGV'}
 COUNTERS = ('utime', 'stime', 'rchar', 'wchar', 'read_bytes', 'write_bytes')
 TAIL_BYTES = 65536
@@ -99,10 +104,12 @@ def publish(args, evidence):
             report = body.get('payload', body)
             report['fatal'] = evidence
             metrics = report.setdefault('jobMetrics', {})
-            metrics.update(payloadFatalSignal=evidence['signal'],
-                           payloadFatalStage=args.stage)
+            short = metric_keys.short_names_on()
+            name = metric_keys.name if short else (lambda f: metric_keys.names(f)[-1])
+            metrics.update({name('fatal_signal'): evidence['signal'],
+                            name('fatal_stage'): args.stage})
             if evidence.get('terminated'):
-                metrics['payloadFatalStalled'] = 1
+                metrics[name('fatal_stalled')] = 1
             if 'payload' in body:
                 body['jobMetrics'] = metrics
             write_json(path, body)

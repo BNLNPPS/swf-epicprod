@@ -598,11 +598,12 @@ def panda_attempt_bad_input_seqs(jedi_task_id):
         return None, f'no job record for the rows of PanDA task {jedi_task_id}'
     seqs = set()
     for lfn, jobstatus, exit_code, metrics in records:
-        metrics = dict(token.split('=', 1) for token in (metrics or '').split() if '=' in token)
+        from swf_epicprod.payload.metric_keys import parse
+        metrics = parse(metrics or '')
         if (str(lfn).isdigit() and jobstatus == 'failed'
                 and str(exit_code).strip() == '1'
-                and metrics.get('payloadStage') == 'simulation'
-                and metrics.get('payloadStageStatus') == 'fail'):
+                and metrics.get('stage') == 'simulation'
+                and metrics.get('stage_status') == 'fail'):
             seqs.add(int(lfn))
     return seqs, (f'{len(seqs)} of the {len(records)} rows of PanDA task '
                   f'{jedi_task_id} last stopped in simulation with payload '
