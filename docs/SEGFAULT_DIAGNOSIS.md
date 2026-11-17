@@ -1005,22 +1005,26 @@ are but by log total: the smallest, median and largest among the
 chatty jobs whose manifest row resolves, kept once chosen. Each row
 carries the job's status and log total.
 
-**The reading.** Which program wrote the volume is in a
-representative's payload report (`logs.by_program`); reading it onto
-the signature is not built yet.
+**The reading.** Which programs wrote the volume, each one's MB
+largest first, read once from the first representative whose payload
+report carries `logs.by_program` (the sweep's filing, else the PanDA
+metatable; `read_hilog_programs` in swf-monitor
+`monitor_app/segfaults.py`) and kept under `data['hilog_reading']`,
+which a record rebuild leaves alone.
 
 **The nightly pass.** The inventory's Hilog pass
 (`scripts/segfault-inventory.py`, after the input pass; `--hilog-only`
 for a back-fill, `--no-hilog` to skip) finds the tasks with a chatty
 job in its window, adds the tasks already holding a Hilog signature,
 recomputes their signatures over their life under the current
-threshold and picks representatives where a signature has none. The
-automatic dig and the automatic study pass these signatures by: there
-is no crash to trace.
+threshold, picks representatives where a signature has none and reads
+the programs where a signature has no reading. The automatic dig and
+the automatic study pass these signatures by: there is no crash to
+trace.
 
 **Pages.** The catalog's and the reproduction runs page's Kind facet
 gains Hilog (`?kind=hilog`); the signature page states the jobs, the
-threshold and the log totals.
+threshold, the log totals and the programs that wrote them.
 
 **Reproduction.** Not built: a chatty row is read from its report, not
 run again.
