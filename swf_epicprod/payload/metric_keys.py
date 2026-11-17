@@ -56,6 +56,15 @@ DISK_AREAS = {'ce': 'ce', 'pilot': 'pl', 'scratch': 'sc'}
 DISK_READINGS = {'FreeMB': 'Free', 'TotalMB': 'Tot', 'IFree': 'IFree', 'ITotal': 'ITot'}
 
 
+def short_names_on():
+    """Whether the payload writes the short names, and the stage-log sizes
+    that need their room: EPICPROD_SWITCH_SHORT_METRICS, on unless set to
+    anything but 1 (on by default since payload 0.25.37;
+    DEVELOPING_THE_PAYLOAD.md, Switches). The one reading of the switch."""
+    import os
+    return os.environ.get('EPICPROD_SWITCH_SHORT_METRICS', '1') == '1'
+
+
 def name(field):
     """The name a writer uses for ``field`` now."""
     return NAMES[field][0]

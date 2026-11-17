@@ -293,6 +293,11 @@ are left out) and their total, and the digest carries the total in MB,
 rounded up, as `pLogMB`. It is the measure behind the Hilog kind of the
 crash catalog (SEGFAULT_DIAGNOSIS.md, Hilog); the pilot's log tarball
 cannot give it, as the pilot keeps the last 1000 lines of each stage.
+Canary task 42003 (2026-11-16) carried `pLogMB=1` in 391 characters,
+its report 238 KB of stage logs for 100 events.
+
+Since payload 0.25.37 the switch is on by default; `=0` turns it off.
+Its one reading is `metric_keys.short_names_on()`.
 
 ## Exit codes
 

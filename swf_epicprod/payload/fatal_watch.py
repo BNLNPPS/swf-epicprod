@@ -104,7 +104,7 @@ def publish(args, evidence):
             report = body.get('payload', body)
             report['fatal'] = evidence
             metrics = report.setdefault('jobMetrics', {})
-            short = os.environ.get('EPICPROD_SWITCH_SHORT_METRICS') == '1'
+            short = metric_keys.short_names_on()
             name = metric_keys.name if short else (lambda f: metric_keys.names(f)[-1])
             metrics.update({name('fatal_signal'): evidence['signal'],
                             name('fatal_stage'): args.stage})

@@ -32,10 +32,10 @@ except ImportError:  # on the worker the payload's files sit side by side
 
 
 def metric_name(field):
-    """The name a digest field is written under: its short name with
-    EPICPROD_SWITCH_SHORT_METRICS=1, its long one otherwise
-    (DEVELOPING_THE_PAYLOAD.md, Switches; metric_keys.py)."""
-    if os.environ.get("EPICPROD_SWITCH_SHORT_METRICS") == "1":
+    """The name a digest field is written under: its short name, or its
+    long one with EPICPROD_SWITCH_SHORT_METRICS=0 (on by default since
+    0.25.37; DEVELOPING_THE_PAYLOAD.md, Switches; metric_keys.py)."""
+    if metric_keys.short_names_on():
         return metric_keys.name(field)
     return metric_keys.names(field)[-1]
 
@@ -400,7 +400,7 @@ def job_metrics(report):
     # With short names the events are the pilot's own nEvents, which the
     # digest then no longer repeats.
     n = metric_name
-    short = os.environ.get("EPICPROD_SWITCH_SHORT_METRICS") == "1"
+    short = metric_keys.short_names_on()
     metrics = {n("stage"): last or "none",
                n("stage_status"): (stages.get(last) or {}).get("status") or "none",
                n("trail"): trail or "none",
@@ -512,7 +512,7 @@ def build_report(args):
         report["scratch"] = scratch
     # The stage logs' sizes come with the short names, whose room carries
     # their total in the digest (DEVELOPING_THE_PAYLOAD.md, Switches).
-    if os.environ.get("EPICPROD_SWITCH_SHORT_METRICS") == "1":
+    if metric_keys.short_names_on():
         logs = log_record(args.prmon_dir, args.taskname)
         if logs is not None:
             report["logs"] = logs

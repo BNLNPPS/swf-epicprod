@@ -9,6 +9,7 @@ import tempfile
 PAYLOAD = Path(__file__).resolve().parents[1] / 'swf_epicprod' / 'payload'
 sys.path.insert(0, str(PAYLOAD))
 from fatal_watch import fatal_signal
+import metric_keys
 
 CHILD = '''import pathlib,sys,time
 mode=sys.argv[1]
@@ -44,7 +45,9 @@ def main():
             assert bool(evidence.get('terminated')) == (mode == 'stalled'), (mode, evidence)
             if mode == 'stalled':
                 assert evidence['processes'] and evidence['tail']
-                assert json.loads((root / 'jobReport.json').read_text())['jobMetrics']['payloadFatalSignal'] == 6
+                metrics = json.loads((root / 'jobReport.json').read_text())['jobMetrics']
+                signal = [metrics[k] for k in metric_keys.names('fatal_signal') if k in metrics]
+                assert signal == [6], metrics
             print(f'{mode}: passed')
 
 
