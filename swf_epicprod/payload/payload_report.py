@@ -25,6 +25,20 @@ import os
 import sys
 from datetime import datetime, timezone
 
+try:  # the monitor and PCS import the payload package
+    from swf_epicprod.payload import metric_keys
+except ImportError:  # on the worker the payload's files sit side by side
+    import metric_keys
+
+
+def metric_name(field):
+    """The name a digest field is written under: its short name with
+    EPICPROD_SWITCH_SHORT_METRICS=1, its long one otherwise
+    (DEVELOPING_THE_PAYLOAD.md, Switches; metric_keys.py)."""
+    if os.environ.get("EPICPROD_SWITCH_SHORT_METRICS") == "1":
+        return metric_keys.name(field)
+    return metric_keys.names(field)[-1]
+
 SCHEMA = "epicprod-payload-report/1"
 
 # The pilot caps the length of a value it will carry in the job metrics.
@@ -355,27 +369,33 @@ def job_metrics(report):
                      for name, s in stages.items() if isinstance(s, dict))
     while len(trail) > MAX_METRIC_VALUE and "," in trail:
         trail = trail.split(",", 1)[1]
-    metrics = {"payloadStage": last or "none",
-               "payloadStageStatus": (stages.get(last) or {}).get("status") or "none",
-               "payloadTrail": trail or "none",
-               "payloadRegistration": (report["registration"]["outcome"] or "none").replace(" ", "_"),
-               "payloadVersion": (report.get("payload_version") or "none").split()[-1]}
-    if isinstance(events, int):
-        metrics["payloadEvents"] = events
+    # Short names under EPICPROD_SWITCH_SHORT_METRICS (metric_keys.py):
+    # PanDA keeps 500 characters of a job's metrics and cuts the rest.
+    # With short names the events are the pilot's own nEvents, which the
+    # digest then no longer repeats.
+    n = metric_name
+    short = os.environ.get("EPICPROD_SWITCH_SHORT_METRICS") == "1"
+    metrics = {n("stage"): last or "none",
+               n("stage_status"): (stages.get(last) or {}).get("status") or "none",
+               n("trail"): trail or "none",
+               n("registration"): (report["registration"]["outcome"] or "none").replace(" ", "_"),
+               n("version"): (report.get("payload_version") or "none").split()[-1]}
+    if not short and isinstance(events, int):
+        metrics[n("events")] = events
     if isinstance(report.get("threads"), int):
-        metrics["payloadThreads"] = report["threads"]
+        metrics[n("threads")] = report["threads"]
     if report.get("exit_code") is not None:
-        metrics["payloadExit"] = report["exit_code"]
+        metrics[n("exit")] = report["exit_code"]
     # The scratch peaks stay in the report, not here: the pilot takes at most
     # 10 payload metrics in 200 characters, which a full trail nearly fills,
     # so these would be dropped; the native pilot reports the peaks from this
     # same scratch log (EPICPROD_PAYLOAD.md, Scratch disk).
     fatal = report.get("fatal") or {}
     if fatal.get("signal") in (6, 7, 8, 11):
-        metrics["payloadFatalSignal"] = fatal["signal"]
-        metrics["payloadFatalStage"] = fatal.get("stage", "unknown")
+        metrics[n("fatal_signal")] = fatal["signal"]
+        metrics[n("fatal_stage")] = fatal.get("stage", "unknown")
         if fatal.get("terminated"):
-            metrics["payloadFatalStalled"] = 1
+            metrics[n("fatal_stalled")] = 1
     return metrics
 
 

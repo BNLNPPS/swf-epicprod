@@ -76,7 +76,8 @@ def scratch_base(workdir):
 def disk_headroom(workdir):
     """Unprivileged available bytes/inodes, carried by the normal heartbeat."""
     import time
-    values = {'diskSample': int(time.time())}
+    from pilot.user.epic import metric_keys
+    values = {metric_keys.name('disk_sample'): int(time.time())}
     paths = []
     ce = os.environ.get('EPICPROD_CE_SANDBOX')
     if ce:
@@ -86,15 +87,27 @@ def disk_headroom(workdir):
         paths.append(('scratch', scratch_base(workdir)))
     except RuntimeError:
         pass  # Still report the pilot volume when no safe scratch exists.
+    # Short names (metric_keys.py), and the pilot's directory only where it
+    # is not on the scratch's filesystem: the same readings twice cost the
+    # 500 characters PanDA keeps, and cut the payload's digest at GREX.
+    devices = {}
     for label, path in paths:
+        try:
+            devices[label] = os.stat(path).st_dev
+        except OSError:
+            pass
+    for label, path in paths:
+        if label == 'pilot' and devices.get('pilot') is not None \
+                and devices.get('pilot') == devices.get('scratch'):
+            continue
         try:
             stat = os.statvfs(path)
         except OSError:
             continue
-        values.update({label + 'FreeMB': stat.f_bavail * stat.f_frsize // 2**20,
-                       label + 'TotalMB': stat.f_blocks * stat.f_frsize // 2**20,
-                       label + 'IFree': stat.f_favail,
-                       label + 'ITotal': stat.f_files})
+        values.update({metric_keys.name(f'{label}_free_mb'): stat.f_bavail * stat.f_frsize // 2**20,
+                       metric_keys.name(f'{label}_total_mb'): stat.f_blocks * stat.f_frsize // 2**20,
+                       metric_keys.name(f'{label}_inodes_free'): stat.f_favail,
+                       metric_keys.name(f'{label}_inodes_total'): stat.f_files})
     return values
 
 
