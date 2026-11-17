@@ -14,6 +14,10 @@ warning or above, tasks paused in the last two days, and promises
 Escalation is shadowed (recorded, not live) while ``--escalate`` is not
 given; the first day measures its volume.
 
+From 06:00 to 22:00 Eastern every tick also messages the session swf-1,
+when it is online, to read the ops list mail (EPICPROD_WATCHER.md, The
+wake).
+
     source ~/.env && python3 scripts/prod-watch.py [--dry-run] [--escalate]
         [--state PATH] [--session NAME]
 
@@ -50,6 +54,16 @@ PAUSED_HOURS = 48
 LIVE_LEVELS = ('WARNING', 'ERROR', 'CRITICAL')
 FACE = 'https://epic-devcloud.org/prod'
 ET = ZoneInfo('America/New_York')
+# Every tick from 06:00 to 22:00 Eastern messages this session, when it is
+# online, to read the ops list mail (Torre, 2026-11-16: "message swf-1 if
+# existing at the 30min wake, every one, to check prod mail, 6am to 10pm
+# eastern").
+MAIL_SESSION = 'swf-1'
+MAIL_HOURS_ET = (6, 22)
+MAIL_TEXT = ("prod-watch {at} ET, ops mail check (Torre, 2026-11-16): read Gmail label "
+             "epic-ops only, read-only, since the cursor in "
+             "/data/wenauseic/swf-epicprod/epic-ops-mail-cursor.txt; surface what is new "
+             "to Torre; never reply, send, forward or draft.")
 
 
 def _now():
@@ -220,6 +234,28 @@ def wake(text, session_id):
     pn._mcp(pn.TJAI_MCP_URL, token, 'send_message', args)
 
 
+def mail_nudge(now, dry_run):
+    """Message MAIL_SESSION to read the ops list mail, on every tick inside
+    MAIL_HOURS_ET while that session is online. Returns what was done, for
+    the tick summary; a failure is reported, never raised."""
+    at = now.astimezone(ET)
+    if not MAIL_HOURS_ET[0] <= at.hour < MAIL_HOURS_ET[1]:
+        return 'outside hours'
+    try:
+        session_id = find_session(MAIL_SESSION)
+        if not session_id:
+            return f'{MAIL_SESSION} offline'
+        text = MAIL_TEXT.format(at=at.strftime('%H:%M'))
+        if dry_run:
+            print(text)
+        else:
+            wake(text, session_id)
+        return f'sent to {MAIL_SESSION}'
+    except Exception as exc:  # noqa: BLE001 - the tick goes on; the summary says so
+        print(f'mail nudge failed: {exc}', file=sys.stderr)
+        return f'failed ({str(exc)[:80]})'
+
+
 def digest_text(open_items, now, session_online):
     lines = ["Read the current docs/EPICPROD_WATCHER_BRIEF.md before deciding; "
              "its standing authority applies to this wake. It holds no authority "
@@ -314,10 +350,13 @@ def tick(args):
                          extra={'shadow': not args.escalate})
             st['escalated_at'] = _iso(now)
 
+    mail = mail_nudge(now, args.dry_run)
+
     summary = (f"tick: {len(items)} items, {len(open_items)} without an outcome, "
                f"{'woke ' + (args.session if session_id else 'the host sessions') if woke else 'no wake'}"
                f"{' (' + '; '.join(f'{k}: ' + ', '.join(v) for k, v in news.items() if v) + ')' if woke else ''}, "
-               f"{len(escalations)} escalation(s){'' if args.escalate else ' (shadow)'}")
+               f"{len(escalations)} escalation(s){'' if args.escalate else ' (shadow)'}, "
+               f"mail check: {mail}")
     if args.dry_run:
         print(summary)
         return 0

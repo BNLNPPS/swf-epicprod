@@ -146,6 +146,12 @@ When the watcher session is offline, the tick sends the digest to the
 working sessions on the host through TJAI messaging, the notifier's
 route, and says so at its head.
 
+From 06:00 to 22:00 Eastern every tick, whatever it finds, also sends one
+TJAI message to the session `swf-1` when that session is online, telling
+it to read the ops list mail (Torre Wenaus, 16 November 2026). The tick
+summary ends with the result: sent, `swf-1` offline, outside hours, or
+the failure.
+
 A headless run for each wake (`claude -p`, the doer of the wrangler
 agent, swf-monitor WRANGLER_AGENT.md) carries no context from one wake
 to the next, so a condition followed across ticks would be re-read from
