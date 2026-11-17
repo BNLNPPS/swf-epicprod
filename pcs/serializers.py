@@ -112,12 +112,68 @@ class DatasetSerializer(serializers.ModelSerializer):
             'background_tag_label',
             'block_num', 'blocks', 'did', 'file_count', 'data_size',
             'stage', 'external', 'source_kind', 'source_location', 'validation_status',
+            'sample_name',
             'description', 'metadata', 'created_by', 'created_at',
         ]
         read_only_fields = [
             'id', 'dataset_name', 'did', 'block_num', 'blocks',
             'file_count', 'data_size', 'created_by', 'created_at',
         ]
+
+    # The sample variant is a name segment (PCS.md § Sample Variants):
+    # letters, digits and . _ + - only, so it composes into a Rucio DID.
+    _SAMPLE_NAME_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._+-]*')
+
+    def validate_sample_name(self, value):
+        from .name_tokens import (reserved_sample_token_description,
+                                  sample_name_reserved_collision)
+        value = (value or '').strip()
+        if not value:
+            return ''
+        if not self._SAMPLE_NAME_RE.fullmatch(value) or '..' in value or value.endswith('.'):
+            raise serializers.ValidationError(
+                'sample_name takes letters, digits and . _ + - '
+                f'(e.g. 45to135deg); got {value!r}.')
+        if sample_name_reserved_collision(value):
+            raise serializers.ValidationError(
+                f'sample_name {value!r} collides with a reserved token '
+                f'({reserved_sample_token_description()}).')
+        return value
+
+    def validate(self, attrs):
+        # A particle gun reads its angles from the sample name at
+        # submission (pcs.commands.gun_config); a name it cannot read is
+        # refused here, where it is typed, rather than at submission.
+        from .commands import GUN_ANGLE_RE, GUN_ETA_RE, GUN_GENERATOR
+        instance = getattr(self, 'instance', None)
+        evgen = attrs.get('evgen_tag', getattr(instance, 'evgen_tag', None))
+        sample = attrs.get('sample_name', getattr(instance, 'sample_name', '') or '')
+        is_gun = evgen is not None and str(
+            (evgen.parameters or {}).get('generator') or '') == GUN_GENERATOR
+        # The compose page resends every field on an edit; only a change
+        # to the name or the generator is checked, so an edition named
+        # before this check (or by another path) still takes other edits.
+        changed = instance is None or any(
+            f in attrs and attrs[f] != getattr(instance, f)
+            for f in ('sample_name', 'evgen_tag'))
+        # A small ES production sample names its angle in its provenance
+        # and appends its own discriminator (pcs.production_samples).
+        production = ((getattr(instance, 'metadata', None) or {})
+                      .get('production_sample') or {})
+        angular = str(production.get('gun_sample') or sample)
+        if is_gun and changed:
+            sample = angular
+            m_angle = GUN_ANGLE_RE.fullmatch(sample)
+            if m_angle:
+                if not 0 <= float(m_angle.group(1)) < float(m_angle.group(2)) <= 180:
+                    raise serializers.ValidationError({'sample_name': [
+                        f'theta bounds need 0 <= N < M <= 180; got {sample!r}.']})
+            elif not GUN_ETA_RE.fullmatch(sample):
+                raise serializers.ValidationError({'sample_name': [
+                    'a particle-gun dataset needs the sample variant '
+                    f'<N>to<M>deg (e.g. 1to4deg) or eta and a number with one '
+                    f'decimal (e.g. eta-1.5); got {sample!r}.']})
+        return attrs
 
     def validate_metadata(self, value):
         if value in (None, ''):

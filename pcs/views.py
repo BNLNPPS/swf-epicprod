@@ -1778,6 +1778,7 @@ def datasets_compose(request):
             'scope': ds.scope,
             'detector_version': ds.detector_version,
             'detector_config': ds.detector_config,
+            'sample_name': ds.sample_name,
             'description': ds.description,
             'blocks': ds.blocks,
             'created_by': ds.created_by,

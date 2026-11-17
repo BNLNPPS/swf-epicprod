@@ -123,6 +123,9 @@
                             <div class="col-md-3"><label class="form-label" style="font-size:.82rem;"><strong>Created By</strong></label>
                                 <input type="text" id="ds-created-by" class="form-control form-control-sm" value="{{ username }}" readonly></div>
                         </div>
+                        <div class="mb-2"><label class="form-label" style="font-size:.82rem;"><strong>Sample variant</strong> <span class="text-muted">(optional)</span></label>
+                            <input type="text" id="ds-sample" class="form-control form-control-sm" placeholder="e.g. 45to135deg (angular range, mass point)">
+                            <div class="form-text" style="font-size:.8rem;">The trailing name segment that tells apart datasets sharing one tag composition. A particle gun reads its angles from it: <code>&lt;N&gt;to&lt;M&gt;deg</code> (theta in degrees, e.g. <code>3to50deg</code>) or <code>eta</code> and a number with one decimal (e.g. <code>eta-1.5</code>).</div></div>
                         <div class="mb-2"><label class="form-label" style="font-size:.82rem;"><strong>Description</strong></label>
                             <textarea id="ds-description" class="form-control form-control-sm" rows="2"></textarea></div>
                         <div class="mb-2" id="ds-source-location-row" style="display:none;">
@@ -318,7 +321,8 @@
         const s = compose.s ? compose.s.label : '?';
         const r = compose.r ? compose.r.label : '?';
         const k = compose.k ? `.${compose.k.label}` : '';
-        document.getElementById('name-preview').textContent = `${scope}.${ver}.${cfg}.${p}.${e}.${s}.${r}${k}`;
+        const sample = document.getElementById('ds-sample').value.trim();
+        document.getElementById('name-preview').textContent = `${scope}.${ver}.${cfg}.${p}.${e}.${s}.${r}${k}${sample ? '.' + sample : ''}`;
     }
 
     function updateSaveButton() {
@@ -375,6 +379,7 @@
         document.getElementById('ds-scope').value = 'group.EIC';
         document.getElementById('ds-version').value = '';
         document.getElementById('ds-config').value = '';
+        document.getElementById('ds-sample').value = '';
         document.getElementById('ds-description').value = '';
         ['p','e','s','r'].forEach(tt => {
             document.getElementById(tt+'-badge').textContent = 'not selected';
@@ -391,6 +396,7 @@
             document.getElementById('ds-scope').value = datasetToEdit.scope;
             document.getElementById('ds-version').value = datasetToEdit.detector_version;
             document.getElementById('ds-config').value = datasetToEdit.detector_config;
+            document.getElementById('ds-sample').value = datasetToEdit.sample_name || '';
             document.getElementById('ds-description').value = datasetToEdit.description || '';
             // The input's source location, editable on an evgen edition only.
             const srcRow = document.getElementById('ds-source-location-row');
@@ -602,6 +608,7 @@
                 <tr><td style="width:30%"><strong>Name (tag-based)</strong></td><td>${htmlEscape(dsComposedName(ds))}</td></tr>
                 ${!isLegacyKey(ds) ? `<tr><td><strong>DID</strong></td><td>${htmlEscape(ds.did)}</td></tr>` : ''}
                 <tr><td><strong>Detector</strong></td><td>${htmlEscape(ds.detector_version)} / ${htmlEscape(ds.detector_config)}</td></tr>
+                ${ds.sample_name ? `<tr><td><strong>Sample variant</strong></td><td>${htmlEscape(ds.sample_name)}</td></tr>` : ''}
                 <tr><td><strong>Blocks</strong></td><td>${htmlEscape(ds.blocks)}</td></tr>
                 <tr><td><strong>Created By</strong></td><td>${htmlEscape(ds.created_by)} | ${htmlEscape(ds.created_at)}</td></tr>
                 ${ds.description ? `<tr><td><strong>Description</strong></td><td>${htmlEscape(ds.description)}</td></tr>` : ''}
@@ -640,6 +647,7 @@
             document.getElementById('ds-scope').value = ds.scope;
             document.getElementById('ds-version').value = ds.detector_version;
             document.getElementById('ds-config').value = ds.detector_config;
+            document.getElementById('ds-sample').value = ds.sample_name || '';
             document.getElementById('ds-description').value = ds.description || '';
             ['p','e','s','r'].forEach(tt => {
                 const tagData = ds[TAG_FK[tt]];
@@ -674,10 +682,11 @@
         const ver = document.getElementById('ds-version').value.trim();
         const cfg = document.getElementById('ds-config').value.trim();
         const desc = document.getElementById('ds-description').value;
+        const sample = document.getElementById('ds-sample').value.trim();
         if (!ver || !cfg || !compose.p || !compose.e || !compose.s || !compose.r) return;
 
         // Duplicate check: same name means same tag+detector combo already exists
-        const previewName = `${scope}.${ver}.${cfg}.${compose.p.label}.${compose.e.label}.${compose.s.label}.${compose.r.label}${compose.k ? '.'+compose.k.label : ''}`;
+        const previewName = `${scope}.${ver}.${cfg}.${compose.p.label}.${compose.e.label}.${compose.s.label}.${compose.r.label}${compose.k ? '.'+compose.k.label : ''}${sample ? '.'+sample : ''}`;
         const existing = allDatasets.find(d => dsComposedName(d) === previewName && d.id !== editingDatasetId);
         if (existing) {
             alert(`Dataset already exists: ${previewName}`);
@@ -687,6 +696,7 @@
         const payload = { scope, detector_version: ver, detector_config: cfg, description: desc,
             physics_tag: compose.p.id, evgen_tag: compose.e.id, simu_tag: compose.s.id, reco_tag: compose.r.id,
             background_tag: compose.k ? compose.k.id : null,
+            sample_name: sample,
             created_by: currentUser };
         if (editingDatasetId) {
             const srcInput = document.getElementById('ds-source-location');
@@ -703,12 +713,12 @@
             window.location.href = `/swf-monitor/pcs/datasets/compose/?tab=datasets&selected=${encodeURIComponent(data.dataset_name || data.name || data.id)}`;
         } else {
             const err = await resp.json();
-            alert('Save failed: ' + Object.values(err).flat().join(', '));
+            alert('Save failed: ' + Object.values(err).flat().map(v => typeof v === 'object' ? Object.values(v).flat().join(', ') : v).join(', '));
         }
     });
 
     // Input listeners for preview
-    ['ds-scope','ds-version','ds-config'].forEach(id => {
+    ['ds-scope','ds-version','ds-config','ds-sample'].forEach(id => {
         document.getElementById(id).addEventListener('input', () => { updatePreview(); updateSaveButton(); });
     });
 

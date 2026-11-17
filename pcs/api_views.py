@@ -233,6 +233,18 @@ class DatasetViewSet(viewsets.ModelViewSet):
         campaign = Campaign.objects.filter(
             name=campaign_family(serializer.validated_data.get('detector_version') or '')
         ).first()
+        # The composed name is the identity; one another edition already
+        # holds is refused, as an edit to it is (partial_update).
+        # Built from everything that will be saved, so it names what
+        # build_dataset_name will name, the trial suffix from metadata included.
+        probe = Dataset(**serializer.validated_data)
+        new_name = probe.build_dataset_name()
+        holder = Dataset.objects.filter(composed_name=new_name).first()
+        if holder is not None:
+            return Response(
+                {'detail': f'{new_name} is already edition {holder.pk}; '
+                           f'edit or use that one.'},
+                status=status.HTTP_409_CONFLICT)
         instance = serializer.save(created_by=request.user.username,
                                    **({'campaign': campaign} if campaign else {}))
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)

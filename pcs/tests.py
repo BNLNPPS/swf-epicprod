@@ -753,3 +753,53 @@ class ProducedRerunTest(TestCase):
             with self.assertRaises(Reached):
                 services.prodtask_queue_submission(task=self._task(), kind='rerun_entire',
                                                    confirm_produced=True)
+
+
+class DatasetSampleVariantApiTest(DjangoTestCase):
+    """POST /pcs/api/datasets/ takes the sample variant (PCS.md § Sample
+    Variants); a particle gun's must be an angle or eta it can read."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from rest_framework.test import APIClient
+        category = PhysicsCategory.objects.create(
+            digit=1, name='Single Particle', created_by='test')
+        self.physics = PhysicsTag.objects.create(
+            tag_number=1112, tag_label='', category=category,
+            parameters={'process': 'SINGLE', 'particle': 'pi+',
+                        'gun_energy': '20GeV'}, created_by='test')
+        self.gun = EvgenTag.objects.create(
+            tag_number=37, tag_label='', created_by='test',
+            parameters={'generator': 'particle_gun'})
+        self.simu = SimuTag.objects.create(tag_number=1, tag_label='', created_by='test')
+        self.reco = RecoTag.objects.create(tag_number=1, tag_label='', created_by='test')
+        self.client = APIClient()
+        self.client.force_authenticate(User.objects.create_user('tester'))
+
+    def _post(self, sample):
+        return self.client.post('/pcs/api/datasets/', {
+            'detector_version': '26.07.1', 'detector_config': 'epic_craterlake',
+            'physics_tag': self.physics.pk, 'evgen_tag': self.gun.pk,
+            'simu_tag': self.simu.pk, 'reco_tag': self.reco.pk,
+            'sample_name': sample}, format='json')
+
+    def test_create_with_angular_variant(self):
+        resp = self._post('1to4deg')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        ds = Dataset.objects.get(pk=resp.json()['id'])
+        self.assertEqual(ds.sample_name, '1to4deg')
+        self.assertTrue(ds.composed_name.endswith('.p1112.e37.s1.r1.1to4deg'))
+
+    def test_same_name_twice_is_refused(self):
+        self.assertEqual(self._post('1to4deg').status_code, 201)
+        self.assertEqual(self._post('1to4deg').status_code, 409)
+        self.assertEqual(self._post('3to50deg').status_code, 201)
+
+    def test_gun_needs_a_readable_angle(self):
+        for bad in ('', 'forward', '4to1deg', '0to181deg'):
+            resp = self._post(bad)
+            self.assertEqual(resp.status_code, 400, bad)
+            self.assertIn('sample_name', resp.json())
+
+    def test_reserved_token_refused(self):
+        self.assertEqual(self._post('1to4deg.trial').status_code, 400)
