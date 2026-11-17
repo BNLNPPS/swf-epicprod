@@ -160,6 +160,14 @@ Production operations:
 - [EPICPROD_RETRIES.md](docs/EPICPROD_RETRIES.md) — retries and reruns:
   the four recovery levels, what each needs to still exist, the
   task-state gates, and the output-name collision rule.
+- [SEGFAULT_DIAGNOSIS.md](docs/SEGFAULT_DIAGNOSIS.md) — the crash
+  catalog: the record, the inventory, signatures, the catalog page,
+  findings and production disposition.
+- [SEGFAULT_REPRODUCTION.md](docs/SEGFAULT_REPRODUCTION.md) — a
+  signature's dig, reproduction, diagnosis and handoff, and the
+  payload's crash capture.
+- [SEGFAULT_KINDS.md](docs/SEGFAULT_KINDS.md) — the catalog's kinds
+  beside segfaults: memory kills, bad input, Hilog, Event Service units.
 - [RUCIO_RESILIENCE.md](docs/RUCIO_RESILIENCE.md) — preventing Rucio
   registration losses.
 - [RUCIO_FAILOVER_STASH.md](docs/RUCIO_FAILOVER_STASH.md) — the failover
