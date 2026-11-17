@@ -966,6 +966,65 @@ gains Bad input (`?kind=badinput`) beside Segfault and Himem.
 reference queue reproduces the signature when it stops on the same
 FATAL line, as an input fault is deterministic.
 
+## Hilog
+
+A job can be chatty about its conditions without failing: a program
+that warns on every event, often EICrecon, fills its stage log and the
+job may still deliver its output. Such jobs are catalogued as a kind of
+their own, Hilog, whether they finished or failed (Wouter Deconinck,
+2026-10-27, asking for "a high logging diagnostic to the production
+monitoring"; Torre Wenaus, 2026-11-16).
+
+**The measure.** The pilot's log tarball cannot show it: the pilot
+keeps the last 1000 lines of each stage, so every tarball is about the
+same size however much the job wrote. The payload measures the full
+stage logs instead (`<task>.<program>.log`, which `run.sh` tees in full
+before passing the last 1000 lines on): its report carries `logs`,
+bytes per program and in all, and its digest carries the total in MB,
+rounded up, as `pLogMB` (EPICPROD_PAYLOAD.md, The job digest). Both
+come with the short job-metric names (`EPICPROD_SWITCH_SHORT_METRICS`),
+whose room in PanDA's 500 characters the figure needs; a job written
+before them has no figure and is never selected.
+
+**Selection.** A finished or failed job of a production task whose
+`pLogMB` is at least `segfault_hilog_mb` (SysConfig, 100). The default
+is provisional, to be set from the first readings.
+
+**Signature.** One per task, key `hilog:task42000`, class `hilog`, exit
+code and signal 0: a log total is not by stage, so a task holds one.
+The rest of the row is the record across the task's whole life from
+aggregate queries: the chatty jobs, how many of them failed, the rate
+over the task's finished plus failed jobs, their job time, the median
+and largest log total, and per site the jobs and hosts. A signature the
+threshold no longer yields is retired unless a reproduction is
+recorded on it, as a memory signature is.
+
+**Representatives.** Three jobs per signature as `EpicProdJob` rows
+with `phase = 'payload_hilog'`, chosen as the memory representatives
+are but by log total: the smallest, median and largest among the
+chatty jobs whose manifest row resolves, kept once chosen. Each row
+carries the job's status and log total.
+
+**The reading.** Which program wrote the volume is in a
+representative's payload report (`logs.by_program`); reading it onto
+the signature is not built yet.
+
+**The nightly pass.** The inventory's Hilog pass
+(`scripts/segfault-inventory.py`, after the input pass; `--hilog-only`
+for a back-fill, `--no-hilog` to skip) finds the tasks with a chatty
+job in its window, adds the tasks already holding a Hilog signature,
+recomputes their signatures over their life under the current
+threshold and picks representatives where a signature has none. The
+automatic dig and the automatic study pass these signatures by: there
+is no crash to trace.
+
+**Pages.** The catalog's and the reproduction runs page's Kind facet
+gains Hilog (`?kind=hilog`); the signature page states the jobs, the
+threshold and the log totals.
+
+**Reproduction.** Not built: a chatty row is read from its report, not
+run again.
+
 ## Event Service units
 
 An Event Service job (NODE_EVENT_DISPATCHER.md) runs its events as
@@ -1023,7 +1082,7 @@ the events no pass delivered, read from the task's delivery once its
 passes are spent, and is not computed here.
 
 **The nightly pass.** The inventory's Event Service pass
-(`scripts/segfault-inventory.py`, after the input pass) reads from
+(`scripts/segfault-inventory.py`, after the Hilog pass) reads from
 swfdb the filed records of the Event Service jobs updated in its
 window and rebuilds, over all of their filed records, the signatures
 of the tasks with a crash. It reads nothing remote. The automatic dig

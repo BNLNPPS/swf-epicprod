@@ -94,6 +94,32 @@ def read_stage_log(path):
     return entries
 
 
+def log_record(log_dir, taskname):
+    """The size of the stage logs the payload wrote in full (run.sh tees
+    each program's output to ``<taskname>.<program>.log`` in the log
+    directory and passes only the last 1000 lines on to the pilot): bytes
+    per program and in all, read when the report is written, so the last
+    report has the job's whole output. The prmon series are measurements,
+    not output, and are left out. None when the directory holds no stage
+    log. A chatty job shows here whether or not it fails (the Hilog kind,
+    SEGFAULT_DIAGNOSIS.md)."""
+    if not log_dir or not taskname:
+        return None
+    by_program = {}
+    prefix = os.path.join(log_dir, glob.escape(taskname) + ".")
+    for path in glob.glob(prefix + "*.log"):
+        program = os.path.basename(path)[len(taskname) + 1:-len(".log")]
+        if not program or program.endswith(".prmon"):
+            continue
+        try:
+            by_program[program] = os.path.getsize(path)
+        except OSError as exc:
+            print(f"payload report: cannot size stage log {path}: {exc}", file=sys.stderr)
+    if not by_program:
+        return None
+    return {"bytes": sum(by_program.values()), "by_program": by_program}
+
+
 def scratch_record(path):
     """The scratch's size and file count through the job, from the scratch
     log that ``EPICPROD_SWITCH_SCRATCH_PEAK`` writes (one line per stage
@@ -386,6 +412,11 @@ def job_metrics(report):
         metrics[n("threads")] = report["threads"]
     if report.get("exit_code") is not None:
         metrics[n("exit")] = report["exit_code"]
+    # The stage logs' total in MB, rounded up (the Hilog kind,
+    # SEGFAULT_DIAGNOSIS.md): only with the short names, which leave it room.
+    logs = report.get("logs") or {}
+    if short and isinstance(logs.get("bytes"), int):
+        metrics[n("log_mb")] = -(-logs["bytes"] // 2**20)
     # The scratch peaks stay in the report, not here: the pilot takes at most
     # 10 payload metrics in 200 characters, which a full trail nearly fills,
     # so these would be dropped; the native pilot reports the peaks from this
@@ -479,6 +510,12 @@ def build_report(args):
     scratch = scratch_record(args.scratch) if args.scratch else None
     if scratch is not None:
         report["scratch"] = scratch
+    # The stage logs' sizes come with the short names, whose room carries
+    # their total in the digest (DEVELOPING_THE_PAYLOAD.md, Switches).
+    if os.environ.get("EPICPROD_SWITCH_SHORT_METRICS") == "1":
+        logs = log_record(args.prmon_dir, args.taskname)
+        if logs is not None:
+            report["logs"] = logs
     for path in sorted(glob.glob(os.path.join(args.prmon_dir, glob.escape(args.taskname) + '.*.fatal.json'))):
         try:
             with open(path) as handle:
