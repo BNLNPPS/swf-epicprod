@@ -15,6 +15,7 @@ from .api_views import (
     pc_ingest_request, pc_ingest_sweep_definitions, storage_listing,
     delivered_outputs_receive, stageout_log_grant,
     declared_window_enter, declared_window_withdraw,
+    my_api_token,
 )
 
 router = DefaultRouter()
@@ -47,6 +48,8 @@ urlpatterns = [
          name='stageout_log_grant'),
     path('prod-requests/compose/', prod_request_compose,
          name='prod_request_compose'),
+    # The signed-in person's own API token (swf-monitor docs/AUTHORITY.md, Tokens)
+    path('my-token/', my_api_token, name='my_api_token'),
     path('requests/<int:pk>/priority/', prod_request_priority,
          name='prod_request_priority'),
     path('requests/<int:pk>/anchor/', prod_request_anchor,

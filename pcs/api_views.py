@@ -2132,3 +2132,73 @@ def stageout_log_grant(request):
     code, body = services.log_grant_request(request.GET.get('pandaid'),
                                             request.GET.get('lfn'))
     return Response(body, status=code)
+
+
+TOKEN_REFUSAL = ('An API token is issued only to an account that may act on '
+                 'the production system: a token passes writes without the '
+                 'authority check, so issuing it is the check. Your Account '
+                 'page states your standing and how to change it.')
+
+
+@api_view(['GET', 'POST'])
+@authentication_classes([TunnelAuthentication, SessionAuthentication,
+                         TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def my_api_token(request):
+    """The signed-in person's own API token, managed by that person.
+
+    The token authenticates the REST API as its owner from a command line
+    (``Authorization: Token <key>``), on the internal face and through the
+    external proxy. A bare token carries no person past the authority gate
+    (swf-monitor docs/AUTHORITY.md, Tokens), so issuing one is the control:
+    create and regenerate need an account that may act; showing and
+    revoking one's own token need only the sign-in. External-safe: JSON, no
+    redirect (swf-monitor docs/EXTERNAL_ACCESS.md).
+
+    GET: whether a token exists, when it was made, whether this account may
+    be issued one; with ``?show=1`` the key itself.
+    POST ``{"action": "create" | "regenerate" | "revoke"}``.
+    """
+    from rest_framework.authtoken.models import Token
+
+    from monitor_app.authority import may_act
+    from monitor_app.epicprod_logging import log_epicprod_action
+
+    user = request.user
+    token = Token.objects.filter(user=user).first()
+
+    def state(tok, with_key=False):
+        body = {'username': user.username, 'has_token': tok is not None,
+                'created': tok.created.isoformat() if tok else None,
+                'may_issue': may_act(user.username)}
+        if tok is not None and with_key:
+            body['token'] = tok.key
+        return body
+
+    if request.method == 'GET':
+        return Response(state(token, request.query_params.get('show') == '1'))
+
+    action_name = str(request.data.get('action') or '').strip()
+    if action_name not in ('create', 'regenerate', 'revoke'):
+        return Response({'detail': 'action must be create, regenerate or revoke'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if action_name == 'revoke':
+        if token is not None:
+            token.delete()
+        log_epicprod_action('web', 'api_token', subject_type='user',
+                            subject_key=user.username, username=user.username,
+                            message=f'{user.username} revoked their API token')
+        return Response(state(None))
+    if not may_act(user.username):
+        return Response({'error': TOKEN_REFUSAL, 'authority': 'refused'},
+                        status=status.HTTP_403_FORBIDDEN)
+    if action_name == 'create' and token is not None:
+        return Response({'detail': 'You already have a token; regenerate replaces it.'},
+                        status=status.HTTP_409_CONFLICT)
+    if token is not None:
+        token.delete()
+    token = Token.objects.create(user=user)
+    log_epicprod_action('web', 'api_token', subject_type='user',
+                        subject_key=user.username, username=user.username,
+                        message=f'{user.username} {action_name}d their API token')
+    return Response(state(token, with_key=True), status=status.HTTP_201_CREATED)
