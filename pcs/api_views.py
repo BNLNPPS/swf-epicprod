@@ -235,10 +235,9 @@ class DatasetViewSet(viewsets.ModelViewSet):
         ).first()
         # The composed name is the identity; one another edition already
         # holds is refused, as an edit to it is (partial_update).
-        probe = Dataset(**{k: v for k, v in serializer.validated_data.items()
-                           if k in ('scope', 'detector_version', 'detector_config',
-                                    'physics_tag', 'evgen_tag', 'simu_tag',
-                                    'reco_tag', 'background_tag', 'sample_name')})
+        # Built from everything that will be saved, so it names what
+        # build_dataset_name will name, the trial suffix from metadata included.
+        probe = Dataset(**serializer.validated_data)
         new_name = probe.build_dataset_name()
         holder = Dataset.objects.filter(composed_name=new_name).first()
         if holder is not None:

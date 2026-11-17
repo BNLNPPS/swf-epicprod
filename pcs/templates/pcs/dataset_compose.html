@@ -124,8 +124,8 @@
                                 <input type="text" id="ds-created-by" class="form-control form-control-sm" value="{{ username }}" readonly></div>
                         </div>
                         <div class="mb-2"><label class="form-label" style="font-size:.82rem;"><strong>Sample variant</strong> <span class="text-muted">(optional)</span></label>
-                            <input type="text" id="ds-sample" class="form-control form-control-sm" placeholder="e.g. 45to135deg — angular range, mass point, …">
-                            <div class="form-text" style="font-size:.8rem;">The trailing name segment that tells apart datasets sharing one tag composition. A particle gun reads its angles from it: <code>&lt;N&gt;to&lt;M&gt;deg</code> (theta in degrees) or <code>eta&lt;value&gt;</code>.</div></div>
+                            <input type="text" id="ds-sample" class="form-control form-control-sm" placeholder="e.g. 45to135deg (angular range, mass point)">
+                            <div class="form-text" style="font-size:.8rem;">The trailing name segment that tells apart datasets sharing one tag composition. A particle gun reads its angles from it: <code>&lt;N&gt;to&lt;M&gt;deg</code> (theta in degrees, e.g. <code>3to50deg</code>) or <code>eta</code> and a number with one decimal (e.g. <code>eta-1.5</code>).</div></div>
                         <div class="mb-2"><label class="form-label" style="font-size:.82rem;"><strong>Description</strong></label>
                             <textarea id="ds-description" class="form-control form-control-sm" rows="2"></textarea></div>
                         <div class="mb-2" id="ds-source-location-row" style="display:none;">

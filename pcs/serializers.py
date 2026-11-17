@@ -171,7 +171,8 @@ class DatasetSerializer(serializers.ModelSerializer):
             elif not GUN_ETA_RE.fullmatch(sample):
                 raise serializers.ValidationError({'sample_name': [
                     'a particle-gun dataset needs the sample variant '
-                    f'<N>to<M>deg (e.g. 1to4deg) or eta<value>; got {sample!r}.']})
+                    f'<N>to<M>deg (e.g. 1to4deg) or eta and a number with one '
+                    f'decimal (e.g. eta-1.5); got {sample!r}.']})
         return attrs
 
     def validate_metadata(self, value):
