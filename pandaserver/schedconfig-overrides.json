@@ -28,7 +28,7 @@
   },
   "JLAB_PanDA_1": {
     "_clone": "UM_GREX_PanDA_1",
-    "_why": "The JLab farm through its own HTCondor-CE, osg-ce-2.jlab.org (account pandas-eic), with pull pilots from pandaharvester01 as at GREX. CRIC has no such queue, and Torre would not wait for one (2026-10-20). JLab's glidein slots in the OSG pool run only CLAS12 (START requires projectName clas12), so this is ePIC's only route to the JLab farm. Starts brokeroff: only jobs we place run there.",
+    "_why": "The JLab farm through its own HTCondor-CE, osg-ce-2.jlab.org (account pandas-eic), with pull pilots from pandaharvester01 as at GREX. CRIC has no such queue, and Torre would not wait for one (2026-10-20). JLab's glidein slots in the OSG pool run only CLAS12 (START requires projectName clas12), so this is ePIC's only route to the JLab farm. Started brokeroff (only jobs we placed ran there); online since 2026-11-18, when Torre made it a production queue (\"yes\", after trial 42027 passed on the direct pilot) (docs/QUEUE_REGISTRY.md).",
     "name": "JLAB_PanDA_1",
     "nickname": "JLAB_PanDA_1",
     "panda_resource": "JLAB_PanDA_1",
@@ -45,7 +45,7 @@
     "region": "US",
     "country": "United States",
     "rc_country": "United States",
-    "status": "brokeroff",
+    "status": "online",
     "corecount": 1,
     "maxrss": 6000,
     "maxtime": 86400,
