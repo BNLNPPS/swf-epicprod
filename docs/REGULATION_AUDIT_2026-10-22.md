@@ -313,9 +313,11 @@ successful revision and time in the provenance sidecar.
 - Reporter backups are beside the shared `~/.local/bin` scripts with
   `.before-regulation-20261022`; the previous OSG crontab is
   `~/.crontab.before-regulation-20261022`.
-- Revert overrides in GitHub to roll them back. A local-file-only rollback
-  is overwritten at the next synchronization unless that cron is stopped.
-  Revert front/monitor source through the normal coordinated deployment.
+- Overrides roll back by a forward edit of the overrides file on
+  swf-epicprod `main`, which the next synchronization installs. A
+  local-file-only rollback is overwritten at the next synchronization
+  unless that cron is stopped. Front/monitor source rolls back by a
+  forward edit through the normal coordinated deployment.
 
 No schema migration, production task move, task kill, queue reopening,
 operator-account change or curated-finding mutation was part of this work.
