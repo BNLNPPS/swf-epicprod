@@ -17,6 +17,8 @@ DEFAULTS = {'mode': 'active', 'max_per_cycle': 4, 'cooldown_h': 12.0}
 MOVE_FAILURE_LIMIT = 0.20       # an idle queue takes moved work only below this failure fraction
 RECENT_MINUTES = 60             # ... over the gate window and over this last hour
 RECENT_MIN_OUTCOMES = 20        # the last hour is read when it holds this many finished and failed
+# An idle queue whose canary reads one of these takes no moved work.
+REFUSING_CANARY = ('degraded', 'failing')
 # Paused tasks wait for an operator's resume, which is not ours to make.
 TASK_STATUSES = ('defined', 'ready', 'running', 'scouting', 'scouted', 'pending',
                  'assigning', 'throttled')
@@ -55,16 +57,17 @@ def refused_for_failures(decision, recent=None):
     Torre Wenaus, 2026-10-26, after the front moved task 41349's 500 jobs to
     GREX while 2,696 of its 7,343 jobs in the gate window had failed (37%,
     under the front's 60% red): "NO MOVE UNLESS FAILURE FRACTION BELOW 20%".
-    A fraction that cannot be read does not establish it. The same limit
-    holds over the last RECENT_MINUTES (``recent``: finished, failed), read
-    when they hold RECENT_MIN_OUTCOMES: a burst that resumes after a quiet
-    spell (GREX, 178 copy failures in the 20 minutes after its feed came back
-    at 16:58) is diluted in the six-hour window. Pure."""
+    A window with no outcome holds no failure: a queue quiet for weeks takes
+    moved work like any other (Torre Wenaus, 2026-11-18: "WE NEED A FRONT
+    THAT SMOOTHLY RESTARTS AFTER A QUIET PERIOD OF WEEKS ... NONE OF THIS
+    REFUSING TO START"). The same limit holds over the last RECENT_MINUTES
+    (``recent``: finished, failed), read when they hold RECENT_MIN_OUTCOMES:
+    a burst that resumes after a quiet spell (GREX, 178 copy failures in the
+    20 minutes after its feed came back at 16:58) is diluted in the six-hour
+    window. Pure."""
     fraction = failure_fraction(decision)
     d = decision or {}
-    if fraction is None:
-        return 'no finished or failed job in the gate window to read its failure fraction'
-    if fraction >= MOVE_FAILURE_LIMIT:
+    if fraction is not None and fraction >= MOVE_FAILURE_LIMIT:
         failed = int(d['gate_failed']) + int(d.get('gate_explained') or 0)
         return (f'failure fraction {fraction:.0%} ({failed} failed of {failed + int(d["gate_finished"])} '
                 f'in the gate window), not below {MOVE_FAILURE_LIMIT:.0%}')
@@ -101,13 +104,17 @@ def recent_outcomes(queues, now=None):
 
 def idle_queues(decisions):
     """The queues that need work the ready pool cannot give them: the
-    front found nothing eligible, the queue is below its low mark, its
-    feed is on and its canary is healthy. Pure."""
+    front found nothing eligible, the queue is below its low mark (a queue
+    with no depth in hours decides ``no_work`` only with no unstarted work
+    of its own), its feed is on and its canary is not degraded or failing.
+    A canary with too little evidence to judge is a quiet queue's reading,
+    and a quiet queue is idle (Torre Wenaus, 2026-11-18: "NONE OF THIS
+    REFUSING TO START"). Pure."""
     out = {}
     for queue, d in (decisions or {}).items():
-        if (d.get('state') == 'no_work' and d.get('committed_h') is not None
-                and d.get('h_low') is not None and d['committed_h'] < d['h_low']
-                and d.get('canary') == 'healthy' and d.get('feed_switch')):
+        if (d.get('state') == 'no_work' and d.get('h_low') is not None
+                and (d.get('committed_h') is None or d['committed_h'] < d['h_low'])
+                and d.get('canary') not in REFUSING_CANARY and d.get('feed_switch')):
             out[queue] = d
     return out
 
@@ -141,7 +148,10 @@ def choose(decisions, tasks, *, max_moves, recent=None):
     A task moves from its queue S to an idle queue T when it has never
     run (no job started or ended), T is open to it, T is still below its low mark, and the
     move leaves T no deeper than S: ``T + task at T <= S - task at S``,
-    in hours at each queue's capacity. Tasks with no jobs generated go
+    in hours at each queue's capacity. An idle queue with no depth in
+    hours (no walltime on record in the census's memory: a new queue) has
+    nothing of its own and takes one task a cycle, as the front feeds it.
+    Tasks with no jobs generated go
     first (the move closes nothing), then lower priority, then newer:
     the work that would start last where it is. Returns ``(moves,
     skipped)``; each move names ``from``, ``to``, ``rows`` and the hours.
@@ -151,6 +161,10 @@ def choose(decisions, tasks, *, max_moves, recent=None):
     if not targets or max_moves <= 0:
         return moves, skipped
     depth = {q: d.get('committed_h') for q, d in (decisions or {}).items()}
+    taken = set()       # idle queues with no depth in hours that took a task this cycle
+
+    def level(q):
+        return 0.0 if depth.get(q) is None else depth[q]
     order = sorted(tasks, key=lambda t: (int(t.get('queued') or 0) > 0,
                                          int(t.get('priority') or 0),
                                          -int(t['jeditaskid'])))
@@ -174,8 +188,13 @@ def choose(decisions, tasks, *, max_moves, recent=None):
             why = f'{source} depth uncalibrated'
         best = None
         if not why:
-            for queue in sorted(targets, key=lambda q: (depth[q], q)):
+            for queue in sorted(targets, key=lambda q: (level(q), q)):
                 if queue == source or queue not in (task.get('eligible') or ()):
+                    continue
+                if depth[queue] is None:
+                    if queue not in taken:
+                        best = (queue, None)
+                        break
                     continue
                 x_target = task_hours(rows, decisions[queue])
                 if x_target is None or depth[queue] >= decisions[queue]['h_low']:
@@ -185,7 +204,7 @@ def choose(decisions, tasks, *, max_moves, recent=None):
                     break
             if best is None:
                 # A task already at the shallowest idle queue is not news.
-                shallower = sorted(q for q in targets if q != source and depth[q] < source_h)
+                shallower = sorted(q for q in targets if q != source and level(q) < source_h)
                 if not shallower:
                     continue
                 why = ('no idle queue open to it would stay shallower than its own'
@@ -197,7 +216,10 @@ def choose(decisions, tasks, *, max_moves, recent=None):
         queue, x_target = best
         before = {'from_h': source_h, 'to_h': depth[queue]}
         depth[source] = round(source_h - x_source, 3)
-        depth[queue] = round(depth[queue] + x_target, 3)
+        if x_target is None:
+            taken.add(queue)
+        else:
+            depth[queue] = round(depth[queue] + x_target, 3)
         moves.append({'jeditaskid': task['jeditaskid'], 'taskname': task.get('taskname', ''),
                       'prod_task_pk': task.get('prod_task_pk'),
                       'from': source, 'to': queue, 'rows': rows,
@@ -318,10 +340,12 @@ def run(queues, decisions, placement, *, enabled, front_mode, cfg, dry_run, crea
     moves, out['skipped'] = choose(decisions, tasks, max_moves=cfg['max_per_cycle'], recent=recent)
     acting = enabled and front_mode == 'active' and cfg['mode'] == 'active' and not dry_run
     for move in moves:
-        reason = (f"{move['to']} idle (no ready work, {move['to_h']} h queued against its "
-                  f"low mark); {move['rows']} unstarted jobs waiting at {move['from']} "
-                  f"({move['from_h']} h queued); after the move {move['from_after_h']} h "
-                  f"and {move['to_after_h']} h")
+        to_now = (f"{move['to_h']} h queued against its low mark" if move['to_h'] is not None
+                  else 'nothing of its own queued, no walltime on record')
+        to_after = f"{move['to_after_h']} h" if move['to_task_h'] is not None else 'one task'
+        reason = (f"{move['to']} idle (no ready work, {to_now}); {move['rows']} unstarted jobs "
+                  f"waiting at {move['from']} ({move['from_h']} h queued); after the move "
+                  f"{move['from_after_h']} h and {to_after}")
         move['reason'] = reason
         if not acting:
             move['outcome'] = 'would_move'

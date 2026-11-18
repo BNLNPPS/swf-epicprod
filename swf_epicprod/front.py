@@ -856,7 +856,11 @@ def hours_summary(backlog, latest, unplaced_queue=None):
 # should go, from what the cycle stored. The Site control on the compose
 # page and the front read the same recommendation.
 
-CANARY_RANK = {'healthy': 0, 'insufficient': 1, 'unknown': 1, 'degraded': 2}
+# A canary with too little evidence to judge is a quiet queue's reading and
+# ranks with healthy: ranked after them, a queue idle for weeks drew last
+# and stayed idle (Torre Wenaus, 2026-11-18: "WE NEED A FRONT THAT SMOOTHLY
+# RESTARTS AFTER A QUIET PERIOD OF WEEKS").
+CANARY_RANK = {'healthy': 0, 'insufficient': 0, 'unknown': 1, 'degraded': 2}
 RANK_FAILURE_SHARE = 0.10          # a queue failing this share of its gate window ranks after cleaner ones
 RANK_FAILURE_MIN_OUTCOMES = 50
 

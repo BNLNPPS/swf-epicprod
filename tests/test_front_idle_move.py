@@ -56,14 +56,28 @@ class IdleMoveTest(unittest.TestCase):
         self.assertEqual(moves, [])
         self.assertIn('shallower', skipped[0]['why'])
 
-    def test_target_must_be_idle_healthy_and_below_its_low_mark(self):
+    def test_target_must_be_idle_not_degraded_and_below_its_low_mark(self):
         for target in (_decision('supplied', 0.0, 0.325, 4425),
                        _decision('no_work', 9.0, 0.325, 4425),
-                       _decision('no_work', 0.0, 0.325, 4425, canary='insufficient'),
+                       _decision('no_work', 0.0, 0.325, 4425, canary='degraded'),
                        _decision('no_work', 0.0, 0.325, 4425, feed=False)):
             decisions = dict(DECISIONS, **{OSG: target})
             self.assertEqual(idle_targets(decisions).get(OSG), None)
             self.assertEqual(choose(decisions, [_task(1)], max_moves=4)[0], [])
+
+    def test_a_queue_quiet_for_weeks_takes_moved_work(self):
+        # 2026-11-18: no outcome in the gate window and a canary with too
+        # little evidence to judge are a quiet queue's readings, not refusals.
+        quiet = _decision('no_work', 0.0, 0.287, 4425, canary='insufficient',
+                          finished=0, failed=0)
+        moves, _ = choose(dict(DECISIONS, **{OSG: quiet}), [_task(1)], max_moves=4)
+        self.assertEqual([m['to'] for m in moves], [OSG])
+
+    def test_a_queue_with_no_walltime_on_record_takes_one_task_a_cycle(self):
+        new = _decision('no_work', None, None, 0, canary='unknown', finished=0, failed=0)
+        moves, _ = choose(dict(DECISIONS, **{OSG: new}), [_task(1), _task(2)], max_moves=4)
+        self.assertEqual([m['to'] for m in moves], [OSG])
+        self.assertIsNone(moves[0]['to_task_h'])
 
     def test_a_task_the_target_cannot_take_stays(self):
         moves, skipped = choose(DECISIONS, [_task(1, eligible=(GREX,))], max_moves=4)
