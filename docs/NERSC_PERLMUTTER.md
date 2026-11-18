@@ -217,11 +217,11 @@ back to another pilot.
 
 ### The batch pilot
 
-The runtime is `native-runtime-perlmutter-es-batch-50969f0`, pilot archive
-`03b435bb18508227d4c9f4b18b6d8f9cd35dae5d98a52a4c4886e7d993d22733`, built
+The runtime is `native-runtime-perlmutter-es-batch-6d241be` (18 November), pilot archive
+`6643a07455fc667e99ba85b7dab788f4a74a61e46e00cd2703f318c4b85ec1c3`, built
 from the approved native archive `9532f30b` by
 `scripts/build-native-es-batch.py`, staged by `scripts/stage-native-runtime.py`
-from committed helpers and frozen assets, and published by
+from committed helpers and frozen assets (`--tarball` packs it), and published by
 `scripts/publish-pilot-asset.py`, which never overwrites a key and verifies
 the public copy's checksum. Google's batch runtime is built from the same
 module and builder ([GKE_PILOT_FLOW.md](GKE_PILOT_FLOW.md)). The batch
