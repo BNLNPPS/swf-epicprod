@@ -332,7 +332,7 @@ task cap; `max_per_cycle` and the activation window bound a cycle.
 | State | Condition | Action | Reason |
 |---|---|---|---|
 | supplied | depth ≥ `h_low`, gates green | hold | `supplied` |
-| refill | depth < `h_low`, gates green, feed on, no submission awaiting observation | submit the highest-priority eligible task; at most `max_per_cycle` per cycle, never past `h_high` (in phase two the first task of a cycle into a queue below `h_low` is fed whatever its hours, JEDI pacing its generation: an idle queue's ceiling, read from its idle fortnight, makes any real task read past the mark; 2026-11-18), never past the caps | `fed:<task>` |
+| refill | depth < `h_low`, gates green, feed on, no submission awaiting observation | submit the highest-priority eligible task; at most `max_per_cycle` per cycle, never past `h_high` (in phase two the first task of a cycle into a queue below `h_low` is fed whatever its hours, JEDI pacing its generation: an idle queue's ceiling, read from its idle fortnight, can make a large task read past the mark; 2026-11-18), never past the caps | `fed:<task>` |
 | awaiting observation | a submission is younger than one activation window (two cycles) | hold; count the submission as committed depth | `awaiting_observation` |
 | degraded | a gate is red: canary failing or its window stale, burn-through or windowed failure rate over threshold, credential invalid | hold; breaker opens | `canary`, `burn_through`, `failure_window`, `credential` |
 | half open | the breaker's cause has cleared and policy allows automatic recovery | submit one task and wait for completions; on failure reopen with a doubled wait | `half_open` |
