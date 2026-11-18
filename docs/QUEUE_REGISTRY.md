@@ -60,7 +60,7 @@ cached in each process for ten seconds.
 Admission also reads the submit hosts' current pilot dispatch capability,
 through `queues.dispatch_capabilities`, from the harvester reports'
 `queue_status.pilot_dispatch`. The reporter derives this from each queue's
-actual submit template and includes its path and hash. Native pilots are
+actual submit template and includes its path and hash. Direct pilots are
 bound to their declared image; known legacy ALRB launchers select the
 task's image dynamically. Missing, stale (over fifteen minutes), unreadable
 or unresolved capability cannot authorize a placement. This is observed

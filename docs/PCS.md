@@ -327,7 +327,7 @@ source's original chunks. The sample metadata records the original angular
 setting separately from the new identity. A registered JSON generation plan
 supplies JEDI's event ledger and records the physics and seed provenance; it is
 not an EVGEN physics file. Its event metadata equals the whole-task budget.
-Fine-grained ES uses the native worker credential; no live proxy is uploaded in
+Fine-grained ES uses the direct pilot's worker credential; no live proxy is uploaded in
 its sandbox. Explicit bounded placement may commission an ES queue while its
 registry state stays commissioning and its automatic front remains disabled.
 

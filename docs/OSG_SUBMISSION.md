@@ -51,7 +51,7 @@ worker running again. PanDA's heartbeat watcher eventually recovers the
 old job; on 26 October its timeout was two hours and `copyArchive` ran
 every 2,400 seconds. These delays explain some nearly complete task tails.
 
-The native production template prevents ordinary restarts using Condor's
+The direct-pilot production template prevents ordinary restarts using Condor's
 [documented policy](https://research.cs.wisc.edu/htcondor/wiki-archive/pages/HowToAvoidJobRestarts/):
 
 ```text
@@ -131,7 +131,7 @@ handling. These additions have less field exposure than the original cohort.
 The ramp is normal Harvester refill: at most 600 waiting pilots and 300
 new workers per cycle, subject to demand. No worker-limit increase or batch
 removal accompanied the switch. Condor dry-run rendering succeeded and the
-20 native tests passed. First real Harvester submission: `27496.0`, worker
+20 direct-pilot tests passed. First real Harvester submission: `27496.0`, worker
 `2364932`, at 14:38:50 UTC, with the expected image, direct executable,
 transferred assets and `harvester-BNL_osg_harvester_1` scheduler identity.
 PanDA independently confirmed task 41040 running in `27498.2` (job
@@ -217,7 +217,7 @@ policy as the launcher. Existing workers retain their transferred assets.
 The policy and `runtime-policy.py` travel with each pilot as frozen
 input files. Both the production renderer and cohort submitter include
 them. `render-native-production.py --retarget` changes an existing
-native template's asset paths and deployment tag, retaining its image,
+direct-pilot template's asset paths and deployment tag, retaining its image,
 Harvester identity, resource requests, runtime, CPU restrictions and
 node guard. A cohort must explicitly resolve a Harvester runtime
 placeholder with `--runtime-minutes`; it must not silently reuse the
@@ -622,7 +622,7 @@ FSU.
 
 ## Container layering as implemented
 
-The ALRB pilot's layering, 2026-09-01; the native pilot removed steps 2
+The ALRB pilot's layering, 2026-09-01; the direct pilot removed steps 2
 and 3 (Current state, above).
 
 1. The glidein starts the pilot job inside the pool's default image
@@ -687,7 +687,7 @@ Under production operations control now:
   (with the CRIC `workflow` field), the template and wrapper used.
 - The pilot (pilot3, `pilot/user/epic/`). The stand-down in the requested
   image and the independence from ALRB listed here on 2026-09-01 shipped
-  as the native pilot (production 2026-10-23).
+  as the direct pilot (production 2026-10-23).
 - The payload and the submission spec on the production side.
 
 Not under local control: the pool's frontend policy and factory
@@ -912,7 +912,7 @@ the same steps as a tarball.
 ### Excluding what delivers nothing
 
 On 24 October at 14:25:04 UTC, the active pull template and 588 idle
-native pilots gained a temporary exclusion of the single Fir glidein
+direct pilots gained a temporary exclusion of the single Fir glidein
 `glidein_2038143_212390262` on `fc20524.int.fir.alliancecan.ca`.
 Nine workers there were held with code 21, disk usage 4,750,000 KiB
 against a 4,500,000 KiB request; those stopped workers were removed by
@@ -1071,7 +1071,7 @@ The 2026-09-01 plan; all four steps are done.
    the pilot sees (site-canary).
 2. `+SingularityImage = eic_xl` on the submit description together
    with the pilot stand-down, so the glidein's container is the only
-   one. Done with the native pilot, 2026-10-23.
+   one. Done with the direct pilot, 2026-10-23.
 3. With nesting gone, drop the user-namespace requirement; with the
    pilot off ALRB, drop the ATLAS CVMFS requirement. Done in the same
    switch.
@@ -1141,7 +1141,7 @@ passenger slots. The OSPool frontend provisions glideins for a flocked
 schedd's idle jobs only when it can match their requirements to its entries;
 on 22 October `HAS_CVMFS_atlas_cern_ch` and the user-namespace requirement
 could not be matched, and both existed only for the ALRB-nested pilot. The
-native pilot that passed its canaries on SU-ITS and GREX on 22 October needs
+direct pilot that passed its canaries on SU-ITS and GREX on 22 October needs
 neither (plan steps 2 and 3 above). Its trial on the active queue began on 23
 October and it became the queue's production pilot at 10:38 ET that day
 (first section; [NATIVE_PILOT_CANARY.md](NATIVE_PILOT_CANARY.md)), which

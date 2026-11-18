@@ -168,7 +168,7 @@ at the end of reconstruction. The report carries them as `scratch`
 stage's largest, the peak file count and its stage, the sample count),
 which reaches the job's metadata for finished jobs. The job metrics do
 not carry them: the pilot takes at most ten payload metrics in 200
-characters, which the stage trail nearly fills. The native pilot
+characters, which the stage trail nearly fills. The direct pilot
 reads the same scratch log and reports its peaks in the job metrics
 (`scratchPeakMB`, `scratchPeakFiles`) for every job; it starts no process
 of its own to measure the scratch. Until 2026-11-11 it ran a shell loop in
@@ -271,14 +271,14 @@ GREX job's metrics ran past the limit after the registration field, so
 its payload version, threads and exit code were lost; 3.7% of the jobs
 of 2026-10-27 were at 480 characters or more. One table,
 `swf_epicprod/payload/metric_keys.py`, names every field the payload
-and the native pilot write, its short name and the long name written
+and the direct pilot write, its short name and the long name written
 before, and every reader goes through it, taking the short name first
 and the long one where a job carries that.
 
 Under `EPICPROD_SWITCH_SHORT_METRICS=1` (payload 0.25.35) the digest
 writes the short names (`pStage`, `pStat`, `pTrail`, `pReg`, `pVer`,
 `pThr`, `pExit`, `pSig`, `pSigStage`, `pStalled`) and no longer repeats
-the event count, which is the pilot's own `nEvents`. The native pilot
+the event count, which is the pilot's own `nEvents`. The direct pilot
 writes its disk readings under short names (`dT`, `ceFree`, `scFree`,
 `scPeakMB` and the rest) and leaves out the pilot directory's readings
 where that directory is on the scratch's filesystem, since they were

@@ -121,7 +121,7 @@ behavior or production recovery. The exact installed source must match the revie
 an installation is considered; unexpected patch contexts are refused.
 
 swf-2 owns implementation and focused verification; swf-3 owns the causal trace
-and independent review. swf-1 owns the separate native startup/refill repair.
+and independent review. swf-1 owns the separate direct-pilot startup/refill repair.
 Any production installation needs its own scoped maintenance decision and
 validation, including successful job completion on valid worker parents. The
 PanDA service maintainer owns changes to pandaserver01.

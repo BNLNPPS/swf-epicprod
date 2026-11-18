@@ -12,7 +12,7 @@ starting empty workers for the queue (below). The request to the PanDA team
 went out the same day.
 
 Torre resumed Google ES commissioning on 24 October 2026: at most five
-concurrent ES jobs, using the production native pilot. Evaluate natural
+concurrent ES jobs, using the production direct pilot. Evaluate natural
 preemptions and the recovery of completed/unfinished ranges. Controlled worker
 termination or a request to another person requires Torre's explicit approval.
 Expansion also requires his explicit approval.
@@ -331,13 +331,13 @@ The cycle sets:
 - the CPU and memory, the `cpu` and `memory` settings, sized so that
   one pod takes one node;
 - the proxy, mounted from the Secret the cycle keeps current;
-- the command: the production native launcher and archive, copied from
+- the command: the production direct-pilot launcher and archive, copied from
   `native_runtime`, with the queue, credentials, campaign image and
   Python-matched ES channel supplied as settings. There is no resource-type
   filter: a whole-node harness can be carried by a generated SCORE job.
 
 The controller sets `ATHENA_PROC_NUMBER` from the pod's CPU limit. The
-native launcher enters the campaign image and runs its Python, adding
+direct-pilot launcher enters the campaign image and runs its Python, adding
 the ES channel after image startup. The
 payload's harness takes its slots from the same number
 (NODE_EVENT_DISPATCHER.md, The core count, from the node).
@@ -362,7 +362,7 @@ then update `gke_pilots.native_runtime` to its immutable CVMFS path. Existing
 bundles are retained. The controller holds launches until the path is available.
 The approved GREX production archive has SHA256
 `9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`.
-This is one native pilot implementation. ES fixes belong in that shared
+This is one direct pilot implementation. ES fixes belong in that shared
 implementation; commissioning tasks and configuration remain separate.
 
 Each successful controller cycle publishes `gke_pilot_runtime`, a cached
@@ -406,7 +406,7 @@ requested from the PanDA team, regenerates the ranges it left.
 | `cpu_limit` | `'15.8'` | each pod's CPU limit, above its request so the shared reconstruction can use the CPU the node's system pods leave idle; the harness still runs 14 slots (`ATHENA_PROC_NUMBER` follows `cpu`) |
 | `getjobrequests` | 5 | job requests before an idle pilot exits |
 | `proxy`, `secret_name` | as above, `epicprod-pilot-proxy` | the credential |
-| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared native launcher/archive bundle; since 2026-10-27 18:40 ET `native-runtime-google-es-batch-cf2c580` (below) |
+| `native_runtime` | `.../canary/native-runtime-e8cc102` | immutable shared direct-pilot launcher/archive bundle; since 2026-10-27 18:40 ET `native-runtime-google-es-batch-cf2c580` (below) |
 | `native_image` | `/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:26.07.3-stable` | the image containing the pilot's Python and the payload |
 | `es_channel` | `.../canary/es-channel-py313-debian13` | the channel matching Python 3.13 in that image |
 | `queuedata` | `.../canary/queuedata/BNL_ePIC_GOOGLE_es.json` | existing ES storage/cadence overrides, preserved from the previous launcher |
@@ -418,7 +418,7 @@ one registered file. Independent JLab Rucio readback of
 `epic:/TEST/canary/google-native-20261024T182959Z` confirmed 20 events,
 7,439,041 bytes and Adler-32 `ad5db215`. The worker used shared runtime
 `native-runtime-6d64079`, archive `9532f30b...27ae2`, campaign 26.07.1 and
-Python 3.13.12. This proves native ES execution and registration; preemption
+Python 3.13.12. This proves direct-pilot ES execution and registration; preemption
 recovery remains to be validated.
 
 After that proof, the configured cap was raised to the already authorized five
@@ -513,7 +513,7 @@ still refuses any real refusal. Legacy-channel pilots do not check the answer.
 Google ran `711576f9` from 03:00 to 04:15 ET.
 
 Cron enqueue (`*/5`) is installed and enabled. Preserve the authorized five-worker
-cap and shared native runtime during steady production. The one approved
+cap and shared direct-pilot runtime during steady production. The one approved
 controlled loss has been consumed; another controlled termination or capacity
 expansion needs separate explicit authorization. Delivery of a natural
 preemption notice to the pod remains unvalidated by the abrupt-loss demonstration.

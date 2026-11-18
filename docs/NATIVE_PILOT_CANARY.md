@@ -1,4 +1,4 @@
-# Native ePIC pilot and single-container canary — 22 October 2026
+# Direct ePIC pilot and single-container canary — 22 October 2026
 
 **Production update, 23 October:** Torre authorized promotion after the
 20-pilot trial. New `BNL_OSG_PanDA_1` Harvester submissions switched to the
@@ -30,10 +30,10 @@ reason to keep the standard rollout on the older bootstrap.
 
 | Site | Deployment status |
 | --- | --- |
-| OSG | Native production launcher, archive `092ac705`, both 26.07.1 and 26.07.3; completed and registered jobs on both images. |
-| GREX | Standard production template switched to the native launcher at 17:33:09 UTC. Archive `9532f30b` retains GREX's epic5 operational fixes. All current queued/running jobs use 26.07.3. First Harvester production submission from this template is still to be observed. |
+| OSG | Direct-pilot production launcher, archive `092ac705`, both 26.07.1 and 26.07.3; completed and registered jobs on both images. |
+| GREX | Standard production template switched to the direct-pilot launcher at 17:33:09 UTC. Archive `9532f30b` retains GREX's epic5 operational fixes. All current queued/running jobs use 26.07.3. First Harvester production submission from this template is still to be observed. |
 | Perlmutter | Off for allocation usage; the existing site launcher still uses the ALRB Python setup. Standard native migration is not deployed. |
-| Google | Off by operator instruction; no native production rollout verified. |
+| Google | Off by operator instruction; no direct-pilot production rollout verified. |
 | JLab | Production since 2026-11-18 (QUEUE_REGISTRY.md). Since 2026-11-17, GREX's direct-pilot runtime with one pilot per batch job (OSG_SUBMISSION.md, JLab on the direct pilot); the earlier host-Python bootstrap ran the obsolete retired pilot. |
 | Compute Canada | Queue not built, awaiting CE authorization ([COMPUTE_CANADA.md](COMPUTE_CANADA.md)). |
 
@@ -256,7 +256,7 @@ monitoring, or log delivery merely because inherited names mention ATLAS.
 
 ## Staged trial on the active OSG queue, 23 October
 
-Torre's order (01:08 ET): run the native pilot on `BNL_OSG_PanDA_1` for
+Torre's order (01:08 ET): run the direct pilot on `BNL_OSG_PanDA_1` for
 experience to evaluate in the morning, by the staged sequence swf-3
 recommended and he confirmed. Stages, each only after the previous one is
 clean: (1) one pilot in `eic_xl:26.07.1-stable`, the image of every task
@@ -448,11 +448,11 @@ build now casts it; the upstream pilot bug is to be reported.
   hold code 45), the only such hold tonight among every pilot we run; the
   same site's scigrid5 runs proc 17; production pilots carry no image at that
   layer and ran on scigrid7 at 04:27 ET. It stays held as evidence: no
-  release, no retry, no site exclusion. Four native jobs have finished
+  release, no retry, no site exclusion. Four direct-pilot jobs have finished
   tonight, each with 1,132 events and zero error codes: 5816241 (26834,
   CNAF), 5816250 and 5816534 (26835 at Fir, nesting the other image, two
-  jobs in one pilot), 5816423 (26893 at GREX). Native pilots held 26 running
-  jobs at 04:55 ET. The jobs of a native pilot are found in the PanDA
+  jobs in one pilot), 5816423 (26893 at GREX). Direct pilots held 26 running
+  jobs at 04:55 ET. The jobs of a direct pilot are found in the PanDA
   database by a `pilotid` carrying `native-20261023`, the cohort's log path.
 - 05:09 ET: the first direct-mode job, 5816380 of pilot 26875 at CNAF, the
   mode the twenty run (no user namespaces, no ATLAS or OASIS repositories
@@ -465,7 +465,7 @@ build now casts it; the upstream pilot bug is to be reported.
   with its hold recorded above (code 45, subcode -1000, slot1_4 of glidein
   2883416 on scigrid7.physics.fsu.edu): a hand-submitted pilot, not a
   harvester worker, whose hold raised the platform's held-workers alarm.
-  Native jobs finished tonight: seven, each 1,132 events, zero errors.
+  Direct-pilot jobs finished tonight: seven, each 1,132 events, zero errors.
 - 06:36 ET: five cohort completions (OU one, Rhodes two, UNL-PATH two), no
   payload failure. The first cohort pilot to leave, 26957.3 at UNL-PATH,
   left by design: its job ended 123 minutes after the pilot started, past
@@ -475,7 +475,7 @@ build now casts it; the upstream pilot bug is to be reported.
   the pilot-side node guard at work on a real worker: the launcher's landing
   check ("not excluded, 5 nodes listed, live mode") and the pilot's own
   check before the next job ("this node is not excluded; next job allowed").
-- 07:14 ET: eighteen native jobs finished tonight, every one with 1,132
+- 07:14 ET: eighteen direct-pilot jobs finished tonight, every one with 1,132
   events and zero error codes, none failed: nine from the cohort (UNL-PATH
   four, Rhodes two, OU, UWM and one more), the site probes at UNL-PATH
   (5816629) and IRISHEP-SSL-UCHICAGO (5816636), and the earlier pilots'
@@ -504,7 +504,7 @@ build now casts it; the upstream pilot bug is to be reported.
 
 ## GREX production image dispatch
 
-GREX uses a campaign image to bootstrap the native pilot, then selects the
+GREX uses a campaign image to bootstrap the direct pilot, then selects the
 payload image per job. Its template sets `EPICPROD_NATIVE_DISPATCH=per-job`
 and enables payload container launching; it does not send a bootstrap-image
 filter to PanDA. OSG remains bound to its glidein image and serves multiple
@@ -656,7 +656,7 @@ cut after `pReg`.
 
 The GREX CE spool is one 196 GiB NFS filesystem, `/var/lib/condor-ce`,
 shared by every GREX CE user and mounted on the batch workers. From the
-native-pilot rollout of 24 October until 79ec244, the multipilot launcher
+direct-pilot rollout of 24 October until 79ec244, the multipilot launcher
 ran each allocation's eight pilots, and every job directory, in the CE
 sandbox on that spool. The spool filled at 18:50 ET on 25 October and
 again at 01:49 ET on 26 October; the second fill aborted 220 jobs with
@@ -725,7 +725,7 @@ It was built with `perlmutter/build-es-channel.sh` in the 26.07.3 campaign
 image; import and a yampl socket also passed with Python 3.13.12 in the
 26.07.1 reference image. These local checks do not establish worker success.
 
-`EPICPROD_ES_CHANNEL` names this directory for a native pilot. The launcher
+`EPICPROD_ES_CHANNEL` names this directory for a direct pilot. The launcher
 prepends its `python` directory after entering the campaign image, whose
 startup resets `PYTHONPATH`. The pilot and its payload inherit that path.
 Without the setting, the launcher's environment is unchanged.
@@ -744,7 +744,7 @@ in units of five using the existing Upsilon reference input and the
 26.07.1 image. Its private directory is
 `/data/atlpan/native-grex-es-yampl313-20261024`; its frozen assets are
 `/data/atlpan/harvester_common/native-grex-es-yampl313-20261024`, using the
-unchanged native pilot archive
+unchanged direct-pilot archive
 `9532f30b41a8b1c8cfcb730eb325933c71c486454ed4365cd3e2d8b625a27ae2`.
 The trial does not establish channel success: GREX's queue generates a
 SCORE job despite the task requesting two cores. Ordinary pilot 27109.7

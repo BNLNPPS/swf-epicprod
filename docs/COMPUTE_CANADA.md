@@ -142,7 +142,7 @@ queues are: a queue in the harvester configuration
 (`panda_queueconfig.json` on pandaharvester01) whose submit description sends
 pilots to the CEs through ARC with the token, the queue record in the tracked
 schedconfig overrides ([SCHEDCONFIG_OVERRIDES.md](SCHEDCONFIG_OVERRIDES.md)),
-the native pilot launcher ([NATIVE_PILOT_CANARY.md](NATIVE_PILOT_CANARY.md)),
+the direct-pilot launcher ([NATIVE_PILOT_CANARY.md](NATIVE_PILOT_CANARY.md)),
 and an entry in the queue registry ([QUEUE_REGISTRY.md](QUEUE_REGISTRY.md)). A
 candidate ARC submit description is on the harvester host,
 `/data/atlpan/harvester_common/submit_pilot2_push_arc.sdf` (ARC REST, token

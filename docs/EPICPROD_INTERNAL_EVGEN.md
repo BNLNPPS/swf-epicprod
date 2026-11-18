@@ -479,7 +479,7 @@ Torre selected particle-gun production on 24 October 2026 as the preferred
 workload for ES commissioning. Generation is part of the workflow, so a small
 whole task can produce new events and contribute useful production statistics
 after validation. This applies to Google and Perlmutter commissioning with
-the common native pilot and the current production software.
+the common direct pilot and the current production software.
 
 Allocate disjoint random streams and record their provenance before starting
 additional statistics. Repeating the same stem and chunk indices repeats the

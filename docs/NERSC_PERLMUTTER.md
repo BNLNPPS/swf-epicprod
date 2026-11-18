@@ -69,13 +69,13 @@ and the request below asks that they be kept in one.
 
 `https://portal.nersc.gov/cfs/m3763/panda/jobs/<queue>/launch/<worker>/task0.out`
 serves, without login, the public launch record of a test-queue worker:
-the launcher's own messages, the pool sample, the native runtime and pilot
+the launcher's own messages, the pool sample, the direct-pilot runtime and pilot
 checksums, the pilot's exit code, and the pilot's end-of-job step lines
 (The end of a job). The pilot's console and the payload's logs stay in the
 private worker directory. The per-job directories
 `https://portal.nersc.gov/cfs/m3763/panda/jobs/<queue>/<pandaid>/`, which
 served the site wrapper's pilot log and task output in September, are not
-published for the test queue's native workers; `panda_study_job` lists the
+published for the test queue's direct-pilot workers; `panda_study_job` lists the
 harvester's log locations whether or not they are served.
 
 ## CVMFS on the nodes
@@ -160,9 +160,9 @@ standing request to PanDA operations is that the Perlmutter harvester
 configuration, Slurm template and wrapper be kept in a repository, so that a
 change like this one is a pull request.
 
-### The launcher and the native pilot
+### The launcher and the direct pilot
 
-The launcher is a site adapter to the **common native pilot**. It starts the
+The launcher is a site adapter to the **common direct pilot**. It starts the
 campaign image's own Python through Apptainer, without ALRB; the Event Service
 uses that pilot's generic executor and a matching Python 3.13 yampl channel.
 The runtime and channel arrive over immutable, checksum-pinned HTTPS URLs under
@@ -371,8 +371,8 @@ An operator submits an ES task from swf-testbed with
 which runs the deployed submitter with the deployed environment, the
 operator's own token and the internal monitor URL; the switches above go as
 `--canary-switch` settings, which the harness reads from the sandbox's
-environment file. Native ES canaries use `--es-worker-proxy`: the sandbox
-names a local proxy path, and the dispatcher copies the native pilot's
+environment file. Direct-pilot ES canaries use `--es-worker-proxy`: the sandbox
+names a local proxy path, and the dispatcher copies the direct pilot's
 credential into it on the worker with mode 0600, so the live credential is
 not uploaded in the sandbox. Both `X509_USER_PROXY` and
 `PILOT_X509_USER_PROXY` name that file in the sandbox environment, so the
@@ -692,7 +692,7 @@ queue on the canary probes page; for `NERSC_Perlmutter_epic` it is 12 hours.
 
 | Task | Shape | Result |
 |---|---|---|
-| 41126 | first native ES smoke, 20 events | all ranges completed; two closes registered; 20 IDs and 387 collections read back |
+| 41126 | first direct-pilot ES smoke, 20 events | all ranges completed; two closes registered; 20 IDs and 387 collections read back |
 | 41148, 41157 | 26.07.3 neutron gun, 20 events | the pilot-proxy token handoff, then unique event IDs per range |
 | 41159 (`pES1`) | 1,000 gun events | all credited and read back; the input lasted minutes, 7.9% of core time |
 | 41203 (`pES2`) | 1,000,000 gun events, 256 slots | the record stopped before five minutes; first units reached the slots over 140 s |
