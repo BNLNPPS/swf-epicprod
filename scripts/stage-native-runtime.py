@@ -65,13 +65,34 @@ def stage(baseline, output, archive_sha256):
     return manifest
 
 
+def tarball(directory):
+    """The runtime as launchers fetch it, ``<directory>.tar.gz`` beside it:
+    its files flat, owned by root, as the published runtimes are. An existing
+    archive is never overwritten."""
+    path = directory.parent / (directory.name + '.tar.gz')
+    with path.open('xb') as raw, tarfile.open(fileobj=raw, mode='w:gz') as archive:
+        for target in sorted(directory.iterdir()):
+            info = archive.gettarinfo(str(target), arcname=target.name)
+            info.uid = info.gid = 0
+            info.uname = info.gname = 'root'
+            with target.open('rb') as content:
+                archive.addfile(info, content)
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--archive-sha256', required=True)
+    parser.add_argument('--tarball', action='store_true',
+                        help='also write <output>.tar.gz, the form publish-pilot-asset.py publishes')
     args = parser.parse_args()
     print(json.dumps(stage(args.baseline, args.output, args.archive_sha256), indent=2))
+    if args.tarball:
+        path = tarball(args.output)
+        print(json.dumps({'tarball': str(path),
+                          'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}, indent=2))
 
 
 if __name__ == '__main__':
