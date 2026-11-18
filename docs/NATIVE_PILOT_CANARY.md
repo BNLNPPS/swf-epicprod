@@ -34,7 +34,7 @@ reason to keep the standard rollout on the older bootstrap.
 | GREX | Standard production template switched to the native launcher at 17:33:09 UTC. Archive `9532f30b` retains GREX's epic5 operational fixes. All current queued/running jobs use 26.07.3. First Harvester production submission from this template is still to be observed. |
 | Perlmutter | Off for allocation usage; the existing site launcher still uses the ALRB Python setup. Standard native migration is not deployed. |
 | Google | Off by operator instruction; no native production rollout verified. |
-| JLab | Commissioning, no running workers; the host-Python bootstrap is not the campaign-image native launcher. |
+| JLab | Commissioning. Since 2026-11-17, GREX's direct-pilot runtime with one pilot per batch job (OSG_SUBMISSION.md, JLab on the direct pilot); the earlier host-Python bootstrap ran the obsolete retired pilot. |
 | Compute Canada | Queue not built, awaiting CE authorization ([COMPUTE_CANADA.md](COMPUTE_CANADA.md)). |
 
 GREX's live template is

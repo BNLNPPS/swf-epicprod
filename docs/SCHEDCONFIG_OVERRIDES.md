@@ -82,10 +82,11 @@ have needs our file there too. Since 2026-10-20 on pandaharvester01:
 - JLAB_PanDA_1's harvester queue (`panda_queueconfig.json`, backups
   `-backup-2026-10-20` and `-20b`): GREX's entry with
   `submit_pilot3_pull_jlab.sdf`, 10 to 50 waiting workers, at most 200.
-  The description is GREX's single-pilot one (backup
-  `submit_pilot3_pull_umgrex.sdf-backup-2026-10-19b`) with one core,
-  6,000 MB and `+maxWallTime` 1440 (minutes; JLab's Slurm holds a pilot
-  without one), shipping `queuedata/JLAB_PanDA_1/queuedata.json`
+  Since 2026-11-17 the description is GREX's direct-pilot runtime with
+  one pilot per batch job (`scripts/render-native-jlab.py`;
+  OSG_SUBMISSION.md, JLab on the direct pilot), one core, `+maxWallTime`
+  1440 (minutes; JLab's Slurm holds a pilot without one), shipping
+  `queuedata/JLAB_PanDA_1/queuedata.json`
   (`scripts/pilot-queuedata.py`, timefloor 180, maxtime 86400). The CE
   token is the one harvester's hourly `get-panda-tokens-for-ces.sh`
   already mints for `osg-ce-2.jlab.org:9619` into

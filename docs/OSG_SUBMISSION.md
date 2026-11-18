@@ -745,6 +745,12 @@ place of `{pilotUrlOption}` in the submit description's `arguments`:
   `BNL_OSG_PanDA_1` and `BNL_OSG_PanDA_pilotest` keep the shared
   template and its CRIC-driven pilot URL.
 
+History: this pilot is the obsolete retired pilot. Since 2026-11-17 the
+retired `BNL_OSG_EPIC_PROD_1` names the direct-pilot template of
+`BNL_OSG_PanDA_1` and its launcher; its own template is renamed
+`submit_pilot2_pull_bnl_osg_epicprod.sdf.retired-pilot-20261118T033604Z`
+(distcomp-services `osg-harvester/CHANGES.md`).
+
 Harvester reads the template at every submission and reloads its queue
 configuration within ten minutes, so no service action is needed. A
 new pilot reaches both queues by moving the canary symlink (below);
@@ -994,8 +1000,9 @@ exclusion keeps the pilots away from it in the first place.
 **The node guard's clause.** Since 2026-10-20 the node guard's black
 holes (site-canary docs/NODE_GUARD.md) are kept off the pool's pilots by
 the same matchmaking, beside the operators' clause and without touching
-it. Both pull descriptions, `submit_pilot2_pull_bnl_osg.sdf` and
-`submit_pilot2_pull_bnl_osg_epicprod.sdf`, end their `Requirements` with
+it. The pull description `submit_pilot2_pull_bnl_osg.sdf`, which both OSG
+queues name since 2026-11-17 (until then also
+`submit_pilot2_pull_bnl_osg_epicprod.sdf`), ends its `Requirements` with
 `&& (MY.EpicprodNodeGuard =!= False)`, and after the marker line
 `# epicprod node guard: osg-node-guard-clause.py writes the next line`
 carry the attribute `+EpicprodNodeGuard`: an expression false on every
@@ -1187,3 +1194,16 @@ XRootD modules; payload/copytool requirements still need an actual canary.
 IPv4 BNL Rucio and JLab Rucio returned HTTP 200; PanDA TCP 25443 timed out
 and TCP 443 refused the connection. IPv6 was unusable. Locating the
 25443 block and proving a complete canary remain part of commissioning.
+
+## JLab on the direct pilot, 17 November 2026
+
+JLab opened the farm's route to `pandaserver01:25443` (Kathryn Strosahl,
+17 November). The queue, offline in Harvester since 22 October, was set
+online at 21:52 ET; the landing probe's job 6608533 was taken by a JLab
+pilot at 22:03 ET, so the route is open. The job then failed in one
+second: `jlab-native-pilot.sh` above runs the obsolete retired pilot
+through the standard wrapper, and that pilot's container setup requires
+`/cvmfs/atlas.cern.ch` (pilot error 1186). The launcher is retired. Since
+22:28 ET JLab's template is GREX's direct-pilot runtime with one pilot per
+batch job, rendered by `scripts/render-native-jlab.py` from the two live
+templates (distcomp-services `harvester/CHANGES.md`).
