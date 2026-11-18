@@ -153,8 +153,14 @@ class DecideTest(unittest.TestCase):
         capped = dict(SETTINGS, j_max=1500)
         self.assertEqual(run(census(not_started=1000), [entry('t', rows=1000)], settings=capped,
                              jedi_throttled=True)[0][0], 'would_feed')
+        # An empty queue takes its first task whatever its hours; past the
+        # low mark the high mark holds the next.
         self.assertEqual(run(census(), [entry('huge', rows=13000)], jedi_throttled=True)[0][:2],
-                         ('held', 'would_exceed_high'))
+                         ('would_feed', 'would_feed:huge'))
+        out = run(census(), [entry('t', rows=1000), entry('huge', rows=13000)],
+                  jedi_throttled=True)
+        self.assertEqual([o[:2] for o in out], [('would_feed', 'would_feed:t'),
+                                                ('held', 'would_exceed_high')])
 
     def test_awaiting_observation_counts_the_feed(self):
         feeds = [{'candidate_rows': 2000}]

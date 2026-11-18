@@ -781,7 +781,13 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         if not jedi_throttled and candidate_h > h_high:
             out.append(('oversize', 'oversize_task', rec(candidate, candidate_h=candidate_h)))
             continue
-        if committed + candidate_h > h_high:
+        # Phase two: a queue below its low mark takes its first task this
+        # cycle whatever the task's hours, since JEDI paces its generation.
+        # An idle queue's ceiling is read from its idle fortnight (OSG: 18,
+        # 2026-11-18), so any real task read as past the high mark and the
+        # queue was never fed.
+        first_into_empty = jedi_throttled and not fed and committed < h_low
+        if committed + candidate_h > h_high and not first_into_empty:
             out.append(('held', 'would_exceed_high',
                         rec(candidate, candidate_h=candidate_h,
                             committed_after=round(committed + candidate_h, 2))))
