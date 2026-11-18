@@ -6,9 +6,9 @@ authenticated PCS (POST .../trial/), binds the named configuration, sets
 the trial's overrides (default: none, the plain gun shape; --keep-overrides
 keeps the source's), and checks the generated spec: the site, the output
 RSE and the trial's events. With --like, the spec's keys and settings are
-compared with an earlier trial's. Nothing is submitted; the operator
-submits the trial from PCS. Keep --state outside Git; a pending write is
-never automatically resent.
+compared with an earlier trial's. Nothing is submitted unless --submit is
+given; otherwise the operator submits the trial from PCS. Keep --state
+outside Git; a pending write is never automatically resent.
 """
 import argparse
 import json
@@ -31,6 +31,9 @@ parser.add_argument('--keep-overrides', action='store_true')
 parser.add_argument('--like', default='', help='an earlier trial whose spec shape to compare')
 parser.add_argument('--state', type=Path, required=True)
 parser.add_argument('--apply', action='store_true')
+parser.add_argument('--submit', action='store_true',
+                    help="with --apply, once the spec checks pass, submit the trial "
+                         "at once through PCS's Submit to its trial site (the ops agent sends it)")
 args = parser.parse_args()
 state = json.loads(args.state.read_text()) if args.state.exists() else {}
 
@@ -125,5 +128,17 @@ if state.get('task'):
     save()
     if not all(checks.values()):
         raise RuntimeError(f'The generated spec is outside its bounds: {checks}')
+    if args.apply and args.submit and not state.get('submitted'):
+        if state.get('submit_pending'):
+            raise RuntimeError('Prior submission outcome is uncertain; resolve it before continuing')
+        state['submit_pending'] = True
+        save()
+        # No site: the trial is already placed by its trial_site, and a
+        # site here re-places it through the production-queue check, which
+        # refuses a commissioning queue that accepts trials (QUEUE_REGISTRY.md).
+        result = request('POST', task_path(state['task']) + 'submit/', json={'now': True})
+        state.update(submitted=True, submit_pending=False,
+                     submit_status=result.get('status'), submit_warnings=result.get('warnings'))
+        save()
 print(json.dumps({'source': args.source, 'site': args.site, 'config': args.config,
                   'config_id': config_id, 'events': args.events, **state}, indent=2, default=str))
