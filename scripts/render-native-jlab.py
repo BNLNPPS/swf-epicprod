@@ -12,7 +12,7 @@ keeps what is JLab's: the CE and its SciTokens authentication with the
 pilot proxy as an ordinary input, one core, memory, the Slurm walltime and
 the queue data. The multipilot launcher runs one pilot per batch job.
 
-    render-native-jlab.py GREX.sdf JLAB.sdf > NEW.sdf
+    render-native-jlab.py GREX.sdf JLAB.sdf [--max-memory MB] > NEW.sdf
 """
 import argparse
 import re
@@ -30,7 +30,7 @@ def value(text, key):
     return match.group(1).strip()
 
 
-def render(grex, jlab):
+def render(grex, jlab, max_memory=None):
     assets = value(grex, 'executable').rsplit('/', 1)[0]
     inputs = [f for f in value(grex, 'transfer_input_files').split(',')
               if 'queuedata' not in f and f != PROXY]
@@ -79,7 +79,7 @@ def render(grex, jlab):
         '+remote_TransferOutput = ""',
         '+ioIntensity = {ioIntensity}',
         f'+xcount = {value(jlab, "+xcount")}',
-        f'+maxMemory = {value(jlab, "+maxMemory")}',
+        f'+maxMemory = {max_memory or value(jlab, "+maxMemory")}',
         f'+maxWallTime = {walltime_minutes}',
         '# minutes; JLab Slurm rejects a pilot without one',
         '',
@@ -106,9 +106,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('grex', help="GREX's live template")
     parser.add_argument('jlab', help="JLab's live template")
+    parser.add_argument('--max-memory', type=int,
+                        help="MB per pilot; default JLab's current value. The queue "
+                             "record's maxrss (docs/SCHEDCONFIG_OVERRIDES.md) is what "
+                             "PanDA dispatches against")
     args = parser.parse_args()
     with open(args.grex) as g, open(args.jlab) as j:
-        sys.stdout.write(render(g.read(), j.read()))
+        sys.stdout.write(render(g.read(), j.read(), args.max_memory))
 
 
 if __name__ == '__main__':
