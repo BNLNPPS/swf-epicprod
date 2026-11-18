@@ -821,6 +821,21 @@ In order, each a committed step on the clone:
     the batch system gave it (The payload report, Cleaning up after each
     job). On by default from payload 0.25.3, after the same canaries;
     `0` turns it off.
+27. **The upload step writes with its token alone** (2026-11-16, payload
+    0.25.38 behind `EPICPROD_SWITCH_UPLOAD_NO_X509=1`, off by default).
+    When `RUCIO_CONFIG` uses a token (item 22), `register_to_rucio.py`
+    removes `X509_USER_PROXY`, `X509_USER_CERT` and `X509_USER_KEY` from
+    its own environment before it makes the upload client
+    (`tokens.upload_without_x509`). Without this, gfal2 offers the job's
+    proxy as the TLS client certificate next to the scoped bearer token.
+    The eicprod JLab proxy has been expired since 2026-10-28, and a door
+    that checks client certificates closes the TLS handshake before the
+    token is sent: MANITOBA-XRD over https:8443, trial6 (task 41977, job
+    6608410), "ssl/tls alert certificate expired". Only the upload
+    process loses the proxy: the input read and the stash keep theirs.
+    An X.509 step (no PanDA token) is unchanged. The switch is turned on
+    by default in a follow-up after canaries at MANITOBA-XRD and
+    EIC-XRD.
 
 ## Event Service closes
 
