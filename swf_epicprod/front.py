@@ -742,7 +742,22 @@ def decide(queue, census_q, backlog, settings, gates, feeds, *, enabled, mode,
         state = 'fed' if mode == 'active' else 'would_feed'
         return [(state, f"{state}:{candidate['task']}", rec(candidate))]
     if committed_h is None:
-        return [('held', 'no_calibration', rec())]
+        # No measured walltime at this queue (no finished production job in
+        # the census window: an idle queue, or a new one), so its depth has
+        # no hours. That never holds it (Torre Wenaus, 2026-11-18, on the
+        # 20-job minimum that held every queue: "MANIFESTLY UNACCEPTABLE"):
+        # like a whole-node queue it takes the next eligible task whenever
+        # it has no unstarted production work of its own, one a cycle.
+        own = int(q.get('not_started_production') or 0) + ungenerated
+        if own > 0:
+            return [('supplied', 'supplied', rec())]
+        if not eligible:
+            return [('no_work', 'no_eligible_task', rec())]
+        candidate = eligible[0]
+        if t_max and tasks_active + 1 > t_max:
+            return [('held', 'task_cap', rec(candidate))]
+        state = 'fed' if mode == 'active' else 'would_feed'
+        return [(state, f"{state}:{candidate['task']}", rec(candidate))]
     if committed_h >= h_low:
         return [('supplied', 'supplied', rec())]
     if not eligible:
@@ -1452,13 +1467,12 @@ def run_cycle(*, dry_run=False, created_by='front'):
 
     # Ready tasks hold no queue (CONTINUOUS_PRODUCTION.md, The front's
     # placement): the unplaced ones form one pool, and a queue the front
-    # may feed (switched on and calibrated) draws on it when it decides
-    # to feed, the neediest first. The ranking reads the previous cycle's
-    # stored decisions with this cycle's switches, gates and limits.
+    # may feed (switched on) draws on it when it decides to feed, the
+    # neediest first; a queue with no measured hours draws too (decide).
+    # The ranking reads the previous cycle's stored decisions with this
+    # cycle's switches, gates and limits.
     feedable = [q for q in queues
-                if enabled and settings_by_queue[q].get('feed')
-                and ((census or {}).get('queues', {}).get(q) or {})
-                .get('hours_at_capacity') is not None]
+                if enabled and settings_by_queue[q].get('feed')]
     pool = backlog.pop(UNPLACED, [])
     pool = _safe('lapsed unplace marks', lambda: lapse_unplaced(
         pool, created_by=created_by, dry_run=dry_run), lambda exc: pool)

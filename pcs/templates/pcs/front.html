@@ -60,8 +60,7 @@
                     <li><strong>burn_through</strong>: in the last 6 h at least 10 of the queue's jobs failed, half of them fast, and none finished.</li>
                     <li><strong>failure_window</strong>: in the last 6 h at least 50 of the queue's jobs ended and 60% of them failed.</li>
                     <li><strong>awaiting_observation</strong>: the front fed the queue less than 600 s ago and waits for the census to show the jobs.</li>
-                    <li><strong>no_calibration</strong>: the queue finished no production job in 14 days, so its hours cannot be computed.</li>
-                    <li><strong>supplied</strong>: committed hours are at or above the low-water mark.</li>
+                    <li><strong>supplied</strong>: committed hours are at or above the low-water mark; for a queue that finished no production job in 14 days, so has no hours, it has unstarted production work of its own (with none, it takes the next eligible task).</li>
                     <li><strong>no_eligible_task</strong>: no task in ready is pinned to the queue and passes the readiness checks.</li>
                     <li><strong>unsized_task</strong>: the next task's job count cannot be read (no per-job event count or no matched input).</li>
                     <li><strong>oversize_task</strong>: the next task alone exceeds the high-water mark.</li>

@@ -173,10 +173,13 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(run(idle, [], last_feed_age_h=1.0)[0][:2],
                          ('no_work', 'no_eligible_task'))
 
-    def test_no_calibration_holds(self):
+    def test_unmeasured_queue_takes_work_when_empty(self):
         bare = {'not_started': 0, 'running': 0, 'ceiling': 0, 'hours_at_capacity': None,
                 'calibration': {}, 'gate': {}}
-        self.assertEqual(run(bare, [entry('t')])[0][:2], ('held', 'no_calibration'))
+        self.assertEqual(run(bare, [entry('t')])[0][:2], ('would_feed', 'would_feed:t'))
+        busy = dict(bare, not_started_production=40)
+        self.assertEqual(run(busy, [entry('t')])[0][:2], ('supplied', 'supplied'))
+        self.assertEqual(run(bare, [])[0][:2], ('no_work', 'no_eligible_task'))
 
     def test_fast_detectors_need_a_minimum_sample(self):
         self.assertFalse(fast_detectors({'finished': 0, 'failed': 5, 'fast_failed': 5})['red'])

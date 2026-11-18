@@ -136,10 +136,15 @@ of not-yet-running work at a queue in hours at the queue's capacity:
   declared rows.
 
 A queue's calibration (median and p90 walltime, p90 start latency) is
-taken from its finished production jobs over 14 days, and counts only
-from 20 of them (`CALIBRATION_MIN_JOBS` in `monitor_app/panda/census.py`).
-Below that the queue reads uncalibrated: one fast trial job gave
-UM_GREX_PanDA_1 a p90 start latency of 0.04 h.
+taken from its finished production jobs over 14 days
+(`monitor_app/panda/census.py`). A queue with none there, idle for two
+weeks or new, has no depth in hours, and that never holds it: it takes
+the next eligible task whenever it has no unstarted production work of
+its own, one a cycle (`front.decide`), as a whole-node queue does. From
+2026-09-30 a 20-job minimum read every queue below it as uncalibrated,
+and the front held such a queue (`no_calibration`); after 18 days in
+which the front fed no queue, it held all of them, and ready tasks sat
+in the buffer (Torre Wenaus, 2026-11-18: "MANIFESTLY UNACCEPTABLE").
 
 Historical concurrency normalizes work depth. A running count below that
 reference does not establish unused available slots and does not hold task
@@ -331,7 +336,7 @@ task cap; `max_per_cycle` and the activation window bound a cycle.
 | awaiting observation | a submission is younger than one activation window (two cycles) | hold; count the submission as committed depth | `awaiting_observation` |
 | degraded | a gate is red: canary failing or its window stale, burn-through or windowed failure rate over threshold, credential invalid | hold; breaker opens | `canary`, `burn_through`, `failure_window`, `credential` |
 | half open | the breaker's cause has cleared and policy allows automatic recovery | submit one task and wait for completions; on failure reopen with a doubled wait | `half_open` |
-| held | queue feed off or exempt, or front off; a declared downtime in force or starting within `h_high` hours (checked right after the breaker, ahead of the measured gates: a declaration is not a fault, the breaker stays closed and the hold lifts itself when the window ends); a feed that would pass `h_high`; the task or job cap; a task that cannot be sized; no calibration for the queue | hold | `queue_off`, `queue_exempt`, `front_off`, `declared`, `would_exceed_high`, `task_cap`, `job_cap`, `unsized_task`, `no_calibration` |
+| held | queue feed off or exempt, or front off; a declared downtime in force or starting within `h_high` hours (checked right after the breaker, ahead of the measured gates: a declaration is not a fault, the breaker stays closed and the hold lifts itself when the window ends); a feed that would pass `h_high`; the task or job cap; a task that cannot be sized | hold | `queue_off`, `queue_exempt`, `front_off`, `declared`, `would_exceed_high`, `task_cap`, `job_cap`, `unsized_task` |
 | oversize | the next eligible task alone exceeds `h_high` (phase one) | hold for the operator's decision | `oversize_task` |
 | no work | nothing in `ready` is eligible for the queue | hold; the page states the starvation | `no_eligible_task` |
 | node occupied | a whole-node queue (Perlmutter, Google: one job per node) whose own work fills its `nodes`: production jobs not started or running, plus files JEDI has not made jobs of, and at least one node for each live task | hold; below it, the next eligible task is fed whatever its hours, one a cycle, ahead of the calibration and depth checks, which measure hours (NERSC_PERLMUTTER.md, EVGEN input in production) | `node_occupied` |
@@ -401,8 +406,7 @@ queue needed work, so all six ready tasks sat under OSG while GREX, its
 feed just switched back on, decided `no_work` at 0 h of its 8 h low mark.
 Now the unplaced tasks form one ready pool, and a queue takes a task from
 it only when it decides to feed, below its low mark. The queues the front
-feeds (feed switch on, and calibrated, since an uncalibrated queue holds
-with `no_calibration`) decide in the recommendation's order with no
+feeds (feed switch on, measured or not) decide in the recommendation's order with no
 task's limits, the neediest first (`draw_order`), with this cycle's feed
 switches. Each draws the pool's tasks open to it by the recommendation's
 own reading (no red gate, a fit to its limits and image; `open_to`),
