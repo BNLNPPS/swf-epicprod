@@ -21,9 +21,10 @@ def definition(settings):
 
     Two inputs: an internal particle gun (the default: one steering row, its
     generation plan the input), or a registered EVGEN sample (``input``
-    ``evgen``, swf_epicprod/evgen_es.py): the files its manifest covers,
-    staged at BNL, one job per file over ``events_per_file`` events each, the
-    task capped at ``events``."""
+    ``evgen``, swf_epicprod/evgen_es.py): the files its manifest covers, one
+    job per file, each file streamed to its own end at its catalog event
+    count (``file_events``), ``events`` their sum and ``events_per_file`` the
+    largest."""
     cfg = dict(settings)
     evgen = cfg.get('input') == 'evgen'
     keys = ('events', 'unit_events', 'close_s', 'deadline_s', 'margin_s', 'memory_mb_per_core')
@@ -37,8 +38,7 @@ def definition(settings):
     if not re.fullmatch(r'[^\s,]+:[^\s,]+', str(cfg.get('input_dataset') or '')):
         raise ValueError('production ES needs its registered PanDA input dataset')
     if evgen:
-        # A job takes one file; JEDI stops at the task's events, so the
-        # last file is taken only as far as the manifest's total.
+        # A job takes one file, to its end.
         cfg['events_per_job'] = cfg['events_per_file']
         if cfg['events'] > cfg['files'] * cfg['events_per_file']:
             raise ValueError('production ES events exceed the staged files')
@@ -69,12 +69,14 @@ def definition(settings):
         k = cfg['range_events']
         if type(k) is not int or k <= 0 or cfg['unit_events'] % k:
             raise ValueError('production ES range_events must be a positive divisor of unit_events')
-        if cfg['events'] % k:
-            # Every range full: the batch pilot rebuilds a range it never
-            # received from its first event and the range size (es_batch.py,
-            # Prefetch._reconcile).
+        # Ranges are uniform up to a file's end. An EVGEN file is streamed to
+        # its end at its own count, so its last range is short where the count
+        # is not a multiple of the range size, and the batch pilot rebuilds such
+        # a range from the file's count (EPICPROD_ES_FILE_EVENTS, es_batch.py,
+        # Prefetch._reconcile). A gun task's events are whole ranges.
+        if not cfg.get('file_events') and cfg['events'] % k:
             raise ValueError('production ES range_events must divide the events')
-        if evgen and cfg['events_per_file'] % k:
+        if evgen and not cfg.get('file_events') and cfg['events_per_file'] % k:
             raise ValueError('production ES range_events must divide each file\'s events')
         if k > 1 and not JEDI_FINE_GRAINED_RANGES:
             raise ValueError('production ES range_events above 1 needs JEDI ranges of several events '
@@ -125,12 +127,12 @@ def definition(settings):
                                  or len(cfg['input_files']) != cfg['files']):
         raise ValueError('production ES input_files must name each of its EVGEN files')
     if 'file_events' in cfg:
-        fe, k = cfg['file_events'], cfg.get('range_events', 1)
-        if (not isinstance(fe, dict) or list(fe) != list(cfg.get('input_files') or [])
-                or any(type(n) is not int or n <= 0 or n % k for n in fe.values())
+        fe = cfg['file_events']
+        if (not evgen or not isinstance(fe, dict) or list(fe) != list(cfg.get('input_files') or [])
+                or any(type(n) is not int or n <= 0 for n in fe.values())
                 or sum(fe.values()) != cfg['events'] or max(fe.values()) != cfg['events_per_file']):
             raise ValueError('production ES file_events must give each input file its events, '
-                             'whole ranges summing to the task\'s events, the largest its events_per_file')
+                             'summing to the task\'s events, the largest its events_per_file')
     if 'notice' in cfg and type(cfg['notice']) is not bool:
         raise ValueError('production ES notice must be a boolean')
     if 'preempt_at_s' in cfg and (type(cfg['preempt_at_s']) is not int or cfg['preempt_at_s'] <= 0):
@@ -164,6 +166,11 @@ def apply(spec, settings):
     if evgen:
         if env.get('EVGEN_INTERNAL') == 'true':
             raise ValueError('production ES over EVGEN input needs an external EVGEN sample')
+        if not cfg.get('file_events'):
+            # One count for every file leaves each larger file's last events
+            # unread (evgen_es.event_service).
+            raise ValueError('production ES over EVGEN input streams each file to its end at its own '
+                             'event count (file_events); set the task\'s setup afresh (evgen_es.prepare)')
     elif env.get('EVGEN_GENERATOR') != 'particle_gun' or env.get('EVGEN_INTERNAL') != 'true':
         raise ValueError('additional production statistics require an internal particle gun')
     if str(env.get('COPYFULL', '')).lower() == 'true':
@@ -222,6 +229,11 @@ def apply(spec, settings):
     }
     if cfg.get('batch_channel'):
         prefix['EPICPROD_SWITCH_ES_BATCH_CHANNEL'] = '1'
+    if evgen:
+        # Each file's event count, for the batch pilot: a range it rebuilds
+        # after a lost acquisition ends at the file's last event, which a short
+        # last range does before the range size (es_batch.file_events).
+        prefix['EPICPROD_ES_FILE_EVENTS'] = ','.join(f'{lfn}:{n}' for lfn, n in cfg['file_events'].items())
     if cfg.get('min_unit_events'):
         prefix['ES_MIN_UNIT_EVENTS'] = str(cfg['min_unit_events'])
     if cfg.get('parallel_start'):
@@ -267,22 +279,19 @@ def apply(spec, settings):
                 + ' $PILOT_EVENTRANGECHANNEL'
                 + ('' if evgen and not (cfg.get('nersc_input') or cfg.get('site_input'))
                    else ' --accessmode=direct'))
-    if evgen and cfg.get('file_events'):
-        # Each file at its own events, the last read only as far as the
-        # manifest, and the task at their sum: JEDI reads each file's count
-        # from the listing (useRealNumEvents), which the DDM interface gives
-        # the task's own counts (epicFileEvents; swf_epicprod/jedi/
-        # EpicDDMClient.py). One count for every file (nEventsPerInputFile)
-        # made JEDI drop a last file the total takes only part way.
+    if evgen:
+        # Each file streamed to its end and the task at their sum: JEDI takes
+        # each file's count from the catalog listing (useRealNumEvents, which
+        # the submitter sets for epicFileEvents; the ePIC DDM interface passes
+        # the catalog's counts) and makes ranges up to the file's last event,
+        # the last one short (pandaserver job_complex_module.py, insertNewJob).
         # nEventsPerJob at the task's total: JEDI cuts a file's events into
-        # records of nEventsPerJob carried across files, so anything less than
-        # the total cuts a file after the first into a short extra job; one
-        # file a job comes from nFilesPerJob.
+        # records of nEventsPerJob carried across files (task_complex_module.py,
+        # insertFilesForDataset), so anything less than the total cuts a file
+        # after the first into a short extra job; one file a job comes from
+        # nFilesPerJob.
         shape = dict(useRealNumEvents=True, epicFileEvents=dict(cfg['file_events']),
                      nEventsPerJob=cfg['events'], nJobs=cfg['files'], nEvents=cfg['events'])
-    elif evgen:
-        shape = dict(nEventsPerInputFile=cfg['events_per_file'], nEventsPerJob=cfg['events_per_file'],
-                     nJobs=cfg['files'], nEvents=cfg['events'])
     else:
         shape = dict(nEventsPerInputFile=cfg['input_events'], nEventsPerJob=cfg['events_per_job'],
                      nJobs=cfg['events'] // cfg['events_per_job'])

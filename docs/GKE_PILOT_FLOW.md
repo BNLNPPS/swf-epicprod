@@ -256,8 +256,8 @@ named by `gke_pilots.site_input_gcs`.
   the cache. Runtime `native-runtime-google-es-batch-7595097` (archive `d44fb763`) carries it.
 - **The shape.** `evgen_es.GOOGLE_SHAPE`: the gun feeder's pod shape (14 slots, three shared reconstruction
   members, 6 GB a core, four-hour ceiling) with the EVGEN switches Perlmutter runs, 100-event units, direct
-  access and the site's copy (`site_input`). A file JEDI leaves out of the task runs as its tail
-  (`evgen_es.tails`).
+  access and the site's copy (`site_input`). Every file is streamed to its end at its catalog event
+  count, as on Perlmutter.
 - **PanDA.** The catalog map's `site_staged` names `BNL_ePIC_GOOGLE_es`, so JEDI holds a task's files at the
   queue and activates its jobs (distcomp-services panda-server CHANGES.md).
 

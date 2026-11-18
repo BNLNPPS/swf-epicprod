@@ -9,11 +9,11 @@ staged copy (run.sh, EPICPROD_INPUT_LOCAL) and every unit records its source
 file. Perlmutter takes no single-core work (Torre Wenaus, 2026-10-28: "NO
 MORE SINGLE CORE 1/128 EFF WORK IN PERL EVER").
 
-This module stages the input: the files of the sample the task's manifest
-covers, copied from the payload's own JLab read path to BNL_PROD_DISK_1,
-checked against JLab's adler32 and registered in the PanDA catalog with each
-file's event count, in the task's input dataset. JEDI stops at the
-manifest's total (``nEvents``), so the task processes what its manifest does.
+This module reads the task's input where its catalog holds it, the files of
+the sample the task's manifest covers, and sets the task's setup: every one
+of those files streamed to its own end, the last included, at its catalog
+event count (Torre Wenaus, 2026-11-18: "THEY ALL NEED TO BE PROCESSED. THIS
+IS A STREAMING WORKFLOW").
 """
 import os
 import subprocess
@@ -129,21 +129,24 @@ def catalog_input(task):
 
 
 def event_service(task, staged, shape=None):
-    """The task's ``event_service`` override for its input: one job per file
-    over the files' common event count and the task capped at its
-    manifest's total, both in whole ranges (the batch pilot rebuilds a range
-    from its first event and the range size). An input read from its
-    catalog names its files (``input_files``), which JEDI takes from the
-    dataset and no others."""
+    """The task's ``event_service`` override for its input: one job per file,
+    each file streamed to its own end at its catalog event count
+    (``file_events``, which JEDI takes from the catalog: useRealNumEvents) and
+    the task at their sum, so JEDI takes every file whole. Ranges are uniform
+    up to a file's end and its last range is short of the range size where
+    the file's count is not a multiple of it. The task names its files
+    (``input_files``), which JEDI takes from the dataset and no others.
+
+    One count for every file, the smallest file's, left each larger file's
+    last events unread, and a task total at the manifest's left out the file
+    it would pass (p4495, p4497, p4498 and p4499, 28 October to 2 November)."""
     shape = shape or SHAPE
-    k = shape['range_events']
     # JEDI knows a path-named catalog's files by their last component
     # (swf_epicprod/jedi/EpicDDMClient.py, lfn_basename).
-    names = [f['lfn'] for f in staged['files'] if f.get('name')]
-    per_file = min(f['events'] for f in staged['files']) // k * k
-    return dict(shape, input='evgen', input_dataset=staged['dataset'], files=len(staged['files']),
-                events_per_file=per_file, events=staged['events'] // k * k,
-                **({'input_files': names} if names else {}))
+    file_events = OrderedDict((f['lfn'], int(f['events'])) for f in staged['files'])
+    return dict(shape, input='evgen', input_dataset=staged['dataset'], files=len(file_events),
+                events_per_file=max(file_events.values()), events=sum(file_events.values()),
+                input_files=list(file_events), file_events=dict(file_events))
 
 
 def tails(task, shape=None, staged=None):
@@ -155,9 +158,10 @@ def tails(task, shape=None, staged=None):
     (p4498, task 41494: run003's 996,791 covered events). Each file left out
     runs as its own task of the same PCS task, over the events the manifest
     takes from it, in whole ranges: one file at one count, which JEDI takes
-    whole. ``[]`` when JEDI takes every file."""
+    whole. ``[]`` when JEDI takes every file, as it does for a setup that
+    takes each file at its own count (``file_events``, event_service)."""
     shape = shape or (task.overrides or {}).get('event_service') or {}
-    if shape.get('input') != 'evgen' or not shape.get('input_files'):
+    if shape.get('input') != 'evgen' or not shape.get('input_files') or shape.get('file_events'):
         return []
     staged = staged or catalog_input(task)
     covered = {f['lfn']: f['used_events'] for f in staged['files']}

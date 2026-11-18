@@ -266,8 +266,10 @@ behaviour lives in `pilot/native-canary/es_batch.py`, gated by
   them. PanDA's record of the job's ranges is the state the pilot keeps to:
   after a failed acquisition the prefetch waits a minute, reads the job's
   ranges back (`get_event_range_statuses`), and takes every range sent to the
-  job that it never received, rebuilt from its first event and the range size;
-  production ES tasks therefore have events divisible by `range_events`. It
+  job that it never received, rebuilt from its first event and the range size
+  and ended at its file's last event where that comes first: the job's
+  parameters carry each input file's event count (`EPICPROD_ES_FILE_EVENTS`,
+  `es_batch.file_events`), since PanDA's record holds a range's status only. It
   answers "No more events" only after that reconciliation. Range reports are
   re-sent until the server takes them, so a restart costs an ES job a retry, as
   it costs an ordinary job.
@@ -503,24 +505,15 @@ with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
 - **Shape.** One job per file, the pilot staging the job's own file so the
   payload simulates from it (`run.sh`, `EPICPROD_INPUT_LOCAL`), never from
   the door path of the manifest's first row; every unit records its source
-  file. JEDI takes the files at their common event count
-  (`nEventsPerInputFile`) and stops at the manifest's total (`nEvents`),
-  both in whole ten-event ranges. It takes no file part way: a file whose
-  count would pass the total is left out, with every file after it, so the
-  file the manifest covers only part way runs as a task of its own, a later
-  attempt of the same PCS task over the events the manifest takes from it
-  (`evgen_es.tails`, the attempt's own setup in its `event_service`
-  metadata). The front queues a task's tails with it, and the ops agent
-  takes each tail as an attempt of its own (p4499's tail, queued with its
-  task on 28 October, was skipped as a repeat of the task's submission and
-  never ran);
-  `scripts/evgen-es-tail.py <task>` queues those of a task already
-  submitted, and `--resend <attempt>` queues again a tail attempt that
-  never reached PanDA. A task whose setup predates the catalog input names
-  no files, so it shows no tail; `--fresh` reads its tails against the setup
-  built afresh, which must take the files its own setup took (p4495 and
-  p4497, whose `.try2` attempts 41525 and 41526 left out run010 and run003). A job works to its four-hour deadline and the next continues the file's
-  remaining ranges. The rest is 41262's shape: 128 slots, 100-event units,
+  file. Every file the manifest covers is streamed to its end, the last one
+  included (Torre Wenaus, 2026-11-18: "THEY ALL NEED TO BE PROCESSED. THIS
+  IS A STREAMING WORKFLOW"): JEDI takes each file at its catalog event count
+  (`useRealNumEvents`; the setup's `file_events`), the task at their sum
+  (`nEvents`, and `nEventsPerJob`, so no file is cut into a second job), and
+  makes ranges of ten events up to each file's last event, the last range
+  short where the count is not a multiple of ten. PCS refuses an EVGEN setup
+  without per-file counts (`production_es.apply`). A job works to its
+  four-hour deadline and the next continues the file's remaining ranges. The rest is 41262's shape: 128 slots, 100-event units,
   closes every 300 s, 32 shared reconstruction members, 1,500 MB a core,
   with the production gun's ten-event ranges, concurrent closes, job log and
   notice.
@@ -602,14 +595,13 @@ minutes, and resident units waited 30 to 80 minutes from simulated to done,
 0.4 to 3 events a second a node against 27.8 (task 41262). The gun feeder's
 shape carries the first two.
 
-The jobs of a task share one event count per file, the smallest of its files'
-full counts in whole ranges (`evgen_es.event_service`). A manifest covers each
-file in whole jobs of the ordinary shape and leaves its tail of a few thousand
-events, so a job reads that tail, which no task covers. p4498 runs run001 and
-run002 in task 41494 and the first 996,790 events of run003 in its tail, task
-41497: the manifest's 5,680,057 events and 21,834 of the files' uncovered
-tails. No event is read twice; the events read are not exactly the
-manifest's.
+The tasks set up before 18 November 2026 (p4495, p4497, p4498 and p4499)
+read every file only to the smallest file's count in whole ranges and stopped
+at the manifest's total, so each larger file's last events were never read and
+the file the total would pass was left out whole. That file ran as a later
+attempt of its own (`evgen_es.tails`, `scripts/evgen-es-tail.py`), over the
+events the manifest took from it. A setup with per-file counts leaves no file
+out, and `tails` returns none for it.
 
 The next step is five nodes on the preempt QOS, which charges half after a
 job's first two hours, with six-hour jobs and then eight (Torre's mail to

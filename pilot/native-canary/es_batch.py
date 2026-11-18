@@ -306,6 +306,24 @@ def prefetch_size():
     return int(raw)
 
 
+FILE_EVENTS_RE = re.compile(r'(?:^|\s)EPICPROD_ES_FILE_EVENTS=(\S+)')
+
+
+def file_events(jobparams):
+    """Each input file's event count, ``{LFN: events}``, as the job's
+    parameters carry it (``EPICPROD_ES_FILE_EVENTS=<lfn>:<events>,...``,
+    swf_epicprod/production_es.py): a file streamed to its end has a last
+    range short of the range size when its count is not a multiple of it.
+    {} when the job carries none, as a gun job does, whose ranges are full."""
+    match = FILE_EVENTS_RE.search(jobparams or '')
+    out = {}
+    for item in (match.group(1).split(',') if match else []):
+        lfn, _, events = item.rpartition(':')
+        if lfn and events.isdigit():
+            out[lfn] = int(events)
+    return out
+
+
 def range_span(rng):
     """The events of one range the server handed out (startEvent..lastEvent)."""
     try:
@@ -330,6 +348,7 @@ class Prefetch:
         self.ranges = collections.deque()
         self.held = 0                   # events in self.ranges
         self.span = 1                   # events a range, from the last acquisition
+        self.file_events = file_events(getattr(job, 'jobparams', ''))   # LFN: its last event
         self.exhausted = False
         self.calls = self.failures = self.recovered = 0
         self.received = {}              # file id: bytearray, 1 at each process id received
@@ -359,9 +378,11 @@ class Prefetch:
     def _reconcile(self):
         """Take back the ranges PanDA has sent to this job that the pilot never
         received. Runs on the prefetch's own thread, so no acquisition is in
-        flight while PanDA's record is read; the ranges of a fine-grained job
-        are full ranges of the job's range size, and a range's process id is
-        its first event (production_es.py requires events divisible by it)."""
+        flight while PanDA's record is read. The ranges of a fine-grained job
+        are of the job's range size up to the file's end, and a range's
+        process id is its first event; a file's last range ends at the file's
+        last event, short of the range size where the file's count is not a
+        multiple of it (file_events)."""
         ident = {'task_id': self.ident['task_id'], 'panda_id': self.ident['job_id']}
         try:
             data = _server_get('get_event_range_statuses', {'job_task_ids': json.dumps([ident])}) or {}
@@ -383,7 +404,11 @@ class Prefetch:
                     unknown += 1
                     continue
                 start = int(parts[3])
-                found.append(dict(fields, eventRangeID=rid, startEvent=start, lastEvent=start + self.span - 1))
+                last = start + self.span - 1
+                end = self.file_events.get(fields.get('LFN'))
+                if end and last > end:
+                    last = end
+                found.append(dict(fields, eventRangeID=rid, startEvent=start, lastEvent=last))
             if found:
                 self._note(found)
                 self.ranges.extend(found)
