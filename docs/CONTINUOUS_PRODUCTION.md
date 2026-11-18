@@ -579,7 +579,13 @@ still choose it explicitly, and work a person places there is fed;
 (`front.queue.<queue>.feed_auto_on` = `exit78`, its reason in
 `front.queue.<queue>.feed_off_reason`) comes back on at the start of the first
 front cycle in which the queue has had no exit-78 failure for 90 minutes
-and at least 100 finished jobs over the same window (`swf_epicprod/feed_guard.py`).
+and at least 100 finished jobs over the same window, or in which a canary
+probe submitted after the switch-off has come back healthy, as the canary
+page reads it (site-canary `canary.probe.probe_health`; Torre Wenaus,
+2026-11-18: "a successful canary turns it back on, tht's what they are
+for!"). The probe lands at the site and stages its output out, so it
+proves the path where a drained queue has no production jobs to prove it
+(`swf_epicprod/feed_guard.py`).
 The return clears the reason, and with it the site's feed-off report
 line, records `front` as who switched it and when, and is posted live
 (`feed_auto_on`). GREX's feed was switched off this way on
