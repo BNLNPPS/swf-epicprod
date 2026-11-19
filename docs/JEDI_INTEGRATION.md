@@ -517,15 +517,22 @@ per manifest row.
 - **`commands.build_evgen_task_params(task, panda_tasks=None)`** (`?fmt=evgen`) — the
   credential-free spec. It resolves the task's matched JLab Rucio EVGEN DID(s)
   (`Dataset.metadata['rucio']['matched']`, written by the EVGEN assimilation) to
-  their files over the public `eicread` read, and emits one manifest row
-  (`file,ext,nevents,ichunk`) per file. A Rucio file's name is the xrootd path
-  below `EVGEN/` — the payload prepends `root://…/volatile/eic/EPIC/` to
-  `EVGEN/<file>`. A file registered with its event count (every registration
-  counts them, RUCIO_REGISTRATION_CONTRACT.md) is chunked against the per-job
-  count by the production team's rule: ceil(total / per-job) equal chunks of
-  total // chunks events, equal because the payload seeks to
-  `ichunk × nevents` with the row's own count. A file registered without a
-  count is one job at the per-job count. The per-job count is the config's
+  their files over the public `eicread` read, and emits the manifest, one row
+  per job (`file,ext,nevents,ichunk[,start]`). A Rucio file's name is the
+  xrootd path below `EVGEN/` — the payload prepends `root://…/volatile/eic/EPIC/`
+  to `EVGEN/<file>`. A file registered with its event count (every
+  registration counts them, RUCIO_REGISTRATION_CONTRACT.md) is cut into chunks
+  of the per-job count, the last chunk taking what remains, so every event of
+  the file is read. The payload starts a row at `ichunk × nevents` events into
+  its file. The one row that starts elsewhere, the short last chunk of a file
+  the per-job count does not divide, carries its start, the zero-based
+  position of its first event, as a fifth field; the dispatcher hands it to
+  the payload as `EPICPROD_SKIP_EVENTS`. Attempts created before 19 November
+  2026 used the production team's rule (`csv_to_chunks.sh`): ceil(total /
+  per-job) equal chunks of total // chunks events, which leaves the remainder
+  of each file, up to one event per chunk, unread (20,435 of p4496's 4,264,110
+  events). A file registered without a count is one job at the per-job count.
+  The per-job count is the config's
   `events_per_job`, bounded by the task's own override where it carries one:
   `overrides['max_events_per_job']` set by hand, or the `MAX_EVENTS_PER_CHUNK`
   of the legacy line it was ingested from (`commands.events_per_job_override`).
@@ -727,17 +734,18 @@ For external-EVGEN tasks (one manifest row per EVGEN file):
    convention, extracted from the working payload (`run.sh`, the condor
    reference basis).
 2. **The attempt's manifest** — the rows the attempt being completed
-   actually ran, at their own `nevents` and `ichunk`: the payload skips
-   `ichunk × nevents` events into the input, so a rerun job regenerates
-   the same chunk only with the same row (`pcs/manifests.py`). Three
+   actually ran, at their own `nevents`, `ichunk` and start: a rerun job
+   regenerates the same chunk only with the same row (`pcs/manifests.py`). Three
    sources, in the order of the evidence: the compact record on the
    `PandaTasks` row, written at submission for PCS attempts and
    harvested nightly from the cache for the rest; the attempt's sandbox
    in the PanDA cache, the exact CSV the jobs read; and reconstruction
    from the definition's per-file event totals and the attempt's row
-   count (`nEvents` in its task parameters), which under the chunking
+   count (`nEvents` in its task parameters), which under the equal-chunk
    rule fixes every file's chunk count uniquely, verified against the
-   delivered outputs and never assumed. Whenever an exact manifest and
+   delivered outputs and never assumed. Only an attempt created before
+   19 November 2026 is reconstructed: a later attempt's rows depend on the
+   per-job count it was cut at, which its row count does not fix. Whenever an exact manifest and
    the reconstruction are both in hand they are compared, and a
    disagreement is stated on the preview. The attempt completed is the
    one with the most rows, the latest of equals. No per-job event count

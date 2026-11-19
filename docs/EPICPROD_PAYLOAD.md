@@ -27,7 +27,8 @@ EVGEN submission) ships a sandbox holding the manifest, an
 files, the in-job dispatcher `evgen_job_dispatcher.py`, and, since
 stage 0 (2026-09-06), the epicprod payload as `payload/`. The
 dispatcher reads its manifest row and hands it to `payload/run.sh` in
-the sandbox; the container's own copy of the production team's
+the sandbox, with the row's start as `EPICPROD_SKIP_EVENTS` when the row
+carries one (JEDI_INTEGRATION.md § Components); the container's own copy of the production team's
 scripts at `/opt/campaigns/hepmc3/scripts/` is no longer referenced.
 The stages of run.sh, as cloned:
 

@@ -82,14 +82,15 @@ is promoted through them as evidence arrives:
   reproduced at the production site, reproduced at a reference site,
   not reproduced, or platform-dependent.
 
-**Row.** The manifest row a job ran: `file,ext,nevents,ichunk`
-(`pcs/manifests.py`). The in-job dispatcher runs row *n* for job
+**Row.** The manifest row a job ran: `file,ext,nevents,ichunk`, and a
+fifth field, the start, on a file's short last chunk
+(`pcs/manifests.py`; JEDI_INTEGRATION.md § Components). The in-job dispatcher runs row *n* for job
 sequence number *n* (`evgen_job_dispatcher.py`, `run_row`), the
 payload seeds the simulation with `ichunk + 1`
 (`run.sh`, line 182), enables the per-event seed
 (`--random.enableEventSeed`) and mixes the background merger's seed
 from the input name and the chunk seed. A row is therefore sufficient
-to rerun the job's work: the same image, input file, chunk and seed.
+to rerun the job's work: the same image, input file, events, chunk and seed.
 
 ## Components
 
@@ -125,7 +126,7 @@ exists, `seq_number` from the job parameters, and in `data`:
 exit_code, signal, computingsite, modificationhost, starttime, endtime,
 minutes (endtime − starttime), maxrss_mb, maxpss_mb, cpuconsumptiontime,
 piloterrorcode, piloterrordiag (as stored), taskname, jobname,
-attemptnr, row (file, ext, nevents, ichunk, when resolved),
+attemptnr, row (file, ext, nevents, ichunk, start, when resolved),
 stage (from the payload digest in jobmetrics when present),
 trace_status (unknown | found | absent | log_unavailable)
 ```
