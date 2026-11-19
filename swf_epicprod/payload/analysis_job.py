@@ -340,6 +340,10 @@ def main():
     finally:
         with open(REPORT, 'w') as f:
             json.dump(report, f, indent=1)
+        # Also in the job's log, one line, so the report survives a job
+        # with no report channel (no REPORT_OUT_BUCKET), e.g. one
+        # submitted by hand.
+        log('report: ' + json.dumps(report, sort_keys=True, separators=(',', ':')))
         send_report(report)
     return report['exit']
 

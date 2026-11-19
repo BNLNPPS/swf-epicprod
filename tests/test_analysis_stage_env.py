@@ -59,5 +59,22 @@ class StageEnvironmentTest(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs['env']['RUCIO_CONFIG'], '/job/rucio-token.cfg')
 
 
+class ReportInLogTest(unittest.TestCase):
+
+    def test_report_is_logged_on_one_line(self):
+        import io, json, tempfile
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, {'ANALYSIS_STAGE': 'map', 'ANALYSIS_RUN_ID': 'r' * 64}, clear=True), \
+                mock.patch.object(analysis_job, 'REPORT', os.path.join(tmp, 'report.json')), \
+                mock.patch.object(sys, 'argv', ['analysis_job.py', '0', os.path.join(tmp, 'none')]), \
+                mock.patch('sys.stderr', new_callable=io.StringIO) as err, \
+                mock.patch('sys.stdout', new_callable=io.StringIO) as out:
+            self.assertEqual(analysis_job.main(), 1)
+        lines = [l for l in (out.getvalue() + err.getvalue()).splitlines() if 'report: ' in l]
+        self.assertEqual(len(lines), 1)
+        report = json.loads(lines[0].split('report: ', 1)[1])
+        self.assertEqual((report['stage'], report['exit']), ('map', 1))
+
+
 if __name__ == '__main__':
     unittest.main()
