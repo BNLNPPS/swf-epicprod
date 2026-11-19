@@ -158,8 +158,8 @@ Candidates are EIC tasks — the epic VO, or working group `EIC` under
 any VO (legacy production uses `vo='wlcg'`, `workinggroup='EIC'`) — in a
 non-final state, plus tasks
 `finished`, `failed` or `exhausted` within SysConfig
-`panda_sandbox_keepalive_final_days` (default 30). So native retry is
-dependable for 30 days after a task goes final, not seven.
+`panda_sandbox_keepalive_final_days` (default 90). So native retry is
+dependable for 90 days after a task goes final, not seven.
 
 Detail worth knowing:
 

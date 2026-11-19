@@ -514,14 +514,14 @@ order matters:
   cap. The check is over the bus deliberately — for a messaging service the
   message path *is* the health. A unit that exited deliberately (sentinel 100) is
   left stopped, not fought; a failed restart is an alarm matter.
-- **Prune** (daily, `--prune-days 30`): remove `panda-logs` entries older than
-  30 days; the cache is reclaimable, a miss just re-fetches.
+- **Prune** (daily, `--prune-days 90`): remove `panda-logs` entries older than
+  90 days; the cache is reclaimable, a miss just re-fetches.
 
 Install (root):
 
 ```
 */2 * * * *  /opt/swf-monitor/current/scripts/prodops-cleaner-killer.sh
-30 3 * * *   /opt/swf-monitor/current/scripts/prodops-cleaner-killer.sh --no-liveness --prune-days 30
+30 3 * * *   /opt/swf-monitor/current/scripts/prodops-cleaner-killer.sh --no-liveness --prune-days 90
 ```
 
 The liveness restart uses `sudo systemctl restart`, so the cron account needs
@@ -604,13 +604,13 @@ marker with its reason, a 404 recorded as gone from the cache, so an
 absence is never silent. The first pass looks back
 `harvester_stdout.backfill_days` (7).
 
-The store is outside the reclaimable scratch cache, so the thirty-day
+The store is outside the reclaimable scratch cache, so the ninety-day
 prune of `panda-logs` never touches it:
 `/data/wenauseic/swf-monitor/harvester-stdout/<jeditaskid>/<pandaid>.stdout.gz`
 (the bytes as the server served them, 120 to 220 KB against about 4 MB
 of text, the whole pilot log), `.json` beside it (source, fetched, bytes,
 status) and `.error` for a failed fetch. Lifetime:
-`harvester_stdout.keep_days`, 30 by default (0 keeps them); the hourly
+`harvester_stdout.keep_days`, 90 by default (0 keeps them); the hourly
 pass prunes copies older than that by their capture time. Measured
 2026-09-15: 13 failed and 299 finished such jobs in a week, so failed
 only is about 3 MB a week and finished switched on about 60 MB a week.

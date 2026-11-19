@@ -593,7 +593,7 @@ per manifest row.
   VO, or working group EIC under any VO, including legacy production) in
   a non-final state, plus tasks finished, failed, or exhausted within the
   retention window (SysConfig `panda_sandbox_keepalive_final_days`,
-  default 30). Tarball names and their source server come from each task's
+  default 90). Tarball names and their source server come from each task's
   stored parameters. It runs nightly as a `catalog_sync` chain step on the
   prod-ops agent; a tarball found already purged is reported per task as
   not natively retryable. The same pass maintains log-dataset lifetimes:

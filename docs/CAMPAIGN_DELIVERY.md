@@ -191,7 +191,8 @@ files two submissions named with different chunk sizes, and files with
 no size basis keep their existing row and are reported. Sandbox rows
 replace inferred rows and never a measured one; every measured anchor
 they meet is compared and the disagreements reported. The PanDA server
-keeps sandboxes for about a month, so the pass caches each task's CSV
+keeps sandboxes for ninety days after a task ends (EPICPROD_RETRIES.md),
+so the pass caches each task's CSV
 and environment under `/data/wenauseic/swf-delivery/panda-sandboxes/`
 (the submitter's proxy is never written) and a campaign's older tasks
 are recoverable only while their sandbox lasts. Hand-run through

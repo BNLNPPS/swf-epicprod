@@ -71,7 +71,7 @@ Root crontab:
 | Schedule | Job |
 |---|---|
 | every 2 min | `prodops-cleaner-killer.sh` — duplicate-agent reaping and MQ liveness ping, with restart of a dead ops agent |
-| 03:30 | `prodops-cleaner-killer.sh --no-liveness --prune-days 30` — payload-log cache pruning |
+| 03:30 | `prodops-cleaner-killer.sh --no-liveness --prune-days 90` — payload-log cache pruning |
 
 The root crontab and the hand-installed bot/agent unit files under
 `/etc/systemd/system/` are host state, not in git; a git pull restores
