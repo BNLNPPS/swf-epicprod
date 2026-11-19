@@ -177,6 +177,42 @@ def tails(task, shape=None, staged=None):
     return out
 
 
+def unread_segments(file_events, credited):
+    """The events of one file that no attempt read: ``[(offset, length)]``,
+    each offset the zero-based position of the segment's first event, from
+    the file's catalog count and the one-based inclusive spans its attempts
+    were credited, in any order and overlapping or not."""
+    out, upto = [], 0
+    for first, last in sorted(credited):
+        if first > upto + 1:
+            out.append((upto, first - upto - 1))
+        upto = max(upto, last)
+    if upto < file_events:
+        out.append((upto, file_events - upto))
+    return out
+
+
+def recovery(task, credited, shape=None, staged=None):
+    """The setups of the tasks that read the events every earlier attempt of
+    an EVGEN Event Service task left unread, one task over each unread
+    segment of each file (``credited``: {file's last name component: [(first,
+    last)]}, PanDA's credited spans over every attempt). A segment runs as
+    PanDA ranges 1..length placed ``input_offset`` events into its file
+    (production_es.apply, EPICPROD_SWITCH_ES_INPUT_OFFSET). The setups made
+    before 18 November read each file to the smallest file's count, so each
+    larger file's last events and a few ranges no job saved were never read
+    (p4495, p4497, p4498, p4499)."""
+    from pcs.commands import pinned_site
+    staged = staged or catalog_input(task)
+    base = event_service(task, staged, shape or site_shape(pinned_site(task)))
+    out = []
+    for f in staged['files']:
+        for offset, length in unread_segments(int(f['events']), credited.get(f['lfn'], [])):
+            out.append(dict(base, input_files=[f['lfn']], files=1, events=length, events_per_file=length,
+                            file_events={f['lfn']: length}, input_offset=offset))
+    return out
+
+
 def coverage(task):
     """The files the task's manifest covers, in manifest order:
     ``(OrderedDict {EVGEN-relative path: {ext, events}}, total events)``,

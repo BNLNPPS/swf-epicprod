@@ -824,11 +824,12 @@ In order, each a committed step on the clone:
 
 ## Event Service input offset
 
-`EPICPROD_SWITCH_ES_INPUT_OFFSET=<N>` (payload 0.25.38, off when unset)
+`EPICPROD_SWITCH_ES_INPUT_OFFSET=<N>` (payload 0.25.39, off when unset)
 places an Event Service task's events N positions into its input file: a
 unit's skip is N plus its start less one (`resident_unit.input_skip`, which
 gives run.sh its `EPICPROD_SKIP_EVENTS` and the resident simulation its
-`--skipNEvents`). A recovery task reads the segment of a file that an earlier
+`--skipNEvents`). The harness hands the switch to its slots, whose
+containers start clean. A recovery task reads the segment of a file that an earlier
 task left unread (NERSC_PERLMUTTER.md, EVGEN input in production). Its
 ranges, unit names, seeds and record stay in PanDA's terms, numbered from 1.
 A value other than a nonnegative integer fails the unit.

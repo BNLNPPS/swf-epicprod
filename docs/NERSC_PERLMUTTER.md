@@ -605,6 +605,16 @@ attempt of its own (`evgen_es.tails`, `scripts/evgen-es-tail.py`), over the
 events the manifest took from it. A setup with per-file counts leaves no file
 out, and `tails` returns none for it.
 
+The events those tasks left unread, about 4.3 million, are read by recovery
+attempts, one over each unread segment of each file (`evgen_es.recovery`,
+`scripts/evgen-es-recovery.py`). A segment is what PanDA's credited ranges over
+every attempt leave of the file's catalog count: mostly each file's last
+events, and a few ten-event ranges that no job saved. JEDI takes the file at
+the segment's length (`nEventsPerInputFile`) and makes ranges 1 to that length,
+and the payload places them at the segment's offset in the file
+(`EPICPROD_SWITCH_ES_INPUT_OFFSET`; EPICPROD_PAYLOAD.md, Event Service input
+offset). A segment that an attempt already carries is not submitted again.
+
 The next step is five nodes on the preempt QOS, which charges half after a
 job's first two hours, with six-hour jobs and then eight (Torre's mail to
 epic-prod-ops, 26 October); the QOS, the Slurm time limit and the worker count

@@ -133,6 +133,14 @@ def definition(settings):
                 or sum(fe.values()) != cfg['events'] or max(fe.values()) != cfg['events_per_file']):
             raise ValueError('production ES file_events must give each input file its events, '
                              'summing to the task\'s events, the largest its events_per_file')
+    if 'input_offset' in cfg:
+        # A recovery task over one unread segment of one file
+        # (evgen_es.recovery): PanDA's ranges run 1..events, placed
+        # input_offset events into the file (EPICPROD_SWITCH_ES_INPUT_OFFSET).
+        if (not evgen or type(cfg['input_offset']) is not int or cfg['input_offset'] < 0
+                or cfg['files'] != 1 or not cfg.get('file_events')):
+            raise ValueError('production ES input_offset is a nonnegative offset into the one EVGEN file '
+                             'of a setup with file_events')
     if 'notice' in cfg and type(cfg['notice']) is not bool:
         raise ValueError('production ES notice must be a boolean')
     if 'preempt_at_s' in cfg and (type(cfg['preempt_at_s']) is not int or cfg['preempt_at_s'] <= 0):
@@ -214,6 +222,10 @@ def apply(spec, settings):
         # The units' records leave with their close; the job record and the
         # end-of-job report carry only units no close shipped.
         env['EPICPROD_SWITCH_ES_RECORD_PER_CLOSE'] = '1'
+    if evgen and 'input_offset' in cfg:
+        # The segment's place in its file: each unit's skip is the offset plus
+        # its start less one (EPICPROD_PAYLOAD.md, Event Service input offset).
+        env['EPICPROD_SWITCH_ES_INPUT_OFFSET'] = str(cfg['input_offset'])
     if cfg.get('local_scratch'):
         # The units' scratch in the node's /tmp, off the shared file system:
         # on Perlmutter the step after a resident unit's reconstruction, which
@@ -279,7 +291,15 @@ def apply(spec, settings):
                 + ' $PILOT_EVENTRANGECHANNEL'
                 + ('' if evgen and not (cfg.get('nersc_input') or cfg.get('site_input'))
                    else ' --accessmode=direct'))
-    if evgen:
+    if evgen and 'input_offset' in cfg:
+        # One unread segment of one file: JEDI takes the file at the
+        # segment's length, the catalog's count set aside, so its ranges run
+        # 1..length, the last one short where the length is not a multiple of
+        # the range size (job_complex_module.py, insertNewJob), and the
+        # payload places them at the offset.
+        shape = dict(nEventsPerInputFile=cfg['events'], nEventsPerJob=cfg['events'], nJobs=1,
+                     nEvents=cfg['events'])
+    elif evgen:
         # Each file streamed to its end and the task at their sum: JEDI takes
         # each file's count from the catalog listing (useRealNumEvents, which
         # the submitter sets for epicFileEvents; the ePIC DDM interface passes

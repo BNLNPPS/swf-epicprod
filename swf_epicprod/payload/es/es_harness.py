@@ -1093,6 +1093,13 @@ def main():
             args.env.append('EPICPROD_SWITCH_ES_RECO_ASYNC=1')
             args.reco_async = True
             log('asynchronous reconstruction: slots simulate while their units reconstruct')
+    input_offset = os.environ.get('EPICPROD_SWITCH_ES_INPUT_OFFSET', '')
+    if input_offset:
+        # A recovery task's place in its input file (resident_unit.input_skip,
+        # which checks the value): the slots' containers start clean, and
+        # without the setting a unit would read the file's first events.
+        args.env = (args.env or []) + [f'EPICPROD_SWITCH_ES_INPUT_OFFSET={input_offset}']
+        log(f'input offset: each unit starts {input_offset} events further into its file')
     args.local_scratch = None
     if os.environ.get('EPICPROD_SWITCH_ES_LOCAL_SCRATCH') == '1':
         # The units' scratch (a resident unit's simulation output, read once
