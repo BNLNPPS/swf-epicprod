@@ -371,8 +371,21 @@ def parse_job_row(line):
 
 # --- storage ---------------------------------------------------------------
 
+#: Where a run's unregistered outputs go on EIC-XRD-LOG, mirroring the
+#: analysis input sets (epic:/ANALYSIS/INPUT/): the central tree, or the
+#: test tree beside the beta input sets (/TEST/ANALYSIS/INPUT/).
+OUTPUT_PREFIX = '/ANALYSIS/OUTPUT'
+OUTPUT_PREFIXES = (OUTPUT_PREFIX, '/TEST/ANALYSIS/OUTPUT')
+
+
+def check_output_prefix(prefix):
+    if prefix not in OUTPUT_PREFIXES:
+        raise CardError(f'output prefix must be one of {OUTPUT_PREFIXES}, not {prefix!r}')
+    return prefix
+
+
 def publish_root(purpose, owner):
-    """The folder under EIC-XRD-LOG's prefix a run publishes to."""
+    """The folder under the output prefix a run writes to."""
     if purpose not in PURPOSES:
         raise CardError(f'purpose must be one of {PURPOSES}, not {purpose!r}')
     if purpose == 'validation':
@@ -382,14 +395,17 @@ def publish_root(purpose, owner):
     return owner
 
 
-def scratch_did(purpose, owner, run_id, name):
+def scratch_did(purpose, owner, run_id, name, prefix=OUTPUT_PREFIX):
     """The unregistered DID name of a run's scratch file; an upload with
-    this name lands at /work/eic3/EPIC/eic/<root>/scratch/<id12>/<name>."""
-    return f'/{publish_root(purpose, owner)}/scratch/{run_id[:12]}/{name}'
+    this name lands at /work/eic3/EPIC/eic<prefix>/<root>/scratch/<id12>/<name>."""
+    return f'{check_output_prefix(prefix)}/{publish_root(purpose, owner)}/scratch/{run_id[:12]}/{name}'
 
 
-def publish_did(purpose, owner, campaign, name):
-    return f'/{publish_root(purpose, owner)}/images/campaigns/{campaign}/{name}'
+def publish_did(purpose, owner, campaign, name, prefix=OUTPUT_PREFIX):
+    """The unregistered DID name of a published plot or sidecar:
+    <prefix>/<root>/images/campaigns/<campaign>/<name>."""
+    return (f'{check_output_prefix(prefix)}/{publish_root(purpose, owner)}'
+            f'/images/campaigns/{campaign}/{name}')
 
 
 def histogram_digests(hists):

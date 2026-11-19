@@ -127,7 +127,7 @@ class DatasetCard(models.Model):
 class AnalysisRun(models.Model):
     """A tag on dataset cards. A draft can be edited; freezing writes the
     run card and its id, after which nothing that changes the result can
-    change. Queue, memory, purpose and owner stay out of the run card:
+    change. Queue, memory, purpose, owner and output prefix stay out of the run card:
     promoting a user's run to validation republishes the same id."""
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -149,6 +149,9 @@ class AnalysisRun(models.Model):
         null=True, blank=True, help_text='Overrides the card\'s split.files_per_job')
     purpose = models.CharField(max_length=16, choices=PURPOSE_CHOICES, default='user')
     owner = models.CharField(max_length=100)
+    # Where the outputs go, fixed when the run is created so its jobs and
+    # its report ingest agree (cards.OUTPUT_PREFIXES); outside the run card.
+    output_prefix = models.CharField(max_length=64, default=cards.OUTPUT_PREFIX)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='draft',
                               db_index=True)
     run_card = models.JSONField(null=True, blank=True)

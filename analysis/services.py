@@ -137,6 +137,7 @@ def freeze_run(run):
     (and the draft left as it is). Returns (run, frozen_now)."""
     if run.is_frozen:
         return run, False
+    cards.check_output_prefix(run.output_prefix)
     card = build_run_card(run)
     run_id = cards.run_card_id(card)
     same = AnalysisRun.objects.filter(run_card_id=run_id).first()
@@ -195,8 +196,10 @@ def _spec_common(run, stage):
             'ANALYSIS_CARD': tag.card_path,
             'ANALYSIS_CARD_SHA256': tag.card_sha256,
             'ANALYSIS_PARAMS': cards.params_string(run.run_card['parameters']),
-            'ANALYSIS_SCRATCH': cards.scratch_did(run.purpose, run.owner, rid, '').rstrip('/'),
-            'ANALYSIS_PUBLISH': cards.publish_did(run.purpose, run.owner, run.campaign, '').rstrip('/'),
+            'ANALYSIS_SCRATCH': cards.scratch_did(run.purpose, run.owner, rid, '',
+                                                  run.output_prefix).rstrip('/'),
+            'ANALYSIS_PUBLISH': cards.publish_did(run.purpose, run.owner, run.campaign, '',
+                                                  run.output_prefix).rstrip('/'),
             'ANALYSIS_RSE': SCRATCH_RSE,
         },
     }
@@ -255,6 +258,7 @@ def build_merge_spec(run):
             'analysis_jobs.json': cards.canonical_json(records),
             'analysis_run.json': cards.canonical_json({
                 'run_id': run.run_card_id, 'purpose': run.purpose, 'owner': run.owner,
+                'output_prefix': run.output_prefix,
                 'campaign': run.campaign, 'panda_tasks': run.panda_tasks}),
         },
     })
@@ -269,7 +273,7 @@ def record_job_outputs(run, rows):
     refused reasons)."""
     written, refused = 0, []
     n_jobs = len(run_jobs(run))
-    scratch = cards.scratch_did(run.purpose, run.owner, run.run_card_id, '')
+    scratch = cards.scratch_did(run.purpose, run.owner, run.run_card_id, '', run.output_prefix)
     for row in rows:
         try:
             seq = int(row['seq'])

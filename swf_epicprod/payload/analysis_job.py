@@ -306,6 +306,7 @@ def result_card(card, label, jobs, hists):
         'run_card': run_card,
         'purpose': record['purpose'],
         'owner': record['owner'],
+        'output_prefix': record.get('output_prefix'),
         'campaign': record['campaign'],
         'sample': label,
         'jobs': mine,

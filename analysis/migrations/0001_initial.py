@@ -65,6 +65,7 @@ class Migration(migrations.Migration):
                 ('files_per_job', models.PositiveIntegerField(blank=True, help_text="Overrides the card's split.files_per_job", null=True)),
                 ('purpose', models.CharField(choices=[('validation', 'Validation'), ('user', 'User')], default='user', max_length=16)),
                 ('owner', models.CharField(max_length=100)),
+                ('output_prefix', models.CharField(default='/ANALYSIS/OUTPUT', max_length=64)),
                 ('status', models.CharField(choices=[('draft', 'Draft'), ('frozen', 'Frozen'), ('submitted', 'Submitted'), ('merging', 'Merging'), ('done', 'Done'), ('failed', 'Failed')], db_index=True, default='draft', max_length=16)),
                 ('run_card', models.JSONField(blank=True, null=True)),
                 ('run_card_id', models.CharField(blank=True, max_length=64, null=True, unique=True)),

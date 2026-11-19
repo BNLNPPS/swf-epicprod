@@ -156,6 +156,23 @@ class RunTest(AnalysisFixture):
         same, frozen_now = services.freeze_run(twin)
         self.assertEqual((same.pk, frozen_now), (run.pk, False))
 
+    def test_test_prefix_run_writes_beside_the_beta_inputs(self):
+        run = self.frozen_run(units=1, output_prefix='/TEST/ANALYSIS/OUTPUT')
+        env = services.build_map_spec(run)['env']
+        self.assertTrue(env['ANALYSIS_SCRATCH'].startswith('/TEST/ANALYSIS/OUTPUT/rahmans/scratch/'))
+        self.assertEqual(env['ANALYSIS_PUBLISH'], '/TEST/ANALYSIS/OUTPUT/rahmans/images/campaigns/26073')
+        # the ingest accepts only partials under the run's own scratch
+        self.assertEqual(services.record_job_outputs(
+            run, [{'seq': 0, 'did': f"{env['ANALYSIS_SCRATCH']}/a.job_0000.root"}]), (1, []))
+        self.assertEqual(services.record_job_outputs(
+            run, [{'seq': 0, 'did': f"/ANALYSIS/OUTPUT/rahmans/scratch/{run.run_card_id[:12]}/a.job_0000.root"}])[0], 0)
+        self.assertIn('"output_prefix":"/TEST/ANALYSIS/OUTPUT"',
+                      services.build_merge_spec(run)['sandboxFiles']['analysis_run.json'])
+
+    def test_unknown_output_prefix_is_refused(self):
+        with self.assertRaises(cards.CardError):
+            self.frozen_run(output_prefix='/RECO')
+
     def test_map_spec(self):
         run = self.frozen_run(units=5)
         spec = services.build_map_spec(run)
@@ -164,7 +181,7 @@ class RunTest(AnalysisFixture):
         self.assertEqual(spec['memory'], 2000)
         self.assertEqual(spec['env']['ANALYSIS_COMMIT'], COMMIT)
         self.assertEqual(spec['env']['ANALYSIS_PARAMS'], 'DIHADRON_TRIG_LOW=2 MODE=reco')
-        self.assertTrue(spec['env']['ANALYSIS_SCRATCH'].startswith('/rahmans/scratch/'))
+        self.assertTrue(spec['env']['ANALYSIS_SCRATCH'].startswith('/ANALYSIS/OUTPUT/rahmans/scratch/'))
         first = cards.parse_job_row(spec['csvRows'][0])
         self.assertEqual(first['dids'], [reco('0000.0001'), reco('0001.0001')])
         self.assertIn('%RNDM=0', spec['exec'])

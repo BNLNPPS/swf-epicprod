@@ -108,14 +108,19 @@ store is the directory `ANALYSIS_LOCAL_STORE`.
 ## Storage
 
 Unregistered uploads to EIC-XRD-LOG (`register_to_rucio.py --noregister`):
-DID name `/X` lands at `/work/eic3/EPIC/eic/X`. `<root>` is `validation`
-for a validation run and the owner's name for a user's run.
+DID name `/X` lands at `/work/eic3/EPIC/eic/X`; the scope is not part of
+the path. Outputs mirror the analysis input sets: `<prefix>` is the run's
+`output_prefix`, `/ANALYSIS/OUTPUT`, or `/TEST/ANALYSIS/OUTPUT` for a run
+beside the beta input sets under `/TEST/ANALYSIS/INPUT/`. It is set when
+the run is created, outside the run card, and carried into the result
+card. `<root>` is `validation` for a validation run and the owner's name
+for a user's run.
 
 | What | DID name |
 |---|---|
-| Partial | `/<root>/scratch/<run id 12>/<sample>.job_<job>.root` |
-| Plot | `/<root>/images/campaigns/<campaign>/<sample>.<plot>.png` |
-| Sidecar | `/<root>/images/campaigns/<campaign>/<sample>.<plot>.json` |
+| Partial | `<prefix>/<root>/scratch/<run id 12>/<sample>.job_<job>.root` |
+| Plot | `<prefix>/<root>/images/campaigns/<campaign>/<sample>.<plot>.png` |
+| Sidecar | `<prefix>/<root>/images/campaigns/<campaign>/<sample>.<plot>.json` |
 
 `<campaign>` is the samples' release without dots (`26.07.3` → `26073`).
 

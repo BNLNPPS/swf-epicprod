@@ -169,11 +169,16 @@ class SplitAndStorageTest(unittest.TestCase):
         self.assertEqual(cards.campaign_of(SAMPLE), '26073')
         rid = 'f' * 64
         self.assertEqual(cards.scratch_did('user', 'rahmans', rid, 'x.root'),
-                         '/rahmans/scratch/ffffffffffff/x.root')
+                         '/ANALYSIS/OUTPUT/rahmans/scratch/ffffffffffff/x.root')
         self.assertEqual(cards.publish_did('validation', 'rahmans', '26073', 'p.png'),
-                         '/validation/images/campaigns/26073/p.png')
+                         '/ANALYSIS/OUTPUT/validation/images/campaigns/26073/p.png')
+        self.assertEqual(cards.publish_did('user', 'rahmans', '26073', 'p.png', '/TEST/ANALYSIS/OUTPUT'),
+                         '/TEST/ANALYSIS/OUTPUT/rahmans/images/campaigns/26073/p.png')
         with self.assertRaises(cards.CardError):
             cards.publish_root('user', '../etc')
+        for prefix in ('/ANALYSIS/INPUT', '/RECO', 'ANALYSIS/OUTPUT', '/TEST/ANALYSIS/OUTPUT/'):
+            with self.assertRaises(cards.CardError):
+                cards.scratch_did('user', 'rahmans', rid, 'x.root', prefix)
 
     def test_histogram_digest_ignores_order_of_names_only(self):
         a = cards.histogram_digests({'h': {'entries': 3, 'bins': [0, 1, 2, 0]}})
