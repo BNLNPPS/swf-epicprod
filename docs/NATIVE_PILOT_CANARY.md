@@ -681,6 +681,22 @@ image keeps the search, which now counts an exited, unreaped process as
 finished (`_payload_running` in `utilities.py`), so it ends within one
 five-second wait.
 
+GREX's template moved to `native-grex-pidsearch-e2ee25c` at 22:07:49 ET on
+18 November (`scripts/retarget-native-grex.py`, label `pidsearch`), and
+JLab's was re-rendered from it at 22:08:08 ET (`scripts/render-native-jlab.py
+--max-memory 6000`). The archive
+`61fb982a7855c806592e49bf86e4288177d16f2716f85b37483a0c2e3378a7c3` differs
+from the previous `aad45ad9` only in `utilities.py`, `common.py`,
+`native_container.py` and a helper in `metric_keys.py` that the pilot does
+not call; every launcher and helper is byte-identical. Template SHA-256s:
+GREX `eeaa0f0ea78affc18d0952fa426145a965166fc9c43948c80525b87a8960214a`,
+JLab `75fd227c4cccfccc20880f4697cbcf97aaefeb727180cebe71ce735dda504f83`;
+the previous ones are kept beside them as `...before-pidsearch-20261119T030749Z`
+and `...before-pidsearch-20261119T030808Z` (distcomp-services
+`harvester/CHANGES.md`). Validation: a payload canary on each queue, and
+the instant-payload probe of site-canary (`spec-instant.json`), tasks 42054
+(GREX) and 42055 (JLab).
+
 ### Shared spool exhaustion, 25–26 October
 
 The GREX CE spool is one 196 GiB NFS filesystem, `/var/lib/condor-ce`,
