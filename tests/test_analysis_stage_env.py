@@ -66,7 +66,7 @@ class ReportInLogTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.dict(os.environ, {'ANALYSIS_STAGE': 'map', 'ANALYSIS_RUN_ID': 'r' * 64}, clear=True), \
                 mock.patch.object(analysis_job, 'REPORT', os.path.join(tmp, 'report.json')), \
-                mock.patch.object(sys, 'argv', ['analysis_job.py', '0', os.path.join(tmp, 'none')]), \
+                mock.patch.object(sys, 'argv', ['analysis_job.py', '1', os.path.join(tmp, 'none')]), \
                 mock.patch('sys.stderr', new_callable=io.StringIO) as err, \
                 mock.patch('sys.stdout', new_callable=io.StringIO) as out:
             self.assertEqual(analysis_job.main(), 1)

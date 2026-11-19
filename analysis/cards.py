@@ -338,7 +338,7 @@ def split_jobs(inputs, exclusions, files_per_job):
 
     ``inputs``: [(sample, rows)] in run-card order. Returns
     [{'seq', 'sample', 'label', 'job', 'dids'}], seq counting from 0
-    across the run (PanDA's %RNDM row), job counting from 0 within the
+    across the run (PanDA's ${SEQNUMBER} - 1), job counting from 0 within the
     sample (the analysis's $JOB, zero-padded to four digits)."""
     excluded = {'/' + str(d).strip('/') for d in exclusions or []}
     jobs = []

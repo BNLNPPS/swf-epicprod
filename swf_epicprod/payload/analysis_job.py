@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """One job of an analysis run (swf-epicprod docs/ANALYSIS.md, The job).
 
-    analysis_job.py <seq> <csv base>
+    analysis_job.py <n> <csv base>
 
-The job's manifest row is line <seq> of <csv base>.csv in the sandbox.
+<n> is PanDA's ${SEQNUMBER}, counting from 1; the job's manifest row is
+line <n> of <csv base>.csv in the sandbox, whose own seq column counts
+from 0 (seq = n - 1).
 ANALYSIS_STAGE says which kind of job this is:
 
 map    row seq;label;job;did;did;...  Fetch the analysis repository at the
@@ -322,7 +324,8 @@ def _label(sample):
 
 
 def main():
-    seq, csv_base = int(sys.argv[1]), sys.argv[2]
+    n, csv_base = int(sys.argv[1]), sys.argv[2]
+    seq = n - 1  # SEQNUMBER is 1-based, the manifest 0-based
     stage = env('ANALYSIS_STAGE')
     report = {'schema': SCHEMA, 'stage': stage, 'run_id': os.environ.get('ANALYSIS_RUN_ID'),
               'seq': seq, 'pandaid': os.environ.get('PandaID'), 'exit': 1}
@@ -330,7 +333,7 @@ def main():
         with open(f'{csv_base}.csv') as f:
             rows = f.read().splitlines()
         if not 0 <= seq < len(rows):
-            raise JobError(f'no row {seq} in {csv_base}.csv ({len(rows)} rows)')
+            raise JobError(f'no row {n} (1-based) in {csv_base}.csv ({len(rows)} rows)')
         repo_dir = os.path.abspath('analysis-repo')
         {'map': map_job, 'merge': merge_job}[stage](rows[seq], repo_dir, report)
         report['exit'] = 0
