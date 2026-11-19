@@ -90,6 +90,14 @@ analysis tasks run it.
 | map | `seq;sample;job;did;...` | Fetch the repository at the commit; refuse a card whose sha256 differs from the tag's; resolve the DIDs at BNL-XRD, then EIC-XRD; write `files.list`; run `stages.map`; upload `files.partial` to scratch |
 | merge | `k;sample;merge;job=did;...` | Fetch the repository; read the sample's partials back with a storage read token and check each adler32; run `stages.merge` and `stages.finalize`; publish each plot and its sidecar |
 
+A card's stages run without the payload's credentials: the job's
+environment less the production Rucio config and account, tokens, the
+pilot's proxy and the payload's patched Rucio client
+(`STAGE_HIDDEN_ENV` in `analysis_job.py`). They see the image's default
+Rucio config (read-only `eicread`) and read over anonymous XRootD, as in
+CI. Resolving inputs, uploads and reading partials back stay in the
+payload, with its credentials.
+
 Each job writes `analysis-report.json` (`epicprod-analysis-report/1`: the
 partial and its adler32, or the result card) and sends it with
 `report_out.py` to `analysis/<run id 12>/<stage>_<seq>.json` when job

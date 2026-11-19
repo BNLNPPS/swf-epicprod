@@ -114,8 +114,46 @@ def substitute(template, values):
     return re.sub(r'\$\{(\w+)\}|\$(\w+)', one, template)
 
 
+# The payload's own credentials, which a card's stage must not see: the
+# production Rucio account and its token config (analysis_run.sh,
+# rucio_auth.sh), the pilot's proxy and PanDA tokens, and the token
+# clients. A stage runs code from the analysis repository, so it runs as
+# CI runs it: the image's default Rucio client config (read-only eicread)
+# and anonymous XRootD reads, which is all a benchmark needs. The CA
+# directory is not a credential and stays.
+STAGE_HIDDEN_ENV = (
+    'RUCIO_CONFIG', 'RUCIO_ACCOUNT', 'RUCIO_AUTH_TYPE', 'RUCIO_X509_CONFIG', 'RUCIO_AUTH_DIR',
+    'BEARER_TOKEN', 'BEARER_TOKEN_FILE',
+    'X509_USER_PROXY', 'X509_USER_CERT', 'X509_USER_KEY', 'PILOT_X509_USER_PROXY',
+    'OIDC_AUTH_TOKEN', 'OIDC_REFRESHED_AUTH_TOKEN', 'OIDC_AUTH_DIR', 'OIDC_AUTH_ORIGIN',
+    'PANDA_AUTH_TOKEN', 'PANDA_AUTH_DIR', 'PANDA_AUTH_ORIGIN',
+    'EPICPROD_RUCIO_TOKEN_CLIENT', 'EPICPROD_STORAGE_TOKEN_CLIENT',
+)
+
+
+def stage_environ(values):
+    """The environment of a card's stage: the job's, less the payload's
+    credentials and the payload's patched Rucio client on PYTHONPATH
+    (rucio_auth.sh puts it under rucio-clients/), plus the stage's values."""
+    environ = {k: v for k, v in os.environ.items() if k not in STAGE_HIDDEN_ENV}
+    if 'PYTHONPATH' in environ:
+        kept = [p for p in environ['PYTHONPATH'].split(':')
+                if p and 'rucio-clients' not in p.split(os.sep)]
+        if kept:
+            environ['PYTHONPATH'] = ':'.join(kept)
+        else:
+            del environ['PYTHONPATH']
+    environ.update(values)
+    return environ
+
+
 def run_stage(card, stage, repo_dir, values):
-    run(card['stages'][stage], cwd=repo_dir, extra_env=values, shell=True)
+    cmd = card['stages'][stage]
+    log(f'run: {cmd}')
+    result = subprocess.run(cmd, cwd=repo_dir, shell=True, executable='/bin/bash',
+                            env=stage_environ(values))
+    if result.returncode != 0:
+        raise JobError(f'command exited {result.returncode}: {cmd}')
 
 
 # --- data --------------------------------------------------------------------
