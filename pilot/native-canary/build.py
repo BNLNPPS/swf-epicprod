@@ -117,7 +117,43 @@ def build(baseline, expected_sha256, output, production=False, heartbeat_seconds
     original = "        setup = get_asetup(asetup=False)\n        setup += 'lsetup prmon;'"
     if content.count(original) != 1:
         raise ValueError('Unexpected memory-monitor baseline')
-    write(relative, content.replace(original, "        setup = 'command -v prmon >/dev/null || exit 69;'"))
+    content = content.replace(original, "        setup = 'command -v prmon >/dev/null || exit 69;'")
+
+    # The memory monitor's payload search ends when the payload has ended
+    # (NATIVE_PILOT_CANARY.md, The memory monitor's payload search). The
+    # pilot reaps the payload only after the search returns, so an exited
+    # payload is a zombie meanwhile, which os.kill(pid, 0) reports as
+    # running: a payload that ended before the first try held the pilot for
+    # the search's whole ten minutes on GREX and JLab.
+    original = 'if not is_process_running(pid):'
+    if content.count(original) != 2 or content.count('\ndef get_proper_pid(') != 1:
+        raise ValueError('Unexpected payload-search baseline in utilities.py')
+    content = content.replace(original, 'if not _payload_running(pid):')
+    content = content.replace('\ndef get_proper_pid(', '''
+def _payload_running(pid: int) -> bool:
+    """ePIC: an exited payload is finished, reaped or not."""
+    try:
+        with open(f'/proc/{pid}/stat', encoding='utf-8') as stat:
+            state = stat.read().rsplit(')', 1)[1].split()[0]
+    except (OSError, IndexError):
+        return is_process_running(pid)
+    return state not in ('Z', 'X')
+
+
+def get_proper_pid(''')
+    write(relative, content)
+
+    # A payload run in place is the process the pilot started: the memory
+    # monitor takes it without a search (same section).
+    relative = 'pilot/user/epic/common.py'
+    content = (tree / relative).read_text()
+    original = "        use_container = job.usecontainer or 'runcontainer' in job.transformation\n"
+    if content.count(original) != 1:
+        raise ValueError('Unexpected memory-monitor container baseline in common.py')
+    write(relative, content.replace(original, original + '''        from pilot.user.epic.native_container import ran_in_place
+        if ran_in_place(job):
+            use_container = False
+'''))
 
     # The bound task from the PanDA_TaskID environment reaches the server as
     # an int: the baseline sends the string and the server's typed API

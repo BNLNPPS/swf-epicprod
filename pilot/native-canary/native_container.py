@@ -208,6 +208,16 @@ def same_image(actual, wanted):
                 and os.path.realpath(actual) == os.path.realpath(wanted))
 
 
+def ran_in_place(job):
+    """True when the wrapper runs this job's payload in the pilot's own image.
+
+    The process the pilot starts is then the payload's own shell, so the
+    memory monitor needs no search for it (NATIVE_PILOT_CANARY.md, The
+    memory monitor's payload search).
+    """
+    return same_image(current_image(), getattr(job, 'imagename', ''))
+
+
 def wrapper(executable, **kwargs):
     job = kwargs.get('job')
     if job is None:

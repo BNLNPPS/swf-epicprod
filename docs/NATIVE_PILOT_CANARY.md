@@ -652,6 +652,35 @@ pilot-directory readings and the digest whole through `pExit`. The same task's
 canary on the previous runtime, task 42000 / job 6608498, had 489 characters,
 cut after `pReg`.
 
+### The memory monitor's payload search, 18 November
+
+A payload that ends within a fraction of a second held its pilot for ten
+minutes on GREX and JLab, and not on OSG (Hello World test jobs of 18
+November; JLab job 6609543 started its payload at 14:26:48 ET and saw it
+finish at 14:37:32 ET). After starting the payload, the pilot looks for
+the payload's process to hand to the memory monitor (`get_proper_pid` in
+the ePIC plugin's `utilities.py`): up to 120 tries five seconds apart,
+stopping early only when the process it started has ended. The pilot reaps
+that process only after the search returns, so a payload that has already
+exited stays a zombie, which `os.kill(pid, 0)` still reports as running,
+and the search runs its full ten minutes. On OSG the pilot runs in its
+glidein's own container and sees a handful of processes, so the first
+try, about a millisecond long, finds the payload still running. On GREX
+and JLab the pilot sees the whole node's process table, and the first try
+takes a quarter of a second. A payload that runs longer is found at once
+(GREX job 6609571, a 60-second sleep, took 70 seconds). Production
+payloads are never this short; one that fails at once on GREX or JLab
+held its slot ten minutes before its failure was reported.
+
+`build.py` makes two changes. A payload the wrapper runs in place is the
+process the pilot started; the started and found process ids agreed in
+every job read (36358 and 52238 at JLab, 132 at OSG). So `common.py`
+hands that process to the memory monitor without a search
+(`native_container.ran_in_place`). A payload launched nested in another
+image keeps the search, which now counts an exited, unreaped process as
+finished (`_payload_running` in `utilities.py`), so it ends within one
+five-second wait.
+
 ### Shared spool exhaustion, 25–26 October
 
 The GREX CE spool is one 196 GiB NFS filesystem, `/var/lib/condor-ce`,
