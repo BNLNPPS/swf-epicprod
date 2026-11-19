@@ -121,6 +121,10 @@ def main():
             # while something reads it (NERSC_PERLMUTTER.md, Admission).
             from swf_epicprod.perlmutter_pilots import capability
             capability(refresh=True)
+            if capability().get('mode') != 'bound':
+                raise SystemExit('The Perlmutter launcher report is stale and this tree cannot store its '
+                                 'refresh (a development tree never writes cached products): refresh it '
+                                 'from the deployed monitor (the page\'s Update) and run again within 15 minutes')
     for shape in pending[:args.limit] if args.limit else pending:
         where = f'{shape["input_files"][0]} from {shape["input_offset"]:,}, {shape["events"]:,} events'
         if not submit:
