@@ -46,15 +46,28 @@ def attempts(task):
     return sorted(ids)
 
 
+def offsets(task):
+    """``{JEDI task id: input offset}`` of the recovery attempts."""
+    out = {}
+    for jedi, meta in task.panda_tasks.filter(jedi_task_id__isnull=False).values_list('jedi_task_id', 'metadata'):
+        es = (meta or {}).get('event_service') or {}
+        if 'input_offset' in es:
+            out[int(jedi)] = int(es['input_offset'])
+    return out
+
+
 def credited(task):
     """``{file's last name component: [(first, last)]}``, PanDA's credited
-    spans over every attempt. JEDI removes a done task's event rows; such a
-    task read each of its input files whole at its JEDI count, which it holds
-    as finished, so those files are credited 1..count. Any other attempt
-    without event rows read nothing."""
-    out = {}
+    spans over every attempt, one-based file positions. JEDI removes a done
+    task's event rows; such a task read each of its input files whole at its
+    JEDI count, which it holds as finished, so those files are credited
+    1..count. Any other attempt without event rows read nothing. A recovery
+    attempt's JEDI events count from its input offset (the payload's skip is
+    offset + startEvent - 1), so its spans are shifted by the offset."""
+    out, shift = {}, offsets(task)
     with connections['panda'].cursor() as cursor:
         for jedi in attempts(task):
+            base = shift.get(jedi, 0)
             cursor.execute('SELECT status FROM doma_panda.jedi_tasks WHERE jeditaskid = %s', [jedi])
             row = cursor.fetchone()
             if row is None:
@@ -67,7 +80,7 @@ def credited(task):
                     'AND d.datasetid = e.datasetid AND d.fileid = e.fileid '
                     'WHERE e.jeditaskid = %s AND e.status = ANY(%s)', [jedi, list(CREDITED)])
                 for lfn, first, last in cursor.fetchall():
-                    out.setdefault(lfn.removeprefix(evgen_es.LFN_PREFIX), []).append((int(first), int(last)))
+                    out.setdefault(lfn.removeprefix(evgen_es.LFN_PREFIX), []).append((base + int(first), base + int(last)))
             elif row[0] == 'done':
                 cursor.execute(
                     "SELECT d.lfn, d.nevents, d.status FROM doma_panda.jedi_dataset_contents d "
@@ -77,7 +90,7 @@ def credited(task):
                     if status != 'finished' or not nevents:
                         raise SystemExit(f'{task.name}: done attempt {jedi} holds {lfn} {status} '
                                          f'with {nevents} events; its credit cannot be read')
-                    out.setdefault(lfn.removeprefix(evgen_es.LFN_PREFIX), []).append((1, int(nevents)))
+                    out.setdefault(lfn.removeprefix(evgen_es.LFN_PREFIX), []).append((base + 1, base + int(nevents)))
     return out
 
 

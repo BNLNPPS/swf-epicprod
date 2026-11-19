@@ -66,11 +66,13 @@ def prepare(args):
     inputs = []
     for f in files:
         r = replicas.get(f"{f['scope']}:{f['name']}")
-        urls = [url for rse, paths in (r or {}).get('rses', {}).items()
-                if r.get('states', {}).get(rse) in ('AVAILABLE', 'A')
-                for url in paths if url.startswith('root://')]
+        # A disk replica only: a tape door's path is not readable in place.
+        pfns = sorted((r or {}).get('pfns', {}).items(), key=lambda item: item[1].get('priority', 0))
+        urls = [url for url, pfn in pfns
+                if pfn.get('type') == 'DISK' and url.startswith('root://')
+                and r.get('states', {}).get(pfn.get('rse')) in ('AVAILABLE', 'A')]
         if not urls:
-            raise RuntimeError('No available ROOT replica for ' + f['name'])
+            raise RuntimeError('No available ROOT disk replica for ' + f['name'])
         inputs.append(dict(f, url=urls[0]))
     return {'files': inputs, 'expected_event_ids': sorted(expected),
             'expected_events': len(expected)}
