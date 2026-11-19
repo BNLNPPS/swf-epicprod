@@ -114,6 +114,13 @@ def main():
             raise SystemExit(f'{args.task}: no pending segment {args.only}')
     print(f'{args.task}: {len(shapes)} unread segments, {sum(s["events"] for s in shapes):,} events; '
           f'{len(shapes) - len(pending)} already carried')
+    if submit and pending:
+        from pcs.commands import pinned_site
+        if pinned_site(task) == 'NERSC_Perlmutter_epic_es':
+            # Image admission reads the launcher's report, which refreshes only
+            # while something reads it (NERSC_PERLMUTTER.md, Admission).
+            from swf_epicprod.perlmutter_pilots import capability
+            capability(refresh=True)
     for shape in pending[:args.limit] if args.limit else pending:
         where = f'{shape["input_files"][0]} from {shape["input_offset"]:,}, {shape["events"]:,} events'
         if not submit:
