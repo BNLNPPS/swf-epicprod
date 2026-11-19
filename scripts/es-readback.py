@@ -16,6 +16,7 @@ def prepare(args):
     django.setup()
     from monitor_app.mcp.rucio import _load_catalog, _CATALOGS
     catalog = _load_catalog('es_output_readback', _CATALOGS['jlab_rucio']['env'])
+    offset = args.input_offset or 0
     if args.prepare:
         evidence = json.loads(args.prepare.read_text())
         if not evidence.get('applied'):
@@ -24,9 +25,12 @@ def prepare(args):
         expected = set()
         for unit in evidence['record']['done']:
             span = unit['range']
-            # PanDA spans are one-based and inclusive; EventHeader uses
-            # the payload's zero-based skip offset (es_slot.run_unit).
-            expected.update(range(int(span['startEvent']) - 1, int(span['lastEvent'])))
+            # PanDA spans are one-based and inclusive; the manifest lists
+            # zero-based positions, the payload's skip offsets
+            # (es_slot.run_unit). EventHeader carries the position for the
+            # neutron-gun plan and the source's own number for EVGEN input
+            # (source_truth).
+            expected.update(range(offset + int(span['startEvent']) - 1, offset + int(span['lastEvent'])))
     else:
         scope, name = args.dataset.split(':', 1)
         result = catalog.list_files(name=name, scope=scope, page=1, limit=500)
@@ -44,7 +48,7 @@ def prepare(args):
             expected = set()
             for unit in record.get('done', []):
                 span = unit['range']
-                ids = set(range(int(span['startEvent']) - 1, int(span['lastEvent'])))
+                ids = set(range(offset + int(span['startEvent']) - 1, offset + int(span['lastEvent'])))
                 if expected.intersection(ids):
                     raise RuntimeError('Saved unit event identities overlap')
                 expected.update(ids)
@@ -72,40 +76,67 @@ def prepare(args):
             'expected_events': len(expected)}
 
 
-def source_truth(path, numbers):
-    """The final-state particles of the source EVGEN events with these event
-    numbers, read by HepMC3 directly, in GeV: {event number: {'species':
-    sorted PDG codes, 'exact': sorted (PDG, px, py, pz) of the particles not
-    produced in a generator decay}}. npsim hands a generator decay (status 2)
-    to Geant4 as a pre-assigned decay, so its products' lab momenta follow
-    the parent through field and material; only their species is the
-    source's."""
+def source_truth(path, positions):
+    """The source EVGEN events at these zero-based positions in the file (the
+    payload's skip offsets), read by HepMC3 directly, keyed by each event's
+    own number, which npsim writes to EventHeader: {event number:
+    {'position', 'species': sorted PDG codes, 'exact': sorted (PDG, px, py,
+    pz) in GeV of the final-state particles with no generator decay among
+    their ancestors}}. A generator may number its events with gaps (pythia6 keeps the
+    numbers of the events it generated), so a number equals its position
+    only in a source numbered 0, 1, 2 and on. npsim hands a generator decay
+    (status 2) to Geant4 as a pre-assigned decay, so the lab momenta of
+    its products, through intermediates of other statuses too (a D meson's
+    pion through a status-11 resonance), follow the parent through field
+    and material; only their species is the source's."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'swf_epicprod' / 'payload' / 'es'))
     from evgen_ranges import hepmc, reader_for
-    root, wanted, found = hepmc(), set(numbers), {}
+    root, wanted, found = hepmc(), set(positions), {}
     if not root.gInterpreter.Declare('#include <HepMC3/GenParticle.h>'):
         raise RuntimeError('Cannot load the HepMC3 particle interface')
+    last, position = max(wanted), -1
     reader = reader_for(path)
     try:
-        while wanted - set(found):
+        while position < last:
             event = root.HepMC3.GenEvent()
             if not reader.read_event(event) or reader.failed():
                 break
+            position += 1
+            if position not in wanted:
+                continue
             number = int(event.event_number())
-            if number in wanted:
-                scale = 0.001 if event.momentum_unit() == root.HepMC3.Units.MEV else 1.0
-                final = [p for p in event.particles() if p.status() == 1]
-                found[number] = {
-                    'species': sorted(int(p.pid()) for p in final),
-                    'exact': sorted((int(p.pid()), p.momentum().px() * scale, p.momentum().py() * scale,
-                                     p.momentum().pz() * scale) for p in final
-                                    if not any(q.status() == 2 for q in p.parents()))}
+            if number in found:
+                raise RuntimeError(f'Source event number {number} repeats, at positions '
+                                   f'{found[number]["position"]} and {position}')
+            scale = 0.001 if event.momentum_unit() == root.HepMC3.Units.MEV else 1.0
+            final = [p for p in event.particles() if p.status() == 1]
+            in_decay = {id(p): from_decay(p) for p in final}
+            found[number] = {
+                'position': position,
+                'species': sorted(int(p.pid()) for p in final),
+                'exact': sorted((int(p.pid()), p.momentum().px() * scale, p.momentum().py() * scale,
+                                 p.momentum().pz() * scale) for p in final
+                                if not in_decay[id(p)])}
     finally:
         reader.close()
-    missing = wanted - set(found)
-    if missing:
-        raise RuntimeError(f'{len(missing)} event numbers are absent from the source, e.g. {sorted(missing)[:5]}')
+    if position < last:
+        raise RuntimeError(f'The source ends at position {position}; the expected coverage reaches {last}')
     return found
+
+
+def from_decay(particle):
+    """Whether a generator decay (status 2) is among the particle's ancestors."""
+    seen, pending = set(), list(particle.parents())
+    while pending:
+        parent = pending.pop()
+        key = int(parent.id())
+        if key in seen:
+            continue
+        seen.add(key)
+        if parent.status() == 2:
+            return True
+        pending.extend(parent.parents())
+    return False
 
 
 def same_particles(simulated, source, tolerance=1e-5):
@@ -129,6 +160,7 @@ def validate(args):
     manifest = json.loads(args.validate.read_text())
     source = getattr(args, 'source', None)
     expected_source = source_truth(source, manifest['expected_event_ids']) if source else None
+    expected_ids = set(expected_source) if expected_source is not None else set(manifest['expected_event_ids'])
     source_checked = 0
     ids, identities, truth = set(), set(), set()
     collections = None
@@ -182,10 +214,10 @@ def validate(args):
         if count != int(entry['events']):
             raise RuntimeError('The readable event count differs from the registered count')
         observed.append({'name': entry['name'], 'events': count})
-    if ids != set(manifest['expected_event_ids']):
+    if ids != expected_ids:
         diagnostic = args.output.with_name(args.output.stem + '-coverage-diagnostic.json')
         diagnostic.write_text(json.dumps({'observed_event_ids': sorted(ids),
-            'expected_event_ids': manifest['expected_event_ids']}, indent=2) + '\n')
+            'expected_event_ids': sorted(expected_ids)}, indent=2) + '\n')
         raise RuntimeError('Readable event identities differ from the expected coverage')
     if args.fingerprints:
         args.fingerprints.write_text(json.dumps({
@@ -211,9 +243,13 @@ def main():
     mode.add_argument('--validate', type=Path, help='prepared readback manifest')
     ap.add_argument('--events', type=int, help='complete task event count')
     ap.add_argument('--evgen', action='store_true', help='external EVGEN truth instead of the neutron-gun plan')
-    ap.add_argument('--source', help='with --evgen: the source EVGEN file; each event\'s final-state '
-                                     'particles must match the source event of the same number')
+    ap.add_argument('--source', help='with --evgen: the source EVGEN file; the expected positions are '
+                                     'read there, the IDs expected are those events\' own numbers, and each '
+                                     'event\'s final-state particles must match its source event')
     ap.add_argument('--record', type=Path, help='read only the saved closes and exact IDs in this shipped record')
+    ap.add_argument('--input-offset', type=int, default=0,
+                    help='the task\'s EPICPROD_SWITCH_ES_INPUT_OFFSET: a range\'s positions start at '
+                         'offset + startEvent - 1')
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--fingerprints', type=Path,
                     help='retain checked identities for combining separately read closes')
@@ -224,6 +260,8 @@ def main():
         ap.error('--record requires --dataset')
     if args.fingerprints and not args.validate:
         ap.error('--fingerprints requires --validate')
+    if args.input_offset and (args.validate or args.input_offset < 0 or not (args.prepare or args.record)):
+        ap.error('--input-offset is a nonnegative offset for --prepare or --record')
     if args.source and not (args.validate and args.evgen):
         ap.error('--source requires --validate and --evgen')
     result = validate(args) if args.validate else prepare(args)

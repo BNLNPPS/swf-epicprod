@@ -43,6 +43,23 @@ def template_path(work):
     return os.path.join(work, TEMPLATE)
 
 
+def input_skip(start, env=None):
+    """The zero-based source position of a unit's first event, the skip
+    npsim is given: PanDA's one-based start less one, plus
+    EPICPROD_SWITCH_ES_INPUT_OFFSET when it is set. A recovery task reads one
+    segment of a file whose ranges PanDA numbers from 1; the switch places
+    them at the segment's position in the source (NERSC_PERLMUTTER.md, EVGEN
+    input in production). Ranges, unit names, seeds and the record stay in
+    PanDA's terms. Off when unset; a value other than a nonnegative integer
+    is refused."""
+    raw = (os.environ if env is None else env).get('EPICPROD_SWITCH_ES_INPUT_OFFSET', '')
+    if raw == '':
+        return start - 1
+    if not raw.isdigit():
+        raise ValueError(f'EPICPROD_SWITCH_ES_INPUT_OFFSET={raw!r} is not a nonnegative integer')
+    return int(raw) + start - 1
+
+
 def identity(template, chunk, label, skip):
     """run.sh's output name and seed for a chunk (Argument parsing and the
     particle gun's seed), from the constants its template recorded."""
@@ -166,7 +183,7 @@ def simulate(template, chunk, label, start, count, out, env, scratch):
     reconstruct() takes. Raises on a failed step, with the reason, and then
     removes the unit's scratch."""
     out, scratch = Path(out), Path(scratch)
-    skip = start - 1
+    skip = input_skip(start, env)
     taskname, seed = identity(template, chunk, label, skip)
     full = scratch / template['full_dir'] / f'{taskname}.edm4hep.root'
     if handoff_in_place(env):

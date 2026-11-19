@@ -693,9 +693,11 @@ GREX `eeaa0f0ea78affc18d0952fa426145a965166fc9c43948c80525b87a8960214a`,
 JLab `75fd227c4cccfccc20880f4697cbcf97aaefeb727180cebe71ce735dda504f83`;
 the previous ones are kept beside them as `...before-pidsearch-20261119T030749Z`
 and `...before-pidsearch-20261119T030808Z` (distcomp-services
-`harvester/CHANGES.md`). Validation: a payload canary on each queue, and
-the instant-payload probe of site-canary (`spec-instant.json`), tasks 42054
-(GREX) and 42055 (JLab).
+`harvester/CHANGES.md`). On new-runtime pilots the instant-payload probe of
+site-canary (`spec-instant.json`) finished in 7 seconds on GREX (job
+6609580, payload phase 0 seconds against 644 before) and 6 seconds on JLab
+(job 6609581), and the payload canaries 6609578 (GREX) and 6609579 (JLab)
+finished with their 100 events.
 
 ### Shared spool exhaustion, 25–26 October
 

@@ -391,8 +391,10 @@ task's jobs and their shipped harness records, read-only. After the job,
 prepares the registered files, and `--validate <manifest> --evgen --source
 <EVGEN file>`, run in the campaign image, reads every registered event with
 the campaign's PODIO reader and checks each event ID once, every collection's
-readability, and each event against the source event of the same number
-(NODE_EVENT_DISPATCHER.md, Resident simulation with external EVGEN input).
+readability, and each event against the source event at its position,
+whose own number in the source the event carries (EPICPROD_PAYLOAD.md, Event
+Service input offset; NODE_EVENT_DISPATCHER.md, Resident simulation with
+external EVGEN input).
 
 ### Measured
 

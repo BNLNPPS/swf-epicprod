@@ -822,6 +822,24 @@ In order, each a committed step on the clone:
     job). On by default from payload 0.25.3, after the same canaries;
     `0` turns it off.
 
+## Event Service input offset
+
+`EPICPROD_SWITCH_ES_INPUT_OFFSET=<N>` (payload 0.25.38, off when unset)
+places an Event Service task's events N positions into its input file: a
+unit's skip is N plus its start less one (`resident_unit.input_skip`, which
+gives run.sh its `EPICPROD_SKIP_EVENTS` and the resident simulation its
+`--skipNEvents`). A recovery task reads the segment of a file that an earlier
+task left unread (NERSC_PERLMUTTER.md, EVGEN input in production). Its
+ranges, unit names, seeds and record stay in PanDA's terms, numbered from 1.
+A value other than a nonnegative integer fails the unit.
+
+npsim writes each EVGEN event's own number in the source to `EventHeader`.
+A generator can number its events with gaps (pythia6 keeps the numbers of
+the events it generated), so a saved ID equals its position in the file
+only for a source numbered 0, 1, 2 and on. `scripts/es-readback.py
+--source` reads the expected positions (`--input-offset N` for a recovery
+task) in the source and expects those events' numbers.
+
 ## Event Service closes
 
 Event Service closes can opt into fast ROOT merging with

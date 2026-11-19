@@ -204,11 +204,16 @@ def run_unit(spec_path, args, background=None):
     for kv in args.env or []:
         k, _, v = kv.partition('=')
         env[k] = v
+    try:
+        skip = resident_unit.input_skip(start, env)
+    except ValueError as error:
+        record.update(status='error', message=str(error))
+        return uid, record, None
     handoff = os.path.join(args.work, 'handoff', uid) if args.handoff else ''
     env.update({
         'EPICPROD_REPORT_ID': f"{env.get('PANDAID') or 'unidentified'}/{uid}",
         'EPICPROD_RECO_HANDOFF': handoff,
-        'EPICPROD_SKIP_EVENTS': str(start - 1),
+        'EPICPROD_SKIP_EVENTS': str(skip),
         'EPICPROD_EVGEN_SOURCE_ID': json.dumps({key: spec['range'].get(key)
             for key in ('LFN', 'GUID')}, sort_keys=True),
         'EPICPROD_CHUNK_LABEL': label or '',
