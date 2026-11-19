@@ -1,12 +1,14 @@
 """Attempt manifests: the work-unit record of every PanDA attempt.
 
 A production attempt runs one job per manifest row, ``file,ext,nevents,
-ichunk``; the payload skips ``ichunk × nevents`` events into the input
-and produces one output named by the row (JEDI_INTEGRATION.md §
-Payload-managed output naming). The residual of an attempt, the rows
-whose output was never delivered, therefore needs the rows that attempt
-actually ran, at their own ``nevents`` and ``ichunk``. This module
-records them and recovers them, in the order of the evidence:
+ichunk[,start]``; the payload starts ``ichunk × nevents`` events into the
+input, or at the row's start where it carries one (a file's short last
+chunk, JEDI_INTEGRATION.md § Components), and produces one output named
+by the row (JEDI_INTEGRATION.md § Payload-managed output naming). The
+residual of an attempt, the rows whose output was never delivered,
+therefore needs the rows that attempt actually ran, at their own
+``nevents``, ``ichunk`` and start. This module records them and recovers
+them, in the order of the evidence:
 
 - **the record on the attempt** (``PandaTasks.metadata['manifest']``),
   written at submission for PCS attempts and harvested nightly for the
@@ -18,11 +20,14 @@ records them and recovers them, in the order of the evidence:
   cut into equal chunks at one per-task size, each file's chunk count
   falls as that size rises, and their sum is the row count, so the row
   count fixes every file's chunk count uniquely and the rows follow.
-  It is verified against the delivered outputs and never assumed.
+  It is verified against the delivered outputs and never assumed. Only
+  attempts created before ``EQUAL_CHUNKS_BEFORE`` are reconstructed: a
+  later attempt's rows depend on the per-job count it was cut at, which
+  its row count does not fix.
 
 The record is compact and lossless: one entry per input file when its
-rows are contiguous chunks at one ``nevents``, an explicit chunk list
-otherwise, about a kilobyte per attempt against hundreds of kilobytes
+rows are contiguous chunks at one ``nevents`` (and a short last chunk,
+``last``), an explicit chunk list otherwise, about a kilobyte per attempt against hundreds of kilobytes
 of rows. Whenever both the exact manifest and the reconstruction are in
 hand they are compared, and a disagreement is reported as a fact about
 the attempt, never resolved silently.
@@ -37,7 +42,12 @@ import time
 from datetime import datetime, timezone
 
 MANIFEST_ROW_RE = re.compile(
-    r'^(?P<file>[^,\s]+),(?P<ext>[^,\s]+),(?P<nevents>\d+),(?P<chunk>\d{4,})$')
+    r'^(?P<file>[^,\s]+),(?P<ext>[^,\s]+),(?P<nevents>\d+),(?P<chunk>\d{4,})'
+    r'(?:,(?P<start>\d+))?$')
+# Attempts created from this moment on were cut into chunks of the per-job
+# count with a short last chunk (JEDI_INTEGRATION.md § Components); earlier
+# ones into equal chunks, the only rule a row count reconstructs.
+EQUAL_CHUNKS_BEFORE = datetime(2026, 11, 19, 22, 0, tzinfo=timezone.utc)
 TARBALL_RE = re.compile(r'jobO\.[0-9a-f]{32}\.tar\.gz')
 SOURCE_URL_RE = re.compile(r'"sourceURL":\s*"([^"]+)"')
 CACHE_FETCH_TIMEOUT = 60
@@ -51,11 +61,46 @@ class ManifestUnavailable(Exception):
 
 # ---------------------------------------------------------------- rows
 
+class Row(tuple):
+    """A manifest row, ``(file, ext, nevents, chunk)``, and its ``start``:
+    the zero-based position in its file of the row's first event. A row
+    starts at ``chunk × nevents`` unless it carries its own start, which a
+    file's short last chunk does (JEDI_INTEGRATION.md § Components). The
+    start is an attribute, not a fifth element, so a row unpacks as the
+    four fields its readers take; equality includes it."""
+
+    def __new__(cls, file, ext, nevents, chunk, start=None):
+        row = super().__new__(cls, (file, ext, int(nevents), int(chunk)))
+        row.start = int(start) if start is not None else int(chunk) * int(nevents)
+        return row
+
+    def __getnewargs__(self):
+        return (*self, self.start)
+
+    def __eq__(self, other):
+        same = tuple.__eq__(self, other)
+        if same is not True:
+            return same
+        return self.start == start_of(other)
+
+    def __ne__(self, other):
+        same = self.__eq__(other)
+        return same if same is NotImplemented else not same
+
+    __hash__ = tuple.__hash__
+
+
+def start_of(row):
+    """A row's start: its own, else ``chunk × nevents``."""
+    start = getattr(row, 'start', None)
+    return int(start) if start is not None else int(row[3]) * int(row[2])
+
+
 def parse_manifest(text):
-    """(rows, rejected) of a CSV text: the manifest rows as (file, ext,
-    nevents, chunk), and the nonblank lines that are not rows. A text with
-    any rejected line is not an exact manifest: its rows are a part of
-    the attempt, never the whole of it."""
+    """(rows, rejected) of a CSV text: the manifest rows as ``Row``, and
+    the nonblank lines that are not rows. A text with any rejected line is
+    not an exact manifest: its rows are a part of the attempt, never the
+    whole of it."""
     rows, rejected = [], []
     for line in text.splitlines():
         line = line.strip()
@@ -63,8 +108,7 @@ def parse_manifest(text):
             continue
         m = MANIFEST_ROW_RE.match(line)
         if m:
-            rows.append((m['file'], m['ext'], int(m['nevents']),
-                         int(m['chunk'])))
+            rows.append(Row(m['file'], m['ext'], m['nevents'], m['chunk'], m['start']))
         else:
             rejected.append(line)
     return rows, rejected
@@ -89,8 +133,14 @@ def rejection(rejected, total):
 
 
 def format_rows(rows):
-    """Rows back to the manifest's own line form."""
-    return [f'{f},{e},{n},{c:04d}' for f, e, n, c in rows]
+    """Rows back to the manifest's own line form, the start written only
+    on a row that does not begin at ``chunk × nevents``."""
+    out = []
+    for row in rows:
+        f, e, n, c = row
+        start = start_of(row)
+        out.append(f'{f},{e},{n},{c:04d}' + (f',{start}' if start != c * n else ''))
+    return out
 
 
 def rows_sha256(rows):
@@ -100,35 +150,50 @@ def rows_sha256(rows):
 
 def compact(rows):
     """The compact record of ``rows``: per file, ``nevents`` and the chunk
-    count when the chunks are 0..n-1 at one size, else the explicit
-    ``[nevents, chunk]`` list."""
+    count when the chunks are 0..n-1 at one size, with ``last`` when the
+    final chunk is shorter and starts where the full chunks end, else the
+    explicit ``[nevents, chunk]`` list (``[nevents, chunk, start]`` for a
+    row with its own start)."""
     by_file = {}
-    for f, e, n, c in rows:
-        by_file.setdefault((f, e), []).append((c, n))
+    for row in rows:
+        f, e, n, c = row
+        by_file.setdefault((f, e), []).append((c, n, start_of(row)))
     files = []
     for (f, e), chunks in by_file.items():
         chunks.sort()
-        sizes = {n for _c, n in chunks}
-        indices = [c for c, _n in chunks]
-        if len(sizes) == 1 and indices == list(range(len(indices))):
-            files.append({'file': f, 'ext': e, 'nevents': sizes.pop(),
+        indices = [c for c, _n, _s in chunks]
+        contiguous = indices == list(range(len(indices)))
+        full = chunks[:-1] if len(chunks) > 1 else chunks
+        sizes = {n for _c, n, _s in full}
+        size = next(iter(sizes)) if len(sizes) == 1 else None
+        plain = size is not None and all(s == c * size for c, _n, s in chunks)
+        last_c, last_n, _last_s = chunks[-1]
+        if contiguous and plain and last_n == size:
+            files.append({'file': f, 'ext': e, 'nevents': size,
                           'nchunks': len(indices)})
+        elif contiguous and plain and len(chunks) > 1 and last_n < size:
+            files.append({'file': f, 'ext': e, 'nevents': size,
+                          'nchunks': len(indices), 'last': last_n})
         else:
             files.append({'file': f, 'ext': e,
-                          'chunks': [[n, c] for c, n in chunks]})
+                          'chunks': [[n, c] if s == c * n else [n, c, s]
+                                     for c, n, s in chunks]})
     return {'rows': len(rows), 'files': files, 'sha256': rows_sha256(rows)}
 
 
 def expand(record):
-    """The rows of a compact record, as (file, ext, nevents, chunk)."""
+    """The rows of a compact record, as ``Row``."""
     rows = []
     for entry in (record or {}).get('files') or []:
         f, e = entry['file'], entry['ext']
         if 'chunks' in entry:
-            rows.extend((f, e, int(n), int(c)) for n, c in entry['chunks'])
+            rows.extend(Row(f, e, *chunk) for chunk in entry['chunks'])
         else:
-            n = int(entry['nevents'])
-            rows.extend((f, e, n, c) for c in range(int(entry['nchunks'])))
+            n, k = int(entry['nevents']), int(entry['nchunks'])
+            last = entry.get('last')
+            rows.extend(Row(f, e, n, c) for c in range(k if last is None else k - 1))
+            if last is not None:
+                rows.append(Row(f, e, int(last), k - 1, (k - 1) * n))
     return rows
 
 
@@ -140,7 +205,7 @@ def record_of(panda_tasks):
 
 def _stops_at_9999(entry):
     if 'chunks' in entry:
-        return max((int(c) for _n, c in entry['chunks']), default=-1) == 9999
+        return max((int(chunk[1]) for chunk in entry['chunks']), default=-1) == 9999
     return int(entry.get('nchunks') or 0) == 10000
 
 
@@ -409,7 +474,7 @@ def reconstruct(files, row_count):
     rows = []
     for (f, e, ntotal), nchunks in zip(files, counts):
         nevents = int(ntotal) // nchunks
-        rows.extend((f, e, nevents, c) for c in range(nchunks))
+        rows.extend(Row(f, e, nevents, c) for c in range(nchunks))
     return rows
 
 
@@ -511,6 +576,11 @@ def attempt_manifest(task, panda_tasks, delivered_keys=None):
     tails = input_dirs(task, rows)
     files = definition_files(task, tails)
     try:
+        created = getattr(panda_tasks, 'created_at', None)
+        if created is not None and created >= EQUAL_CHUNKS_BEFORE:
+            raise ManifestUnavailable(
+                'the attempt was cut into chunks of its per-job count with a short '
+                'last chunk, which its row count does not fix')
         recon = reconstruct(files, attempt_row_count(panda_tasks.jedi_task_id))
         bad = verify(recon, delivered_keys, tails)
         recon_note = 'verified' if not bad else 'rejected: ' + '; '.join(bad)

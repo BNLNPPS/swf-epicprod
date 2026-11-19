@@ -527,18 +527,24 @@ def events_per_job_override(task):
 
 def _chunk_rows(file_col, ext, file_events, events_per_job):
     """The manifest rows of one input file: one job when its events fit
-    the per-job count, otherwise equal chunks — ceil(total / per-job)
-    of them, each total // chunks events, the production team's
-    chunking rule (csv_to_chunks.sh). Chunks are equal because the
-    payload seeks to ``ichunk × nevents`` with the row's own count, so
-    an unequal last chunk would read the wrong events. A file whose
-    count is unknown is one job at the per-job count."""
+    the per-job count, otherwise chunks of the per-job count, the last
+    taking what remains, so every event of the file is read. The payload
+    starts a row at ``ichunk × nevents``; a short last chunk starts where
+    the full chunks end and carries that start as its fifth field
+    (JEDI_INTEGRATION.md § Components). A file whose count is unknown is
+    one job at the per-job count. The production team's rule
+    (csv_to_chunks.sh), ceil(total / per-job) equal chunks of
+    total // chunks events, left each file's remainder unread."""
+    from .manifests import Row, format_rows
     if not file_events or file_events <= events_per_job:
         nevents = file_events if file_events else events_per_job
-        return [f'{file_col},{ext},{nevents},0000']
+        return format_rows([Row(file_col, ext, nevents, 0)])
     chunks = -(-file_events // events_per_job)
-    nevents = file_events // chunks
-    return [f'{file_col},{ext},{nevents},{i:04d}' for i in range(chunks)]
+    full = chunks - 1
+    rows = [Row(file_col, ext, events_per_job, i) for i in range(full)]
+    rows.append(Row(file_col, ext, file_events - events_per_job * full, full,
+                    events_per_job * full))
+    return format_rows(rows)
 
 
 EPIC_CONFIGURATIONS_DIR = os.environ.get(
@@ -639,7 +645,7 @@ def payload_beams(task):
 
 def _evgen_manifest_from_inputs(task, events_per_job):
     """Resolve the task's matched JLab Rucio EVGEN DID(s) to per-job manifest
-    rows ``file,ext,nevents,ichunk``.
+    rows ``file,ext,nevents,ichunk[,start]``.
 
     The matched DIDs live on the bound dataset's ``metadata['rucio']['matched']``
     (``task.inputs``), written by the EVGEN assimilation. A Rucio file's name IS
@@ -654,7 +660,7 @@ def _evgen_manifest_from_inputs(task, events_per_job):
     the first one that reaches it: the input usually holds more events
     than the target, and every file expanded ran ~10x it (JEDI 41354,
     pc6783-6786, 2026-10-27). The cut is at a row boundary, never a
-    shortened row, since the payload seeks ``ichunk x nevents``; DIDs and
+    shortened row, since a row is the unit a job delivers; DIDs and
     their files are taken in name order so a rebuild keeps the same rows.
 
     Raises ValueError if the task has no matched input or it resolves to no
@@ -1097,7 +1103,7 @@ def _residual_rows(task, csv_rows, delivered=None, exclude=None):
     residual = []
     excluded = 0
     for seq, row in enumerate(csv_rows, 1):
-        file_col, _ext, _nev, chunk = row.rsplit(',', 3)
+        file_col, _ext, _nev, chunk = row.split(',')[:4]
         head, _, stem = file_col.rpartition('/')
         if (head, stem, chunk) not in keys:
             if seq in exclude:
@@ -1319,7 +1325,7 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         # row (SEGFAULT_DIAGNOSIS.md, Reproduction), so the manifest is
         # given and neither the EVGEN input resolution nor the per-job
         # count is asked of the configuration. Each row is
-        # file,ext,nevents,ichunk as the manifest carries it.
+        # file,ext,nevents,ichunk[,start] as the manifest carries it.
         from . import manifests
         csv_rows = []
         for row in rows:
@@ -1330,7 +1336,7 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         # Residual rerun: the workload is the undelivered remainder of the
         # attempt being completed, over the rows that attempt actually ran
         # (pcs/manifests.py; JEDI_INTEGRATION.md § Residual rerun). Each
-        # row carries its own nevents and ichunk, so nothing is asked of
+        # row carries its own nevents, ichunk and start, so nothing is asked of
         # the configuration's per-job event count. Refusal reasons
         # propagate as ValueError.
         from . import manifests
@@ -1366,7 +1372,7 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
                                          'evidence': evidence,
                                          'observed_longest_hours': longest_hours}
     else:
-        # Per-job manifest (file,ext,nevents,ichunk), one row per job over
+        # Per-job manifest (file,ext,nevents,ichunk[,start]), one row per job over
         # the matched Rucio EVGEN files; PanDA's %RNDM→${SEQNUMBER} selects
         # the row in-job.
         n_events = prodtask_events_per_job(task, cfg=cfg)

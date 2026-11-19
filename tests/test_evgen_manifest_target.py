@@ -55,11 +55,12 @@ def test_ten_times_the_target_in_input(monkeypatch):
 
 
 def test_cut_is_a_whole_row_reaching_the_target(monkeypatch):
-    # 9999-event files chunk to 100 rows of 99; 1000 events need 11 rows.
-    rows = _manifest(monkeypatch, _files(3, events=9999), target=1000)
+    # 9999-event files chunk to 99 rows of 100 and a last of 99; 1050
+    # events need 11 whole rows.
+    rows = _manifest(monkeypatch, _files(3, events=9999), target=1050)
     assert len(rows) == 11
-    assert {r.split(',')[2] for r in rows} == {'99'}
-    assert _events(rows) == 1089
+    assert {r.split(',')[2] for r in rows} == {'100'}
+    assert _events(rows) == 1100
 
 
 def test_rows_follow_file_name_order(monkeypatch):
