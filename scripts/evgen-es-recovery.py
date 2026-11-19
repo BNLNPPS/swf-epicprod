@@ -107,13 +107,13 @@ def main():
     shapes = evgen_es.recovery(task, credited(task))
     done = carried(task)
     pending = [s for s in shapes if (s['input_files'][0], s['input_offset']) not in done]
+    print(f'{args.task}: {len(shapes)} unread segments, {sum(s["events"] for s in shapes):,} events; '
+          f'{len(shapes) - len(pending)} already carried')
     if args.only:
         lfn, _, offset = args.only.rpartition(':')
         pending = [s for s in pending if s['input_files'][0] == lfn and s['input_offset'] == int(offset)]
         if not pending:
             raise SystemExit(f'{args.task}: no pending segment {args.only}')
-    print(f'{args.task}: {len(shapes)} unread segments, {sum(s["events"] for s in shapes):,} events; '
-          f'{len(shapes) - len(pending)} already carried')
     if submit and pending:
         from pcs.commands import pinned_site
         if pinned_site(task) == 'NERSC_Perlmutter_epic_es':
