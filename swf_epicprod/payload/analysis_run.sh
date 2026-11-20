@@ -13,7 +13,9 @@ case $1 in %RNDM=*) n=$(( ${1#%RNDM=} + 1 )) ;; *) n=$1 ;; esac; csv_base=$2
 for f in environment-*.sh; do [ -f "$f" ] && source "$f"; done
 if [ "${ANALYSIS_LOCAL:-0}" != 1 ]; then
   export RUCIO_CONFIG=${here}/rucio.cfg
-  export RUCIO_ACCOUNT=${RUCIO_ACCOUNT:-eicprod}
+  # eicprod always, as run.sh: the pilot's environment names its own
+  # account (panda), which the job's credentials do not sign in to.
+  export RUCIO_ACCOUNT=eicprod
   source "${here}/rucio_auth.sh"
   rucio_auth || echo "analysis: rucio_auth failed; the job tries the image's own client"
 fi
