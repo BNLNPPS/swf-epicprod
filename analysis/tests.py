@@ -185,6 +185,7 @@ class RunTest(AnalysisFixture):
         first = cards.parse_job_row(spec['csvRows'][0])
         self.assertEqual(first['dids'], [reco('0000.0001'), reco('0001.0001')])
         self.assertIn('%RNDM=0', spec['exec'])
+        self.assertEqual(spec['outDS'], f'group.EIC.analysis.a1.{run.run_card_id[:12]}.map')
 
     def test_merge_waits_for_every_partial_then_ships_the_record(self):
         run = self.frozen_run(units=3)
@@ -232,3 +233,37 @@ class ReportApiTest(AnalysisFixture):
                                           'sample': 'ep_noradcor_9x130_x_1e-2to1e-1'},
                                     format='json')
         self.assertEqual(response.json()['status'], 'done')
+
+
+class SubmissionApiTest(AnalysisFixture):
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(User.objects.create(username='ops'))
+
+    def test_spec_is_served_to_the_doer_and_merge_waits(self):
+        run = self.frozen_run(units=3)
+        url = f'/analysis/api/v1/runs/{run.run_card_id}/spec/'
+        spec = self.client.get(url, {'stage': 'map'}).json()
+        self.assertEqual(spec, services.build_map_spec(run))
+        self.assertEqual(self.client.get(url, {'stage': 'merge'}).status_code, 409)
+        self.assertEqual(self.client.get(url, {'stage': 'finalize'}).status_code, 409)
+        self.assertIn(APIClient().get(url, {'stage': 'map'}).status_code, (401, 403))
+
+    def test_record_submission_is_idempotent_and_counts_tries(self):
+        run = self.frozen_run(units=1)
+        url = f'/analysis/api/v1/runs/{run.run_card_id}/record-submission/'
+        body = {'stage': 'map', 'jedi_task_id': 42200, 'panda_task_name': 'n.map',
+                'payload_version': 'v1'}
+        first = self.client.post(url, body, format='json').json()
+        self.assertEqual(first['status'], 'submitted')
+        self.client.post(url, body, format='json')
+        again = self.client.post(url, dict(body, jedi_task_id=42201), format='json').json()
+        self.assertEqual([(t['jedi_task_id'], t['try']) for t in again['panda_tasks']],
+                         [(42200, 1), (42201, 2)])
+        merge = self.client.post(url, dict(body, stage='merge', jedi_task_id=42300),
+                                 format='json').json()
+        self.assertEqual(merge['status'], 'merging')
+        self.assertEqual(self.client.post(url, {'stage': 'map'}, format='json').status_code, 400)
+        self.assertIn(APIClient().post(url, body, format='json').status_code, (401, 403))

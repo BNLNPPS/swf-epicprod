@@ -2,7 +2,9 @@
 
 Reads are public, like the PCS catalog: a dataset card or a run card is a
 statement of record that anyone reproducing a result needs. Writes come
-from the operations agent's ingest of job reports, with its token.
+from the operations agent (its doer's submissions, its ingest of job
+reports), with its token. So does a run's task specification, which only
+the doer needs.
 """
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -92,3 +94,33 @@ def result_receive(request, run_card_id):
                         status=status.HTTP_400_BAD_REQUEST)
     services.record_result(run, result)
     return Response({'status': run.status})
+
+
+@api_view(['GET'])
+@authentication_classes(WRITE_AUTH)
+@permission_classes([IsAuthenticated])
+def run_spec(request, run_card_id):
+    """The task specification of a stage (?stage=map|merge), for the doer.
+    409 when the stage cannot be built yet (a merge before every partial)."""
+    run = get_object_or_404(AnalysisRun, run_card_id=run_card_id)
+    try:
+        return Response(services.build_spec(run, request.query_params.get('stage', 'map')))
+    except cards.CardError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
+
+
+@api_view(['POST'])
+@authentication_classes(WRITE_AUTH)
+@permission_classes([IsAuthenticated])
+def record_submission(request, run_card_id):
+    """Record a stage's PanDA task. Body: {"stage", "jedi_task_id",
+    "panda_task_name", "payload_version"}. Idempotent per task."""
+    run = get_object_or_404(AnalysisRun, run_card_id=run_card_id)
+    body = request.data if isinstance(request.data, dict) else {}
+    try:
+        services.record_submission(run, body.get('stage', ''), body.get('jedi_task_id'),
+                                   body.get('panda_task_name', ''),
+                                   body.get('payload_version', ''))
+    except (cards.CardError, TypeError, ValueError) as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({'status': run.status, 'panda_tasks': run.panda_tasks})

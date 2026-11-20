@@ -11,4 +11,7 @@ urlpatterns = [
          name='job_outputs_receive'),
     path('api/v1/runs/<str:run_card_id>/result/', api_views.result_receive,
          name='result_receive'),
+    path('api/v1/runs/<str:run_card_id>/spec/', api_views.run_spec, name='run_spec'),
+    path('api/v1/runs/<str:run_card_id>/record-submission/', api_views.record_submission,
+         name='record_submission'),
 ]

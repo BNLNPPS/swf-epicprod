@@ -133,7 +133,7 @@ operations agent's doer submits, in the shape of
 | Key | Value |
 |---|---|
 | `kind`, `stage` | `analysis`; `map` or `merge` |
-| `runCardId`, `outDS` | The run's id; `analysis.<tag>.<run id 12>.<stage>` |
+| `runCardId`, `outDS` | The run's id; `group.EIC.analysis.<tag>.<run id 12>.<stage>` |
 | `vo`, `userName`, `workingGroup`, `nEventsPerJob`, `skipScout`, `disableReassign` | `epic`, the run's owner, `EIC`, 1, true, true |
 | `prodSourceLabel`, `taskType`, `processingType` | `user`, `anal`, `epicanalysis` |
 | `gshare` | `Validation` or `User`, from the run's purpose |
@@ -154,6 +154,8 @@ written partial.
 | GET | `analysis/api/v1/runs/<run id>/` | none | Run card, status, PanDA tasks, result |
 | POST | `analysis/api/v1/runs/<run id>/job-outputs/` | token | `{"outputs": [{seq, did, adler32, bytes, ...}]}`; idempotent per job, confined to the run's scratch |
 | POST | `analysis/api/v1/runs/<run id>/result/` | token | One sample's result card; the run is done when every sample has one |
+| GET | `analysis/api/v1/runs/<run id>/spec/?stage=map\|merge` | token | The stage's task specification, for the doer; 409 while a merge waits for partials |
+| POST | `analysis/api/v1/runs/<run id>/record-submission/` | token | `{stage, jedi_task_id, panda_task_name, payload_version}`; appended to `panda_tasks` (a new task of a stage is its next try), status `submitted` or `merging`; idempotent per task |
 
 ## Deployment
 
@@ -163,7 +165,9 @@ on `analysis/models.py` and `analysis/migrations/`. swf-monitor needs
 
 ## Not wired yet
 
-- The doer and agent handler that submit a specification; the ingest that
-  posts job reports to the POST endpoints (swf-monitor).
+- The ingest that posts job reports to the POST endpoints, and the
+  merge submission once every partial is written (swf-monitor). The doer
+  and agent handler that submit a specification are in swf-monitor
+  (`scripts/submit-analysis-run.py`, `submit_analysis_run`).
 - Pages and MCP tools to register tags, freeze cards and create runs.
 - A sweeper for scratch; resubmission of a run's failed jobs.

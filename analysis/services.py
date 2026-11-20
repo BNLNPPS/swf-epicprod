@@ -170,7 +170,9 @@ def _spec_common(run, stage):
         'kind': 'analysis',
         'stage': stage,
         'runCardId': rid,
-        'outDS': f'analysis.{tag.label}.{rid[:12]}.{stage}',
+        # An official task name: PanDA takes group.<working group>.* from
+        # the production identity (the hand canary's group.EIC.TEST.*).
+        'outDS': f'group.EIC.analysis.{tag.label}.{rid[:12]}.{stage}',
         'vo': 'epic',
         'userName': run.owner,
         'workingGroup': 'EIC',
@@ -263,6 +265,36 @@ def build_merge_spec(run):
         },
     })
     return spec
+
+
+STAGE_STATUS = {'map': 'submitted', 'merge': 'merging'}
+
+
+def build_spec(run, stage):
+    """The specification the operations agent's doer submits for a stage."""
+    if stage not in STAGE_STATUS:
+        raise cards.CardError(f'stage must be one of {", ".join(STAGE_STATUS)}')
+    return build_map_spec(run) if stage == 'map' else build_merge_spec(run)
+
+
+def record_submission(run, stage, jedi_task_id, task_name='', payload_version=''):
+    """Record a stage's PanDA task on the run, from the doer. A second
+    record of the same task changes nothing; a new task of a stage is its
+    next try."""
+    if stage not in STAGE_STATUS:
+        raise cards.CardError(f'stage must be one of {", ".join(STAGE_STATUS)}')
+    jedi_task_id = int(jedi_task_id)
+    tasks = list(run.panda_tasks or [])
+    if any(int(t.get('jedi_task_id') or 0) == jedi_task_id for t in tasks):
+        return run
+    tries = [t for t in tasks if t.get('stage') == stage]
+    tasks.append({'stage': stage, 'jedi_task_id': jedi_task_id, 'try': len(tries) + 1,
+                  'task_name': task_name, 'payload_version': payload_version})
+    run.panda_tasks = tasks
+    if run.status in ('frozen', 'submitted'):
+        run.status = STAGE_STATUS[stage]
+    run.save()
+    return run
 
 
 # --- job reports -----------------------------------------------------------
