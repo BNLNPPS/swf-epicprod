@@ -59,6 +59,8 @@ Architecture and interfaces:
 - [ARCHITECTURE_MAP.md](docs/ARCHITECTURE_MAP.md) — component homes
   and consumption interfaces across the platform.
 - [API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) — the REST API.
+- [ANALYSIS.md](docs/ANALYSIS.md) — analysis runs: the `analysis`
+  application, the job, and how they are wired.
 
 PCS:
 
