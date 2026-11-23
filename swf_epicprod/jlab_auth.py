@@ -48,9 +48,10 @@ TOKEN_DOORS = {h.strip() for h in os.environ.get(
     if h.strip()}
 # Each door host's RSE oidc_base_path values, removed from the door path to
 # form a storage token's scope path. dtn-rucio serves EIC-XRD
-# (/volatile/eic/EPIC) and EIC-XRD-LOG (/work/eic3/EPIC/eic); BNL-XRD
-# strips nothing.
-OIDC_BASE_PATHS = {'dtn-rucio.jlab.org': ('/volatile', '/work/eic3/EPIC')}
+# (/cache/eic/EPIC, oidc_base_path /cache) and EIC-XRD-LOG
+# (/work/eic3/EPIC/eic); /volatile is kept for door paths still written
+# there. BNL-XRD strips nothing.
+OIDC_BASE_PATHS = {'dtn-rucio.jlab.org': ('/cache', '/volatile', '/work/eic3/EPIC')}
 # A cached token is used while it has this long left.
 TOKEN_MARGIN_S = 600
 # The JLab Rucio server saves a token at its first use, and requests that

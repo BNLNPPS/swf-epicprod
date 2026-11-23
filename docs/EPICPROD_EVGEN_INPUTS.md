@@ -225,7 +225,8 @@ The coverage worklist's action, **Register in Rucio**, registers the
 files at an EVGEN path as `epic:/EVGEN/...` datasets at RSE `EIC-XRD`
 under the `eicprod` account: tick worklist rows, or give paths, one per
 line, typed, pasted or loaded from a text file in the browser (each the
-DID tail, the `/volatile/eic/EPIC` door path, or the `root://` URL;
+DID tail, a door path — `/cache/eic/EPIC`, the legacy `/volatile/eic/EPIC`,
+or the OSDF `/jlab-osdf-ro/eic/EPIC/cache` — or its `root://` URL;
 blank lines and `#` comments are skipped).
 The web tier validates and queues (`POST /pcs/api/evgen/register/`,
 body `{"paths": [...]}`); the production operations agent does the
@@ -244,7 +245,8 @@ asked of the door, anonymously, and accepted when it is a directory
 there, so a sample whose files have landed is registrable before its
 definition is on record. A door that cannot be asked refuses the
 request with that reason rather than reading as absent. The doer lists the
-directory on the JLab production door, takes each file's size and
+directory on the JLab production door (`root://dtn-rucio.jlab.org:1094`,
+under EIC-XRD's prefix `/cache/eic/EPIC`), takes each file's size and
 adler32 from the door (`xrdfs query checksum`; the server computes it
 and no bytes are read), and registers one dataset per directory
 holding files. A directory named `obsolete`, at any depth below the

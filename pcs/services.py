@@ -1952,14 +1952,14 @@ EPIC_VOLATILE_PREFIX = '/volatile/eic/EPIC/'
 # XRDRURL and XRDRBASE). JLab's read-only OSDF origin on dtn2304, which
 # replaced dtn2201 (dtn-eic) when that host was decommissioned on
 # 2026-10-01; the volatile area sits under /jlab-osdf-ro/eic/EPIC/volatile.
-XROOTD_EPIC_BASE = 'root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/volatile'
+XROOTD_EPIC_BASE = 'root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/cache'
 XROOTD_EPIC_DOOR = 'root://dtn2304.jlab.org:8443'
-XROOTD_EPIC_PATH = '/jlab-osdf-ro/eic/EPIC/volatile'
+XROOTD_EPIC_PATH = '/jlab-osdf-ro/eic/EPIC/cache'
 
 
 def evgen_door_directory_exists(path, timeout_s=15):
     """Whether ``/EVGEN/...`` is a directory on the collaboration door,
-    asked anonymously (the door lists the volatile area without a
+    asked anonymously (the door lists the cache area without a
     credential, as the payload streams from it). True or False from the
     door's answer; None when the door could not be asked (timeout, no
     client, another failure), which a caller must not read as absent.
@@ -8006,20 +8006,27 @@ def _definition_tails():
 
 
 _EVGEN_PATH_OK = _re.compile(r'^/EVGEN/[A-Za-z0-9._=+\-/]+$')
+# Door path roots the EVGEN tree hangs from, longest first.
+_EVGEN_DOOR_BASES = ('/jlab-osdf-ro/eic/EPIC/volatile', '/jlab-osdf-ro/eic/EPIC/cache',
+                     '/volatile/eic/EPIC', '/cache/eic/EPIC')
 
 
 def normalize_evgen_path(raw):
     """``/EVGEN/...`` from any form the page accepts: the DID tail, the
-    ``epic:`` DID, the ``/volatile/eic/EPIC`` door path, or the full
-    ``root://`` URL. Raises ServiceError(400) for anything else."""
+    ``epic:`` DID, a door path (``/cache/eic/EPIC``, the legacy
+    ``/volatile/eic/EPIC``, or the OSDF ``/jlab-osdf-ro/eic/EPIC/cache``
+    or ``.../volatile``), or the full ``root://`` URL of any of them.
+    Raises ServiceError(400) for anything else."""
     p = str(raw or '').strip()
     if '://' in p:
         rest = p.split('://', 1)[1]            # host[:port]/path
         p = '/' + rest.partition('/')[2].lstrip('/')
     if p.startswith('epic:'):
         p = p[len('epic:'):]
-    if p.startswith('/volatile/eic/EPIC/'):
-        p = p[len('/volatile/eic/EPIC'):]
+    for base in _EVGEN_DOOR_BASES:
+        if p.startswith(base + '/'):
+            p = p[len(base):]
+            break
     p = '/' + p.strip('/')
     if (not _EVGEN_PATH_OK.match(p) or '..' in p or '//' in p
             or len(p.split('/')) < 4):
