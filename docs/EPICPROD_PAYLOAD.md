@@ -825,11 +825,13 @@ In order, each a committed step on the clone:
     `0` turns it off.
 27. **EVGEN input reads from `/cache`** (2026-11-23, payload 0.25.40).
     EIC-XRD serves the EVGEN area as `/cache/eic/EPIC` (its protocol
-    prefix and `oidc_base_path`), and `/volatile` no longer holds files.
+    prefix and `oidc_base_path`); `/volatile` was its former prefix.
     `XRDRBASE` defaults to `/jlab-osdf-ro/eic/EPIC/cache` on the same
-    OSDF door; manifest rows stay relative to `EVGEN/`, so tasks and
-    manifests are unchanged. `evgen_es.JLAB_READ`, the Event Service
-    input stage's read path, moves with it.
+    OSDF door, where `.../EPIC/volatile` still lists the same files;
+    manifest rows stay relative to `EVGEN/`, so tasks and manifests are
+    unchanged. `evgen_es.JLAB_READ`, the Event Service input stage's
+    read path, moves with it (`tests/test_evgen_read_base.py` holds the
+    two together).
 
 ## Event Service input offset
 

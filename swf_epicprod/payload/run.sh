@@ -356,7 +356,7 @@ XRDWBASE=${XRDWBASE:-"/eic/eic2/EPIC"}
 # XRD Read locations (allow for empty URL override). JLab's read-only
 # OSDF origin on dtn2304, replacing dtn2201 (dtn-eic), decommissioned
 # 2026-10-01 (payload 0.21.7). The base is the area EIC-XRD serves,
-# /cache (payload 0.25.40; /volatile before, which no longer holds files).
+# /cache (payload 0.25.40; /volatile before, EIC-XRD's former prefix).
 XRDRURL=${XRDRURL-"root://dtn2304.jlab.org:8443/"}
 XRDRBASE=${XRDRBASE:-"/jlab-osdf-ro/eic/EPIC/cache"}
 
