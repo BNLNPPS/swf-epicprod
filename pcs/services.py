@@ -25,6 +25,10 @@ from django.utils import timezone as _timezone
 from django.utils.dateparse import parse_datetime as _parse_datetime
 
 from monitor_app.utils import format_datetime
+from swf_epicprod.door_paths import (
+    DOOR_PREFIXES, OSDF_BASE, OSDF_DOOR, OSDF_PATH, OSDF_PATHS,
+    door_forms, evgen_tail, split_door_prefix, strip_door_prefix,
+)
 
 _log = _logging.getLogger(__name__)
 
@@ -1277,7 +1281,8 @@ def dataset_intake(*, source_location, source_kind='csv_manifest',
     """
     Idempotent intake of an external (e.g. EVGEN CSV manifest) Dataset.
 
-    Idempotency key: ``(source.kind, source.location)``.
+    Idempotency key: ``(source.kind, source.location)``, a door path
+    matching under either door prefix.
 
     Returns ``(dataset, was_created)``.
     """
@@ -1285,7 +1290,7 @@ def dataset_intake(*, source_location, source_kind='csv_manifest',
         raise ServiceError('source_location is required')
 
     existing = Dataset.objects.filter(
-        metadata__source__location=source_location,
+        metadata__source__location__in=door_forms(source_location),
         metadata__source__kind=source_kind,
     ).first()
     if existing:
@@ -1937,38 +1942,17 @@ def _possible(value):
 
 
 def _csvimport_slug(dataset_path, gen_version):
-    """Short stable slug derived from the (path, generator) idempotency key."""
-    key = f'{dataset_path}|{gen_version}'.encode()
+    """Short stable slug derived from the (path, generator) idempotency key.
+    The slugs on record were made from ``/volatile/eic/EPIC`` paths, so a
+    path under either door prefix keys as that form: a catalogue row
+    respelled under ``/cache`` updates its record rather than adding one."""
+    key = f'{door_forms(dataset_path)[-1]}|{gen_version}'.encode()
     return _hashlib.sha1(key).hexdigest()[:12]
 
 
-# The door prefix a catalog source path starts with: /cache/eic/EPIC/, the
-# area EIC-XRD serves, or /volatile/eic/EPIC/, its former name, which stored
-# records and the production team's default_datasets catalogue still carry.
-# Both name the same files and carry no distinguishing information, so every
-# reader strips either one (strip_door_prefix) and a record matches the same
-# way whichever it carries. Canonical first.
-EPIC_DOOR_PREFIXES = ('/cache/eic/EPIC/', '/volatile/eic/EPIC/')
-
-
-def strip_door_prefix(path):
-    """``path`` less its leading door prefix (EPIC_DOOR_PREFIXES), with or
-    without the leading slash; unchanged when it carries none."""
-    p = str(path or '')
-    for prefix in EPIC_DOOR_PREFIXES:
-        for form in (prefix, prefix.lstrip('/')):
-            if p.startswith(form):
-                return p[len(form):]
-    return p
-
-
-# The collaboration xrootd door in front of the EIC-XRD area: JLab's
-# read-only OSDF origin on dtn2304, which replaced dtn2201 (dtn-eic) when
-# that host was decommissioned on 2026-10-01. The area sits under
-# /jlab-osdf-ro/eic/EPIC/cache.
-XROOTD_EPIC_BASE = 'root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/cache'
-XROOTD_EPIC_DOOR = 'root://dtn2304.jlab.org:8443'
-XROOTD_EPIC_PATH = '/jlab-osdf-ro/eic/EPIC/cache'
+# The collaboration xrootd door in front of the EIC-XRD area, and the door
+# prefixes a catalog source path may carry (swf_epicprod.door_paths).
+XROOTD_EPIC_DOOR, XROOTD_EPIC_PATH, XROOTD_EPIC_BASE = OSDF_DOOR, OSDF_PATH, OSDF_BASE
 
 
 def evgen_door_directory_exists(path, timeout_s=15):
@@ -3052,15 +3036,10 @@ def _extract_csv_filters(path, detector_config):
     dataset's detector_config field (not the path); everything else from
     the path tail after the EVGEN prefix.
     """
-    raw = '/' + (path or '').lstrip('/')
-    segs = raw.lstrip('/').split('/')
-    stripped = strip_door_prefix(raw).lstrip('/').split('/')
     # Drop the fixed prefix <door>/EVGEN when present, but be tolerant if
     # a different shape appears later.
-    if strip_door_prefix(raw) != raw and stripped[:1] == ['EVGEN']:
-        tail = stripped[1:]
-    else:
-        tail = segs
+    tail = evgen_tail(path)
+    tail = (path or '').lstrip('/').split('/') if tail is None else tail.split('/')
     out = _extract_path_filters(tail)
     out['detector'] = detector_config or ''
     return out
@@ -4422,18 +4401,11 @@ def _request_input_tail(ds_path):
     dataset definition's EVGEN path (PCS_INGEST.md).
     anything else                    ->  '' (no match)
     """
-    if not ds_path:
-        return ''
-    stripped = strip_door_prefix('/' + ds_path.lstrip('/'))
-    if stripped != '/' + ds_path.lstrip('/'):
-        parts = stripped.strip('/').split('/')
-        if len(parts) >= 2 and parts[0] == 'EVGEN':
-            return '/'.join(parts[1:]).lower()
-        return ''
-    parts = ds_path.strip('/').split('/')
-    if len(parts) >= 2 and parts[0] == 'EVGEN':
-        return '/'.join(parts[1:]).lower()
-    return ''
+    tail = evgen_tail(ds_path)
+    if tail is None:
+        head, _, rest = str(ds_path or '').strip('/').partition('/')
+        tail = rest if head == 'EVGEN' else ''
+    return tail.lower()
 
 
 def _did_path_tail(did):
@@ -8029,9 +8001,6 @@ def _definition_tails():
 
 
 _EVGEN_PATH_OK = _re.compile(r'^/EVGEN/[A-Za-z0-9._=+\-/]+$')
-# Door path roots the EVGEN tree hangs from, longest first.
-_EVGEN_DOOR_BASES = ('/jlab-osdf-ro/eic/EPIC/volatile', '/jlab-osdf-ro/eic/EPIC/cache',
-                     '/volatile/eic/EPIC', '/cache/eic/EPIC')  # longest first
 
 
 def normalize_evgen_path(raw):
@@ -8046,10 +8015,7 @@ def normalize_evgen_path(raw):
         p = '/' + rest.partition('/')[2].lstrip('/')
     if p.startswith('epic:'):
         p = p[len('epic:'):]
-    for base in _EVGEN_DOOR_BASES:
-        if p.startswith(base + '/'):
-            p = p[len(base):]
-            break
+    p = split_door_prefix(p, OSDF_PATHS + DOOR_PREFIXES)[1]
     p = '/' + p.strip('/')
     if (not _EVGEN_PATH_OK.match(p) or '..' in p or '//' in p
             or len(p.split('/')) < 4):

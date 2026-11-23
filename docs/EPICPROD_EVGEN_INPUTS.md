@@ -28,7 +28,7 @@ constraint".
 A PCS catalog request names an EVGEN path under
 `/cache/eic/EPIC/EVGEN/<tail>` (stored records and older catalogue rows
 carry the former `/volatile/eic/EPIC/EVGEN/<tail>`; both read alike,
-`services.strip_door_prefix`), taken from the production team's
+`swf_epicprod/door_paths.py`), taken from the production team's
 `default_datasets` catalogue (`eic/epic-prod`, the basis of the PCS task
 catalog). The produced sample is registered in Rucio as `epic:/EVGEN/<tail>`.
 The `<tail>` is the same namespace on both sides, but the request tail ranges
