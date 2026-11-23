@@ -516,7 +516,7 @@ models the configurations: Single Particle physics tags (p1xxx) carry
 `particle` and `gun_energy`, the EvGen tag is e37 (`particle_gun`, no
 version), and the angular range is the dataset's sample name (PCS.md,
 Sample Variants). What is missing is the path from those tags to a
-job: the steering files are hand-written, kept on the JLab volatile
+job: the steering files are hand-written, kept on the JLab EVGEN
 area (`EVGEN/SINGLE/<particle>/<energy>/<variant>/<stem>.steer`, not in
 Rucio), and no PCS manifest builder writes a steering row
 (`_EVGEN_EXTS` and `_evgen_manifest_internal` are HepMC only). The
@@ -557,7 +557,7 @@ dataset list carries without −1.7, gains it.
 ### The steering
 
 Composed from the tags and the sample name. Two templates, reproducing
-the files on the volatile area byte for byte, including the eta file's
+the files on the EVGEN area byte for byte, including the eta file's
 own line order:
 
 ```
@@ -587,7 +587,8 @@ and its sign (`-1.7`, `0.0`). Nothing else varies: no multiplicity, no
 momentum mode, no seed, no event count. A prototype of the two
 templates, run on 2026-10-24 against the 273 steering files the
 dataset list names (244 angle ranges, 29 eta points; read through
-`root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/volatile/EVGEN/SINGLE`),
+`root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/volatile/EVGEN/SINGLE`,
+now `.../EPIC/cache/EVGEN/SINGLE`),
 reproduced every one byte for byte.
 
 ### PCS
@@ -710,7 +711,7 @@ Rows without the switch, and every non-gun row, keep `chunk + 1`.
 Two payload canaries with the switch set, one per template: π⁺ 100 MeV
 `3to50deg` and e⁻ 1 GeV `eta-1.7`, the point that is new. Acceptance:
 every stage ok; the geometry stage on `epic_craterlake_5x41.xml`; the
-composed steering in the stage log identical to the volatile-area file
+composed steering in the stage log identical to the EVGEN-area file
 (for the eta point, to the e⁻ 2 GeV η −1.7 file with the energy
 changed); the RECO output registered under `/TEST/canary/<stamp>` with
 its event count and gun metadata; no `/EVGEN` dataset. The canary

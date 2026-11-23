@@ -11,7 +11,7 @@ import unittest
 
 RUN_SH = os.path.join(os.path.dirname(__file__), '..', 'swf_epicprod', 'payload', 'run.sh')
 REFUSAL = ('Error in <TNetXNGFile::Open>: [ERROR] Server responded with an error: '
-           '[3005] Unable to open /jlab-osdf-ro/eic/EPIC/volatile/EVGEN/x.hepmc3.tree.root; '
+           '[3005] Unable to open /jlab-osdf-ro/eic/EPIC/cache/EVGEN/x.hepmc3.tree.root; '
            'no such device')
 
 

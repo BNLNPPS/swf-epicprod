@@ -519,7 +519,7 @@ per manifest row.
   (`Dataset.metadata['rucio']['matched']`, written by the EVGEN assimilation) to
   their files over the public `eicread` read, and emits the manifest, one row
   per job (`file,ext,nevents,ichunk[,start]`). A Rucio file's name is the
-  xrootd path below `EVGEN/` — the payload prepends `root://…/volatile/eic/EPIC/`
+  xrootd path below `EVGEN/` — the payload prepends its read base (`XRDRURL`/`XRDRBASE`, the `/cache` area)
   to `EVGEN/<file>`. A file registered with its event count (every
   registration counts them, RUCIO_REGISTRATION_CONTRACT.md) is cut into chunks
   of the per-job count, the last chunk taking what remains, so every event of
