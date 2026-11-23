@@ -26,8 +26,8 @@ from django.utils.dateparse import parse_datetime as _parse_datetime
 
 from monitor_app.utils import format_datetime
 from swf_epicprod.door_paths import (
-    DOOR_PREFIXES, OSDF_BASE, OSDF_DOOR, OSDF_PATH, OSDF_PATHS,
-    door_forms, evgen_tail, split_door_prefix, strip_door_prefix,
+    DOOR_PREFIX, OSDF_BASE, OSDF_DOOR, OSDF_PATH,
+    evgen_tail, split_door_prefix, strip_door_prefix,
 )
 
 _log = _logging.getLogger(__name__)
@@ -1280,8 +1280,7 @@ def dataset_intake(*, source_location, source_kind='csv_manifest',
     """
     Idempotent intake of an external (e.g. EVGEN CSV manifest) Dataset.
 
-    Idempotency key: ``(source.kind, source.location)``, a door path
-    matching under either door prefix.
+    Idempotency key: ``(source.kind, source.location)``.
 
     Returns ``(dataset, was_created)``.
     """
@@ -1289,7 +1288,7 @@ def dataset_intake(*, source_location, source_kind='csv_manifest',
         raise ServiceError('source_location is required')
 
     existing = Dataset.objects.filter(
-        metadata__source__location__in=door_forms(source_location),
+        metadata__source__location=source_location,
         metadata__source__kind=source_kind,
     ).first()
     if existing:
@@ -1833,8 +1832,8 @@ def campaign_clone_to_new(source, *, name, created_by,
 # Submission state changes
 # ---------------------------------------------------------------------------
 
-# The collaboration xrootd door in front of the EIC-XRD area, and the door
-# prefixes a catalog source path may carry (swf_epicprod.door_paths).
+# The collaboration xrootd door in front of the EIC-XRD area
+# (swf_epicprod.door_paths).
 XROOTD_EPIC_DOOR, XROOTD_EPIC_PATH, XROOTD_EPIC_BASE = OSDF_DOOR, OSDF_PATH, OSDF_BASE
 
 
@@ -2034,8 +2033,7 @@ def data_provenance(did_or_path):
 
 def _task_name_from_path(path):
     """Human-readable ProdTask.name from a catalog source path: the path with
-    its door prefix (``/cache/eic/EPIC/`` or ``/volatile/eic/EPIC/``)
-    stripped (matching the compose title). Paths are unique per catalog row.
+    its door prefix (``/cache/eic/EPIC/``) stripped (matching the compose title). Paths are unique per catalog row.
     Returns '' for an empty path so the caller can fall back to the slug
     name."""
     p = (path or '').strip()
@@ -2663,9 +2661,8 @@ def _extract_csv_filters(path, detector_config):
     """Current-tab filter fields from a CSV input dataset path.
 
     Path shape: /cache/eic/EPIC/EVGEN/<physics>/<gen>/.../<beam>/...
-    (or the former /volatile/eic/EPIC/ form). Geometry comes from the
-    dataset's detector_config field (not the path); everything else from
-    the path tail after the EVGEN prefix.
+    Geometry comes from the dataset's detector_config field (not the
+    path); everything else from the path tail after the EVGEN prefix.
     """
     # Drop the fixed prefix <door>/EVGEN when present, but be tolerant if
     # a different shape appears later.
@@ -4025,9 +4022,8 @@ def fetch_jlab_rucio_unarrived_files(scope, file_names):
 def _request_input_tail(ds_path):
     """Return the comparable tail of an EVGEN input location.
 
-    /cache/eic/EPIC/EVGEN/<TAIL>     ->  '<TAIL>'  (lower-cased): the CSV
-    /volatile/eic/EPIC/EVGEN/<TAIL>      import's form, the door path, under
-                                         either door prefix.
+    /cache/eic/EPIC/EVGEN/<TAIL>     ->  '<TAIL>'  (lower-cased): the door
+                                         path.
     EVGEN/<TAIL> or /EVGEN/<TAIL>    ->  '<TAIL>': the ingest's form, the
     dataset definition's EVGEN path (PCS_INGEST.md).
     anything else                    ->  '' (no match)
@@ -7636,9 +7632,9 @@ _EVGEN_PATH_OK = _re.compile(r'^/EVGEN/[A-Za-z0-9._=+\-/]+$')
 
 def normalize_evgen_path(raw):
     """``/EVGEN/...`` from any form the page accepts: the DID tail, the
-    ``epic:`` DID, a door path (``/cache/eic/EPIC``, the legacy
-    ``/volatile/eic/EPIC``, or the OSDF ``/jlab-osdf-ro/eic/EPIC/cache``
-    or ``.../volatile``), or the full ``root://`` URL of any of them.
+    ``epic:`` DID, a door path (``/cache/eic/EPIC`` or the OSDF
+    ``/jlab-osdf-ro/eic/EPIC/cache``), or the full ``root://`` URL of
+    either.
     Raises ServiceError(400) for anything else."""
     p = str(raw or '').strip()
     if '://' in p:
@@ -7646,7 +7642,7 @@ def normalize_evgen_path(raw):
         p = '/' + rest.partition('/')[2].lstrip('/')
     if p.startswith('epic:'):
         p = p[len('epic:'):]
-    p = split_door_prefix(p, OSDF_PATHS + DOOR_PREFIXES)[1]
+    p = split_door_prefix(p, (OSDF_PATH, DOOR_PREFIX))[1]
     p = '/' + p.strip('/')
     if (not _EVGEN_PATH_OK.match(p) or '..' in p or '//' in p
             or len(p.split('/')) < 4):

@@ -1725,8 +1725,7 @@ def evgen_register(request):
     """Queue the registration of EVGEN input directories in JLab Rucio —
     the EVGEN inputs page's "Register in Rucio" action on the coverage
     worklist and its free path box. Body: {"paths": ["/EVGEN/...", ...]}
-    (a path may also be given as its /cache door path, the former /volatile
-    one, or the root:// URL). Each path is validated and queued independently
+    (a path may also be given as its /cache door path or the root:// URL). Each path is validated and queued independently
     (services.evgen_register_request): the reply lists the queued
     normalized paths and the refused ones with the reason. The web tier
     holds no credential; the prod-ops agent registers and then

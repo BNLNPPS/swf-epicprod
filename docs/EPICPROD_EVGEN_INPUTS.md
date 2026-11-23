@@ -26,11 +26,9 @@ constraint".
 ## The two namespaces: request and Rucio
 
 A PCS catalog request names an EVGEN path under
-`/cache/eic/EPIC/EVGEN/<tail>` (stored records and older catalogue rows
-carry the former `/volatile/eic/EPIC/EVGEN/<tail>`; both read alike,
-`swf_epicprod/door_paths.py`), taken from the production team's
-`default_datasets` catalogue (`eic/epic-prod`, the basis of the PCS task
-catalog). The produced sample is registered in Rucio as `epic:/EVGEN/<tail>`.
+`/cache/eic/EPIC/EVGEN/<tail>`, EIC-XRD's protocol prefix
+(`swf_epicprod/door_paths.py`; records imported under the former
+`/volatile/eic/EPIC` were rewritten by migration 0011). The produced sample is registered in Rucio as `epic:/EVGEN/<tail>`.
 The `<tail>` is the same namespace on both sides, but the request tail ranges
 from abstract to fully specific depending on physics class:
 
@@ -87,7 +85,7 @@ the Q² token**. Two consequences follow, and they are the whole point:
   to the versioned Q² ranges, and two PCS submissions (tasks 40440, 40443)
   ran the versioned files for minQ2 requests.
 - **Two location forms, one tail.** A CSV-imported request names the door
-  path (`/cache/eic/EPIC/EVGEN/…`, or `/volatile/eic/EPIC/EVGEN/…`); an edition composed by the ingest
+  path (`/cache/eic/EPIC/EVGEN/…`); an edition composed by the ingest
   (PCS_INGEST.md) names the dataset definition's EVGEN path (`EVGEN/…`).
   Both reduce to the same tail before matching.
 
@@ -227,8 +225,8 @@ The coverage worklist's action, **Register in Rucio**, registers the
 files at an EVGEN path as `epic:/EVGEN/...` datasets at RSE `EIC-XRD`
 under the `eicprod` account: tick worklist rows, or give paths, one per
 line, typed, pasted or loaded from a text file in the browser (each the
-DID tail, a door path — `/cache/eic/EPIC`, the legacy `/volatile/eic/EPIC`,
-or the OSDF `/jlab-osdf-ro/eic/EPIC/cache` — or its `root://` URL;
+DID tail, a door path — `/cache/eic/EPIC` or the OSDF
+`/jlab-osdf-ro/eic/EPIC/cache` — or its `root://` URL;
 blank lines and `#` comments are skipped).
 The web tier validates and queues (`POST /pcs/api/evgen/register/`,
 body `{"paths": [...]}`); the production operations agent does the
