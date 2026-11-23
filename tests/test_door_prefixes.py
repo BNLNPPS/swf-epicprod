@@ -1,7 +1,7 @@
 """A catalog source path under /cache/eic/EPIC (the area EIC-XRD serves) reads
 exactly as the same path under /volatile/eic/EPIC, the form stored records
 carry: same request tail for the EVGEN match, same filters, same task name,
-same RECO output DID, same status-grid EVGEN path, same import key
+same RECO output DID, same status-grid EVGEN path
 (swf_epicprod.door_paths; its own cases are in test_door_paths.py)."""
 from types import SimpleNamespace
 
@@ -16,13 +16,6 @@ CACHE = '/cache/eic/EPIC/EVGEN/' + TAIL
 
 
 class DoorPrefixTests(SimpleTestCase):
-    def test_import_key_is_the_same_under_either_prefix(self):
-        # The slugs on record were made from /volatile paths.
-        import hashlib
-        minted = hashlib.sha1(f'{VOLATILE}|g1'.encode()).hexdigest()[:12]
-        self.assertEqual(services._csvimport_slug(VOLATILE, 'g1'), minted)
-        self.assertEqual(services._csvimport_slug(CACHE, 'g1'), minted)
-
     def test_request_input_tail(self):
         self.assertEqual(services._request_input_tail(VOLATILE), TAIL.lower())
         self.assertEqual(services._request_input_tail(CACHE), TAIL.lower())

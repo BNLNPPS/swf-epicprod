@@ -1184,10 +1184,10 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='catalog-import')
     def catalog_import(self, request):
         """Request a background catalog import — the external-safe trigger for the
-        'Update from CSV' and 'Update from epic-prod' buttons. The web tier only
-        publishes a catalog_import to the prod-ops agent, which runs the import
-        off the WSGI request (the epic-prod walk times the gateway out) and pushes
-        catalog_import_ready over the SSE relay. ``source``: 'csv' | 'epic-prod'.
+        'Update from epic-prod' button. The web tier only publishes a
+        catalog_import to the prod-ops agent, which runs the import off the
+        WSGI request (the epic-prod walk times the gateway out) and pushes
+        catalog_import_ready over the SSE relay. ``source``: 'epic-prod'.
         See docs/EPICPROD_OPS_AGENT.md, docs/SSE_PUSH.md."""
         user = getattr(request.user, 'username', '') or 'catalog_import'
         try:

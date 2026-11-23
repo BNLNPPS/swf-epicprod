@@ -88,13 +88,6 @@
     {% endif %}
     {% if catalog_view != 'progress' and not user_view %}
     {% if not is_tunnel and user.is_authenticated %}
-    <form method="post" action="{% url 'pcs:pcs_catalog_csv_update' %}" class="ms-2 d-inline" id="csv-update-form">
-      {% csrf_token %}
-      <button type="submit" id="csv-update-btn" class="btn btn-sm btn-primary"
-              title="Re-import eic/epic-prod/docs/_data/datasets.csv into the catalog (runs in the prod-ops agent; updates live when done)">
-        Update from CSV
-      </button>
-    </form>
     <form method="post" action="{% url 'pcs:pcs_catalog_rucio_update' %}" class="ms-2 d-inline" id="rucio-update-form">
       {% csrf_token %}
       <button type="submit" id="rucio-update-btn" class="btn btn-sm btn-primary"
@@ -103,8 +96,6 @@
       </button>
     </form>
     {% else %}
-    <button type="button" class="btn btn-sm btn-primary ms-2" disabled
-            title="Re-import eic/epic-prod/docs/_data/datasets.csv into the catalog — operator action; sign in on pandaserver02">Update from CSV</button>
     <button type="button" class="btn btn-sm btn-primary ms-2" disabled
             title="Refresh the JLab Rucio output snapshot — operator action; sign in on pandaserver02">Update from Rucio</button>
     {% endif %}
@@ -258,47 +249,6 @@
       } catch (err) {
         busy(false);
         alert('Could not queue the request-link update: ' + err.message);
-      }
-    });
-  })();
-
-  // Update from CSV — fire-and-notify via the prod-ops agent + SSE push, so the
-  // import runs off the request and the page updates when catalog_import_ready
-  // arrives. See docs/EPICPROD_OPS_AGENT.md, docs/SSE_PUSH.md.
-  (function () {
-    const form = document.getElementById('csv-update-form');
-    const btn  = document.getElementById('csv-update-btn');
-    if (!form || !btn) return;
-    const label = btn.textContent.trim();
-    function busy(on) { btn.disabled = on; btn.textContent = on ? 'Updating…' : label; }
-    form.addEventListener('submit', async function (e) {
-      e.preventDefault();
-      if (!confirm('Re-import the default-datasets CSV into the catalog?')) return;
-      busy(true);
-      const token = form.querySelector('[name=csrfmiddlewaretoken]').value;
-      try {
-        const r = await fetch('{{ request.META.SCRIPT_NAME }}/pcs/api/prod-tasks/catalog-import/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
-          body: JSON.stringify({ source: 'csv' }),
-        });
-        if (r.status !== 202) {
-          let m = 'queue failed';
-          try { const j = await r.json(); m = j.detail || j.message || m; } catch (_) {}
-          throw new Error(m);
-        }
-        // Open the push stream ONLY now that the import is queued — never on
-        // page load — so viewing the catalog pins no streaming worker.
-        const es = new EventSource("{{ request.META.SCRIPT_NAME }}/api/messages/stream/?msg_types=catalog_import_ready");
-        es.addEventListener('catalog_import_ready', function (ev) {
-          let d = {}; try { d = JSON.parse(ev.data); } catch (_) {}
-          if (d.source !== 'csv') return;
-          if (d.ok === false) { es.close(); busy(false); alert('CSV import failed: ' + (d.error || 'unknown error')); }
-          else { window.location.reload(); }
-        });
-      } catch (err) {
-        busy(false);
-        alert('Could not queue the CSV import: ' + err.message);
       }
     });
   })();

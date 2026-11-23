@@ -153,8 +153,11 @@ Production-team fields added during processing:
 | `validation_status` | Validation summary string. |
 | `prod_task_links` | Relation to ProdTask records derived from the request. |
 
-Request records are populated by the catalog CSV import and bind to physics
-configurations, not campaigns; the binding and its projection onto campaign
+Request records are composed in PCS (the request page; PC ingest's
+"Create request"). The rows of the production team's `datasets.csv` were
+imported until that file was archived and remain on record under their
+`csv_import.<hash>` names; PCS no longer reads the file. Requests bind to
+physics configurations, not campaigns; the binding and its projection onto campaign
 editions are described in [CAMPAIGN_CONTINUUM.md](CAMPAIGN_CONTINUUM.md).
 
 Production requests use a dedicated 2-panel page: a filterable request list
@@ -391,7 +394,8 @@ real generator/simulation/reconstruction configuration. Born-vs-adopted is
 therefore the standing migration metric — adopted counts belong in reports
 and trend to zero as production moves onto the campaign-task flow.
 
-Rows with no bound configuration — auto-intake, CSV import — anchor to
+Rows with no bound configuration — auto-intake, rows of the former CSV
+import — anchor to
 the dedicated `Placeholder — no bound configuration` ProdConfig, never
 to a real config: rendering a genuine config name on an unbound row
 misstates executed software, whose truth for adopted tasks lives in the

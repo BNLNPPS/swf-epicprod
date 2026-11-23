@@ -69,8 +69,9 @@ No new entity is required: the physics configuration remains a derived key (PCS.
 request context migrates from "rows owned by the current campaign" to
 "rows resolved to physics configurations, projected onto whichever editions exist."
 
-*(Implemented.)* The catalog CSV import writes one `ProdRequest` per row,
-idempotent on the row key, and binds it to its physics configuration through
+*(Implemented.)* The catalog CSV import, since retired with its source
+file, wrote one `ProdRequest` per row, idempotent on the row key, and bound
+it to its physics configuration through
 `data['physics_config_anchor']` — the composed name of the edition the request
 was recorded against, a name reference in the same convention as
 `replaced_by`. Production-team triage fields and status are never touched by
