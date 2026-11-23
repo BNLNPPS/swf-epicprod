@@ -83,6 +83,9 @@ def _is_ion(tok):
 _NUCLEON    = {'ep', 'en'}
 _MASS_RE    = re.compile(r'^ma_[0-9]')
 _CHANNEL_RE = re.compile(r'^aem')
+#: lepton-flavour-violating channels of an electron beam, read under
+#: EW_BSM/LFV only: e to tau, e to mu
+_LFV_CHANNELS = {'etau', 'emu'}
 _UPSILON_RE = re.compile(r'^upsilon(1s|2s|3s)(photo|_threshold)_ab_(hiAcc|hiDiv)_(\d+x\d+)')
 _BEAMCONFIG = {'hiAcc', 'hiDiv'}
 #: proton energies at which the afterburner has one configuration (ip6_ep_)
@@ -181,7 +184,7 @@ def derive_physics(path, beam=''):
     elif area == 'EXCLUSIVE':
         sig['process'] = _strip_abconv(rest[0]) if rest else 'EXCLUSIVE'
     elif area == 'EW_BSM':
-        sig['process'] = rest[0] if rest else 'EW_BSM'       # ALP
+        sig['process'] = rest[0] if rest else 'EW_BSM'       # ALP, LFV
     else:
         sig['process'] = area
 
@@ -216,6 +219,8 @@ def derive_physics(path, beam=''):
             elif tok in _FINAL_STATE:     sig['final_state'] = tok
             elif _MASS_RE.match(tok):     sig['mass'] = tok
             elif _CHANNEL_RE.match(tok):  sig['channel'] = tok
+            elif sig['process'] == 'LFV' and tok in _LFV_CHANNELS:
+                sig['channel'] = tok
 
     if ions:
         sig['beam_species'] = ions[0]

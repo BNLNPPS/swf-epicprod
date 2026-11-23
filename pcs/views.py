@@ -6228,7 +6228,8 @@ PROCESS_WORDS = {
 }
 MECHANISM_WORDS = {'photo': 'photoproduction', 'threshold': 'threshold production'}
 CHANNEL_WORDS = {'k_lambda': 'kaon with Lambda', 'k_sigma': 'kaon with Sigma',
-                 'pi_n': 'pion with neutron', 'pi_p': 'pion with proton'}
+                 'pi_n': 'pion with neutron', 'pi_p': 'pion with proton',
+                 'etau': 'electron to tau', 'emu': 'electron to muon'}
 BEAM_CONFIG_WORDS = {'hiacc': 'high acceptance', 'hidiv': 'high divergence'}
 
 
