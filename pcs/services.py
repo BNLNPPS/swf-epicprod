@@ -2207,7 +2207,9 @@ def _ensure_csvimport_anchors():
 # (number = digit*1000 + global suffix). Existing tags are reused by their
 # physics parameters and keep their historically-assigned numbers/categories;
 # the seeded set predates this map and is internally inconsistent — renumbering
-# it is a separate cleanup, deliberately out of scope here.
+# it is a separate cleanup, deliberately out of scope here. EW_BSM (7) holds
+# the electroweak and beyond-the-Standard-Model processes; the ALP tags issued
+# before that category existed keep their p5xxx numbers.
 _PROCESS_CATEGORY = {
     'SINGLE': 1,
     'DIS': 2, 'DIS_NC': 2, 'DIS_CC': 2, 'DDIS': 2,
@@ -2216,7 +2218,8 @@ _PROCESS_CATEGORY = {
     'DEMP': 5, 'DVMP': 5, 'MESON_SF': 5,
     'DIFFRACTIVE_JPSI': 5, 'DIFFRACTIVE_PHI': 5, 'DIFFRACTIVE_RHO': 5,
     'PHOTOPRODUCTION_JPSI': 5, 'UPSILON': 5,
-    'UCHANNEL_PI0': 5, 'UCHANNEL_RHO': 5, 'ALP': 5,
+    'UCHANNEL_PI0': 5, 'UCHANNEL_RHO': 5,
+    'ALP': 7, 'LFV': 7,
 }
 
 
@@ -2269,7 +2272,9 @@ def find_or_create_physics_tag(derived, *, created_by='csv_import', dry_run=Fals
         raise ServiceError(f'No physics category mapping for process {process!r}')
     if dry_run:
         return None, 'create'
-    category = PhysicsCategory.objects.get(digit=digit)
+    category = PhysicsCategory.objects.filter(digit=digit).first()
+    if category is None:
+        raise ServiceError(f'Physics category {digit} (process {process!r}) is not defined')
     tag = PhysicsTag(
         tag_number=PhysicsTag.allocate_next(category),
         category=category,
