@@ -94,7 +94,7 @@ tags:
    radiation from the path. A path that names no generator version
    (the pythia8 DIS paths, merged backgrounds) is looked up in the
    catalog: the datasets whose source location is this path carry the
-   generator the CSV import resolved from the request's version
+   generator the former CSV import resolved from the request's version
    column, and when they agree that identity is used and the row says
    so. An identity those editions carry only as a tag binding, never
    observed in a path (the default e1 binding on background editions),
@@ -114,15 +114,15 @@ A physics configuration exists only through an edition (PCS.md
 one). Accepting a line therefore composes the edition the line
 describes for the campaign it names: the physics and generator tags
 found or created, the background tag when one applies, the stage
-sentinels s0 and r0 (EVGEN-stage material, as the CSV import records
-requests), the detector version and config from the line, and the
+sentinels s0 and r0 (EVGEN-stage material, as the former CSV import
+recorded requests), the detector version and config from the line, and the
 sample. Saving the edition binds and, when needed, mints the PC.
 
 The edition records its provenance in `metadata['ingest']`: the raw
 line, its environment, the target hours and any further arguments, and
 the definition's cost record; `metadata['source']` carries the EVGEN
-path and the CSV path as a `csv_manifest` source, as the CSV import
-does.
+path and the CSV path as a `csv_manifest` source, as the former CSV
+import did.
 
 Acceptance re-derives every line server-side and refuses, with the
 reason, a line that is identified, a near miss not explicitly allowed,
@@ -143,7 +143,7 @@ when a request is created.
 
 An identified row with an edition in the line's campaign, which an
 accepted row is, carries a second action, "Create request". It records
-what the CSV import records for a catalog row
+what the former CSV import recorded for a catalog row
 (PCS_DATASET_REQUEST_WORKFLOW.md), in one transaction:
 
 - **The request** (`ProdRequest`), anchored on the edition's composed

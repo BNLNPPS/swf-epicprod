@@ -3002,38 +3002,6 @@ LIFECYCLE_KEYS = ('past', 'last', 'current', 'future')
 
 
 @_login_required_flash
-def pcs_catalog_csv_update(request):
-    """POST handler for the 'Update from CSV' button on the catalog.
-
-    Runs the default-datasets CSV import service and redirects back to
-    the catalog with a flash summary. POST-only.
-    """
-    if request.method != 'POST':
-        return _post_only_redirect(
-            request, reverse('pcs:pcs_catalog'),
-            action_label='Update from CSV')
-    from .services import import_default_datasets_csv, ServiceError
-    try:
-        summary = import_default_datasets_csv(
-            created_by=getattr(request.user, 'username', '') or 'csv_import',
-        )
-    except (ServiceError, FileNotFoundError, OSError) as e:
-        messages.error(request, f'CSV import failed: {e}')
-        return redirect(reverse('pcs:pcs_catalog'))
-    msg = (f'CSV import: {summary["created"]} new, '
-           f'{summary["updated"]} updated, '
-           f'{summary["requests_created"]} new / '
-           f'{summary["requests_updated"]} updated requests, '
-           f'{len(summary["errors"])} errors '
-           f'(of {summary["rows"]} rows)')
-    if summary['errors']:
-        messages.warning(request, msg)
-    else:
-        messages.success(request, msg)
-    return redirect(reverse('pcs:pcs_catalog'))
-
-
-@_login_required_flash
 def pcs_catalog_set_current(request):
     """POST handler for the 'Make current' button.
 

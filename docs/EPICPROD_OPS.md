@@ -672,7 +672,7 @@ reads, three studies a night; frames a finding reads marked covered) →
 segfault notice (one TJAI message to the swf
 sessions: the catalog census and the signatures awaiting a
 reproduction or a reading; SEGFAULT_DIAGNOSIS.md, The nightly notice)
-→ csv import → epic-prod past import →
+→ epic-prod past import →
 questionnaire import → association sweep with auto-intake of direct
 group.EIC submissions → Rucio output snapshot → Rucio arrivals sweep →
 EVGEN assimilation → dataset definitions sweep (the

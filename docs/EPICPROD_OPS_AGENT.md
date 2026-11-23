@@ -252,7 +252,7 @@ invokable on their own, so a single step can be rerun without the chain.
 | `msg_type` | Doer | Purpose | Timeout |
 |---|---|---|---|
 | `catalog_sync` | in-process chain | Nightly composite sync in dependency order: association sweep, Rucio snapshot, EVGEN assimilation, questionnaire match, progress refresh. Logs a chain summary — the catalog-freshness timestamp the alarm system watches. | per step |
-| `catalog_import` | `pcs-catalog-import.py` | Run a PCS catalog import (csv or epic-prod). The epic-prod walk covers some 4900 datasets. | 1800 |
+| `catalog_import` | `pcs-catalog-import.py` | Run a PCS catalog import (source `epic-prod`, the past-campaign output). The walk covers some 4900 datasets. | 1800 |
 | `association_sweep` | `sweep_panda_associations` | Batch-associate recent PanDA tasks with PCS campaign tasks. | 600 |
 | `questionnaire_import` | `import-questionnaires.py` | Import new production-request form responses; the nightly sweep reads the CSV URL from SysConfig `questionnaire_csv_url`. | 120 |
 | `questionnaire_automatch` | `match-questionnaires.py` | LLM-assisted matching of questionnaires to catalog tasks. | 1800 |

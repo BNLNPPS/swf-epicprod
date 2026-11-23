@@ -34,6 +34,9 @@ Production coordination has described and prototyped this public intake path:
 4. Once merged, the Jekyll-generated page at the campaign datasets documentation displays
    the new request.
 
+That file is archived. PCS imported its rows while it was live and no
+longer reads it: requests are composed in PCS.
+
 The public CSV currently stores fields such as:
 
 - DSC or PWG
@@ -323,7 +326,7 @@ page shows, live, the physics configurations the system already has that
 match: what they are, where they were produced, and how much. Contact name
 and email are required, prefilled for signed-in users. "Use this"
 bases the request on an existing configuration, recording the same
-physics-configuration anchor the CSV import writes, so a composed request
+physics-configuration anchor the former CSV import wrote, so a composed request
 projects onto campaign editions exactly like an imported one. The mapping is
 deterministic throughout: form fields land in the request's filter block and
 columns; no inference intervenes.
