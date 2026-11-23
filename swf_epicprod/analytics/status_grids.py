@@ -65,17 +65,22 @@ SKIPPED_AREAS = ('BACKGROUNDS',)
 # discriminator ahead of the physics area (/RECO/<v>/<config>/gOP000001/
 # SINGLE/...), which would otherwise read as a background chain.
 ES_VALIDATION_RE = re.compile(r'\.[gp][A-Z]{2}\d+$')
-DOOR_PREFIX = '/volatile/eic/EPIC'
+# The door prefixes of an EVGEN location: /cache/eic/EPIC, the area
+# EIC-XRD serves, and /volatile/eic/EPIC, its former name.
+DOOR_PREFIXES = ('/cache/eic/EPIC', '/volatile/eic/EPIC')
 
 
 def evgen_path(location):
     """``/EVGEN/<tail>`` from a DID (``epic:/EVGEN/...``), a door path
-    (``/volatile/eic/EPIC/EVGEN/...``) or a tail; '' when none."""
+    (``/cache/eic/EPIC/EVGEN/...`` or ``/volatile/eic/EPIC/EVGEN/...``)
+    or a tail; '' when none."""
     text = str(location or '').strip()
     if ':' in text and not text.startswith('/'):
         text = text.partition(':')[2]
-    if text.startswith(DOOR_PREFIX):
-        text = text[len(DOOR_PREFIX):]
+    for prefix in DOOR_PREFIXES:
+        if text == prefix or text.startswith(prefix + '/'):
+            text = text[len(prefix):]
+            break
     text = '/' + text.lstrip('/')
     if not text.startswith('/EVGEN/'):
         text = '/EVGEN' + text
