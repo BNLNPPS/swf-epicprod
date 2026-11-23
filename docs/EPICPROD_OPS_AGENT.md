@@ -332,7 +332,7 @@ Each item below is, by design, a new handler + doer on this agent.
 - **Campaign-provenance sweep** — the join the campaign catalogue and the
   `eic/snippets` `check_campaign.py` / `check_storage.py` do by hand, run live
   and credentialed: for each requested EVGEN path
-  `/volatile/eic/EPIC/EVGEN/<suffix>`, resolve the produced
+  `/cache/eic/EPIC/EVGEN/<suffix>` (or `/volatile/eic/EPIC/EVGEN/<suffix>`), resolve the produced
   `epic:/RECO/<campaign>/<detector_config>/<suffix>` DID(s), their RSE replicas
   (BNL-XRD / EIC-XRD), and file counts, into a provenance cache the catalog
   renders. This supersedes the temporary hand-curated dataset catalogue and the

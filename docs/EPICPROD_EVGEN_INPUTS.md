@@ -26,7 +26,9 @@ constraint".
 ## The two namespaces: request and Rucio
 
 A PCS catalog request names an EVGEN path under
-`/volatile/eic/EPIC/EVGEN/<tail>`, taken from the production team's
+`/cache/eic/EPIC/EVGEN/<tail>` (stored records and older catalogue rows
+carry the former `/volatile/eic/EPIC/EVGEN/<tail>`; both read alike,
+`services.strip_door_prefix`), taken from the production team's
 `default_datasets` catalogue (`eic/epic-prod`, the basis of the PCS task
 catalog). The produced sample is registered in Rucio as `epic:/EVGEN/<tail>`.
 The `<tail>` is the same namespace on both sides, but the request tail ranges
@@ -85,7 +87,7 @@ the Q² token**. Two consequences follow, and they are the whole point:
   to the versioned Q² ranges, and two PCS submissions (tasks 40440, 40443)
   ran the versioned files for minQ2 requests.
 - **Two location forms, one tail.** A CSV-imported request names the door
-  path (`/volatile/eic/EPIC/EVGEN/…`); an edition composed by the ingest
+  path (`/cache/eic/EPIC/EVGEN/…`, or `/volatile/eic/EPIC/EVGEN/…`); an edition composed by the ingest
   (PCS_INGEST.md) names the dataset definition's EVGEN path (`EVGEN/…`).
   Both reduce to the same tail before matching.
 

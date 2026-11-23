@@ -98,7 +98,7 @@ same interim convention that already holds `input_dataset_dids` and the
 
 - `input_source_location` (property; `Dataset.source_location`, i.e.
   `Dataset.metadata['source']['location']`, `csv_file` fallback) — the requested
-  `/volatile/eic/EPIC/EVGEN/<suffix>` path the request filter fields are extracted
+  `/cache/eic/EPIC/EVGEN/<suffix>` path (or its former `/volatile/eic/EPIC/` form) the request filter fields are extracted
   from for the match.
 - `campaign` → `Campaign` (FK) — selects the Rucio snapshot to match against.
 - `dataset` → `Dataset` (FK) — the PCS *output* dataset. Its `did` is the
