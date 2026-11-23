@@ -36,8 +36,9 @@ class DoorAccessTest(unittest.TestCase):
         self.assertNotIn('X509_USER_PROXY', env)
 
     def test_jlab_scope_is_the_path_less_the_rse_oidc_base_path(self):
-        for path, scope in (('//volatile/eic/EPIC//RECO/f.root', '/eic/EPIC/RECO/f.root'),
+        for path, scope in (('//cache/eic/EPIC//RECO/f.root', '/eic/EPIC/RECO/f.root'),
                             ('//cache/eic/EPIC//EVGEN/f.root', '/eic/EPIC/EVGEN/f.root'),
+                            ('//volatile/eic/EPIC//RECO/f.root', '/volatile/eic/EPIC/RECO/f.root'),
                             ('/work/eic3/EPIC/eic/LOG/t/log.tgz', '/eic/LOG/t/log.tgz'),
                             ('/other/f', '/other/f')):
             with mock.patch.object(jlab_auth, 'panda_token', return_value='tok') as token:

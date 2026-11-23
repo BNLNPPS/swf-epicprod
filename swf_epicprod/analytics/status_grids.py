@@ -71,8 +71,7 @@ ES_VALIDATION_RE = re.compile(r'\.[gp][A-Z]{2}\d+$')
 
 def evgen_path(location):
     """``/EVGEN/<tail>`` from a DID (``epic:/EVGEN/...``), a door path
-    (``/cache/eic/EPIC/EVGEN/...`` or ``/volatile/eic/EPIC/EVGEN/...``)
-    or a tail; '' when none."""
+    (``/cache/eic/EPIC/EVGEN/...``) or a tail; '' when none."""
     text = str(location or '').strip()
     if ':' in text and not text.startswith('/'):
         text = text.partition(':')[2]

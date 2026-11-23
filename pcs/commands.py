@@ -345,8 +345,7 @@ def _output_dataset_name(task):
       recorded produced version matches it (e.g. ``26.05.0``), not the input
       ``detector_version`` (``26.02.0``).
     - ``<suffix>`` is the requested EVGEN path with its door prefix
-      (``/cache/eic/EPIC/`` or the former ``/volatile/eic/EPIC/``) and
-      ``EVGEN/`` stripped (case preserved). The path is the dataset's
+      (``/cache/eic/EPIC/``) and ``EVGEN/`` stripped (case preserved). The path is the dataset's
       identity, so the RECO DID mirrors it per row — carrying the per-task
       angle/beam detail the tag composition collapses.
 

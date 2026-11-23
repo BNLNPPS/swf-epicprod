@@ -11,9 +11,7 @@ class NormalizeEvgenPathTests(SimpleTestCase):
     def test_every_form_reduces_to_the_did_tail(self):
         for raw in (TAIL, TAIL + '/', 'epic:' + TAIL,
                     '/cache/eic/EPIC' + TAIL,
-                    '/volatile/eic/EPIC' + TAIL,
                     '/jlab-osdf-ro/eic/EPIC/cache' + TAIL,
-                    '/jlab-osdf-ro/eic/EPIC/volatile' + TAIL,
                     'root://dtn-rucio.jlab.org:1094//cache/eic/EPIC' + TAIL,
                     'root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/cache' + TAIL):
             with self.subTest(raw=raw):
@@ -21,7 +19,8 @@ class NormalizeEvgenPathTests(SimpleTestCase):
 
     def test_non_evgen_paths_are_refused(self):
         for raw in ('/cache/eic/EPIC/RECO/26.06.0/x/y', '/cache/eic/EPIC/EVGEN',
-                    '/other/eic/EPIC' + TAIL):
+                    '/other/eic/EPIC' + TAIL, '/volatile/eic/EPIC' + TAIL,
+                    '/jlab-osdf-ro/eic/EPIC/volatile' + TAIL):
             with self.subTest(raw=raw), self.assertRaises(services.ServiceError):
                 services.normalize_evgen_path(raw)
 
