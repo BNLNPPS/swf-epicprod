@@ -652,7 +652,7 @@ def _evgen_manifest_from_inputs(task, events_per_job):
     The matched DIDs live on the bound dataset's ``metadata['rucio']['matched']``
     (``task.inputs``), written by the EVGEN assimilation. A Rucio file's name IS
     the xrootd path below ``EVGEN/`` — the payload prepends
-    ``root://…/volatile/eic/EPIC/`` to ``EVGEN/<file>`` and streams it; nothing
+    its read base (``root://…/jlab-osdf-ro/eic/EPIC/cache/``) to ``EVGEN/<file>`` and streams it; nothing
     is read from local disk. A file registered with its event count (every
     registration counts them now) is chunked against the per-job count; a
     file registered without one is one job at that count. Resolution is a

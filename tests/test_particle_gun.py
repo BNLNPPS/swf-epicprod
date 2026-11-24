@@ -17,7 +17,7 @@ from pcs.commands import (GUN_DEFAULT_BEAMS, _evgen_manifest_internal,
 PAYLOAD = os.path.join(os.path.dirname(__file__), '..', 'swf_epicprod',
                        'payload', 'evgen_generate.py')
 
-# The volatile area's EVGEN/SINGLE/pi+/1GeV/3to50deg/pi+_1GeV_3to50deg.steer
+# The EVGEN area's EVGEN/SINGLE/pi+/1GeV/3to50deg/pi+_1GeV_3to50deg.steer
 # and EVGEN/SINGLE/e-/2GeV/etaScan/e-_2GeV_eta-1.7.steer, read 2026-10-24.
 ANGLE_FILE = '''from DDSim.DD4hepSimulation import DD4hepSimulation
 from g4units import mm, GeV, MeV, degree

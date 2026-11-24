@@ -18,7 +18,7 @@ from pcs.commands import _residual_rows, reco_row_key
 from swf_epicprod.analytics.delivery_daily import count_each_row_once
 from swf_epicprod.analytics.file_events import source_of
 
-EVGEN = 'root://dtn-eic.jlab.org//volatile/eic/EPIC/EVGEN/EXCLUSIVE/DDIS/run001'
+EVGEN = 'root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/cache/EVGEN/EXCLUSIVE/DDIS/run001'
 RECO = '/RECO/26.07.3/epic_craterlake/EXCLUSIVE/DDIS'
 TRY2 = '/RECO/26.07.3/epic_craterlake/try2/EXCLUSIVE/DDIS'
 

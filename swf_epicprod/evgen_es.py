@@ -23,7 +23,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 # The payload's EVGEN read path (payload/run.sh, XRDRURL and XRDRBASE).
-JLAB_READ = 'root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/volatile'
+JLAB_READ = 'root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/cache'
 JLAB_SCOPE = 'epic'
 BNL_RSE = 'BNL_PROD_DISK_1'
 BNL_SCOPE = 'group.EIC'

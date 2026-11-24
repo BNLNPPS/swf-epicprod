@@ -694,7 +694,8 @@ In order, each a committed step on the clone:
     The volatile area is exported read-only, without a credential, by
     JLab's OSDF origin: `XRDRURL` defaults to
     `root://dtn2304.jlab.org:8443/` and `XRDRBASE` to
-    `/jlab-osdf-ro/eic/EPIC/volatile` (the old `/volatile/eic/EPIC`).
+    `/jlab-osdf-ro/eic/EPIC/volatile` (the old `/volatile/eic/EPIC`;
+    `/cache` from payload 0.25.40, item 27).
     The same file answers with the same identity at both doors. PCS's
     own reads of the area (`pcs/services.py`, `XROOTD_EPIC_*`) and the
     crash reproduction's input moved with it. Output registration is
@@ -822,6 +823,15 @@ In order, each a committed step on the clone:
     the batch system gave it (The payload report, Cleaning up after each
     job). On by default from payload 0.25.3, after the same canaries;
     `0` turns it off.
+27. **EVGEN input reads from `/cache`** (2026-11-23, payload 0.25.40).
+    EIC-XRD serves the EVGEN area as `/cache/eic/EPIC` (its protocol
+    prefix and `oidc_base_path`); `/volatile` was its former prefix.
+    `XRDRBASE` defaults to `/jlab-osdf-ro/eic/EPIC/cache` on the same
+    OSDF door, where `.../EPIC/volatile` still lists the same files;
+    manifest rows stay relative to `EVGEN/`, so tasks and manifests are
+    unchanged. `evgen_es.JLAB_READ`, the Event Service input stage's
+    read path, moves with it (`tests/test_evgen_read_base.py` holds the
+    two together).
 
 ## Event Service input offset
 
