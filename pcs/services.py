@@ -25,6 +25,10 @@ from django.utils import timezone as _timezone
 from django.utils.dateparse import parse_datetime as _parse_datetime
 
 from monitor_app.utils import format_datetime
+from swf_epicprod.door_paths import (
+    DOOR_PREFIXES, OSDF_BASE, OSDF_DOOR, OSDF_PATH, OSDF_PATHS,
+    door_forms, evgen_tail, split_door_prefix, strip_door_prefix,
+)
 
 _log = _logging.getLogger(__name__)
 
@@ -1277,7 +1281,8 @@ def dataset_intake(*, source_location, source_kind='csv_manifest',
     """
     Idempotent intake of an external (e.g. EVGEN CSV manifest) Dataset.
 
-    Idempotency key: ``(source.kind, source.location)``.
+    Idempotency key: ``(source.kind, source.location)``, a door path
+    matching under either door prefix.
 
     Returns ``(dataset, was_created)``.
     """
@@ -1285,7 +1290,7 @@ def dataset_intake(*, source_location, source_kind='csv_manifest',
         raise ServiceError('source_location is required')
 
     existing = Dataset.objects.filter(
-        metadata__source__location=source_location,
+        metadata__source__location__in=door_forms(source_location),
         metadata__source__kind=source_kind,
     ).first()
     if existing:
@@ -1937,29 +1942,22 @@ def _possible(value):
 
 
 def _csvimport_slug(dataset_path, gen_version):
-    """Short stable slug derived from the (path, generator) idempotency key."""
-    key = f'{dataset_path}|{gen_version}'.encode()
+    """Short stable slug derived from the (path, generator) idempotency key.
+    The slugs on record were made from ``/volatile/eic/EPIC`` paths, so a
+    path under either door prefix keys as that form: a catalogue row
+    respelled under ``/cache`` updates its record rather than adding one."""
+    key = f'{door_forms(dataset_path)[-1]}|{gen_version}'.encode()
     return _hashlib.sha1(key).hexdigest()[:12]
 
 
-# Common prefix on every catalog source path; carries no distinguishing
-# information, so it is stripped from the human-readable task name (and the
-# compose title strips it the same way).
-EPIC_VOLATILE_PREFIX = '/volatile/eic/EPIC/'
-
-# The collaboration xrootd door in front of the volatile area — the same
-# endpoint the production payload streams EVGEN from (payload run.sh,
-# XRDRURL and XRDRBASE). JLab's read-only OSDF origin on dtn2304, which
-# replaced dtn2201 (dtn-eic) when that host was decommissioned on
-# 2026-10-01; the volatile area sits under /jlab-osdf-ro/eic/EPIC/volatile.
-XROOTD_EPIC_BASE = 'root://dtn2304.jlab.org:8443//jlab-osdf-ro/eic/EPIC/volatile'
-XROOTD_EPIC_DOOR = 'root://dtn2304.jlab.org:8443'
-XROOTD_EPIC_PATH = '/jlab-osdf-ro/eic/EPIC/volatile'
+# The collaboration xrootd door in front of the EIC-XRD area, and the door
+# prefixes a catalog source path may carry (swf_epicprod.door_paths).
+XROOTD_EPIC_DOOR, XROOTD_EPIC_PATH, XROOTD_EPIC_BASE = OSDF_DOOR, OSDF_PATH, OSDF_BASE
 
 
 def evgen_door_directory_exists(path, timeout_s=15):
     """Whether ``/EVGEN/...`` is a directory on the collaboration door,
-    asked anonymously (the door lists the volatile area without a
+    asked anonymously (the door lists the cache area without a
     credential, as the payload streams from it). True or False from the
     door's answer; None when the door could not be asked (timeout, no
     client, another failure), which a caller must not read as absent.
@@ -2153,12 +2151,13 @@ def data_provenance(did_or_path):
 
 def _task_name_from_path(path):
     """Human-readable ProdTask.name from a catalog source path: the path with
-    the common ``/volatile/eic/EPIC/`` prefix stripped (matching the compose
-    title). Paths are unique per catalog row. Returns '' for an empty path so
-    the caller can fall back to the slug name."""
+    its door prefix (``/cache/eic/EPIC/`` or ``/volatile/eic/EPIC/``)
+    stripped (matching the compose title). Paths are unique per catalog row.
+    Returns '' for an empty path so the caller can fall back to the slug
+    name."""
     p = (path or '').strip()
-    if p.startswith(EPIC_VOLATILE_PREFIX):
-        p = p[len(EPIC_VOLATILE_PREFIX):]
+    if p.startswith('/'):
+        p = strip_door_prefix(p)
     return p
 
 
@@ -3037,17 +3036,15 @@ def _extract_past_filters(did):
 def _extract_csv_filters(path, detector_config):
     """Current-tab filter fields from a CSV input dataset path.
 
-    Path shape: /volatile/eic/EPIC/EVGEN/<physics>/<gen>/.../<beam>/...
-    Geometry comes from the dataset's detector_config field (not the
-    path); everything else from the path tail after the EVGEN prefix.
+    Path shape: /cache/eic/EPIC/EVGEN/<physics>/<gen>/.../<beam>/...
+    (or the former /volatile/eic/EPIC/ form). Geometry comes from the
+    dataset's detector_config field (not the path); everything else from
+    the path tail after the EVGEN prefix.
     """
-    segs = (path or '').lstrip('/').split('/')
-    # Drop the fixed prefix volatile/eic/EPIC/EVGEN when present, but
-    # be tolerant if a different shape appears later.
-    if len(segs) >= 4 and segs[:4] == ['volatile', 'eic', 'EPIC', 'EVGEN']:
-        tail = segs[4:]
-    else:
-        tail = segs
+    # Drop the fixed prefix <door>/EVGEN when present, but be tolerant if
+    # a different shape appears later.
+    tail = evgen_tail(path)
+    tail = (path or '').lstrip('/').split('/') if tail is None else tail.split('/')
     out = _extract_path_filters(tail)
     out['detector'] = detector_config or ''
     return out
@@ -4402,20 +4399,18 @@ def fetch_jlab_rucio_unarrived_files(scope, file_names):
 def _request_input_tail(ds_path):
     """Return the comparable tail of an EVGEN input location.
 
-    /volatile/eic/EPIC/EVGEN/<TAIL>  ->  '<TAIL>'  (lower-cased): the CSV
-    import's form, the door path.
+    /cache/eic/EPIC/EVGEN/<TAIL>     ->  '<TAIL>'  (lower-cased): the CSV
+    /volatile/eic/EPIC/EVGEN/<TAIL>      import's form, the door path, under
+                                         either door prefix.
     EVGEN/<TAIL> or /EVGEN/<TAIL>    ->  '<TAIL>': the ingest's form, the
     dataset definition's EVGEN path (PCS_INGEST.md).
     anything else                    ->  '' (no match)
     """
-    if not ds_path:
-        return ''
-    parts = ds_path.strip('/').split('/')
-    if len(parts) >= 5 and parts[:4] == ['volatile', 'eic', 'EPIC', 'EVGEN']:
-        return '/'.join(parts[4:]).lower()
-    if len(parts) >= 2 and parts[0] == 'EVGEN':
-        return '/'.join(parts[1:]).lower()
-    return ''
+    tail = evgen_tail(ds_path)
+    if tail is None:
+        head, _, rest = str(ds_path or '').strip('/').partition('/')
+        tail = rest if head == 'EVGEN' else ''
+    return tail.lower()
 
 
 def _did_path_tail(did):
@@ -8015,16 +8010,17 @@ _EVGEN_PATH_OK = _re.compile(r'^/EVGEN/[A-Za-z0-9._=+\-/]+$')
 
 def normalize_evgen_path(raw):
     """``/EVGEN/...`` from any form the page accepts: the DID tail, the
-    ``epic:`` DID, the ``/volatile/eic/EPIC`` door path, or the full
-    ``root://`` URL. Raises ServiceError(400) for anything else."""
+    ``epic:`` DID, a door path (``/cache/eic/EPIC``, the legacy
+    ``/volatile/eic/EPIC``, or the OSDF ``/jlab-osdf-ro/eic/EPIC/cache``
+    or ``.../volatile``), or the full ``root://`` URL of any of them.
+    Raises ServiceError(400) for anything else."""
     p = str(raw or '').strip()
     if '://' in p:
         rest = p.split('://', 1)[1]            # host[:port]/path
         p = '/' + rest.partition('/')[2].lstrip('/')
     if p.startswith('epic:'):
         p = p[len('epic:'):]
-    if p.startswith('/volatile/eic/EPIC/'):
-        p = p[len('/volatile/eic/EPIC'):]
+    p = split_door_prefix(p, OSDF_PATHS + DOOR_PREFIXES)[1]
     p = '/' + p.strip('/')
     if (not _EVGEN_PATH_OK.match(p) or '..' in p or '//' in p
             or len(p.split('/')) < 4):

@@ -27,6 +27,8 @@ ranges that no sample or configuration names is left empty.
 import logging
 import re
 
+from swf_epicprod.door_paths import split_door_prefix
+
 logger = logging.getLogger(__name__)
 
 PRODUCT_KEY = 'status_grids:v3:{campaign}'
@@ -65,17 +67,16 @@ SKIPPED_AREAS = ('BACKGROUNDS',)
 # discriminator ahead of the physics area (/RECO/<v>/<config>/gOP000001/
 # SINGLE/...), which would otherwise read as a background chain.
 ES_VALIDATION_RE = re.compile(r'\.[gp][A-Z]{2}\d+$')
-DOOR_PREFIX = '/volatile/eic/EPIC'
 
 
 def evgen_path(location):
     """``/EVGEN/<tail>`` from a DID (``epic:/EVGEN/...``), a door path
-    (``/volatile/eic/EPIC/EVGEN/...``) or a tail; '' when none."""
+    (``/cache/eic/EPIC/EVGEN/...`` or ``/volatile/eic/EPIC/EVGEN/...``)
+    or a tail; '' when none."""
     text = str(location or '').strip()
     if ':' in text and not text.startswith('/'):
         text = text.partition(':')[2]
-    if text.startswith(DOOR_PREFIX):
-        text = text[len(DOOR_PREFIX):]
+    text = split_door_prefix(text)[1]
     text = '/' + text.lstrip('/')
     if not text.startswith('/EVGEN/'):
         text = '/EVGEN' + text

@@ -15,6 +15,8 @@ import os
 import re
 import shlex
 
+from swf_epicprod.door_paths import evgen_tail
+
 from .background_files import stored as stored_bg_sources
 
 
@@ -342,8 +344,9 @@ def _output_dataset_name(task):
     - ``<campaign>`` is the task's production campaign (``Campaign.name``); the
       recorded produced version matches it (e.g. ``26.05.0``), not the input
       ``detector_version`` (``26.02.0``).
-    - ``<suffix>`` is the requested EVGEN path with the ``/volatile/eic/EPIC/
-      EVGEN/`` prefix stripped (case preserved). The path is the dataset's
+    - ``<suffix>`` is the requested EVGEN path with its door prefix
+      (``/cache/eic/EPIC/`` or the former ``/volatile/eic/EPIC/``) and
+      ``EVGEN/`` stripped (case preserved). The path is the dataset's
       identity, so the RECO DID mirrors it per row — carrying the per-task
       angle/beam detail the tag composition collapses.
 
@@ -354,9 +357,8 @@ def _output_dataset_name(task):
     flat ``task_name`` when no EVGEN path or campaign is available.
     """
     ds = task.dataset
-    parts = (ds.source_location or '').strip('/').split('/')
-    if task.campaign_id and parts[:4] == ['volatile', 'eic', 'EPIC', 'EVGEN'] and len(parts) > 4:
-        suffix = '/'.join(parts[4:])
+    suffix = evgen_tail(ds.source_location)
+    if task.campaign_id and suffix:
         return f'/RECO/{task.campaign.name}/{ds.detector_config}/{suffix}'
     return ds.task_name
 

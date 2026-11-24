@@ -726,7 +726,7 @@ def create_request_line(raw, *, created_by):
         row['refusal'] = f'campaign {row["campaign_name"]} is not defined'
         return row
     # The task carries the EVGEN path as its name, the CSV import's own
-    # form (the catalog path minus its volatile prefix).
+    # form (the catalog path minus its door prefix).
     task_name = row['evgen_path'] or f'ingest:{row["csv_path"]}'
     existing = pc_request_projection([edition]).get(edition.composed_name) or []
     if existing:
