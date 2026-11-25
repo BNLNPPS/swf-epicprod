@@ -1280,7 +1280,8 @@ def task_container_image(cfg, override=None):
 
 def build_evgen_task_params(task, panda_tasks=None, residual=False,
                             residual_of=None, rows=None, container=None,
-                            bad_input_preview=False, residual_exclusion=None):
+                            bad_input_preview=False, residual_exclusion=None,
+                            es_canary=None):
     """Build the client-API EVGEN production submission spec from a ProdTask.
 
     This is the production reproduction of the proven condor-side recipe
@@ -1307,6 +1308,12 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         if panda_tasks is not None else None
     if attempt_es:
         event_service = attempt_es
+    if es_canary:
+        # An Event Service canary of a gun sample: its queue's production
+        # shape now, over the sample's plan, ``es_canary`` = (queue, events)
+        # (production_es.canary_settings).
+        from swf_epicprod.production_es import canary_settings
+        event_service = canary_settings(event_service, *es_canary)
     if event_service:
         if residual:
             raise ValueError('production ES uses native event retries; row-based residual rerun is not supported')

@@ -232,13 +232,61 @@ def apply(spec, settings):
         # removes that scratch, was served one unit at a time across the node
         # (canary 41481).
         env['EPICPROD_SWITCH_ES_LOCAL_SCRATCH'] = '1'
+    command = _command(spec, cfg, dataset=dataset)
+    if evgen and 'input_offset' in cfg:
+        # One unread segment of one file: JEDI takes the file at the
+        # segment's length, the catalog's count set aside, so its ranges run
+        # 1..length, the last one short where the length is not a multiple of
+        # the range size (job_complex_module.py, insertNewJob), and the
+        # payload places them at the offset.
+        shape = dict(nEventsPerInputFile=cfg['events'], nEventsPerJob=cfg['events'], nJobs=1,
+                     nEvents=cfg['events'])
+    elif evgen:
+        # Each file streamed to its end and the task at their sum: JEDI takes
+        # each file's count from the catalog listing (useRealNumEvents, which
+        # the submitter sets for epicFileEvents; the ePIC DDM interface passes
+        # the catalog's counts) and makes ranges up to the file's last event,
+        # the last one short (pandaserver job_complex_module.py, insertNewJob).
+        # nEventsPerJob at the task's total: JEDI cuts a file's events into
+        # records of nEventsPerJob carried across files (task_complex_module.py,
+        # insertFilesForDataset), so anything less than the total cuts a file
+        # after the first into a short extra job; one file a job comes from
+        # nFilesPerJob.
+        shape = dict(useRealNumEvents=True, epicFileEvents=dict(cfg['file_events']),
+                     nEventsPerJob=cfg['events'], nJobs=cfg['files'], nEvents=cfg['events'])
+    else:
+        shape = dict(nEventsPerInputFile=cfg['input_events'], nEventsPerJob=cfg['events_per_job'],
+                     nJobs=cfg['events'] // cfg['events_per_job'])
+    spec.update(exec=command, fineGrainedProc=True, directInput=not evgen,
+                inputDataset=cfg['input_dataset'], nFilesPerJob=1,
+                nEventsPerWorker=cfg['unit_events'], nCore=cfg.get('pilot_cores', 1),
+                walltimeHours=cfg['deadline_s'] / 3600,
+                memory=cfg['memory_mb_per_core'], maxAttempt=10, maxFailure=3,
+                noLog=not cfg.get('job_log'), workerProxy=True, event_service=dict(cfg), **shape)
+    if cfg.get('range_events', 1) > 1:
+        spec['fineGrainedRangeEvents'] = cfg['range_events']
+    if evgen and cfg.get('input_files'):
+        # The input read where it resides: the catalog's dataset, limited to
+        # the files the manifest covers (JEDI's template ``files``).
+        spec['inputFiles'] = list(cfg['input_files'])
+    return spec
+
+
+def _command(spec, cfg, dataset=None, stamp=None):
+    """The job's command: the harness settings as an environment prefix on
+    the dispatcher, whose ``es-production`` mode registers into the task's
+    RECO dataset and whose ``es`` mode, for a canary named by its stamp,
+    into the expiring dataset under epic:/TEST/canary/ (swf-monitor
+    scripts/evgen_job_dispatcher.py, run_event_service)."""
+    evgen = cfg.get('input') == 'evgen'
     prefix = {
         'ES_WORKER_PROXY': '1',
         'ES_PAYLOAD_IMAGE': spec['containerImage'], 'ES_SLOTS': cfg['slots'],
         'ES_EVENTS_PER_UNIT': str(cfg['unit_events']), 'ES_CLOSE_S': str(cfg['close_s']),
         'ES_DEADLINE_S': str(cfg['deadline_s']), 'ES_MARGIN_S': str(cfg['margin_s']),
-        'ES_OUTPUT_DATASET': dataset,
     }
+    if stamp is None:
+        prefix['ES_OUTPUT_DATASET'] = dataset
     if cfg.get('batch_channel'):
         prefix['EPICPROD_SWITCH_ES_BATCH_CHANNEL'] = '1'
     if evgen:
@@ -286,47 +334,57 @@ def apply(spec, settings):
     # file is staged by the pilot, so the payload simulates from the job's
     # own file (run.sh, EPICPROD_INPUT_LOCAL), never from the door path of
     # the manifest's first row.
-    command += (' python3 evgen_job_dispatcher.py es-production '
-                + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(spec['outDS'])
+    mode, name = ('es-production', spec['outDS']) if stamp is None else ('es', stamp)
+    command += (f' python3 evgen_job_dispatcher.py {mode} '
+                + shlex.quote(spec['csvBase']) + ' ' + shlex.quote(name)
                 + ' $PILOT_EVENTRANGECHANNEL'
                 + ('' if evgen and not (cfg.get('nersc_input') or cfg.get('site_input'))
                    else ' --accessmode=direct'))
-    if evgen and 'input_offset' in cfg:
-        # One unread segment of one file: JEDI takes the file at the
-        # segment's length, the catalog's count set aside, so its ranges run
-        # 1..length, the last one short where the length is not a multiple of
-        # the range size (job_complex_module.py, insertNewJob), and the
-        # payload places them at the offset.
-        shape = dict(nEventsPerInputFile=cfg['events'], nEventsPerJob=cfg['events'], nJobs=1,
-                     nEvents=cfg['events'])
-    elif evgen:
-        # Each file streamed to its end and the task at their sum: JEDI takes
-        # each file's count from the catalog listing (useRealNumEvents, which
-        # the submitter sets for epicFileEvents; the ePIC DDM interface passes
-        # the catalog's counts) and makes ranges up to the file's last event,
-        # the last one short (pandaserver job_complex_module.py, insertNewJob).
-        # nEventsPerJob at the task's total: JEDI cuts a file's events into
-        # records of nEventsPerJob carried across files (task_complex_module.py,
-        # insertFilesForDataset), so anything less than the total cuts a file
-        # after the first into a short extra job; one file a job comes from
-        # nFilesPerJob.
-        shape = dict(useRealNumEvents=True, epicFileEvents=dict(cfg['file_events']),
-                     nEventsPerJob=cfg['events'], nJobs=cfg['files'], nEvents=cfg['events'])
-    else:
-        shape = dict(nEventsPerInputFile=cfg['input_events'], nEventsPerJob=cfg['events_per_job'],
-                     nJobs=cfg['events'] // cfg['events_per_job'])
-    spec.update(exec=command, fineGrainedProc=True, directInput=not evgen,
-                inputDataset=cfg['input_dataset'], nFilesPerJob=1,
-                nEventsPerWorker=cfg['unit_events'], nCore=cfg.get('pilot_cores', 1),
-                walltimeHours=cfg['deadline_s'] / 3600,
-                memory=cfg['memory_mb_per_core'], maxAttempt=10, maxFailure=3,
-                noLog=not cfg.get('job_log'), workerProxy=True, event_service=dict(cfg), **shape)
-    if cfg.get('range_events', 1) > 1:
-        spec['fineGrainedRangeEvents'] = cfg['range_events']
-    if evgen and cfg.get('input_files'):
-        # The input read where it resides: the catalog's dataset, limited to
-        # the files the manifest covers (JEDI's template ``files``).
-        spec['inputFiles'] = list(cfg['input_files'])
+    return command
+
+
+# The Event Service payload canary (site-canary IMPLEMENTATION.md, Payload
+# canaries; NERSC_PERLMUTTER.md, Payload canaries and probes): the first
+# events of a feeder's gun sample, in the queue's production shape as the
+# feeder submits it now, as one canary job whose outputs expire. A harness
+# deadline bounds the node it holds if the job stalls.
+CANARY_DEADLINE_S = 1800
+CANARY_MARGIN_S = 300
+
+
+def feeder_shape(queue):
+    """The production Event Service shape a queue's feeder submits."""
+    from . import google_production, perlmutter_production
+    shapes = {perlmutter_production.QUEUE: perlmutter_production.SHAPE,
+              google_production.QUEUE: google_production.SHAPE}
+    if queue not in shapes:
+        raise ValueError(f'{queue} has no production Event Service shape')
+    return dict(shapes[queue])
+
+
+def canary_settings(es, queue, events):
+    """An Event Service canary's settings: the queue's production shape over
+    a gun sample's generation plan, its first ``events`` events in one job."""
+    if not es or es.get('input') == 'evgen':
+        raise ValueError('an Event Service canary runs a particle-gun sample')
+    if type(events) is not int or not 0 < events <= int(es.get('events') or 0):
+        raise ValueError("an Event Service canary takes from 1 to its sample's planned events")
+    path = str(es.get('row') or '').split(',')[0]
+    return definition(dict(feeder_shape(queue), events=events, input_events=events,
+                           events_per_job=events, input_dataset=es.get('input_dataset'),
+                           row=f'{path},steer,{events},0000',
+                           deadline_s=CANARY_DEADLINE_S, margin_s=CANARY_MARGIN_S))
+
+
+def canary(spec, stamp):
+    """A production ES spec (``apply``) as its canary: the dispatcher's
+    ``es`` mode with its outputs under epic:/TEST/canary/<stamp>, one job and
+    one attempt. The caller sets the canary identity (swf-monitor
+    scripts/submit-evgen-task.py)."""
+    cfg = spec.get('event_service')
+    if not cfg:
+        raise ValueError('an Event Service canary needs a production ES spec')
+    spec.update(exec=_command(spec, cfg, stamp=stamp), nJobs=1, maxAttempt=1, maxFailure=1)
     return spec
 
 

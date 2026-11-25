@@ -127,8 +127,19 @@ def image_problem(image, capability):
             + (capability.get('error') or 'no fresh pilot image report'))
 
 
-def require_image(queue, image):
-    problem = image_problem(image, dispatch_capabilities().get(queue))
+def require_image(queue, image, refresh=False):
+    """Raise unless the queue's pilots are seen serving the image. With
+    ``refresh``, a reading the monitor takes itself (Perlmutter's public
+    launcher) is taken afresh first: read only when stale, it rebuilds behind
+    the read, and a submission after a quiet interval was refused on the
+    stale reading (NERSC_PERLMUTTER.md, The launcher and the direct pilot,
+    Admission)."""
+    from .perlmutter_pilots import QUEUE as perlmutter_queue, capability
+    if refresh and queue == perlmutter_queue:
+        observed = capability(DISPATCH_MAX_AGE_S, refresh=True)
+    else:
+        observed = dispatch_capabilities().get(queue)
+    problem = image_problem(image, observed)
     if problem:
         raise ValueError(f'{queue}: {problem}')
 

@@ -694,7 +694,9 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'site and container are required for admission'}, status=400)
             try:
                 services.refuse_closed_queue(site)
-                require_image(site, image)
+                # The submission's own reading of the destination's pilots:
+                # a reading the monitor takes itself is taken afresh here.
+                require_image(site, image, refresh=True)
             except (ValueError, ServiceError) as exc:
                 return Response({'detail': str(exc)}, status=409)
             return Response({'allowed': True, 'site': site, 'container_image': image})
@@ -727,10 +729,21 @@ class ProdTaskViewSet(viewsets.ModelViewSet):
                 # manifest is given, so no input resolution is needed.
                 rows = [r for r in request.query_params.getlist('row') if r.strip()]
                 container = (request.query_params.get('container') or '').strip()
+                # An Event Service canary of a gun sample: the queue whose
+                # production shape it runs and its events
+                # (swf_epicprod.production_es.canary_settings).
+                es_canary = None
+                es_canary_queue = (request.query_params.get('es_canary_queue') or '').strip()
+                if es_canary_queue:
+                    raw_events = request.query_params.get('es_canary_events') or ''
+                    if not raw_events.isdigit():
+                        raise ValueError('es_canary_events must be a positive integer')
+                    es_canary = (es_canary_queue, int(raw_events))
                 return JsonResponse(
                     build_evgen_task_params(task, panda_tasks=panda_tasks,
                                             residual=residual, rows=rows or None,
-                                            container=container or None),
+                                            container=container or None,
+                                            es_canary=es_canary),
                     json_dumps_params={'indent': 2})
             except ValueError as e:
                 return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)

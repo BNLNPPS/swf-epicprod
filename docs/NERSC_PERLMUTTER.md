@@ -211,9 +211,10 @@ back to another pilot.
   the cached product `perlmutter_pilot_runtime` (five-minute refresh,
   fifteen-minute maximum evidence age) and derives the exact image and pinned
   runtime hashes from it; missing, unreadable, ambiguous or stale evidence
-  refuses submission. The product refreshes only while something long-lived
-  reads it: before a submission after a quiet interval, it is refreshed
-  (`perlmutter_pilots.capability(refresh=True)`, the page's Update).
+  refuses submission. A stale product read rebuilds behind the read, so the
+  submission's admission check takes the reading afresh
+  (`queues.require_image(..., refresh=True)`), as the feeder does before it
+  submits and the page's Update does.
 
 ### The batch pilot
 
@@ -688,17 +689,21 @@ Two limits end a job without its pilot's final report:
 
 `NERSC_Perlmutter_epic_es` runs a scheduled payload canary once a day (Torre
 Wenaus, 25 November 2026; site-canary IMPLEMENTATION.md § Payload canaries)
-of `group.EIC.26.07.3.epic_craterlake.p1108.e37.s11.r11.3to50deg`: one
-manifest row, 100 pi+ gun events on one core. A worker on this queue is a
-whole node, so the canary holds a node for one core's work; as one short run a
-day it is the exception to Perlmutter's rule against single-core work (EVGEN
-input in production). The task's image must be one the launcher serves
-(Admission). The canary's admission reads the launcher record without
-refreshing it, and a refused submission does not use up the interval, so the
-dispatch tries again at its next hourly cycle. The queue's production jobs run
-the launcher, and each leaves its launch record and pool sample. A launcher or
-payload change is tested with an Event Service task submitted by
-`scripts/submit-es-canary.py` (Submitting, watching and reading back).
+as an Event Service job in the queue's production shape: 128,000 events of
+the feeder's gun sample
+`group.EIC.26.07.3.epic_craterlake.p1107.e37.s11.r11.3to50deg.pOP000011` on
+the whole node, two 500-event units for each of its 128 slots, with
+production's switches, reconstruction pool and closes. The shape is the one
+the feeder submits (`production_es.feeder_shape`), so a change to production
+reaches the canary. It runs under the canary identity, one job and one
+attempt, its closes registered under `epic:/TEST/canary/<stamp>` with a
+seven-day lifetime, and a 30-minute harness deadline bounds the node it holds.
+Its verdict: the harness ended cleanly, no unit failed, every close is
+registered, and the closes hold every event offered, each credited by PanDA. The
+queue's production jobs run the launcher, and each leaves its launch record
+and pool sample. A launcher or payload change is tested with an Event Service
+task submitted by `scripts/submit-es-canary.py` (Submitting, watching and
+reading back).
 
 A landing probe on the production queue is a whole-node Slurm allocation
 running the site's wrapper: the harvester brings up a worker for it, and the
