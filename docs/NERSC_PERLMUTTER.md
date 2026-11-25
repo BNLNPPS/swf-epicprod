@@ -686,13 +686,18 @@ Two limits end a job without its pilot's final report:
 
 ## Payload canaries and probes
 
-`NERSC_Perlmutter_epic_es` has no scheduled payload canary (disabled on
-Torre Wenaus's word, 24 November 2026). A payload canary (site-canary
-IMPLEMENTATION.md § Payload canaries) runs one manifest row of a
-standard-configuration task on one core, which on this queue holds a whole
-node for one core's work (EVGEN input in production). The queue's production
-jobs run the launcher, and each leaves its launch record and pool sample. A
-launcher or payload change is tested with an Event Service task submitted by
+`NERSC_Perlmutter_epic_es` runs a scheduled payload canary once a day (Torre
+Wenaus, 25 November 2026; site-canary IMPLEMENTATION.md § Payload canaries)
+of `group.EIC.26.07.3.epic_craterlake.p1108.e37.s11.r11.3to50deg`: one
+manifest row, 100 pi+ gun events on one core. A worker on this queue is a
+whole node, so the canary holds a node for one core's work; as one short run a
+day it is the exception to Perlmutter's rule against single-core work (EVGEN
+input in production). The task's image must be one the launcher serves
+(Admission). The canary's admission reads the launcher record without
+refreshing it, and a refused submission does not use up the interval, so the
+dispatch tries again at its next hourly cycle. The queue's production jobs run
+the launcher, and each leaves its launch record and pool sample. A launcher or
+payload change is tested with an Event Service task submitted by
 `scripts/submit-es-canary.py` (Submitting, watching and reading back).
 
 A landing probe on the production queue is a whole-node Slurm allocation
