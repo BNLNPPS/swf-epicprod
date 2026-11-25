@@ -686,13 +686,14 @@ Two limits end a job without its pilot's final report:
 
 ## Payload canaries and probes
 
-The test queue runs the launcher, so a payload canary there (site-canary
-IMPLEMENTATION.md § Payload canaries: one manifest row of a
-standard-configuration task, the production payload, a verdict from its
-report) is the launcher's proof and the pool sample's carrier: every run
-leaves a sample of the machine as the worker found it, whatever the verdict.
-A payload canary on `NERSC_Perlmutter_epic_es` every twelve hours is the
-standing reading of the Perlmutter pool until production runs the launcher.
+`NERSC_Perlmutter_epic_es` has no scheduled payload canary (disabled on
+Torre Wenaus's word, 24 November 2026). A payload canary (site-canary
+IMPLEMENTATION.md § Payload canaries) runs one manifest row of a
+standard-configuration task on one core, which on this queue holds a whole
+node for one core's work (EVGEN input in production). The queue's production
+jobs run the launcher, and each leaves its launch record and pool sample. A
+launcher or payload change is tested with an Event Service task submitted by
+`scripts/submit-es-canary.py` (Submitting, watching and reading back).
 
 A landing probe on the production queue is a whole-node Slurm allocation
 running the site's wrapper: the harvester brings up a worker for it, and the
