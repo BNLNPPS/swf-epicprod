@@ -732,7 +732,12 @@ For external-EVGEN tasks (one manifest row per EVGEN file):
    takes Rucio a minute for a few thousand files and trips the gateway's
    60 s limit). Output names derive from the input stem by the payload's
    convention, extracted from the working payload (`run.sh`, the condor
-   reference basis).
+   reference basis). A task whose outputs carry a path prefix — a
+   background-mixed task writes under its background tag's
+   `bg_tag_prefix`, `RECO/<ver>/<config>/<prefix>/[tryN/]<input dir>` —
+   has that prefix left out when its files are mapped
+   (`commands.output_prefix`, `reco_row_key`), so its residual is
+   established like any other task's.
 2. **The attempt's manifest** — the rows the attempt being completed
    actually ran, at their own `nevents`, `ichunk` and start: a rerun job
    regenerates the same chunk only with the same row (`pcs/manifests.py`). Three
