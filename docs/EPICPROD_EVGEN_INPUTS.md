@@ -351,7 +351,9 @@ inventory, so the task resolves its input at once and the dataset reads
 matched. It refuses a dataset whose physics, generator or sample is not
 the task's, one another record matches, and a task that already resolves
 an input; one `task_evgen_input` action records it. Setting it requires
-a signed-in user. Campaign membership is separate: a task composed with
+a signed-in user. A task whose input is set this way runs on the
+whole-node Event Service queues as an intake's task does (NERSC_PERLMUTTER.md,
+EVGEN input in production). Campaign membership is separate: a task composed with
 no campaign stays out of the campaign plan until it is given one.
 
 ## Current state

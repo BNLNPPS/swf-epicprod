@@ -68,12 +68,42 @@ def site_shape(site):
     return (SITES.get(site) or (SHAPE, 'nersc'))[0]
 
 
+def registered_input(task):
+    """The registered EVGEN dataset the task reads, or '': the dataset its
+    EVGEN-stage record (the evgen-stage dataset of its physics, evgen and
+    sample tags) is bound to in the catalog and matched. Registered-sample
+    intake and setting a task's EVGEN input write that record alike
+    (pcs/registered_samples.py), so a task qualifies whichever way it was
+    made; the intake's own mark on the task stands first."""
+    did = ((task.overrides or {}).get('registered_sample') or {}).get('did')
+    if did:
+        return did
+    edition = task.dataset
+    if edition is None or not edition.physics_tag_id or not edition.evgen_tag_id:
+        return ''
+    from pcs.models import Dataset
+    records = list(Dataset.objects.filter(metadata__stage='evgen',
+                                          physics_tag_id=edition.physics_tag_id,
+                                          evgen_tag_id=edition.evgen_tag_id).only('sample_name', 'metadata'))
+    # The sample name decides where one distinguishes the record, as the
+    # task's EVGEN paths are resolved (pcs.models.evgen_paths_for_tags).
+    exact = [r for r in records if (r.sample_name or '') == (edition.sample_name or '')]
+    dids = set()
+    for record in exact or records:
+        md = record.metadata or {}
+        source = md.get('source') or {}
+        if source.get('kind') == 'rucio' and source.get('did') and (md.get('rucio') or {}).get('matched'):
+            dids.add(source['did'])
+    # Two records the tags cannot tell apart name no one input.
+    return dids.pop() if len(dids) == 1 else ''
+
+
 def capable(task, cfg=None):
     """True for a task this path can run: a registered EVGEN sample read as
     external EVGEN (not an internal generator), not yet submitted."""
     if task.panda_task_id is not None:
         return False
-    if not ((task.overrides or {}).get('registered_sample') or {}).get('did'):
+    if not registered_input(task):
         return False
     cfg = cfg if cfg is not None else task.get_effective_config()
     return str((cfg.get('data') or {}).get('workflow_mode') or 'external_evgen') != 'internal_evgen'
@@ -111,9 +141,9 @@ def catalog_input(task):
     event count, and the manifest's total. Nothing is copied or registered
     anywhere: ``{dataset, files: [{name, lfn, scope, bytes, adler32,
     events, used_events}], events}``, ``lfn`` the name's last component."""
-    did = ((task.overrides or {}).get('registered_sample') or {}).get('did')
+    did = registered_input(task)
     if not did:
-        raise ValueError(f'{task.composed_name}: no registered sample to read the input from')
+        raise ValueError(f'{task.composed_name}: no registered EVGEN input to read')
     files, events = coverage(task)
     jlab = _jlab()
     out = []

@@ -490,7 +490,11 @@ site), before any placement.
 
 A PCS task over a registered EVGEN sample runs there through the Event Service
 with its EVGEN files as the job's input, the shape of the DIS runs 41241 and
-41262 (`swf_epicprod/evgen_es.py`):
+41262 (`swf_epicprod/evgen_es.py`). The task's EVGEN-stage record names a
+registered catalog dataset and holds its match, written by registered-sample
+intake or by setting the task's EVGEN input alike (EPICPROD_EVGEN_INPUTS.md,
+From a registered sample to a task, Setting a task's input;
+`evgen_es.registered_input`):
 
 - **Input.** The task's input is its registered sample's dataset in the
   catalog that holds it, JLab's Rucio today (`epic:/EVGEN/...`), limited to
