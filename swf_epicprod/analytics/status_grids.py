@@ -31,7 +31,7 @@ from swf_epicprod.door_paths import split_door_prefix
 
 logger = logging.getLogger(__name__)
 
-PRODUCT_KEY = 'status_grids:v3:{campaign}'
+PRODUCT_KEY = 'status_grids:v4:{campaign}'
 PRODUCT_TTL_SECONDS = 3600
 
 # A beam token: electron x hadron energy, e.g. 10x100, 18x137.5.
@@ -54,7 +54,11 @@ ANGLE_RE = re.compile(r'^([\d.]+)to([\d.]+)deg$')
 ENERGY_MEV = {'keV': 1e-3, 'MeV': 1.0, 'GeV': 1e3, 'TeV': 1e6}
 # The axes of a grid: rows, then columns.
 AXES = {'beam': ('Beam (GeV)', 'Q² (GeV²)'), 'x': ('Species, beam (GeV)', 'Bjorken x'),
-        'single': ('Energy', 'Angle')}
+        'single': ('Energy', 'Angle'), 'variant': ('Variant, beam (GeV)', 'Q² (GeV²)')}
+# A generator-version segment (EpIC1.1.6-1.0, lAger3.7.0-1.1, 1.0.0): the
+# end of a family's stem. Sibling families under one stem
+# (DDVCS_ABCONV/EpIC1.1.6-1.0/edecay/hminus, .../mudecay/hplus) are one grid.
+VERSION_RE = re.compile(r'\d+\.\d+')
 # A retry segment of a produced output's path (/RECO/<v>/<config>/try2/...),
 # which names the same sample as the base path.
 TRY_RE = re.compile(r'^try\d+$')
@@ -359,6 +363,8 @@ def build_status_grids(campaign_name):
     unplaced = [{'pc': pc, 'edition': edition_by_pc[pc]}
                 for pc in sorted(set(edition_by_pc) - placed)]
 
+    merge_variants(cells.values())
+
     # Families, each a grid over the beams and Q² ranges its samples name.
     families = {}
     for cell in cells.values():
@@ -371,7 +377,8 @@ def build_status_grids(campaign_name):
         rows = [{'beam': b or 'all',
                  'cells': [by_key.get((b, q)) for q in q2s]} for b in beams]
         axes = AXES['single' if area == SINGLE_AREA
-                    else 'x' if any(X_RANGE_RE.match(q or '') for q in q2s) else 'beam']
+                    else 'x' if any(X_RANGE_RE.match(q or '') for q in q2s)
+                    else 'variant' if any(c.get('variant') for c in members) else 'beam']
         grids.append({'area': area, 'family': family,
                       'row_axis': axes[0], 'column_axis': axes[1],
                       'columns': [{'token': q, 'label': column_label(q)} for q in q2s],
@@ -388,6 +395,52 @@ def build_status_grids(campaign_name):
         'completion_built_at': (product['built_at'].isoformat()
                                 if product.get('built_at') else None),
     }
+
+
+def family_stem(family):
+    """(stem, variant) of a family: the stem runs through its last
+    generator-version segment, the variant is the segments after it as a
+    list (``EXCLUSIVE/DDVCS_ABCONV/EpIC1.1.6-1.0``, ``['edecay', 'hminus']``).
+    A family with no version segment is its own stem. A background chain
+    (``, with background ...``) stays on the stem."""
+    name, sep, background = family.partition(', with background ')
+    tokens = name.split('/')
+    at = max((i for i, t in enumerate(tokens) if VERSION_RE.search(t)), default=None)
+    if at is None:
+        return family, []
+    return '/'.join(tokens[:at + 1]) + sep + background, tokens[at + 1:]
+
+
+def merge_variants(cells):
+    """Sibling families under one stem become one family, in place: the
+    family is the stem with the variant segments its members share, and
+    each cell's row is the segments that differ ahead of its beam
+    (``edecay/hminus 10x100``). The single-particle area keeps its own
+    families, an x-binned family is not merged with a Q² one, and a stem
+    with one family is left as it is."""
+    stems = {}
+    for cell in cells:
+        if cell['area'] == SINGLE_AREA:
+            continue
+        stem, variant = family_stem(cell['family'])
+        # an x-binned family (its species already in the row) stays apart
+        # from a Q² family of the same generator
+        binned = bool(X_RANGE_RE.match(cell['q2'] or ''))
+        stems.setdefault((cell['area'], stem, binned), []).append((cell, variant))
+    for (_, stem, _), members in stems.items():
+        if len({c['family'] for c, _ in members}) < 2:
+            continue
+        shared = []
+        for column in zip(*(v for _, v in members)):
+            if len(set(column)) > 1:
+                break
+            shared.append(column[0])
+        name, sep, background = stem.partition(', with background ')
+        family = '/'.join([name, *shared]) + sep + background
+        for cell, variant in members:
+            cell['family'] = family
+            cell['variant'] = '/'.join(variant[len(shared):])
+            cell['beam'] = f"{cell['variant']} {cell['beam']}".strip()
 
 
 def places(cells):

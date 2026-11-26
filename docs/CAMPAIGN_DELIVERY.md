@@ -383,7 +383,12 @@ by-priority table carrying the rest.
    segments, its grid beam energy against Q² range. A family binned in
    Bjorken x (`x_1e-4to1e-3`) runs one beam per species, so it is the path
    without its species, beam and x segments, its grid species and beam
-   (`ep_noradcor 9x130`) against x range. A single-particle
+   (`ep_noradcor 9x130`) against x range. Sibling families under one
+   generator version (`EXCLUSIVE/DDVCS_ABCONV/EpIC1.1.6-1.0/edecay/hminus`,
+   `.../mudecay/hplus`) are one grid: the family is the path through the
+   version with the segments its members share, and the segments that
+   differ lead the row (`edecay/hminus 10x100`); an x-binned family is not
+   merged with a Q² one. A single-particle
    family is the particle, its grid energy against angle. A cell is one
    EVGEN sample and reads delivered / target events on its latest edition
    with events delivered, which it names (a sample delivered on 26.07.1
