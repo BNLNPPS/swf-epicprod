@@ -92,7 +92,18 @@ def test_named_build_in_the_release_tag():
     assert evgen == {'generator': 'pythia6-lhapdf', 'generator_version': '1.1.0'}
 
 
-def test_pythia6_eic_reading_unchanged():
-    # Bound PCs derive from this reading; it changes only with their repair.
-    evgen = derive_evgen('EVGEN/SIDIS/pythia6-eic/1.3.0/ep_noradcor/18x275/q2_0to1')
-    assert evgen == {'generator': 'pythia6', 'generator_version': '6-eic'}
+def test_pythia6_eic_version_from_its_segment():
+    # Each pythia6-eic release is its own generator identity; read as one
+    # token the build merged 1.0.0, 1.2.0 and 1.3.0 into pythia6 '6-eic'.
+    for path, version in (
+            ('EVGEN/SIDIS/pythia6-eic/1.0.0/10x100/q2_0to1', '1.0.0'),
+            ('EVGEN/SIDIS/pythia6-eic/1.2.0/ep_noradcor/10x100/q2_1to10', '1.2.0'),
+            ('EVGEN/SIDIS/pythia6-eic/1.3.0/ep_noradcor/18x275/q2_0to1', '1.3.0')):
+        assert derive_evgen(path) == {'generator': 'pythia6-eic',
+                                      'generator_version': version}
+
+
+def test_pythia6_eic_version_in_the_release_tag():
+    evgen = derive_evgen('EVGEN/SIDIS/pythia6-eic/1.0.0/10x100/q2_0to1',
+                         gen_version='pythia6-eic/1.0.0')
+    assert evgen == {'generator': 'pythia6-eic', 'generator_version': '1.0.0'}
