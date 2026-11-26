@@ -44,14 +44,14 @@ STORAGE_TOKEN_CLIENT = os.environ.get('EPICPROD_STORAGE_TOKEN_CLIENT', 'storage'
 JLAB_RUCIO_URL = os.environ.get('JLAB_RUCIO_URL', 'https://rucio-server.jlab.org:443')
 JLAB_RUCIO_ACCOUNT = os.environ.get('EVGEN_RUCIO_ACCOUNT', 'eicprod')
 TOKEN_DOORS = {h.strip() for h in os.environ.get(
-    'EPICPROD_TOKEN_DOORS', 'epicxrd1.sdcc.bnl.gov:1094,dtn-rucio.jlab.org:1094').split(',')
+    'EPICPROD_TOKEN_DOORS', 'epicxrd1.sdcc.bnl.gov:1094,dtn-rucio.jlab.org:1094,xgate.hec.lancs.ac.uk:1094').split(',')
     if h.strip()}
 # Each door host's RSE oidc_base_path values, removed from the door path to
 # form a storage token's scope path. dtn-rucio serves EIC-XRD
 # (/cache/eic/EPIC, oidc_base_path /cache) and EIC-XRD-LOG
 # (/work/eic3/EPIC/eic); /volatile is kept for door paths still written
 # there. BNL-XRD strips nothing.
-OIDC_BASE_PATHS = {'dtn-rucio.jlab.org': ('/cache', '/volatile', '/work/eic3/EPIC')}
+OIDC_BASE_PATHS = {'dtn-rucio.jlab.org': ('/cache', '/volatile', '/work/eic3/EPIC'), 'xgate.hec.lancs.ac.uk': (' /cephfs/grid ')}
 # A cached token is used while it has this long left.
 TOKEN_MARGIN_S = 600
 # The JLab Rucio server saves a token at its first use, and requests that
