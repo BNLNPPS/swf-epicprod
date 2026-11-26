@@ -303,11 +303,10 @@ _EVGEN_NAMES = ('EpIC', 'BeAGLE', 'sartre', 'eSTARlight', 'eicMesonSFGen',
                 'lAger', 'rapgap', 'DEMPgen', 'DJANGOH', 'GETaLM')
 _PYTHIA_RE = re.compile(r'^[Pp]ythia[ _]?(\d)(.*)$')
 #: Named pythia builds whose version is the next path segment
-#: (``pythia6-lhapdf/1.1.0``). Split as one token it read as pythia6 at
-#: version '6-lhapdf', which no EvGen tag carries. pythia6-eic has the same
-#: shape but ~30 bound PCs derive from its current reading; it joins this set
-#: only with a reviewed repair of those bindings.
-_NAMED_BUILDS = {'pythia6-lhapdf'}
+#: (``pythia6-lhapdf/1.1.0``, ``pythia6-eic/1.0.0``). Split as one token
+#: such a build reads as pythia6 at version '6-lhapdf' / '6-eic', which
+#: merges every release of the build into one generator identity.
+_NAMED_BUILDS = {'pythia6-lhapdf', 'pythia6-eic'}
 _SEG_VERSION_RE = re.compile(r'^v?\d+(\.\d+)+$')
 
 
