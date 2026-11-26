@@ -111,12 +111,18 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
     if not snapshot or not snapshot.get('campaigns'):
         return {'error': f'no Rucio snapshot for {campaign_name}'}
 
-    from .services import precreated_output_owners
+    from .services import (precreated_output_owners, production_sample_owner,
+                           production_sample_owners)
     precreated = {}
     for did, name in precreated_output_owners(campaign).items():
         task = ProdTask.objects.filter(name=name).order_by('pk').first()
         if task is not None:
             precreated[did] = task
+    # A production sample's outputs, every try under its prefix, are its
+    # own; they are neither attached by their physics nor registered as
+    # past output (production_sample_owners).
+    samples = production_sample_owners(campaign)
+    sample_tasks = {}
 
     existing_by_location = {}
     for dataset in Dataset.objects.filter(campaign=campaign):
@@ -149,9 +155,17 @@ def reconcile_campaign_from_rucio(campaign_name, *, created_by=''):
             filters = _extract_past_filters(did)
 
             owner = precreated.get(did)
+            if owner is None:
+                name = production_sample_owner(did, samples)
+                if name:
+                    if name not in sample_tasks:
+                        sample_tasks[name] = (ProdTask.objects.filter(name=name)
+                                              .order_by('pk').first())
+                    owner = sample_tasks[name]
             if owner is not None:
-                # PCS created this dataset at submission: the attempt's
-                # record attributes it, ahead of the physics derived from
+                # PCS created this dataset at submission, or it is under a
+                # production sample's prefix: that record attributes it,
+                # ahead of the physics derived from
                 # its path and of any placeholder row registered at it.
                 _upsert_task_output(
                     owner,
