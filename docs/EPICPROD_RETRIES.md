@@ -112,6 +112,9 @@ Three consequences, and they are the whole of the collision question:
   fails with a duplicate DID.
 - **A `.tryN` rerun cannot collide.** PCS sets `TAG_PREFIX=tryN` in the
   payload environment, so the try writes under `RECO/<version>/<config>/tryN/...`.
+  A task with its own output prefix (a background-mixed task's
+  `bg_tag_prefix`) has the try joined below it:
+  `RECO/<version>/<config>/<prefix>/tryN/...`.
   Ghosts from earlier tries are in a different namespace and are
   irrelevant.
 - **A resubmission made outside PCS collides.** It sets no prefix, so
@@ -252,6 +255,12 @@ workload is the remainder; the residual computation is entirely
 PCS-side. Design and derivation:
 [JEDI_INTEGRATION.md § Residual rerun](JEDI_INTEGRATION.md).
 
+**A prefixed task's files map onto its rows.** A background-mixed task
+writes under its prefix, `RECO/<version>/<config>/<prefix>/[tryN/]<input dir>`;
+the row key leaves the task's prefix out and then the try segment
+(`pcs.commands.output_prefix`, `reco_row_key`), so its residual is
+established like any other task's.
+
 **Delivered means registered and arrived.** A file counts only with an
 AVAILABLE replica on at least one RSE, so a catalog entry whose data
 never landed — a ghost — falls into the residual and is rerun.
@@ -316,8 +325,6 @@ established, so every surface can state it.
   first, or rerun the entire task);
 - an input resolving differently than at first submission;
 - zero residual, every row registered and arrived;
-- a background-mixed task, where `TAG_PREFIX` already shapes the output
-  path (rerun the entire task instead);
 - no recorded PanDA submission on the task itself;
 - an attempt whose manifest none of the three sources can establish:
   no record, sandbox gone from the cache, and a reconstruction that

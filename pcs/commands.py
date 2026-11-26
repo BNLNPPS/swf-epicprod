@@ -997,7 +997,7 @@ RECO_LFN_TAIL_RE = re.compile(r'\.(\d{4,})(?:\.p\w+)?\.eicrecon\.edm4eic\.root$'
 TRY_SEGMENT_RE = re.compile(r'^try\d+$')
 
 
-def reco_row_key(name):
+def reco_row_key(name, prefix=''):
     """The manifest row a RECO file delivers, as (version, config,
     relative dir, stem, chunk), or None for a name that is not a RECO
     output. The payload's naming convention (simulation_campaign_hepmc3
@@ -1006,16 +1006,44 @@ def reco_row_key(name):
     rerun writes under its try segment (TAG_PREFIX=tryN, _add_try_env)
     with the row the same below it, and a diverted registration carries
     the attempt's mark after the chunk, so the key maps one-to-one onto
-    manifest rows across every attempt and every copy of a version."""
+    manifest rows across every attempt and every copy of a version.
+
+    ``prefix`` is the task's own output prefix (``output_prefix``), which
+    the payload writes between the configuration and the try segment:
+    ``RECO/<ver>/<config>/<prefix>/[tryN/]<input dir>/...`` for a
+    background-mixed task. It is left out of the key when the name
+    carries it, so a prefixed task's files key onto its manifest rows
+    like any other task's. A name without the prefix is keyed as it is."""
     m = RECO_LFN_TAIL_RE.search(name)
     if not m:
         return None
     parts = [p for p in name[:m.start()].split('/') if p]
     if len(parts) < 4 or parts[0] != 'RECO':
         return None
-    if TRY_SEGMENT_RE.match(parts[3]):
-        parts = parts[:3] + parts[4:]
-    return (parts[1], parts[2], '/'.join(parts[3:-1]), parts[-1], m.group(1))
+    below = parts[3:]
+    lead = [p for p in str(prefix or '').split('/') if p]
+    if lead and below[:len(lead)] == lead:
+        below = below[len(lead):]
+    if below and TRY_SEGMENT_RE.match(below[0]):
+        below = below[1:]
+    if not below:
+        return None
+    return (parts[1], parts[2], '/'.join(below[:-1]), below[-1], m.group(1))
+
+
+def output_prefix(task):
+    """The path prefix the task's outputs carry between the configuration
+    and the input directory, before any try segment; '' for a task
+    without one. It is the ``TAG_PREFIX`` ``_evgen_env`` gives the
+    payload: the sample prefix (``production_sample_prefix``) where one
+    is set, else the background tag's ``bg_tag_prefix`` for a
+    background-mixed task. Read from those two directly, so a caller
+    keying every task of a campaign does not compose a payload
+    environment per task."""
+    prefix = (task.overrides or {}).get('production_sample_prefix')
+    if not prefix and task.get_effective_config().get('bg_mixing'):
+        prefix = _bg_param(task, 'bg_tag_prefix')
+    return str(prefix or '').strip('/')
 
 
 def _delivered_row_keys(task):
@@ -1054,6 +1082,10 @@ def _delivered_row_keys(task):
     dids = sorted(set(dids))
     if not dids:
         return None, [], {}
+    # A background-mixed task writes under its background tag's prefix
+    # (RECO/<ver>/<config>/Bkg_.../[tryN/]<input dir>); the key leaves
+    # the prefix out so the files match the manifest rows.
+    prefix = output_prefix(task)
     keys = set()
     arrival = {}
     for did in dids:
@@ -1075,7 +1107,7 @@ def _delivered_row_keys(task):
         for fname in names:
             if fname in unarrived:
                 continue
-            key = reco_row_key(fname)
+            key = reco_row_key(fname, prefix)
             if key is not None:
                 keys.add(key[2:])
     return keys, dids, arrival
@@ -1089,12 +1121,6 @@ def _residual_rows(task, csv_rows, delivered=None, exclude=None):
     Raises ValueError with the refusal reason when the residual cannot
     be established honestly (design: JEDI_INTEGRATION.md § Residual
     rerun)."""
-    env = _evgen_env(task)
-    if env.get('TAG_PREFIX'):
-        raise ValueError(
-            'residual rerun is not supported for background-mixed tasks '
-            '(TAG_PREFIX changes the output path shape); rerun the '
-            'entire task instead')
     keys, dids, arrival = (delivered if delivered is not None
                            else _delivered_row_keys(task))
     if keys is None:

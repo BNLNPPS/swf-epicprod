@@ -8,7 +8,11 @@ tryN RECO dataset in a campaign version, this lists it and its siblings
 (the base dataset at <tail> and every other try of the same tail) in
 JLab Rucio, keys each file as the residual does (tail, stem, chunk),
 and reports the rows present in more than one dataset with their
-events. Read-only; nothing is written.
+events. A task with an output prefix (a background-mixed task) writes
+its tries under RECO/<ver>/<config>/<prefix>/tryN/<tail>; the prefixes
+come from the PCS tasks of the version and configuration
+(pcs.commands.output_prefix), and those files are keyed with their
+prefix. Read-only; nothing is written.
 
     cd <swf-monitor>/src && source ~/.env
     <venv>/bin/python <swf-epicprod>/scripts/check_try_duplicates.py [--version 26.07.1]
@@ -24,7 +28,8 @@ import django  # noqa: E402
 
 django.setup()
 
-from pcs.commands import reco_row_key  # noqa: E402
+from pcs.commands import output_prefix, reco_row_key  # noqa: E402
+from pcs.models import ProdTask  # noqa: E402
 from pcs.services import (_jlab_rucio_auth, _jlab_rucio_get,  # noqa: E402
                           _ndjson, fetch_jlab_rucio_did_files)
 
@@ -37,11 +42,28 @@ def try_datasets(root):
     return sorted(n if isinstance(n, str) else n.get('name') for n in found)
 
 
-def keys_of(did_name):
-    """{(tail, stem, chunk): events} for one RECO dataset's files."""
+def task_prefixes(version, config):
+    """The output prefixes of the PCS tasks of a version and
+    configuration, sorted; empty when no task writes under one."""
+    found = set()
+    for task in (ProdTask.objects
+                 .filter(dataset__detector_version=version,
+                         dataset__detector_config=config)
+                 .select_related('prod_config', 'dataset__physics_tag',
+                                 'dataset__evgen_tag',
+                                 'dataset__background_tag')):
+        prefix = output_prefix(task)
+        if prefix:
+            found.add(prefix)
+    return sorted(found)
+
+
+def keys_of(did_name, prefix=''):
+    """{(tail, stem, chunk): events} for one RECO dataset's files, keyed
+    with the owning task's output prefix."""
     out = {}
     for f in fetch_jlab_rucio_did_files('epic', did_name):
-        key = reco_row_key(str(f.get('name') or ''))
+        key = reco_row_key(str(f.get('name') or ''), prefix)
         if key is not None:
             out[key[2:]] = f.get('events')
     return out
@@ -54,6 +76,13 @@ def main():
     args = parser.parse_args()
 
     root = f'/RECO/{args.version}/{args.config}'
+    for prefix in [''] + task_prefixes(args.version, args.config):
+        report(f'{root}/{prefix}' if prefix else root, prefix)
+
+
+def report(root, prefix):
+    """The rows delivered more than once among the tries under ``root``
+    (the configuration, or the configuration and a task's prefix)."""
     tries = try_datasets(root)
     tails = defaultdict(set)
     for name in tries:
@@ -67,7 +96,7 @@ def main():
         sizes = {}
         for ds in datasets:
             try:
-                ks = keys_of(ds)
+                ks = keys_of(ds, prefix)
             except Exception as exc:  # a base that does not exist is normal
                 sizes[ds] = f'unreadable ({exc.__class__.__name__})'
                 continue

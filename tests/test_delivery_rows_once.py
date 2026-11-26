@@ -54,6 +54,21 @@ class RowsOnce(unittest.TestCase):
         kept, dup = count_each_row_once([simu, simu])
         self.assertEqual((len(kept), dup), (2, {}))
 
+    def test_prefixed_task_rows_counted_once_across_tries(self):
+        # A background-mixed task's base and try2 copies of a row are one
+        # row once each location is keyed with the task's prefix.
+        prefix = 'Bkg_Exact1S_2us_e_only/GoldCt/10um'
+        tail = 'EXCLUSIVE/UPSILON/1S/9x275/hiDiv'
+        base = f'/RECO/26.07.1/epic_craterlake/{prefix}/{tail}'
+        try2 = f'/RECO/26.07.1/epic_craterlake/{prefix}/try2/{tail}'
+        records = [f(base, 7, 1), f(try2, 7, 3), f(try2, 8, 3)]
+        kept, dup = count_each_row_once(records)
+        self.assertEqual((len(kept), dup), (3, {}))
+        prefixes = {base.strip('/'): prefix, try2.strip('/'): prefix}
+        kept, dup = count_each_row_once(records, prefixes)
+        self.assertEqual(sorted(r[0] for r in kept), sorted([f(base, 7, 1)[0], f(try2, 8, 3)[0]]))
+        self.assertEqual(dup, {try2: 1})
+
 
 if __name__ == '__main__':
     unittest.main()
