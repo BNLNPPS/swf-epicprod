@@ -1,10 +1,10 @@
-"""Status grids: the event-service samples (gES, pES, gRS, gRU, gOP, pOP),
-which no production request asks for, are in no grid; an x-binned family is
+"""Status grids: production samples (gES, pES, gRS, gRU, gOP, pOP, cES, any
+discriminator), which no production request asks for, are in no grid; an x-binned family is
 one grid of species and beam against x."""
 import unittest
 
 from swf_epicprod.analytics.status_grids import (
-    ES_VALIDATION_RE, _column_order, _row_order, column_label, latest_delivery, split_path)
+    _column_order, _row_order, column_label, is_production_sample, latest_delivery, split_path)
 
 
 class XBinnedFamilyTest(unittest.TestCase):
@@ -33,17 +33,22 @@ class XBinnedFamilyTest(unittest.TestCase):
             ('SIDIS/pythia6-lhapdf/1.0.0/ep_noradcor', '9x130', 'q2_1to10'))
 
 
-class EsSampleTest(unittest.TestCase):
-    def test_es_samples_match(self):
-        for sample in ('3to50deg.gES1', '3to50deg.gES3', '3to50deg.pES6', '45to135deg.pES12',
-                       '3to50deg.gRS2', '3to50deg.gRU1',
-                       '3to50deg.gOP000001', '3to50deg.pOP000011'):
-            self.assertTrue(ES_VALIDATION_RE.search(sample), sample)
+class ProductionSampleTest(unittest.TestCase):
+    @staticmethod
+    def sample(name):
+        # The record pcs.production_samples.compose writes.
+        return {'production_sample': {'sample': name, 'events': 100,
+                                      'source': 'group.EIC.26.07.3.epic_craterlake.p1107.e37.s11.r11.3to50deg'}}
 
-    def test_campaign_samples_do_not_match(self):
-        for sample in ('', '3to50deg', '130to177deg', 'eta0.5', '3to50deg.trial',
-                       'EIC_ESR_Xsuite.dataprod_rel_1.0.1.18x275.10000Ahr.MachineRuntime50s'):
-            self.assertFalse(ES_VALIDATION_RE.search(sample), sample)
+    def test_production_samples_are_left_out_whatever_their_discriminator(self):
+        for name in ('gES1', 'pES12', 'gRS2', 'gRU1', 'gOP000001', 'pOP000011',
+                     'cES000001', 'cES000002'):
+            self.assertTrue(is_production_sample(self.sample(name)), name)
+
+    def test_campaign_editions_are_kept(self):
+        for metadata in (None, {}, {'stage': 'evgen'}, {'trial': 1},
+                         {'production_sample': {}}):
+            self.assertFalse(is_production_sample(metadata), metadata)
 
 
 class LatestDeliveryTest(unittest.TestCase):
