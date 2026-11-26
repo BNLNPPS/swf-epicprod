@@ -12,8 +12,9 @@ neither. This marks such an edition as a test after the fact:
    the completion record and the status grids no longer count it, as a trial
    with no campaign is not counted.
 
-Its registered outputs take the trial lifetime separately
-(scripts/did-lifetime.py). Only editions carrying a production-sample record
+Marking deletes nothing. A lifetime on its registered outputs
+(scripts/did-lifetime.py) is a deletion and needs Torre Wenaus's explicit
+approval of that deletion. Only editions carrying a production-sample record
 are accepted. Rows are written with queryset updates, so no save() logic
 renames or rebinds them; the identity history records the change under the
 actor and reason. One ``production_sample_marked_test`` action records the
