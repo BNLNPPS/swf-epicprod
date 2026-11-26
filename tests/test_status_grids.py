@@ -4,8 +4,8 @@ one grid of species and beam against x."""
 import unittest
 
 from swf_epicprod.analytics.status_grids import (
-    _column_order, _row_order, column_label, is_production_sample, latest_delivery, sample_name, split_path,
-    under_sample_prefix)
+    _column_order, _row_order, column_label, family_stem, is_production_sample, latest_delivery,
+    merge_variants, sample_name, split_path, under_sample_prefix)
 
 
 class XBinnedFamilyTest(unittest.TestCase):
@@ -32,6 +32,66 @@ class XBinnedFamilyTest(unittest.TestCase):
         self.assertEqual(
             split_path('/EVGEN/SIDIS/pythia6-lhapdf/1.0.0/ep_noradcor/9x130/q2_1to10')[1:4],
             ('SIDIS/pythia6-lhapdf/1.0.0/ep_noradcor', '9x130', 'q2_1to10'))
+
+
+class SiblingFamilyTest(unittest.TestCase):
+    """Families under one generator version are one grid, the segments
+    that differ ahead of the beam in the row."""
+
+    @staticmethod
+    def cells(paths):
+        out = []
+        for path in paths:
+            area, family, beam, q2, _ = split_path(path)
+            out.append({'area': area, 'family': family, 'beam': beam, 'q2': q2})
+        merge_variants(out)
+        return out
+
+    def test_stem_ends_at_the_generator_version(self):
+        self.assertEqual(family_stem('EXCLUSIVE/DDVCS_ABCONV/EpIC1.1.6-1.0/edecay/hminus'),
+                         ('EXCLUSIVE/DDVCS_ABCONV/EpIC1.1.6-1.0', ['edecay', 'hminus']))
+        self.assertEqual(family_stem('DIS/NC'), ('DIS/NC', []))
+        self.assertEqual(family_stem('DIS/x/1.0.0/ep, with background Bkg_a/1.2'),
+                         ('DIS/x/1.0.0, with background Bkg_a/1.2', ['ep']))
+
+    def test_ddvcs_channels_are_one_grid(self):
+        cells = self.cells(
+            f'/EVGEN/EXCLUSIVE/DDVCS_ABCONV/EpIC1.1.6-1.0/{d}/{h}/{b}/q2_0_10'
+            for d in ('edecay', 'mudecay') for h in ('hminus', 'hplus') for b in ('10x100', '18x275'))
+        self.assertEqual({c['family'] for c in cells}, {'EXCLUSIVE/DDVCS_ABCONV/EpIC1.1.6-1.0'})
+        rows = sorted({c['beam'] for c in cells}, key=_row_order)
+        self.assertEqual(rows[:4], ['edecay/hminus 10x100', 'edecay/hplus 10x100',
+                                    'mudecay/hminus 10x100', 'mudecay/hplus 10x100'])
+        self.assertEqual(len(rows), 8)
+
+    def test_shared_variant_segments_stay_in_the_family(self):
+        cells = self.cells(['/EVGEN/DIS/DJANGOH4.6.10-4.0/CC/Rad/eMinus-pMinus/9x275/q2_1to10',
+                            '/EVGEN/DIS/DJANGOH4.6.10-4.0/CC/Rad/eMinus-pPlus/9x275/q2_1to10'])
+        self.assertEqual({c['family'] for c in cells}, {'DIS/DJANGOH4.6.10-4.0/CC/Rad'})
+        self.assertEqual({c['beam'] for c in cells}, {'eMinus-pMinus 9x275', 'eMinus-pPlus 9x275'})
+
+    def test_a_lone_family_and_other_versions_are_left_alone(self):
+        cells = self.cells(['/EVGEN/DIS/BeAGLE1.03.02-4.0/eAg/9x115/q2_1to10',
+                            '/EVGEN/DIS/BeAGLE1.03.02-5.0/eAg/9x115/q2_1to10'])
+        self.assertEqual([(c['family'], c['beam']) for c in cells],
+                         [('DIS/BeAGLE1.03.02-4.0/eAg', '9x115'),
+                          ('DIS/BeAGLE1.03.02-5.0/eAg', '9x115')])
+
+    def test_x_binned_family_is_not_merged_with_q2_families(self):
+        cells = self.cells(XBinnedFamilyTest.PATHS[:1]
+                           + ['/EVGEN/SIDIS/pythia6-lhapdf/1.1.0/ep_noradcor/9x130/q2_1to10',
+                              '/EVGEN/SIDIS/pythia6-lhapdf/1.1.0/eAu_EPPS16_noradcor/9x100/q2_1to10'])
+        self.assertEqual(cells[0]['family'], 'SIDIS/pythia6-lhapdf/1.1.0')
+        self.assertEqual(cells[0]['beam'], 'ep_noradcor 9x130')
+        self.assertEqual({c['beam'] for c in cells[1:]},
+                         {'ep_noradcor 9x130', 'eAu_EPPS16_noradcor 9x100'})
+        self.assertTrue(all(c['variant'] for c in cells[1:]))
+        self.assertNotIn('variant', cells[0])
+
+    def test_single_particles_keep_their_families(self):
+        cells = self.cells(['/EVGEN/SINGLE/e+/1.0/100MeV/3to50deg',
+                            '/EVGEN/SINGLE/e-/1.0/100MeV/3to50deg'])
+        self.assertEqual(len({c['family'] for c in cells}), 2)
 
 
 class ProductionSampleTest(unittest.TestCase):
