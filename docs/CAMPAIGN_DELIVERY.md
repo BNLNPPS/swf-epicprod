@@ -116,7 +116,9 @@ attached set is read once per build and the rest is left out. A
 manifest row is counted once: a RECO file is keyed to its row as the
 residual keys it (`pcs.commands.reco_row_key`: version, configuration,
 input directory, stem, chunk, the same below every try segment and
-with or without a diverted registration's mark after the chunk), and
+with or without a diverted registration's mark after the chunk; a
+prefixed task's files are keyed with the prefix of the task whose
+output record holds the location, `delivery_daily.output_prefixes`), and
 where more than one attempt of a version delivered the row, the
 earliest-registered copy stands and the later copies are left out of
 files, bytes and events (2,098 Upsilon rows in 26.07.1, each in a base

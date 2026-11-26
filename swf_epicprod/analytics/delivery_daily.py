@@ -165,7 +165,8 @@ def collect_files(campaigns, limit_files=0):
         if done % 10000 < BULK_CHUNK:
             print(f'  bulkmeta {done}/{len(ordered)}')
 
-    records, duplicates = count_each_row_once(records)
+    records, duplicates = count_each_row_once(records,
+                                              output_prefixes(campaigns))
     if duplicates:
         print(f'rows delivered more than once, later copies left out: '
               f'{sum(duplicates.values())} in {len(duplicates)} locations')
@@ -186,33 +187,68 @@ def collect_files(campaigns, limit_files=0):
     return daily, unknown, unattached, duplicates
 
 
-def count_each_row_once(records):
+def count_each_row_once(records, prefixes=None):
     """Each manifest row counted once. A RECO file's row is
     ``pcs.commands.reco_row_key`` (version, config, input dir, stem,
     chunk), the same for every attempt of a version; where a row was
     delivered by more than one attempt, the earliest-registered copy
     stands and the later ones are left out. Files that are not RECO
     outputs pass unchanged. ``records`` are (name, family, registered,
-    bytes); returns the kept records and {location: copies left out}."""
+    bytes); ``prefixes`` is {dataset path: output prefix}
+    (``output_prefixes``), so a prefixed task's files are keyed with its
+    prefix as the residual rerun keys them; returns the kept records and
+    {location: copies left out}."""
     from pcs.commands import reco_row_key
 
+    prefixes = prefixes or {}
+
+    def key_of(name):
+        location = '/'.join(name.split('/')[:-1]).strip('/')
+        return reco_row_key(name, prefixes.get(location, ''))
+
+    keys = [key_of(record[0]) for record in records]
     first = {}
-    for record in records:
-        key = reco_row_key(record[0])
+    for record, key in zip(records, keys):
         if key is None:
             continue
         held = first.get(key)
         if held is None or (record[2], record[0]) < (held[2], held[0]):
             first[key] = record
     kept, duplicates = [], {}
-    for record in records:
-        key = reco_row_key(record[0])
+    for record, key in zip(records, keys):
         if key is None or first[key] is record:
             kept.append(record)
             continue
         location = '/'.join(record[0].split('/')[:-1])
         duplicates[location] = duplicates.get(location, 0) + 1
     return kept, duplicates
+
+
+def output_prefixes(campaigns):
+    """JLab dataset path -> output prefix (``pcs.commands.output_prefix``)
+    for every task output whose task writes under one, from the PCS
+    task output records, as ``location_map`` maps the same paths to
+    their tasks. A path with no prefixed task is absent."""
+    from pcs.commands import output_prefix
+    from pcs.models import ProdTask
+
+    mapping = {}
+    for task in (ProdTask.objects
+                 .filter(campaign__name__in=campaigns)
+                 .select_related('prod_config', 'dataset__physics_tag',
+                                 'dataset__evgen_tag',
+                                 'dataset__background_tag')):
+        if not (task.dataset_id and task.outputs):
+            continue
+        prefix = output_prefix(task)
+        if not prefix:
+            continue
+        for output in task.outputs:
+            did = str(output.get('did') or '')
+            path = did.split(':', 1)[-1].strip('/')
+            if path:
+                mapping[path] = prefix
+    return mapping
 
 
 def location_map(campaigns):

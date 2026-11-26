@@ -1033,10 +1033,17 @@ def reco_row_key(name, prefix=''):
 
 def output_prefix(task):
     """The path prefix the task's outputs carry between the configuration
-    and the input directory, before any try segment: the background
-    tag's ``bg_tag_prefix`` or the sample prefix (``_evgen_env``); ''
-    for a task without one."""
-    return str(_evgen_env(task).get('TAG_PREFIX') or '').strip('/')
+    and the input directory, before any try segment; '' for a task
+    without one. It is the ``TAG_PREFIX`` ``_evgen_env`` gives the
+    payload: the sample prefix (``production_sample_prefix``) where one
+    is set, else the background tag's ``bg_tag_prefix`` for a
+    background-mixed task. Read from those two directly, so a caller
+    keying every task of a campaign does not compose a payload
+    environment per task."""
+    prefix = (task.overrides or {}).get('production_sample_prefix')
+    if not prefix and task.get_effective_config().get('bg_mixing'):
+        prefix = _bg_param(task, 'bg_tag_prefix')
+    return str(prefix or '').strip('/')
 
 
 def _delivered_row_keys(task):

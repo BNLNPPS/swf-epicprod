@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from pcs import manifests
-from pcs.commands import _delivered_row_keys, _residual_rows, reco_row_key
+from pcs.commands import _delivered_row_keys, _residual_rows, output_prefix, reco_row_key
 
 DIR = 'DIS/NC/18x275/q2_1'
 PREFIX = 'Bkg_Exact1S_2us_e_only/GoldCt/10um'
@@ -68,8 +68,7 @@ class PrefixedResidual(unittest.TestCase):
             [(f'{DIR}/run001', 'hepmc3.tree.root', 100, c) for c in range(5)])
         names = [reco(MIXED, c) for c in range(3)] + [reco(MIXED_TRY2, 3)]
         keys = {reco_row_key(n, PREFIX)[2:] for n in names}
-        with mock.patch('pcs.commands._evgen_env', return_value={'TAG_PREFIX': PREFIX}):
-            residual, cov = _residual_rows(None, csv_rows, (keys, [], {}))
+        residual, cov = _residual_rows(None, csv_rows, (keys, [], {}))
         self.assertEqual(residual, [csv_rows[4]])
         self.assertEqual((cov['rows_total'], cov['rows_residual']), (5, 1))
 
@@ -83,7 +82,7 @@ class PrefixedResidual(unittest.TestCase):
             fetch_jlab_rucio_unarrived_files=lambda scope, names: set())
         task = SimpleNamespace(overrides={'outputs': [{'stage': 'RECO', 'did': did}]})
         with mock.patch.dict(sys.modules, {'pcs.services': services}), \
-                mock.patch('pcs.commands._evgen_env', return_value={'TAG_PREFIX': PREFIX}):
+                mock.patch('pcs.commands.output_prefix', return_value=PREFIX):
             keys, dids, arrival = _delivered_row_keys(task)
         self.assertEqual(keys, {(DIR, 'run001', f'{c:04d}') for c in range(3)})
         self.assertEqual(dids, [did])
@@ -98,9 +97,37 @@ class PrefixedResidual(unittest.TestCase):
             fetch_jlab_rucio_unarrived_files=lambda scope, names: set())
         task = SimpleNamespace(overrides={'outputs': [{'stage': 'RECO', 'did': did}]})
         with mock.patch.dict(sys.modules, {'pcs.services': services}), \
-                mock.patch('pcs.commands._evgen_env', return_value={}):
+                mock.patch('pcs.commands.output_prefix', return_value=''):
             keys, _dids, _arrival = _delivered_row_keys(task)
         self.assertEqual(keys, {(DIR, 'run001', '0000')})
+
+
+def task(overrides=None, bg_mixing=False, bg_prefix=None, evgen_prefix=None):
+    tag = lambda prefix: SimpleNamespace(
+        parameters={'bg_tag_prefix': prefix} if prefix else {})
+    return SimpleNamespace(
+        overrides=overrides or {},
+        get_effective_config=lambda: {'bg_mixing': bg_mixing},
+        dataset=SimpleNamespace(background_tag_id=1 if bg_prefix else None,
+                                background_tag=tag(bg_prefix) if bg_prefix else None,
+                                evgen_tag=tag(evgen_prefix)))
+
+
+class OutputPrefix(unittest.TestCase):
+    # The same TAG_PREFIX _evgen_env gives the payload, before any try.
+
+    def test_background_mixed_task_uses_the_background_tag_prefix(self):
+        self.assertEqual(output_prefix(task(bg_mixing=True, bg_prefix=f'{PREFIX}/')), PREFIX)
+
+    def test_evgen_tag_prefix_is_the_fallback(self):
+        self.assertEqual(output_prefix(task(bg_mixing=True, evgen_prefix=PREFIX)), PREFIX)
+
+    def test_sample_prefix_wins(self):
+        t = task({'production_sample_prefix': 'eicrecon-v1.2.3'}, True, PREFIX)
+        self.assertEqual(output_prefix(t), 'eicrecon-v1.2.3')
+
+    def test_no_mixing_no_prefix(self):
+        self.assertEqual(output_prefix(task(bg_prefix=PREFIX)), '')
 
 
 if __name__ == '__main__':
