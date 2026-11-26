@@ -693,11 +693,12 @@ Two limits end a job without its pilot's final report:
 
 `NERSC_Perlmutter_epic_es` runs a scheduled payload canary once a day (Torre
 Wenaus, 25 November 2026; site-canary IMPLEMENTATION.md § Payload canaries)
-as an Event Service job in the queue's production shape: 128,000 events of
+as an Event Service job in the queue's production shape: 80,000 events of
 the feeder's gun sample
 `group.EIC.26.07.3.epic_craterlake.p1107.e37.s11.r11.3to50deg.pOP000011` on
-the whole node, two 500-event units for each of its 128 slots, with
-production's switches, reconstruction pool and closes. The shape is the one
+the whole node, about ten minutes over its 128 slots (Torre Wenaus,
+26 November 2026: "it was supposed to be 10min"), with production's
+switches, reconstruction pool and closes. The shape is the one
 the feeder submits (`production_es.feeder_shape`), so a change to production
 reaches the canary. It runs under the canary identity, one job and one
 attempt, its closes registered under `epic:/TEST/canary/<stamp>` with a
