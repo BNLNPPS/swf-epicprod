@@ -1340,6 +1340,12 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         # (production_es.canary_settings).
         from swf_epicprod.production_es import canary_settings
         event_service = canary_settings(event_service, *es_canary)
+    trial = _trial_spec(ds).get('trial')
+    if event_service and trial and not es_canary:
+        # A trial of an Event Service task runs as Event Service: the task's
+        # shape over its input at the trial's event count (docs/PCS.md, Trials).
+        from swf_epicprod.production_es import trial_settings
+        event_service = trial_settings(event_service, int(trial['events']))
     if event_service:
         if residual:
             raise ValueError('production ES uses native event retries; row-based residual rerun is not supported')
@@ -1522,6 +1528,10 @@ def build_evgen_task_params(task, panda_tasks=None, residual=False,
         spec['env'] = dict(spec['env'], COPYFULL='true', COPYRECO='true',
                            COPYLOG='true', COPYEVGEN='false' if gun else 'true',
                            USERUCIO='true')
+        if event_service:
+            # An Event Service trial registers what Event Service production
+            # registers: the RECO its closes merge (production_es.apply).
+            spec['env'].update(COPYFULL='false', COPYLOG='false', COPYEVGEN='false')
     spec['outputs'] = output_datasets(spec, cfg)
     if event_service:
         from swf_epicprod.production_es import apply

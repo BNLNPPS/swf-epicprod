@@ -43,16 +43,17 @@ def trial_output_root(name):
 TRIAL_LIFETIME_DAYS = 14
 
 # The source's overrides that belong to its own run, not to a trial of its
-# configuration (PCS.md § Trials): the Event Service shape, its sample's output
-# namespace and the site feeders' markers, since a trial is one ordinary job
-# under its own name; a site's input-staging record, which names the source's
-# staging job; and where the source was placed, since the trial runs where it
-# is composed for (trial_site); and the source's recorded output datasets
-# (outputs, output_refs), since a trial writes only under its own root.
-# Copied, a trial of an Event Service source could not submit, the source's pin
-# overrode the trial's site, and the trial was listed as a producer of the
-# source's production datasets.
-TRIAL_DROPPED_OVERRIDES = ('event_service', 'production_sample_prefix', 'google_production',
+# configuration (PCS.md § Trials): its sample's output namespace and the site
+# feeders' markers, since a trial runs under its own name; a site's
+# input-staging record, which names the source's staging job; and where the
+# source was placed, since the trial runs where it is composed for
+# (trial_site); and the source's recorded output datasets (outputs,
+# output_refs), since a trial writes only under its own root. Copied, the
+# source's pin overrode the trial's site, and the trial was listed as a
+# producer of the source's production datasets. The Event Service setup is
+# kept: a trial of an Event Service task runs as Event Service at the trial's
+# event count (production_es.trial_settings).
+TRIAL_DROPPED_OVERRIDES = ('production_sample_prefix', 'google_production',
                            'perlmutter_production', 'site_input', 'panda_site', 'placed_by',
                            'outputs', 'output_refs')
 
@@ -123,6 +124,11 @@ def compose_trial(source_task, events=DEFAULT_TRIAL_EVENTS, site='',
             'trial_lifetime_days': TRIAL_LIFETIME_DAYS,
             'source': {'kind': 'trial', 'location': source.composed_name},
             **({'rucio': {'matched': matched}} if matched else {}),
+            # A production sample's gun identity and generation plan
+            # (pcs.production_samples): its sample name is the gun's angular
+            # range and the sample discriminator, read from this record.
+            **({'production_sample': source.metadata['production_sample']}
+               if (source.metadata or {}).get('production_sample') else {}),
         },
         created_by=created_by or 'trial',
     )

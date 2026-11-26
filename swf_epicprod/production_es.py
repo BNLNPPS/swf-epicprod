@@ -159,17 +159,28 @@ def definition(settings):
 
 
 def apply(spec, settings):
-    """Keep the ordinary PCS producer, provenance, outputs and recording path."""
+    """Keep the ordinary PCS producer, provenance, outputs and recording path.
+    A trial (docs/PCS.md, Trials) keeps them too, with its RECO under its own
+    root and the trial lifetime on everything it registers."""
     cfg = definition(settings)
-    if spec.get('trial'):
-        raise ValueError('a production ES sample is a whole production task, not a trial')
+    trial = spec.get('trial') or {}
     outputs = spec.get('outputs') or []
     if len(outputs) != 1 or outputs[0].get('level') != 'RECO':
         raise ValueError('production ES currently requires one RECO output dataset')
     dataset = outputs[0]['dataset']
-    if not dataset.startswith('/RECO/'):
+    if trial:
+        root = str(trial.get('outputRoot') or '').strip('/')
+        if not root or dataset != f'/{root}/RECO':
+            raise ValueError('an Event Service trial registers its RECO under its own trial root')
+    elif not dataset.startswith('/RECO/'):
         raise ValueError('production ES output must use the production RECO namespace')
     env = spec['env']
+    if trial:
+        # Each unit's run.sh reads the sandbox's environment file: the trial
+        # root and lifetime there route its RECO and the close's registration
+        # under the trial root, expiring (run.sh, the trial outputs).
+        env['TRIAL_OUTPUT_ROOT'] = root
+        env['TRIAL_LIFETIME_S'] = str(int(trial.get('lifetimeDays') or 14) * 86400)
     evgen = cfg.get('input') == 'evgen'
     if evgen:
         if env.get('EVGEN_INTERNAL') == 'true':
@@ -287,6 +298,10 @@ def _command(spec, cfg, dataset=None, stamp=None):
     }
     if stamp is None:
         prefix['ES_OUTPUT_DATASET'] = dataset
+        if spec['env'].get('TRIAL_OUTPUT_ROOT'):
+            # The dispatcher takes a trial's RECO under its root as the
+            # task's declared dataset (run_event_service).
+            prefix['TRIAL_OUTPUT_ROOT'] = spec['env']['TRIAL_OUTPUT_ROOT']
     if cfg.get('batch_channel'):
         prefix['EPICPROD_SWITCH_ES_BATCH_CHANNEL'] = '1'
     if evgen:
@@ -374,6 +389,35 @@ def canary_settings(es, queue, events):
                            events_per_job=events, input_dataset=es.get('input_dataset'),
                            row=f'{path},steer,{events},0000',
                            deadline_s=CANARY_DEADLINE_S, margin_s=CANARY_MARGIN_S))
+
+
+def trial_settings(es, events):
+    """A trial's Event Service settings (docs/PCS.md, Trials): the task's own
+    shape over its own input, its first ``events`` events in one job. A gun
+    sample takes the first events of its generation plan; an EVGEN sample the
+    first events of its first file, as one segment at offset 0 (the form of
+    evgen_es.tails)."""
+    if not es:
+        raise ValueError('an Event Service trial needs the task\'s Event Service setup')
+    if type(events) is not int or events <= 0:
+        raise ValueError('an Event Service trial takes a positive number of events')
+    if es.get('input') == 'evgen':
+        files = dict(es.get('file_events') or {})
+        if not files and es.get('input_files') and es.get('events_per_file'):
+            # A setup from before the per-file counts read every file to the
+            # smallest file's count, so each file holds at least that many.
+            files = {es['input_files'][0]: int(es['events_per_file'])}
+        if not files:
+            raise ValueError('an Event Service trial over EVGEN input needs its setup\'s files')
+        lfn, total = next(iter(files.items()))
+        n = min(events, int(total))
+        return definition(dict(es, input_files=[lfn], files=1, events=n, events_per_file=n,
+                               file_events={lfn: n}, input_offset=0))
+    if events > int(es.get('events') or 0):
+        raise ValueError("an Event Service trial takes at most its sample's planned events")
+    path = str(es.get('row') or '').split(',')[0]
+    return definition(dict(es, events=events, input_events=events, events_per_job=events,
+                           row=f'{path},steer,{events},0000'))
 
 
 def canary(spec, stamp):
