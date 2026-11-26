@@ -75,6 +75,23 @@ def is_production_sample(metadata):
     return bool((metadata or {}).get('production_sample'))
 
 
+def sample_name(metadata):
+    """The discriminator a production sample writes its outputs under
+    (``production_sample.sample``, ``cES000002``), or ''."""
+    return str(((metadata or {}).get('production_sample') or {}).get('sample') or '')
+
+
+def under_sample_prefix(path, samples):
+    """Whether an EVGEN path made from a produced output
+    (``/EVGEN/cES000002/try8/SINGLE/...``) leads with a production
+    sample's discriminator. Such a path is the sample's output whichever
+    task's record holds it: the Rucio match has attributed a sample's
+    unrecorded tries to tasks of the same species and energy, and through
+    them the path would place a grid of its own."""
+    tokens = [t for t in str(path or '').split('/') if t]
+    return len(tokens) > 1 and tokens[0] == 'EVGEN' and tokens[1] in samples
+
+
 def evgen_path(location):
     """``/EVGEN/<tail>`` from a DID (``epic:/EVGEN/...``), a door path
     (``/cache/eic/EPIC/EVGEN/...`` or ``/volatile/eic/EPIC/EVGEN/...``)
@@ -253,15 +270,19 @@ def build_status_grids(campaign_name):
     # cell and it is not counted as unplaced.
     edition_by_pc = {}
     name_by_version = {}
+    samples = set()
     for label, name, metadata, version in (Dataset.objects
                                            .filter(campaign=campaign,
                                                    physics_config__isnull=False)
                                            .order_by('pk')
                                            .values_list('physics_config__label', 'composed_name',
                                                         'metadata', 'detector_version')):
-        if not is_production_sample(metadata):
+        if is_production_sample(metadata):
+            samples.add(sample_name(metadata))
+        else:
             edition_by_pc.setdefault(label, name)
             name_by_version.setdefault((label, version), name)
+    samples.discard('')
 
     # The configurations behind each EVGEN path, three ways: an EVGEN-stage
     # record that matched the registered dataset; the produced output (the
@@ -291,7 +312,7 @@ def build_status_grids(campaign_name):
                if not is_production_sample(t.dataset.metadata)}
     convention = evgen_convention_paths_cached() or {}
     for path, info in convention.items():
-        if path.startswith('/EVGEN/'):
+        if path.startswith('/EVGEN/') and not under_sample_prefix(path, samples):
             for task in info.get('tasks') or []:
                 if task in task_pc:
                     pcs_by_path.setdefault(evgen_path(path), set()).add(task_pc[task])

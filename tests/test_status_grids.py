@@ -4,7 +4,8 @@ one grid of species and beam against x."""
 import unittest
 
 from swf_epicprod.analytics.status_grids import (
-    _column_order, _row_order, column_label, is_production_sample, latest_delivery, split_path)
+    _column_order, _row_order, column_label, is_production_sample, latest_delivery, sample_name, split_path,
+    under_sample_prefix)
 
 
 class XBinnedFamilyTest(unittest.TestCase):
@@ -49,6 +50,23 @@ class ProductionSampleTest(unittest.TestCase):
         for metadata in (None, {}, {'stage': 'evgen'}, {'trial': 1},
                          {'production_sample': {}}):
             self.assertFalse(is_production_sample(metadata), metadata)
+
+    def test_paths_under_a_sample_prefix_are_the_samples(self):
+        samples = {'cES000001', 'cES000002', 'gOP000001'}
+        for path in ('/EVGEN/cES000002/try8/SINGLE/neutron/5GeV/3to50deg.cES000002',
+                     '/EVGEN/cES000002/try5/SINGLE/neutron/5GeV/3to50deg.cES000002',
+                     '/EVGEN/cES000001/SINGLE/neutron/5GeV/3to50deg.cES000001',
+                     '/EVGEN/gOP000001/SINGLE/neutron/5GeV/3to50deg.gOP000001'):
+            self.assertTrue(under_sample_prefix(path, samples), path)
+        for path in ('/EVGEN/SINGLE/neutron/5GeV/3to50deg',
+                     '/EVGEN/Bkg_Exact1S_2us_e_only/GoldCt/10um/DIS/NC/18x275/q2_1',
+                     '/EVGEN/cES000003/SINGLE/neutron/5GeV/3to50deg.cES000003',
+                     '/EVGEN', ''):
+            self.assertFalse(under_sample_prefix(path, samples), path)
+
+    def test_sample_name_is_the_discriminator(self):
+        self.assertEqual(sample_name(ProductionSampleTest.sample('cES000002')), 'cES000002')
+        self.assertEqual(sample_name({}), '')
 
 
 class LatestDeliveryTest(unittest.TestCase):
