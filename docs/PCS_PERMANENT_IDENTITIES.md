@@ -61,7 +61,12 @@ Migration `0010_identity_guards` is intentionally irreversible:
 The three `scripts/fold_*` global orphan-configuration deletes are removed.
 A fold preserves old configuration associations on their original record.
 Carrying associations to a successor is an explicit curation operation;
-retirement does not guess how to redistribute them.
+retirement does not guess how to redistribute them. The edition rebind
+after a derivation correction (`pcs_rebind_editions`, `pcs.edition_repair`)
+is one: when every edition of a configuration moves to one successor, the
+configuration's requestors are set on the successor through the requestor
+setter and recorded in its requestor history, and the old configuration
+keeps its own. Any other configuration metadata refuses the rebind.
 
 ## Deployment and recovery
 

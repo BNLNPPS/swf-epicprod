@@ -43,13 +43,16 @@ class Command(BaseCommand):
         if problems:
             raise CommandError('Not applied: the plan has problems (above).')
         try:
-            _, moved = apply_rebind(labels, actor=options['actor'],
-                                    reason=options['reason'],
-                                    expect_editions=options['expect_editions'])
+            plan, moved = apply_rebind(labels, actor=options['actor'],
+                                       reason=options['reason'],
+                                       expect_editions=options['expect_editions'])
         except ValidationError as e:
             raise CommandError('Not applied: ' + '; '.join(e.messages))
+        requestors = {entry['pc']: entry['requestors'] for entry in plan}
         for old, new in moved.items():
-            self.stdout.write(self.style.SUCCESS(f'{old} superseded by {new}'))
+            carried = (f"; requestors {', '.join(requestors[old])} carried"
+                       if requestors.get(old) else '')
+            self.stdout.write(self.style.SUCCESS(f'{old} superseded by {new}{carried}'))
 
     def _report(self, plan):
         out = self.stdout.write

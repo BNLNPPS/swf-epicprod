@@ -8,9 +8,13 @@ named configurations, so Dataset.save -> ensure_physics_config binds each
 to the configuration its corrected identity names, and then supersedes
 each old configuration with the one its editions all moved to. Names,
 source DIDs, targets and request/task links stay on the edition rows,
-which are not otherwise changed.
+which are not otherwise changed. A moving configuration's requestors are
+carried to its target through the requestor setter, recorded in the
+target's requestor history; the old configuration keeps its own. Any
+other configuration metadata refuses the plan.
 
-``plan_rebind`` reads only; ``classify`` and ``plan_problems`` are pure;
+``plan_rebind`` reads only; ``classify``, ``plan_problems`` and
+``carried_requestors`` are pure;
 ``apply_rebind`` plans again and writes, in one transaction, only a plan
 in which every configuration moves whole.
 
@@ -59,9 +63,10 @@ def plan_problems(plan, expect_editions=None):
             problems.append(f"{label}: {entry['outcome']}, not one whole move")
         if entry['lifecycle'] != 'active':
             problems.append(f"{label}: lifecycle {entry['lifecycle']}, not active")
-        if entry['requestors'] or entry['metadata']:
-            problems.append(f'{label}: carries requestors or metadata; '
-                            'move them through the services setters first')
+        other = sorted(set(entry['metadata']) - {'requestors'})
+        if other:
+            problems.append(f"{label}: carries metadata {', '.join(other)}; "
+                            'move it through the services setters first')
         target = entry['target']
         if target and target['lifecycle'] not in ('', 'active'):
             problems.append(f"{label}: target {target['label']} is "
@@ -70,6 +75,23 @@ def plan_problems(plan, expect_editions=None):
     if expect_editions is not None and total != expect_editions:
         problems.append(f'{total} editions bound, {expect_editions} expected')
     return problems
+
+
+def carried_requestors(plan, current):
+    """The requestors each target takes from the configurations moving to
+    it: its own (``current``, by target key) followed by theirs, each label
+    once. Returns {target key: labels} for the targets whose list changes."""
+    carried = {}
+    for entry in plan:
+        if not entry['target'] or not entry['requestors']:
+            continue
+        key = entry['target']['key']
+        labels = carried.setdefault(key, list(current.get(key) or []))
+        for label in entry['requestors']:
+            if label not in labels:
+                labels.append(label)
+    return {key: labels for key, labels in carried.items()
+            if labels != list(current.get(key) or [])}
 
 
 def plan_rebind(pc_labels):
@@ -150,8 +172,8 @@ def lock_targets(plan):
 
 def apply_rebind(pc_labels, *, actor, reason, expect_editions):
     """Lock the scope, plan again under the locks, then resave every
-    planned edition and supersede each old configuration with its target,
-    all in one transaction. Refuses (nothing written) when plan_problems
+    planned edition, supersede each old configuration with its target and
+    carry its requestors there, all in one transaction. Refuses (nothing written) when plan_problems
     or lock_targets report a problem, an edition does not bind as planned,
     or an edition is left on an old configuration. Returns
     (plan, {old label: new label})."""
@@ -192,4 +214,19 @@ def apply_rebind(pc_labels, *, actor, reason, expect_editions):
             set_lifecycle(old, 'superseded', reason=reason, changed_by=actor,
                           replacement=new)
             moved[old.label] = new.label
+        targets = {pc.config_key: pc for pc in PhysicsConfig.objects.select_for_update()
+                   .filter(config_key__in={e['target']['key'] for e in plan})
+                   .order_by('pk')}
+        carried = carried_requestors(
+            plan, {key: pc.requestors for key, pc in targets.items()})
+        if carried:
+            from .services import ServiceError, physics_config_requestors_set
+            try:
+                physics_config_requestors_set(
+                    [{'config': targets[key].label, 'requestors': labels}
+                     for key, labels in carried.items()],
+                    f'carried from the configuration this one supersedes: {reason}',
+                    changed_by=actor)
+            except ServiceError as e:
+                raise ValidationError(f'requestors not carried: {e}')
     return plan, moved

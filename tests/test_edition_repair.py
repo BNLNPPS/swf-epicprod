@@ -64,9 +64,11 @@ def test_inactive_configuration_refused():
         'pc6778: lifecycle superseded, not active']
 
 
-def test_associations_refused():
-    assert len(plan_problems([entry(requestors=['SIDIS'])])) == 1
-    assert len(plan_problems([entry(metadata={'requestors': {}})])) == 1
+def test_requestors_carried_other_metadata_refused():
+    assert plan_problems([entry(requestors=['SIDIS'],
+                                metadata={'requestors': {'history': []}})]) == []
+    assert plan_problems([entry(metadata={'notes': 'x', 'requestors': {}})]) == [
+        'pc6778: carries metadata notes; move it through the services setters first']
 
 
 def test_existing_inactive_target_refused():
