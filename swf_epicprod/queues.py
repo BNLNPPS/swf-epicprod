@@ -130,13 +130,17 @@ def image_problem(image, capability):
 def require_image(queue, image, refresh=False):
     """Raise unless the queue's pilots are seen serving the image. With
     ``refresh``, a reading the monitor takes itself (Perlmutter's public
-    launcher) is taken afresh first: read only when stale, it rebuilds behind
-    the read, and a submission after a quiet interval was refused on the
-    stale reading (NERSC_PERLMUTTER.md, The launcher and the direct pilot,
-    Admission)."""
+    launcher, npps0's committed pass) is taken afresh first: read only when
+    stale, it rebuilds behind the read, and a submission after a quiet
+    interval was refused on the stale reading (NERSC_PERLMUTTER.md, The
+    launcher and the direct pilot, Admission; NPPS0_WORKER.md, Image
+    admission)."""
+    from . import npps0_pilots
     from .perlmutter_pilots import QUEUE as perlmutter_queue, capability
     if refresh and queue == perlmutter_queue:
         observed = capability(DISPATCH_MAX_AGE_S, refresh=True)
+    elif refresh and queue == npps0_pilots.QUEUE:
+        observed = npps0_pilots.capability(DISPATCH_MAX_AGE_S, refresh=True)
     else:
         observed = dispatch_capabilities().get(queue)
     problem = image_problem(image, observed)

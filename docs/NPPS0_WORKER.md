@@ -57,9 +57,12 @@ Perlmutter's launcher is read: a pass that runs the standard wrapper for
 `BNL_NPPS_GPU` with `container_type` `apptainer:pilot` starts each job in the
 image the job declares, and reads as serving any image. Any other shape, an
 unreadable source or a reading older than 15 minutes refuses admission. The
-reading describes the committed pass, so a deploy keeps the host's copies
-equal to git. From 2026-10-24 to 2026-11-11 the queue had no report and every
-reference run there was refused.
+reading is taken only when read, so a submission's admission check takes it
+afresh (`queues.require_image(..., refresh=True)`), as Perlmutter's does;
+before 2026-11-27 a reference run after a quiet interval was refused on the
+stale reading. The reading describes the committed pass, so a deploy keeps the
+host's copies equal to git. From 2026-10-24 to 2026-11-11 the queue had no
+report and every reference run there was refused.
 
 ## Host prerequisites (in place 2026-08-14)
 
