@@ -5,8 +5,8 @@ can be delegated to a person or a physics working group outside the
 production operations team. The request, as Torre Wenaus recorded it on
 2026-10-27: "a delegation mechanism (as in delegate to a person or physics
 working group who is not the ops team) in the segfault analysis system".
-Stages 1 and 2 of the build below are in place (the record, the MCP tools,
-REST and the pages); stage 3, the notice events, is not yet built.
+The three stages of the build below are in place: the record, the MCP
+tools and REST; the pages; the notice events.
 
 ## The delegation
 
@@ -85,8 +85,17 @@ swf-remote proxy (swf-monitor EXTERNAL_ACCESS.md).
 ## Notices
 
 `segfault_delegated` and `segfault_delegation_answered` are action-stream
-events. Notice routing (swf-monitor NOTICE_ROUTING.md) delivers them to
-subscribers who registered for them, with a filter on the delegate.
+events at normal importance, not posted to epicprod-live. Each carries
+`delegate`, `delegate_kind` (person or group), `delegated_by`, `finding`
+and `delegation`, and a reply its `state`. Its `title` names the finding
+and the delegate, its `summary` is the ask or the reply, and its `url` is
+the Delegated to me tab for a delegation and the finding for a reply.
+
+Notice routing (swf-monitor NOTICE_ROUTING.md) delivers them to the
+subscribers who registered for them at `/api/notices/subscriptions/`. A
+delegate subscribes to `segfault_delegat*` with its account name and its
+groups, `{"delegate": ["<account>", "<group>"]}`; an operator subscribes
+to `segfault_delegation_answered` with `{"delegated_by": "<account>"}`.
 Nothing sends mail or writes to a person who has not subscribed, in keeping
 with the production disposition (SEGFAULT_DIAGNOSIS.md): no machinery files
 an issue or writes to a site.
