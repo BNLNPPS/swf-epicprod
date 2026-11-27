@@ -168,6 +168,9 @@ Production operations:
   payload's crash capture.
 - [SEGFAULT_KINDS.md](docs/SEGFAULT_KINDS.md) — the catalog's kinds
   beside segfaults: memory kills, bad input, Hilog, Event Service units.
+- [SEGFAULT_DELEGATION.md](docs/SEGFAULT_DELEGATION.md) — proposed:
+  delegating a crash's finding to a person or physics working group
+  outside the operations team.
 - [RUCIO_RESILIENCE.md](docs/RUCIO_RESILIENCE.md) — preventing Rucio
   registration losses.
 - [RUCIO_FAILOVER_STASH.md](docs/RUCIO_FAILOVER_STASH.md) — the failover

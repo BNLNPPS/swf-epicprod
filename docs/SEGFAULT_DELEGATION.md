@@ -1,0 +1,91 @@
+# Segfault delegation (proposed)
+
+A crash in the segfault catalog ([SEGFAULT_DIAGNOSIS.md](SEGFAULT_DIAGNOSIS.md))
+can be delegated to a person or a physics working group outside the
+production operations team. The request, as Torre Wenaus recorded it on
+2026-10-27: "a delegation mechanism (as in delegate to a person or physics
+working group who is not the ops team) in the segfault analysis system".
+This document is the proposed design; nothing in it is built.
+
+## The delegation
+
+The unit is a finding, the curated reading of one crash
+(SEGFAULT_DIAGNOSIS.md, Findings), since the findings are where the
+handoffs already live. A crash that no finding reads gets a finding before
+it is delegated; a short one stating the signature and the ask is enough.
+
+The record is kept in the finding's data under `delegations`, a list in
+order of creation, versioned with the finding:
+
+- `delegate`: a person (an epicprod account name) or a group (a name in the
+  group registry below);
+- `ask`: what is asked, in one or two sentences, such as reading the crash,
+  fixing the software, or deciding whether the stated loss is acceptable;
+- `by` and `at`: the operator who delegated and when;
+- `state`: `delegated`, `accepted`, `answered` or `returned`;
+- `answer`: the delegate's reply, with its author and time.
+
+A finding can carry several delegations at once, for example to a physics
+working group and to a software maintainer. A delegation is open until it
+is answered or returned.
+
+## Groups
+
+The delegate groups are a registry held as data, the SysConfig key
+`segfault_delegate_groups`, edited on the System page. Each group has a
+name, a one-line scope, and its conveners and members by epicprod account
+name. The expected entries are the physics working groups and the software
+groups the findings hand off to (npsim and DD4hep, EICrecon); the list is
+the production lead's to set.
+
+## Who acts
+
+Delegating is an authenticated operator decision (EPICPROD_OPS.md,
+Operational control tiers). It is made from the finding's row on the
+findings page, from the signature page, with the MCP tool
+`panda_segfault_delegate`, or with
+`POST /api/segfaults/findings/<name>/delegations/`, and each delegation is
+a `segfault_delegated` action. An LLM session does not delegate on its own;
+its reading may recommend a delegation. The delegate, or a member of the
+delegated group, accepts, answers or returns the delegation from the same
+places, as a `segfault_delegation_answered` action.
+
+## What the delegate sees
+
+- The findings page and the catalog gain a Delegated column (delegate and
+  state) and a Delegated facet in the narrowing filter.
+- A Delegated to me page, `/panda/segfaults/delegated/`, lists the
+  delegations to the signed-in user and to the groups the user belongs to,
+  open ones first. Each row carries the finding, its signatures, crashes
+  and loss, the ask, and an answer box. The page is part of the user view
+  (swf-monitor USER_VIEW.md).
+
+## Notices
+
+`segfault_delegated` and `segfault_delegation_answered` are action-stream
+events. Notice routing (swf-monitor NOTICE_ROUTING.md) delivers them to
+subscribers who registered for them, with a filter on the delegate.
+Nothing sends mail or writes to a person who has not subscribed, in keeping
+with the production disposition (SEGFAULT_DIAGNOSIS.md): no machinery files
+an issue or writes to a site.
+
+## Effect on production
+
+A delegation records who is asked and what they answered. It changes no
+production disposition: holding a configuration, a residual rerun, or
+accepting the loss remain operator decisions on the record.
+
+## Build
+
+The record is entry-store data on the finding and the registry is a
+SysConfig key, so no schema change is needed. The stages, each deployed and
+checked on the external face before the next:
+
+1. The record, the MCP tool and REST.
+2. The findings-page column and facet, and the Delegated to me page.
+3. The notice events.
+
+## Open questions
+
+- Who made the request, so that the first delegations fit that use.
+- The initial group list.
