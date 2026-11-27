@@ -1,11 +1,12 @@
-# Segfault delegation (proposed)
+# Segfault delegation
 
 A crash in the segfault catalog ([SEGFAULT_DIAGNOSIS.md](SEGFAULT_DIAGNOSIS.md))
 can be delegated to a person or a physics working group outside the
 production operations team. The request, as Torre Wenaus recorded it on
 2026-10-27: "a delegation mechanism (as in delegate to a person or physics
 working group who is not the ops team) in the segfault analysis system".
-This document is the proposed design; nothing in it is built.
+Stage 1 of the build below is in place (the record, the MCP tools and REST);
+stages 2 and 3 are not yet built.
 
 ## The delegation
 
@@ -48,7 +49,19 @@ findings page, from the signature page, with the MCP tool
 a `segfault_delegated` action. An LLM session does not delegate on its own;
 its reading may recommend a delegation. The delegate, or a member of the
 delegated group, accepts, answers or returns the delegation from the same
-places, as a `segfault_delegation_answered` action.
+places (the MCP tool `panda_segfault_delegation_reply`, or
+`POST /api/segfaults/findings/<name>/delegations/<id>/` with `state` and
+`text`), as a `segfault_delegation_answered` action. A reply that answers
+or returns carries its text; an answered or returned delegation takes no
+further reply. `panda_segfault_delegations` and
+`GET /api/segfaults/delegations/?person=<account>&open=1` list the
+delegations, open ones first, with the group registry.
+
+As built: `delegate_finding`, `reply_delegation`, `delegations` and
+`delegate_groups` in swf-monitor `monitor_app/segfaults.py`, writing through
+`set_finding` so each change is a version of the finding. A signed-in caller
+is recorded as themselves; a service token names who acts. The two write
+tools are under the authority gate (swf-monitor AUTHORITY.md).
 
 ## What the delegate sees
 
@@ -87,5 +100,4 @@ checked on the external face before the next:
 
 ## Open questions
 
-- Who made the request, so that the first delegations fit that use.
 - The initial group list.
