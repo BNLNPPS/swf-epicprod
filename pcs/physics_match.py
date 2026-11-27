@@ -111,8 +111,11 @@ def taskname_remainder_path(remainder):
     fragmenting before derivation sees them. A dot before a beam token
     (``eHe3.9x166``, ``Pb208.5x110``) separates: the digit ending an ion
     species and the digit starting the beam pair are not a decimal, and
-    gluing them lost the species (the 26.07 BeAGLE eHe3 tags)."""
-    protected = re.sub(r'(\d)\.(?!\d+x\d+(?:\.|$))(\d)', '\\1\x00\\2', remainder or '')
+    gluing them lost the species (the 26.07 BeAGLE eHe3 tags). The digits
+    beside a dot are looked at, not consumed, so every dot of a version
+    run stays (``pythia6-eic.1.0.0`` -> ``pythia6-eic/1.0.0``; consuming
+    them read ``1.0/0``)."""
+    protected = re.sub(r'(?<=\d)\.(?!\d+x\d+(?:\.|$))(?=\d)', '\x00', remainder or '')
     return protected.replace('.', '/').replace('\x00', '.')
 
 

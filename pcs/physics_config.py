@@ -28,7 +28,8 @@ Resolution policy (never guess):
 - **Sample**: the stored ``sample_name``, else the single-particle angle
   derived from the path; empty means the configuration has no variant.
 """
-from .physics_match import _KNOWN_AREAS, derive_evgen, single_particle_angle
+from .physics_match import (_KNOWN_AREAS, _NAMED_BUILDS, derive_evgen,
+                            single_particle_angle)
 
 
 def _source_path(dataset):
@@ -45,7 +46,9 @@ def _source_path(dataset):
         # physics grammar dot-separated. Dot-splitting fragments dotted
         # version tokens (pythia8.316-1.0 -> pythia8, 316-1, 0); a pure
         # version fragment re-merges into its predecessor, restoring the
-        # slash-path segment shape. Non-version tokens (100MeV, 18x275,
+        # slash-path segment shape. A named build's version is its own
+        # segment in that shape (pythia6-eic/1.0.0), so the fragment after
+        # a named build starts one. Non-version tokens (100MeV, 18x275,
         # q2_1to10) never match the fragment pattern.
         import re
         parts = path.split('.')
@@ -53,7 +56,8 @@ def _source_path(dataset):
             if token in _KNOWN_AREAS:
                 segments = []
                 for part in parts[i:]:
-                    if segments and re.fullmatch(r'\d+(?:-\d+)*', part):
+                    if (segments and re.fullmatch(r'\d+(?:-\d+)*', part)
+                            and segments[-1].lower() not in _NAMED_BUILDS):
                         segments[-1] += '.' + part
                     else:
                         segments.append(part)

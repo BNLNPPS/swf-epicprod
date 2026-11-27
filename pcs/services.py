@@ -3206,12 +3206,17 @@ def _source_path_for_evgen(ds):
     return location, ''
 
 
-def rebind_anchor_editions(family, *, changed_by, dry_run=True):
+def rebind_anchor_editions(family, *, changed_by, dry_run=True, evgen_tag=None):
     """Repair: every edition of a campaign family still wearing the import
     and intake anchors — e1, s1, r1, placeholders that read as real
     software — takes the tags the binding rule gives an intake today: the
     release's simulation and reconstruction pair, and the evgen tag its
     source supports or the unrecorded sentinel. r0 keeps its meaning.
+
+    ``evgen_tag`` (a label) scopes the repair to the family's editions
+    carrying that tag and replaces it as it replaces e1: by the evgen tag
+    each edition's source supports. It is for a tag the sources do not
+    name (e55, ``pythia6 6-eic``, bound to two pythia6-eic releases).
 
     Each rebound edition records the change in ``metadata['rebind']``;
     its composed name and physics configuration follow from the tags on
@@ -3223,13 +3228,22 @@ def rebind_anchor_editions(family, *, changed_by, dry_run=True):
     from django.utils import timezone as _tz
     from monitor_app.epicprod_logging import log_epicprod_action
 
+    retag = None
+    if evgen_tag:
+        number = str(evgen_tag).lower().removeprefix('e')
+        retag = EvgenTag.objects.get(tag_number=int(number))
+    reason = (f'evgen tag {retag.tag_label} replaced by the binding rule' if retag
+              else 'import and intake anchors replaced by the binding rule')
     prefix = f'{family}.'
+    scope = Dataset.objects.filter(detector_version__startswith=prefix)
+    if retag is not None:
+        scope = scope.filter(evgen_tag=retag)
     editions = list(
-        Dataset.objects.filter(detector_version__startswith=prefix)
-        .select_related('evgen_tag', 'simu_tag', 'reco_tag', 'physics_config')
+        scope.select_related('evgen_tag', 'simu_tag', 'reco_tag', 'physics_config')
         .order_by('composed_name', 'pk'))
     pairs = {}
     report = {'family': family, 'dry_run': dry_run, 'examined': len(editions),
+              'evgen_tag': retag.tag_label if retag else '',
               'rebound': 0, 'unchanged': 0, 'skipped_collision': [],
               'simu': 0, 'reco': 0, 'evgen_derived': 0, 'evgen_unrecorded': 0,
               'renamed': [], 'pc_moved': [], 'requests_carried': 0,
@@ -3260,7 +3274,8 @@ def rebind_anchor_editions(family, *, changed_by, dry_run=True):
             if src is not None and src.evgen_tag_id != ds.evgen_tag_id:
                 new_evgen = src.evgen_tag
                 change['evgen'] = (ds.evgen_tag.tag_label, src.evgen_tag.tag_label)
-        elif ds.evgen_tag.tag_number == 1:
+        elif ds.evgen_tag.tag_number == 1 or (
+                retag is not None and ds.evgen_tag_id == retag.pk):
             path, gen_version = _source_path_for_evgen(ds)
             params = derive_evgen(path, gen_version) if path else None
             if params:
@@ -3307,8 +3322,7 @@ def rebind_anchor_editions(family, *, changed_by, dry_run=True):
         history.append({'from': {k: v[0] for k, v in change.items()},
                         'to': {k: v[1] for k, v in change.items()},
                         'name_before': old_name, 'by': changed_by, 'at': now,
-                        'reason': 'import and intake anchors replaced by the '
-                                  'binding rule'})
+                        'reason': reason})
         ds.metadata = dict(ds.metadata or {}, rebind=history)
         ds.save()
         new_pc = ds.physics_config.label if ds.physics_config_id else ''
@@ -3355,7 +3369,7 @@ def rebind_anchor_editions(family, *, changed_by, dry_run=True):
                 entries[new_pc] = plan[old_pc]
             campaign_plan_entries_set(
                 campaign.name, entries,
-                'plan entries carried with their editions by the anchor rebind',
+                f'plan entries carried with their editions: {reason}',
                 changed_by=changed_by)
             report['plan_entries_carried'] = [
                 {'from': a, 'to': b} for a, b in moves.items()]
@@ -3364,8 +3378,10 @@ def rebind_anchor_editions(family, *, changed_by, dry_run=True):
         'pcs', 'edition_rebind', outcome='ok', sublevel='low',
         live_default=False, subject_type='campaign', subject_key=family,
         username=changed_by,
-        message=(f'edition_rebind {family}: {report["rebound"]} of '
-                 f'{report["examined"]} editions rebound'),
+        message=(f'edition_rebind {family}'
+                 f'{" " + report["evgen_tag"] if report["evgen_tag"] else ""}: '
+                 f'{report["rebound"]} of {report["examined"]} editions rebound'),
+        evgen_tag=report['evgen_tag'],
         examined=report['examined'], rebound=report['rebound'],
         simu=report['simu'], reco=report['reco'],
         evgen_derived=report['evgen_derived'],
