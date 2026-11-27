@@ -234,15 +234,18 @@ peer message to the swf sessions on the monitor host (the
 `epicprod-nightly`) with the census of the catalog (signatures and
 crashes; read by a finding; a reproduction in flight; no trace and a
 runnable row; traced with no reading; settled by a reproduction with
-no trace and no reading; no trace and no runnable row) and three
-lists, largest first: the signatures for which reproduction is the
-only extraction left (no trace, a runnable row, no attempt in flight,
-no finding), the traced signatures no finding reads, and the
-signatures whose reproduction has settled without a trace (the row ran
-clean at both queues, or crashed without a readable trace) that no
-finding reads: those are read from the record, the per-host and
-per-day shape of their crashes, into a finding
-(`panda_segfault_finding_set`), never run again. A session takes a
+no trace and no reading; bad input or Hilog with no reading; no trace
+and no runnable row) and four lists, largest first: the signatures for
+which reproduction is the only extraction left (no trace, a runnable
+row, no attempt in flight, no finding), the traced signatures no
+finding reads, the signatures whose reproduction has settled without a
+trace (the row ran clean at both queues, or crashed without a readable
+trace) that no finding reads: those are read from the record, the
+per-host and per-day shape of their crashes, into a finding
+(`panda_segfault_finding_set`), never run again; and the bad-input and
+Hilog signatures no finding reads, each with its reading (the FATAL
+line, the programs that wrote the logs), since no run settles them
+([SEGFAULT_KINDS.md](SEGFAULT_KINDS.md)). A session takes a
 reproduction item by requesting it on the record,
 with the MCP tool `panda_segfault_reproduce(key)` (the production
 queue and the reference queue, the crashed row of the representative;
