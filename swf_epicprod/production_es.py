@@ -127,8 +127,13 @@ def definition(settings):
                                  or len(cfg['input_files']) != cfg['files']):
         raise ValueError('production ES input_files must name each of its EVGEN files')
     if 'file_events' in cfg:
+        # Compared as names, not in order: every reader looks a file's count
+        # up by its name, and the stored setup (JSONB) returns an object's
+        # keys shortest first, so run10 no longer follows run1 as it does in
+        # input_files (p4265, 2026-11-27).
         fe = cfg['file_events']
-        if (not evgen or not isinstance(fe, dict) or list(fe) != list(cfg.get('input_files') or [])
+        if (not evgen or not isinstance(fe, dict)
+                or sorted(fe) != sorted(cfg.get('input_files') or [])
                 or any(type(n) is not int or n <= 0 for n in fe.values())
                 or sum(fe.values()) != cfg['events'] or max(fe.values()) != cfg['events_per_file']):
             raise ValueError('production ES file_events must give each input file its events, '
