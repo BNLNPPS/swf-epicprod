@@ -5,8 +5,8 @@ can be delegated to a person or a physics working group outside the
 production operations team. The request, as Torre Wenaus recorded it on
 2026-10-27: "a delegation mechanism (as in delegate to a person or physics
 working group who is not the ops team) in the segfault analysis system".
-Stage 1 of the build below is in place (the record, the MCP tools and REST);
-stages 2 and 3 are not yet built.
+Stages 1 and 2 of the build below are in place (the record, the MCP tools,
+REST and the pages); stage 3, the notice events, is not yet built.
 
 ## The delegation
 
@@ -65,13 +65,22 @@ tools are under the authority gate (swf-monitor AUTHORITY.md).
 
 ## What the delegate sees
 
-- The findings page and the catalog gain a Delegated column (delegate and
-  state) and a Delegated facet in the narrowing filter.
-- A Delegated to me page, `/panda/segfaults/delegated/`, lists the
-  delegations to the signed-in user and to the groups the user belongs to,
-  open ones first. Each row carries the finding, its signatures, crashes
-  and loss, the ask, and an answer box. The page is part of the user view
-  (swf-monitor USER_VIEW.md).
+- The findings page carries a Delegated column (the open delegations and
+  their state) and, under each finding, its delegations with their replies
+  and, for an account that may act, a Delegate control.
+- The catalog carries a Delegated column and a Delegated facet in its
+  narrowing filter (open, answered, returned, not delegated), read through
+  each signature's finding.
+- The Delegated to me tab, `/panda/segfaults/delegated/`, lists the
+  delegations to the signed-in account and to the groups that list it,
+  open ones first (`?all=1` lists every delegation). Each row carries the
+  finding, the ask, its crashes and loss, and the replies, with Accept,
+  Answer and Return for the delegate.
+
+The page actions are JSON POSTs under `panda/segfaults/`
+(`findings/<name>/delegate/` and
+`findings/<name>/delegations/<id>/reply/`), so they work through the
+swf-remote proxy (swf-monitor EXTERNAL_ACCESS.md).
 
 ## Notices
 
