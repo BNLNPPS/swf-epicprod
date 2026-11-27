@@ -163,6 +163,18 @@ writers each finish with `consolidate_output_ownership`
 consolidation once across all campaigns), so ownership re-settles on
 every nightly pass.
 
+A production sample (`pcs.production_samples.compose`: the event-service
+validation runs and the site feeders' samples) writes under its own
+discriminator, `<STAGE>/<version>/<config>/<sample>/[tryN/]...`, and owns
+every dataset under that prefix, each try included
+(`services.production_sample_owners`). Its prefix ranks after the
+submission record (`precreated_output_owners`) and ahead of a row
+registered at the location, and its datasets are left out of the filter
+match: their path carries the sample's own physics, so the filters
+would hand each of them to every task of the same species and energy,
+whatever its angle, and the reconcile would register the ones nobody
+owned as past output.
+
 The past-campaign ingest itself is clockwork: a `catalog_sync` chain step
 (`epic-prod-past-import.py`) pulls the eic/epic-prod bookkeeping clone —
 the production team's nightly-regenerated, Rucio-derived record — and

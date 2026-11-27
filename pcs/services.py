@@ -4639,6 +4639,49 @@ def precreated_output_owners(campaign):
     return owners
 
 
+def production_sample_output_key(did):
+    """(version, detector config, leading segment) of a produced DID,
+    ``epic:/<STAGE>/<version>/<config>/<segment>/...``, or None for a
+    name too short to carry one. A production sample writes under its
+    own discriminator, ``<STAGE>/<version>/<config>/<sample>/[tryN/]...``
+    (``production_sample_prefix``), so the leading segment names it."""
+    rest = str(did or '').split(':', 1)[-1]
+    segs = [s for s in rest.split('/') if s]
+    if len(segs) < 5:
+        return None
+    return (segs[1], segs[2], segs[3])
+
+
+def production_sample_owners(campaign):
+    """(version, detector config, sample) -> owning ProdTask name for the
+    campaign's production samples (``pcs.production_samples.compose``),
+    keyed as ``production_sample_output_key`` keys a DID. Their outputs
+    are not in the submission record ``precreated_output_owners`` reads,
+    and their path carries the sample's own physics, so the filters
+    would hand every try of a sample to every task of the same species
+    and energy; the sample's prefix attributes them instead."""
+    owners = {}
+    rows = (ProdTask.objects
+            .filter(campaign=campaign,
+                    dataset__metadata__has_key='production_sample')
+            .order_by('pk')
+            .values_list('name', 'dataset__detector_version',
+                         'dataset__detector_config', 'dataset__metadata'))
+    for name, version, config, metadata in rows:
+        sample = str(((metadata or {}).get('production_sample') or {})
+                     .get('sample') or '')
+        if sample and version and config:
+            owners[(version, config, sample)] = name
+    return owners
+
+
+def production_sample_owner(did, owners):
+    """The production-sample task that owns ``did`` under ``owners``
+    (``production_sample_owners``), or ''."""
+    key = production_sample_output_key(did)
+    return owners.get(key, '') if key else ''
+
+
 def _output_owner_names(campaign):
     """did -> owning ProdTask name for one campaign.
 
@@ -4649,7 +4692,9 @@ def _output_owner_names(campaign):
     (EPICPROD_DATA_LINEAGE.md § Output ownership). When several rows
     register the same DID (the past ingest lists a RECO co-output under
     both stage sections), a working edition outranks a past row, and a
-    stage-matching row outranks a cross-stage one.
+    stage-matching row outranks a cross-stage one. A dataset under a
+    production sample's prefix is that sample's (``production_sample_owners``),
+    after the submission record and ahead of any registered row.
     """
     candidates = {}
     for ds in Dataset.objects.filter(campaign=campaign).only(
@@ -4684,8 +4729,16 @@ def _output_owner_names(campaign):
                                and status != 'past_output'):
             task_by_composed[composed] = (name, status)
     owners = precreated_output_owners(campaign)
+    samples = production_sample_owners(campaign)
     for loc, lst in candidates.items():
         if loc in owners:
+            continue
+        # A production sample's prefix outranks a row registered at the
+        # location: the past import registers a row at a sample's output
+        # it could not attribute, and that row is not the sample's record.
+        sample_owner = production_sample_owner(loc, samples)
+        if sample_owner:
+            owners[loc] = sample_owner
             continue
         match = _re.match(r'^[^:]*:/([A-Za-z]+)/', loc)
         did_stage = match.group(1).upper() if match else ''
@@ -4725,6 +4778,7 @@ def consolidate_output_ownership(campaign):
     same call across all campaigns.
     """
     owner_names = _output_owner_names(campaign)
+    samples = production_sample_owners(campaign)
     tasks = list(ProdTask.objects.filter(campaign=campaign))
     by_name = {t.name: t for t in tasks}
     newest = {}
@@ -4747,7 +4801,8 @@ def consolidate_output_ownership(campaign):
         changed = False
         for entry in outputs:
             did = entry.get('did') or ''
-            owner = owner_names.get(did) or task.name
+            owner = (owner_names.get(did) or production_sample_owner(did, samples)
+                     or task.name)
             if owner == task.name:
                 kept.append(entry)
                 continue
@@ -4809,6 +4864,20 @@ def match_requests_to_rucio_snapshot(snapshot, *, campaign):
         rec = idx_by_did.get(did)
         if rec is not None:
             precreated_recs.setdefault(name, []).append(rec)
+    # A dataset under a production sample's prefix is that sample's
+    # output, every try of it: it goes to the sample and is left out of
+    # the filter match, which would hand it to every task of the same
+    # species and energy whatever its angle.
+    samples = production_sample_owners(campaign)
+    sample_dids = set()
+    for did, rec in idx_by_did.items():
+        name = production_sample_owner(did, samples)
+        if name:
+            sample_dids.add(did)
+            if all(m['did'] != did for m in precreated_recs.get(name, [])):
+                precreated_recs.setdefault(name, []).append(rec)
+    idx_filtered = [(rec, f) for rec, f in idx_filtered
+                    if rec['did'] not in sample_dids]
     for t in qs:
         summary['tasks_seen'] += 1
         # Prefer the persisted csv_import.filters block (already extracted
@@ -4834,7 +4903,8 @@ def match_requests_to_rucio_snapshot(snapshot, *, campaign):
         own_entries, ref_entries = [], []
         for m in matches:
             entry = _rucio_match_to_output(m, checked_at)
-            owner = owner_names.get(entry['did'], '')
+            owner = (owner_names.get(entry['did'], '')
+                     or production_sample_owner(entry['did'], samples))
             if owner and owner != t.name:
                 ref_entries.append(_output_ref(entry, owner))
             else:
