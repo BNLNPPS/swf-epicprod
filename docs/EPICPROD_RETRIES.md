@@ -230,10 +230,12 @@ job's inputs to the next step of 1000, 2000, 3000, 4000, 6000 and
 start at the larger size. A raised job runs only on a queue that takes
 its size: PanDA gives a queue no job above its `maxrss`, so on
 `BNL_OSG_PanDA_1` (`maxrss` 4,096 MB) an input raised to 6,000 MB waits
-unrun (tasks 42182 and 42183, 27 November 2026). Within the queue's
+unrun (task 42183, 27 November 2026). Within the queue's
 limit a running task needs no operator action, no kill and no
-configuration edit; above it, the queue's limit is raised or the work
-is moved to a queue with more memory.
+configuration edit; above it, the queue's limit is raised together
+with the memory its pilots request (on OSG a fixed 4,096 MB in the
+submit description, OSG_SUBMISSION.md), or the work is moved to a
+queue with more memory.
 
 Two facts govern their use:
 
@@ -418,7 +420,7 @@ returns the result over SSE (EPICPROD_OPS_AGENT.md).
 - Jobs are failing on memory → nothing, within the queue's `maxrss`:
   the `increase_memory` rules retry them at the next memory step and
   raise the task when most of it needs more. Above the queue's
-  `maxrss` the raised inputs wait unrun: raise the limit or move the
-  work.
+  `maxrss` the raised inputs wait unrun: raise the limit with the
+  pilots' memory request, or move the work.
 - A ghost is holding an output name → **Rerun Residual**; it covers
   the row and writes in a new namespace.
