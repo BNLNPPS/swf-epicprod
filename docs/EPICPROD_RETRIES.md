@@ -227,15 +227,20 @@ by which an OSG glidein evicts a job over its memory request) move the
 job's inputs to the next step of 1000, 2000, 3000, 4000, 6000 and
 8000 MB, and once more than 30% of a task's inputs are above its
 `ramCount` the task's own `ramCount` is raised, so its remaining jobs
-start at the larger size. A raised job runs only on a queue that takes
-its size: PanDA gives a queue no job above its `maxrss`, so on
-`BNL_OSG_PanDA_1` (`maxrss` 4,096 MB) an input raised to 6,000 MB waits
-unrun (task 42183, 27 November 2026). Within the queue's
-limit a running task needs no operator action, no kill and no
-configuration edit; above it, the queue's limit is raised together
-with the memory its pilots request (on OSG a fixed 4,096 MB in the
-submit description, OSG_SUBMISSION.md), or the work is moved to a
-queue with more memory.
+start at the larger size. A queue's `maxrss` does not hold a raised
+job back from a task already placed on that queue: JEDI's brokerage
+compares memory with `maxrss` only for a task with no site, and the
+dispatcher gives a job to any pilot that reports at least the job's
+memory, which the pilot reads from its node. The raised job runs in
+whatever slot its pilot holds. On `BNL_OSG_PanDA_1`, whose pilots ask
+the pool for 4,096 MB, task 42182's jobs raised to 6,000 MB ran on
+27 November 2026: 294 finished and 589 were evicted on memory again,
+each eviction spending one of the input's attempts. Where the slot
+holds the raised size, a running task needs no operator action, no
+kill and no configuration edit; where it does not, the pilots' memory
+request is raised with the queue's `maxrss` (on OSG a fixed 4,096 MB
+in the submit description, OSG_SUBMISSION.md), or the work is moved
+to a queue with more memory.
 
 Two facts govern their use:
 
@@ -417,10 +422,10 @@ returns the result over SSE (EPICPROD_OPS_AGENT.md).
   still applies; it takes the reactivation path by itself.
 - Jobs are failing on one known error and eating attempts → a retry
   rule, not an operation.
-- Jobs are failing on memory → nothing, within the queue's `maxrss`:
-  the `increase_memory` rules retry them at the next memory step and
-  raise the task when most of it needs more. Above the queue's
-  `maxrss` the raised inputs wait unrun: raise the limit with the
-  pilots' memory request, or move the work.
+- Jobs are failing on memory → nothing, while the pilots' slots hold
+  the raised size: the `increase_memory` rules retry them at the next
+  memory step and raise the task when most of it needs more. Where the
+  slots are smaller, the raised jobs are evicted again: raise the
+  pilots' memory request with the queue's `maxrss`, or move the work.
 - A ghost is holding an output name → **Rerun Residual**; it covers
   the row and writes in a new namespace.
